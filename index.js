@@ -1,8 +1,11 @@
+require("dotenv").config();
 const express = require('express');
 const Stripe = require('stripe');
 const path = require('path');
 const app = express();
-const stripe = Stripe('sk_test_51QzK6tG7utWo2rQvVgHCzNGCgMifSrwWpwn2CiAzdKeqas13Gjx3E3zsi5HCVzaoee5f1LYkNeRa3SZcv22FqjxD00HG9RvMB4'); // Replace with test key
+
+// ✅ Use secret key from .env instead of hardcoding
+const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 
 app.use(express.json());
 app.use(express.static('public'));
