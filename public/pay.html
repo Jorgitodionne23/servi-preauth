@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Confirm Your Payment</title>
+  <script src="https://js.stripe.com/v3/"></script>
+</head>
+<body>
+  <h2>Enter Your Card to Pre-Authorize</h2>
+  <form id="payment-form">
+    <div id="card-element"></div>
+    <button type="submit">Confirm</button>
+  </form>
+  <div id="result"></div>
+
+  <script>
+    const stripe = Stripe('pk_test_51QzK6tG7utWo2rQvhFzSBxh59IMDentv5zN7jfKWtf5vkFiGkcuEENhumOpKGjkf33tGqrL3b3o05tp0DDvcJn4r00pQcvaQXR'); // Replace this
+
+    const elements = stripe.elements();
+    const cardElement = elements.create('card');
+    cardElement.mount('#card-element');
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const clientSecret = urlParams.get('secret');
+
+    const form = document.getElementById('payment-form');
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+
+      const result = await stripe.confirmCardPayment(clientSecret, {
+        payment_method: {
+          card: cardElement
+        }
+      });
+
+      if (result.error) {
+        document.getElementById('result').textContent = '❌ ' + result.error.message;
+      } else {
+        if (result.paymentIntent.status === 'requires_capture') {
+          document.getElementById('result').textContent = '✅ Pre-authorization successful!';
+        }
+      }
+    });
+  </script>
+</body>
+</html>
