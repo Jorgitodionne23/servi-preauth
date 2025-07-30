@@ -88,10 +88,11 @@
 <img src="logo-servi-white.png" alt="SERVI Logo" style="width: 120px; margin: 0 auto 20px; display: block;" />
   <div class="container">
     <h2>Confirmar pago</h2>
-    
-    <div id="apple-pay-container" style="display:none; margin-bottom: 20px;">
-  <div id="apple-pay-button"></div>
+
+<div id="express-pay-container" style="display:none; margin-bottom: 20px;">
+  <div id="express-pay-button"></div>
 </div>
+
 
     <form id="payment-form">
       <div class="form-row">
@@ -139,14 +140,15 @@
   });
 
   // Verificar disponibilidad
-  paymentRequest.canMakePayment().then(result => {
-    if (result) {
-      document.getElementById("apple-pay-container").style.display = "block";
-      prButton.mount("#apple-pay-button");
-    } else {
-      console.log("Apple Pay no está disponible.");
-    }
-  });
+paymentRequest.canMakePayment().then(result => {
+  if (result) {
+    document.getElementById("express-pay-container").style.display = "block";
+prButton.mount("#express-pay-button");
+  } else {
+    document.getElementById("express-pay-container").style.display = "none";
+  }
+});
+
 
   // Manejador de Apple Pay
   paymentRequest.on("paymentmethod", async (ev) => {
@@ -174,7 +176,7 @@
         alert("Error al confirmar: " + result.error.message);
       } else {
         alert("¡Tu servicio ha sido confirmado!");
-        window.location.href = "https://wa.me/525525112588";
+        window.location.href = "/success.html";
       }
     }
   });
@@ -207,7 +209,7 @@
       submitBtn.disabled = false;
     } else if (result.paymentIntent.status === "succeeded") {
       alert("¡Tu servicio ha sido confirmado!");
-      window.location.href = "https://wa.me/525525112588";
+      window.location.href = "/success.html";
     }
   });
 </script>
