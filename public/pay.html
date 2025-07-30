@@ -88,6 +88,11 @@
 <img src="logo-servi-white.png" alt="SERVI Logo" style="width: 120px; margin: 0 auto 20px; display: block;" />
   <div class="container">
     <h2>Confirmar pago</h2>
+    
+    <div id="apple-pay-container" style="display:none; margin-bottom: 20px;">
+  <div id="apple-pay-button"></div>
+</div>
+
     <form id="payment-form">
       <div class="form-row">
         <div id="card-element"><!-- Stripe Card Element will be inserted here --></div>
@@ -102,42 +107,110 @@
     <div class="footer">Pagos seguros con Stripe</div>
   </div>
 
-  <script>
-    const stripe = Stripe("pk_test_51QzK6tG7utWo2rQvhFzSBxh59IMDentv5zN7jfKWtf5vkFiGkcuEENhumOpKGjkf33tGqrL3b3o05tp0DDvcJn4r00pQcvaQXR"); // Replace with your actual publishable key
-    const elements = stripe.elements();
-    const card = elements.create("card", { style: { base: { color: "#fff" } } });
-    card.mount("#card-element");
+<script>
+  const stripe = Stripe("pk_test_51QzK6tG7utWo2rQvhFzSBxh59IMDentv5zN7jfKWtf5vkFiGkcuEENhumOpKGjkf33tGqrL3b3o05tp0DDvcJn4r00pQcvaQXR");
+  const elements = stripe.elements();
 
-    const form = document.getElementById("payment-form");
-    const submitBtn = document.getElementById("submit");
-    const spinner = document.getElementById("spinner");
+  // Estilo de los elementos
+  const style = { base: { color: "#fff" } };
 
-    form.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      submitBtn.disabled = true;
-      spinner.style.display = "block";
+  // Crear el Card Element
+  const card = elements.create("card", { style });
+  card.mount("#card-element");
 
-      const res = await fetch("/create-payment-intent", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amount: 2000 }) // MXN $20.00
-      });
+  // Agregar Apple Pay si está disponible
+  const paymentRequest = stripe.paymentRequest({
+    country: "MX",
+    currency: "mxn",
+    total: { label: "Servicio SERVI", amount: 2000 },
+    requestPayerName: true,
+    requestPayerEmail: true,
+  });
 
-      const { clientSecret } = await res.json();
+  const prButton = elements.create("paymentRequestButton", {
+    paymentRequest,
+    style: {
+      paymentRequestButton: {
+        type: "default",
+        theme: "dark",
+        height: "40px"
+      }
+    }
+  });
 
-      const result = await stripe.confirmCardPayment(clientSecret, {
-        payment_method: { card: card }
-      });
+  // Verificar disponibilidad
+  paymentRequest.canMakePayment().then(result => {
+    if (result) {
+      document.getElementById("apple-pay-container").style.display = "block";
+      prButton.mount("#apple-pay-button");
+    } else {
+      console.log("Apple Pay no está disponible.");
+    }
+  });
 
+  // Manejador de Apple Pay
+  paymentRequest.on("paymentmethod", async (ev) => {
+    const res = await fetch("/create-payment-intent", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ amount: 2000 })
+    });
+
+    const { clientSecret } = await res.json();
+
+    const { error, paymentIntent } = await stripe.confirmCardPayment(
+      clientSecret,
+      { payment_method: ev.paymentMethod.id },
+      { handleActions: false }
+    );
+
+    if (error) {
+      ev.complete("fail");
+      alert(error.message);
+    } else {
+      ev.complete("success");
+      const result = await stripe.confirmCardPayment(clientSecret);
       if (result.error) {
-        alert("Error: " + result.error.message);
-        spinner.style.display = "none";
-        submitBtn.disabled = false;
-      } else if (result.paymentIntent.status === "succeeded") {
-        alert("¡Tu servicio ha sido confirmado! Te mandaremos un mensaje de recordatorio antes de tu servicio. Haz clic aquí para ver o modificar tu solicitud por WhatsApp.");
+        alert("Error al confirmar: " + result.error.message);
+      } else {
+        alert("¡Tu servicio ha sido confirmado!");
         window.location.href = "https://wa.me/525525112588";
       }
+    }
+  });
+
+  // Formulario tradicional
+  const form = document.getElementById("payment-form");
+  const submitBtn = document.getElementById("submit");
+  const spinner = document.getElementById("spinner");
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    submitBtn.disabled = true;
+    spinner.style.display = "block";
+
+    const res = await fetch("/create-payment-intent", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ amount: 2000 })
     });
-  </script>
+
+    const { clientSecret } = await res.json();
+
+    const result = await stripe.confirmCardPayment(clientSecret, {
+      payment_method: { card: card }
+    });
+
+    if (result.error) {
+      alert("Error: " + result.error.message);
+      spinner.style.display = "none";
+      submitBtn.disabled = false;
+    } else if (result.paymentIntent.status === "succeeded") {
+      alert("¡Tu servicio ha sido confirmado!");
+      window.location.href = "https://wa.me/525525112588";
+    }
+  });
+</script>
+
 </body>
 </html>
