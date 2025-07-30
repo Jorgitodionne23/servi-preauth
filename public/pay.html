@@ -1,64 +1,143 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <title>Pay with Stripe</title>
-    <script src="https://js.stripe.com/v3/"></script>
-    <style>
-      body {
-        font-family: sans-serif;
-        padding: 2rem;
-        max-width: 500px;
-        margin: auto;
-      }
-      #card-element {
-        padding: 10px;
-        border: 1px solid #ccc;
-        margin-bottom: 1rem;
-        border-radius: 4px;
-      }
-    </style>
-  </head>
-  <body>
-    <h2>Complete your payment</h2>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pago - SERVI</title>
+  <script src="https://js.stripe.com/v3/"></script>
+  <style>
+    body {
+      background-color: #000;
+      color: #fff;
+      font-family: 'Poppins', sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      min-height: 100vh;
+      padding: 40px 20px;
+    }
+
+    .container {
+      max-width: 400px;
+      width: 100%;
+      background: #111;
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 0 20px rgba(255, 255, 255, 0.1);
+    }
+
+    .logo {
+      max-width: 160px;
+      margin-bottom: 30px;
+    }
+
+    h2 {
+      text-align: center;
+      margin-bottom: 20px;
+      font-weight: 600;
+    }
+
+    form {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .form-row {
+      margin-bottom: 20px;
+    }
+
+    #card-element {
+      background-color: #222;
+      padding: 12px;
+      border-radius: 6px;
+      border: 1px solid #444;
+    }
+
+    button {
+      background-color: #fff;
+      color: #000;
+      border: none;
+      padding: 12px;
+      border-radius: 6px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    .footer {
+      margin-top: 20px;
+      font-size: 12px;
+      text-align: center;
+      color: #aaa;
+    }
+
+    .support {
+      margin-top: 10px;
+      font-size: 13px;
+      text-align: center;
+    }
+
+    .support a {
+      color: #0af;
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <img src="https://serviservices.my.canva.site/servi-logo-white.png" alt="SERVI Logo" class="logo" />
+  <div class="container">
+    <h2>Confirmar pago</h2>
     <form id="payment-form">
-      <div id="card-element"><!-- Stripe Element will go here --></div>
-      <button type="submit">Confirm</button>
-      <div id="error-message" style="color: red; margin-top: 1rem;"></div>
+      <div class="form-row">
+        <div id="card-element"><!-- Stripe Card Element will be inserted here --></div>
+      </div>
+      <button id="submit">Reservar servicio</button>
+      <div id="spinner" class="spinner" style="display: none;">Procesando...</div>
     </form>
 
-    <script>
-      const stripe = Stripe("pk_test_51QzK6tG7utWo2rQvhFzSBxh59IMDentv5zN7jfKWtf5vkFiGkcuEENhumOpKGjkf33tGqrL3b3o05tp0DDvcJn4r00pQcvaQXR");
+    <div class="support">
+      ¿Necesitas ayuda? <a href="https://serviservices.my.canva.site/helpcenter/#reportar" target="_blank">Centro de ayuda</a> o <a href="https://wa.me/525525112588" target="_blank">WhatsApp</a>
+    </div>
+    <div class="footer">Pagos seguros con Stripe</div>
+  </div>
 
-      const elements = stripe.elements();
-      const cardElement = elements.create('card');
-      cardElement.mount('#card-element');
+  <script>
+    const stripe = Stripe("pk_test_51QzK6tG7utWo2rQvhFzSBxh59IMDentv5zN7jfKWtf5vkFiGkcuEENhumOpKGjkf33tGqrL3b3o05tp0DDvcJn4r00pQcvaQXR"); // Replace with your actual publishable key
+    const elements = stripe.elements();
+    const card = elements.create("card", { style: { base: { color: "#fff" } } });
+    card.mount("#card-element");
 
-      const form = document.getElementById('payment-form');
-      const errorMessage = document.getElementById('error-message');
+    const form = document.getElementById("payment-form");
+    const submitBtn = document.getElementById("submit");
+    const spinner = document.getElementById("spinner");
 
-      form.addEventListener('submit', async (event) => {
-        event.preventDefault();
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      submitBtn.disabled = true;
+      spinner.style.display = "block";
 
-        const params = new URLSearchParams(window.location.search);
-        const clientSecret = params.get('client_secret');
-
-        if (!clientSecret) {
-          errorMessage.textContent = "Missing client_secret in URL.";
-          return;
-        }
-
-        const { error } = await stripe.confirmCardPayment(clientSecret, {
-          payment_method: {
-            card: cardElement,
-          }
-        });
-
-        if (error) {
-          errorMessage.textContent = error.message;
-        } else {
-          errorMessage.textContent = "Payment confirmed!";
-        }
+      const res = await fetch("/create-payment-intent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount: 2000 }) // MXN $20.00
       });
-    </script>
-  </body>
+
+      const { clientSecret } = await res.json();
+
+      const result = await stripe.confirmCardPayment(clientSecret, {
+        payment_method: { card: card }
+      });
+
+      if (result.error) {
+        alert("Error: " + result.error.message);
+        spinner.style.display = "none";
+        submitBtn.disabled = false;
+      } else if (result.paymentIntent.status === "succeeded") {
+        alert("¡Tu servicio ha sido confirmado! Te mandaremos un mensaje de recordatorio antes de tu servicio. Haz clic aquí para ver o modificar tu solicitud por WhatsApp.");
+        window.location.href = "https://wa.me/525525112588";
+      }
+    });
+  </script>
+</body>
 </html>
