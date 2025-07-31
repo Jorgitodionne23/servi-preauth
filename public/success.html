@@ -18,33 +18,89 @@
       padding: 20px;
     }
 
+    .container {
+      background-color: #111;
+      padding: 30px 20px;
+      border-radius: 12px;
+      box-shadow: 0 0 20px rgba(255, 255, 255, 0.1);
+      max-width: 400px;
+      width: 100%;
+    }
+
     .logo {
       width: 120px;
-      margin-bottom: 30px;
+      margin: 0 auto 20px;
+      display: block;
+    }
+
+    .checkmark {
+      width: 48px;
+      height: 48px;
+      background-color: #4CAF50;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 20px;
+    }
+
+    .checkmark::before {
+      content: '\2713';
+      color: #fff;
+      font-size: 24px;
     }
 
     h1 {
-      font-size: 22px;
+      font-size: 20px;
       margin-bottom: 20px;
       font-weight: 600;
+    }
+
+    .order-number {
+      font-size: 14px;
+      color: #ccc;
+      margin-bottom: 20px;
     }
 
     a.button {
       display: inline-block;
       background-color: #fff;
       color: #000;
-      padding: 12px 20px;
+      padding: 10px 16px;
       border-radius: 6px;
       font-weight: bold;
       text-decoration: none;
+      font-size: 14px;
+    }
+
+    .footer {
+      font-size: 11px;
+      color: #aaa;
+      margin-top: 30px;
     }
   </style>
 </head>
 <body>
-  <img src="logo-servi-white.png" alt="SERVI Logo" class="logo" />
-  <h1>¡Tu servicio ha sido confirmado!<br>
-  Te mandaremos un mensaje de recordatorio antes de tu servicio.<br><br>
-  <a href="https://wa.me/525525112588" class="button">Ver o modificar por WhatsApp</a></h1>
+  <div class="container">
+    <img src="logo-servi-white.png" alt="SERVI Logo" class="logo" />
+    <div class="checkmark"></div>
+    <h1>
+      ¡Tu servicio ha sido reservado!<br>
+      Te mandaremos un mensaje recordatorio antes de tu servicio.
+    </h1>
+    <div class="order-number">Número de orden: #<span id="order-id"></span></div>
+    <a href="https://wa.me/525525112588" class="button">Ver o modificar por solicitud</a>
+  </div>
+
+  <div class="footer">
+    <div><a href="https://serviservices.my.canva.site/servi" target="_blank" style="color: #aaa; text-decoration: none;">serviservices.my.canva.site/servi</a></div>
+    <div>+52 55 2511 2588</div>
+  </div>
+
+  <script>
+    // Generate random order number
+    const randomId = Math.floor(Math.random() * 900000 + 100000);
+    document.getElementById('order-id').textContent = randomId;
+  </script>
 </body>
 </html>
-
