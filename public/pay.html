@@ -22,9 +22,12 @@
       max-width: 400px;
       width: 100%;
       background: #111;
-      padding: 30px;
+      padding: 40px 24px;
       border-radius: 12px;
       box-shadow: 0 0 20px rgba(255, 255, 255, 0.1);
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
     }
 
     .logo {
@@ -34,17 +37,19 @@
 
     h2 {
       text-align: center;
-      margin-bottom: 20px;
+      margin-bottom: 10px;
       font-weight: 600;
     }
 
     form {
       display: flex;
       flex-direction: column;
+      gap: 16px;
     }
 
     .form-row {
-      margin-bottom: 20px;
+      display: flex;
+      flex-direction: column;
     }
 
     #card-element {
@@ -82,14 +87,31 @@
       color: #0af;
       text-decoration: none;
     }
+
+    .terms-label {
+      font-size: 12px;
+      color: #ccc;
+      line-height: 1.4;
+    }
+
+    .terms-label a {
+      color: #0af;
+      text-decoration: underline;
+    }
+
+    .terms-checkbox-wrapper {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+    }
   </style>
 </head>
 <body>
-  <img src="logo-servi-white.png" alt="SERVI Logo" style="width: 120px; margin: 0 auto 20px; display: block;" />
+  <img src="logo-servi-white.png" alt="SERVI Logo" class="logo" />
   <div class="container">
-    <h2>Confirmar metodo de pago</h2>
+    <h2>Confirmar método de pago</h2>
 
-    <div id="express-pay-container" style="display:none; margin-bottom: 20px;">
+    <div id="express-pay-container" style="display:none;">
       <div id="express-pay-button"></div>
     </div>
 
@@ -97,21 +119,28 @@
       <div class="form-row">
         <div id="card-element"><!-- Stripe Card Element will be inserted here --></div>
       </div>
+
       <div class="form-row">
-  <label style="font-size: 12px; color: #ccc; display: flex; align-items: center; gap: 8px;">
-    <input type="checkbox" id="terms-checkbox" />
-    Al realizar tu pedido, aceptas nuestros
-    <a href="https://serviservices.my.canva.site/terminos" target="_blank" style="color: #0af;">Términos y Condiciones</a>
-    y nuestro
-    <a href="https://serviservices.my.canva.site/privacidad" target="_blank" style="color: #0af;">Aviso de Privacidad</a>.
-  </label>
-</div>
+        <div class="terms-checkbox-wrapper">
+          <input type="checkbox" id="terms-checkbox" />
+          <label for="terms-checkbox" class="terms-label">
+            Al realizar tu pedido, aceptas nuestros
+            <a href="https://serviservices.my.canva.site/terminos" target="_blank">Términos y Condiciones</a>
+            y nuestro
+            <a href="https://serviservices.my.canva.site/privacidad" target="_blank">Aviso de Privacidad</a>.
+          </label>
+        </div>
+      </div>
+
       <button id="submit">Reservar servicio</button>
       <div id="spinner" class="spinner" style="display: none;">Procesando...</div>
     </form>
 
     <div class="support">
-      ¿Necesitas ayuda? <a href="https://serviservices.my.canva.site/helpcenter/#reportar" target="_blank">Centro de ayuda</a> o <a href="https://wa.me/525525112588" target="_blank">WhatsApp</a>
+      ¿Necesitas ayuda?
+      <a href="https://serviservices.my.canva.site/helpcenter/#reportar" target="_blank">Centro de ayuda</a>
+      o
+      <a href="https://wa.me/525525112588" target="_blank">WhatsApp</a>
     </div>
     <div class="footer">Pagos seguros con Stripe</div>
   </div>
@@ -191,11 +220,12 @@
   const spinner = document.getElementById("spinner");
 
   form.addEventListener("submit", async (event) => {
-      const termsChecked = document.getElementById("terms-checkbox").checked;
-  if (!termsChecked) {
-    alert("Debes aceptar los Términos y Condiciones y el Aviso de Privacidad para continuar.");
-    return;
-  }
+    const termsChecked = document.getElementById("terms-checkbox").checked;
+    if (!termsChecked) {
+      alert("Debes aceptar los Términos y Condiciones y el Aviso de Privacidad para continuar.");
+      return;
+    }
+
     event.preventDefault();
     submitBtn.disabled = true;
     spinner.style.display = "block";
