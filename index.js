@@ -21,7 +21,7 @@ app.post("/create-payment-intent", async (req, res) => {
   try {
     const paymentIntent = await stripe.paymentIntents.create({
       amount,
-      currency: "usd",
+      currency: "mxn",         // ← now charges in Mexican Pesos
       capture_method: "manual",
       payment_method_types: ["card"],
     });
