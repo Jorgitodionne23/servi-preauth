@@ -97,6 +97,15 @@
       <div class="form-row">
         <div id="card-element"><!-- Stripe Card Element will be inserted here --></div>
       </div>
+      <div class="form-row">
+  <label style="font-size: 12px; color: #ccc; display: flex; align-items: center; gap: 8px;">
+    <input type="checkbox" id="terms-checkbox" />
+    Al realizar tu pedido, aceptas nuestros
+    <a href="https://serviservices.my.canva.site/terminos" target="_blank" style="color: #0af;">Términos y Condiciones</a>
+    y nuestro
+    <a href="https://serviservices.my.canva.site/privacidad" target="_blank" style="color: #0af;">Aviso de Privacidad</a>.
+  </label>
+</div>
       <button id="submit">Reservar servicio</button>
       <div id="spinner" class="spinner" style="display: none;">Procesando...</div>
     </form>
@@ -182,6 +191,11 @@
   const spinner = document.getElementById("spinner");
 
   form.addEventListener("submit", async (event) => {
+      const termsChecked = document.getElementById("terms-checkbox").checked;
+  if (!termsChecked) {
+    alert("Debes aceptar los Términos y Condiciones y el Aviso de Privacidad para continuar.");
+    return;
+  }
     event.preventDefault();
     submitBtn.disabled = true;
     spinner.style.display = "block";
