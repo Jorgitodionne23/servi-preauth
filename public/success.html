@@ -18,48 +18,39 @@
       padding: 20px;
     }
 
+    .logo {
+      width: 120px;
+      margin-bottom: 30px;
+    }
+
     .container {
       background-color: #111;
-      padding: 30px 20px;
+      padding: 40px 24px;
       border-radius: 12px;
       box-shadow: 0 0 20px rgba(255, 255, 255, 0.1);
       max-width: 400px;
       width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 24px;
     }
 
-    .logo {
-      width: 120px;
-      margin: 0 auto 20px;
-      display: block;
-    }
-
-    .checkmark {
+    .checkmark-img {
       width: 48px;
       height: 48px;
-      background-color: #4CAF50;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin: 0 auto 20px;
-    }
-
-    .checkmark::before {
-      content: '\2713';
-      color: #fff;
-      font-size: 24px;
+      object-fit: contain;
     }
 
     h1 {
-      font-size: 20px;
-      margin-bottom: 20px;
+      font-size: 18px;
       font-weight: 600;
+      margin: 0;
     }
 
     .order-number {
       font-size: 14px;
       color: #ccc;
-      margin-bottom: 20px;
     }
 
     a.button {
@@ -77,18 +68,23 @@
       font-size: 11px;
       color: #aaa;
       margin-top: 30px;
+      text-align: center;
     }
   </style>
 </head>
 <body>
+  <img src="/logo-servi-white.png" alt="SERVI Logo" class="logo" />
+
   <div class="container">
-    <img src="logo-servi-white.png" alt="SERVI Logo" class="logo" />
-    <div class="checkmark"></div>
+    <img src="/checkmark-green.png" alt="Éxito" class="checkmark-img" />
+
     <h1>
       ¡Tu servicio ha sido reservado!<br>
       Te mandaremos un mensaje recordatorio antes de tu servicio.
     </h1>
+
     <div class="order-number">Número de orden: #<span id="order-id"></span></div>
+
     <a href="https://wa.me/525525112588" class="button">Ver o modificar tu solicitud</a>
   </div>
 
