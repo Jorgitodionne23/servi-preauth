@@ -73,30 +73,48 @@
   </style>
 </head>
 <body>
-  <img src="logo-servi-white.png" alt="SERVI Logo" class="logo" />
+  <!-- Logo above the confirmation box -->
+  <img src="/logo-servi-white.png" alt="SERVI Logo" class="logo" />
 
   <div class="container">
-    <img src="checkmark-green.png" alt="Éxito" class="checkmark-img" />
+    <!-- Checkmark image -->
+    <img src="/checkmark-green.png" alt="Éxito" class="checkmark-img" />
 
+    <!-- Confirmation message -->
     <h1>
       ¡Tu servicio ha sido reservado!<br>
       Te mandaremos un mensaje recordatorio antes de tu servicio.
     </h1>
 
-    <div class="order-number">Número de orden: #<span id="order-id"></span></div>
+    <!-- Real order ID from server -->
+    <div class="order-number">
+      Número de orden: #<span id="order-id"></span>
+    </div>
 
-    <a href="https://wa.me/525525112588" class="button">Ver o modificar tu solicitud</a>
+    <!-- WhatsApp CTA -->
+    <a href="https://wa.me/525525112588" class="button">
+      Ver o modificar tu solicitud
+    </a>
   </div>
 
+  <!-- Footer -->
   <div class="footer">
-    <div><a href="https://serviservices.my.canva.site/servi" target="_blank" style="color: #aaa; text-decoration: none;">serviservices.my.canva.site/servi</a></div>
+    <div>
+      <a href="https://serviservices.my.canva.site/servi"
+         target="_blank"
+         style="color: #aaa; text-decoration: none;">
+        serviservices.my.canva.site/servi
+      </a>
+    </div>
     <div>+52 55 2511 2588</div>
   </div>
 
   <script>
-    // Generate random order number
-    const randomId = Math.floor(Math.random() * 900000 + 100000);
-    document.getElementById('order-id').textContent = randomId;
+    // Extract the real orderId from the URL query string
+    const params = new URLSearchParams(window.location.search);
+    const orderId = params.get('orderId') || '';
+    document.getElementById('order-id').textContent = orderId;
   </script>
 </body>
 </html>
+
