@@ -6,16 +6,31 @@
   <title>Pago - SERVI</title>
   <script src="https://js.stripe.com/v3/"></script>
   <style>
+    * {
+      box-sizing: border-box;
+    }
+
     body {
       background-color: #000;
       color: #fff;
       font-family: 'Poppins', sans-serif;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    .wrapper {
+      flex: 1;
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: flex-start;
-      min-height: 100vh;
-      padding: 40px 20px 20px;
+      justify-content: space-between;
+      padding: 40px 20px;
+    }
+
+    .logo {
+      max-width: 160px;
     }
 
     .container {
@@ -28,11 +43,7 @@
       display: flex;
       flex-direction: column;
       gap: 20px;
-    }
-
-    .logo {
-      max-width: 160px;
-      margin-bottom: 30px;
+      margin: 40px 0;
     }
 
     h2 {
@@ -70,32 +81,6 @@
       cursor: pointer;
     }
 
-    .support {
-      margin-top: 30px;
-      font-size: 13px;
-      text-align: center;
-      color: #ccc;
-    }
-
-    .support a {
-      color: #0af;
-      text-decoration: none;
-    }
-
-    .footer {
-      margin-top: 10px;
-      font-size: 12px;
-      text-align: center;
-      color: #aaa;
-    }
-
-    .footer img {
-      height: 28px;
-      max-width: 100%;
-      object-fit: contain;
-      margin-top: 8px;
-    }
-
     .terms-label {
       font-size: 12px;
       color: #ccc;
@@ -112,49 +97,77 @@
       align-items: flex-start;
       gap: 8px;
     }
+
+    .support {
+      font-size: 13px;
+      text-align: center;
+      color: #ccc;
+      margin-bottom: 10px;
+    }
+
+    .support a {
+      color: #0af;
+      text-decoration: none;
+    }
+
+    .footer {
+      font-size: 12px;
+      text-align: center;
+      color: #aaa;
+      margin-bottom: 20px;
+    }
+
+    .footer img {
+      height: 28px;
+      max-width: 100%;
+      object-fit: contain;
+      margin-top: 8px;
+    }
   </style>
 </head>
 <body>
-  <img src="logo-servi-white.png" alt="SERVI Logo" class="logo" />
-  <div class="container">
-    <h2>Confirmar método de pago</h2>
+  <div class="wrapper">
+    <img src="logo-servi-white.png" alt="SERVI Logo" class="logo" />
 
-    <div id="express-pay-container" style="display:none;">
-      <div id="express-pay-button"></div>
+    <div class="container">
+      <h2>Confirmar método de pago</h2>
+
+      <div id="express-pay-container" style="display:none;">
+        <div id="express-pay-button"></div>
+      </div>
+
+      <form id="payment-form">
+        <div class="form-row">
+          <div id="card-element"></div>
+        </div>
+
+        <div class="form-row">
+          <div class="terms-checkbox-wrapper">
+            <input type="checkbox" id="terms-checkbox" />
+            <label for="terms-checkbox" class="terms-label">
+              Al realizar tu pedido, aceptas nuestros
+              <a href="https://serviservices.my.canva.site/helpcenter/#términos-y-condiciones" target="_blank">Términos y Condiciones</a>
+              y nuestro
+              <a href="https://serviservices.my.canva.site/helpcenter/#aviso-de-privacidad" target="_blank">Aviso de Privacidad</a>.
+            </label>
+          </div>
+        </div>
+
+        <button id="submit">Reservar servicio</button>
+        <div id="spinner" class="spinner" style="display: none;">Procesando...</div>
+      </form>
     </div>
 
-    <form id="payment-form">
-      <div class="form-row">
-        <div id="card-element"><!-- Stripe Card Element will be inserted here --></div>
-      </div>
+    <div class="support">
+      ¿Necesitas ayuda?
+      <a href="https://serviservices.my.canva.site/helpcenter/#reportar" target="_blank">Centro de ayuda</a>
+      o
+      <a href="https://wa.me/525525112588" target="_blank">WhatsApp</a>
+    </div>
 
-      <div class="form-row">
-        <div class="terms-checkbox-wrapper">
-          <input type="checkbox" id="terms-checkbox" />
-          <label for="terms-checkbox" class="terms-label">
-            Al realizar tu pedido, aceptas nuestros
-            <a href="https://serviservices.my.canva.site/helpcenter/#términos-y-condiciones" target="_blank">Términos y Condiciones</a>
-            y nuestro
-            <a href="https://serviservices.my.canva.site/helpcenter/#aviso-de-privacidad" target="_blank">Aviso de Privacidad</a>.
-          </label>
-        </div>
-      </div>
-
-      <button id="submit">Reservar servicio</button>
-      <div id="spinner" class="spinner" style="display: none;">Procesando...</div>
-    </form>
-  </div>
-
-  <!-- MOVED OUTSIDE CONTAINER -->
-  <div class="support">
-    ¿Necesitas ayuda?
-    <a href="https://serviservices.my.canva.site/helpcenter/#reportar" target="_blank">Centro de ayuda</a>
-    o
-    <a href="https://wa.me/525525112588" target="_blank">WhatsApp</a>
-  </div>
-
-  <div class="footer">
-    <img src="/PoweredbyStripe-white.png" alt="Powered by Stripe" />
+    <div class="footer">
+      <img src="/PoweredbyStripe-white.png" alt="Powered by Stripe" />
+    </div>
   </div>
 
   <script>
