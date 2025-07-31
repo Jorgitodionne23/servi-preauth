@@ -15,7 +15,7 @@
       align-items: center;
       justify-content: flex-start;
       min-height: 100vh;
-      padding: 40px 20px;
+      padding: 40px 20px 20px;
     }
 
     .container {
@@ -70,22 +70,30 @@
       cursor: pointer;
     }
 
-    .footer {
-      margin-top: 20px;
-      font-size: 12px;
-      text-align: center;
-      color: #aaa;
-    }
-
     .support {
-      margin-top: 10px;
+      margin-top: 30px;
       font-size: 13px;
       text-align: center;
+      color: #ccc;
     }
 
     .support a {
       color: #0af;
       text-decoration: none;
+    }
+
+    .footer {
+      margin-top: 10px;
+      font-size: 12px;
+      text-align: center;
+      color: #aaa;
+    }
+
+    .footer img {
+      height: 28px;
+      max-width: 100%;
+      object-fit: contain;
+      margin-top: 8px;
     }
 
     .terms-label {
@@ -135,131 +143,133 @@
       <button id="submit">Reservar servicio</button>
       <div id="spinner" class="spinner" style="display: none;">Procesando...</div>
     </form>
-
-    <div class="support">
-      ¿Necesitas ayuda?
-      <a href="https://serviservices.my.canva.site/helpcenter/#reportar" target="_blank">Centro de ayuda</a>
-      o
-      <a href="https://wa.me/525525112588" target="_blank">WhatsApp</a>
-    </div>
-<div class="footer">
-<img src="/PoweredbyStripe-white.png" alt="Powered by Stripe" style="height: 28px; max-width: 100%; object-fit: contain;" />
-</div>
   </div>
 
-<script>
-  const stripe = Stripe("pk_test_51QzK6tG7utWo2rQvhFzSBxh59IMDentv5zN7jfKWtf5vkFiGkcuEENhumOpKGjkf33tGqrL3b3o05tp0DDvcJn4r00pQcvaQXR");
-  const elements = stripe.elements();
-  const style = { base: { color: "#fff" } };
-  const card = elements.create("card", { style });
-  card.mount("#card-element");
+  <!-- MOVED OUTSIDE CONTAINER -->
+  <div class="support">
+    ¿Necesitas ayuda?
+    <a href="https://serviservices.my.canva.site/helpcenter/#reportar" target="_blank">Centro de ayuda</a>
+    o
+    <a href="https://wa.me/525525112588" target="_blank">WhatsApp</a>
+  </div>
 
-  const paymentRequest = stripe.paymentRequest({
-    country: "MX",
-    currency: "mxn",
-    total: { label: "Servicio SERVI", amount: 2000 },
-    requestPayerName: true,
-    requestPayerEmail: true,
-  });
+  <div class="footer">
+    <img src="/PoweredbyStripe-white.png" alt="Powered by Stripe" />
+  </div>
 
-  const prButton = elements.create("paymentRequestButton", {
-    paymentRequest,
-    style: {
-      paymentRequestButton: {
-        type: "default",
-        theme: "dark",
-        height: "40px"
+  <script>
+    const stripe = Stripe("pk_test_51QzK6tG7utWo2rQvhFzSBxh59IMDentv5zN7jfKWtf5vkFiGkcuEENhumOpKGjkf33tGqrL3b3o05tp0DDvcJn4r00pQcvaQXR");
+    const elements = stripe.elements();
+    const style = { base: { color: "#fff" } };
+    const card = elements.create("card", { style });
+    card.mount("#card-element");
+
+    const paymentRequest = stripe.paymentRequest({
+      country: "MX",
+      currency: "mxn",
+      total: { label: "Servicio SERVI", amount: 2000 },
+      requestPayerName: true,
+      requestPayerEmail: true,
+    });
+
+    const prButton = elements.create("paymentRequestButton", {
+      paymentRequest,
+      style: {
+        paymentRequestButton: {
+          type: "default",
+          theme: "dark",
+          height: "40px"
+        }
       }
-    }
-  });
+    });
 
-  paymentRequest.canMakePayment().then(result => {
-    if (result) {
-      document.getElementById("express-pay-container").style.display = "block";
-      prButton.mount("#express-pay-button");
-    }
-  });
+    paymentRequest.canMakePayment().then(result => {
+      if (result) {
+        document.getElementById("express-pay-container").style.display = "block";
+        prButton.mount("#express-pay-button");
+      }
+    });
 
-  paymentRequest.on("paymentmethod", async (ev) => {
-    const urlParams = new URLSearchParams(window.location.search);
-    let clientSecret = urlParams.get("client_secret");
-    let orderId = null;
+    paymentRequest.on("paymentmethod", async (ev) => {
+      const urlParams = new URLSearchParams(window.location.search);
+      let clientSecret = urlParams.get("client_secret");
+      let orderId = null;
 
-    if (!clientSecret) {
-      const res = await fetch("/create-payment-intent", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amount: 2000 })
-      });
-      const data = await res.json();
-      clientSecret = data.clientSecret;
-      orderId = data.orderId;
-    }
+      if (!clientSecret) {
+        const res = await fetch("/create-payment-intent", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ amount: 2000 })
+        });
+        const data = await res.json();
+        clientSecret = data.clientSecret;
+        orderId = data.orderId;
+      }
 
-    const { error } = await stripe.confirmCardPayment(
-      clientSecret,
-      { payment_method: ev.paymentMethod.id },
-      { handleActions: false }
-    );
+      const { error } = await stripe.confirmCardPayment(
+        clientSecret,
+        { payment_method: ev.paymentMethod.id },
+        { handleActions: false }
+      );
 
-    if (error) {
-      ev.complete("fail");
-      alert(error.message);
-    } else {
-      ev.complete("success");
-      const result = await stripe.confirmCardPayment(clientSecret);
-      if (result.error) {
-        alert("Error al confirmar: " + result.error.message);
+      if (error) {
+        ev.complete("fail");
+        alert(error.message);
       } else {
+        ev.complete("success");
+        const result = await stripe.confirmCardPayment(clientSecret);
+        if (result.error) {
+          alert("Error al confirmar: " + result.error.message);
+        } else {
+          const finalOrderId = orderId || urlParams.get("orderId") || "undefined";
+          window.location.href = `/success.html?orderId=${finalOrderId}`;
+        }
+      }
+    });
+
+    const form = document.getElementById("payment-form");
+    const submitBtn = document.getElementById("submit");
+    const spinner = document.getElementById("spinner");
+
+    form.addEventListener("submit", async (event) => {
+      const termsChecked = document.getElementById("terms-checkbox").checked;
+      if (!termsChecked) {
+        alert("Debes aceptar los Términos y Condiciones y el Aviso de Privacidad para continuar.");
+        return;
+      }
+
+      event.preventDefault();
+      submitBtn.disabled = true;
+      spinner.style.display = "block";
+
+      const urlParams = new URLSearchParams(window.location.search);
+      let clientSecret = urlParams.get("client_secret");
+      let orderId = null;
+
+      if (!clientSecret) {
+        const res = await fetch("/create-payment-intent", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ amount: 2000 })
+        });
+        const data = await res.json();
+        clientSecret = data.clientSecret;
+        orderId = data.orderId;
+      }
+
+      const result = await stripe.confirmCardPayment(clientSecret, {
+        payment_method: { card: card }
+      });
+
+      if (result.error) {
+        alert("Error: " + result.error.message);
+        spinner.style.display = "none";
+        submitBtn.disabled = false;
+      } else if (result.paymentIntent.status === "succeeded" || result.paymentIntent.status === "requires_capture") {
         const finalOrderId = orderId || urlParams.get("orderId") || "undefined";
         window.location.href = `/success.html?orderId=${finalOrderId}`;
       }
-    }
-  });
-
-  const form = document.getElementById("payment-form");
-  const submitBtn = document.getElementById("submit");
-  const spinner = document.getElementById("spinner");
-
-  form.addEventListener("submit", async (event) => {
-    const termsChecked = document.getElementById("terms-checkbox").checked;
-    if (!termsChecked) {
-      alert("Debes aceptar los Términos y Condiciones y el Aviso de Privacidad para continuar.");
-      return;
-    }
-
-    event.preventDefault();
-    submitBtn.disabled = true;
-    spinner.style.display = "block";
-
-    const urlParams = new URLSearchParams(window.location.search);
-    let clientSecret = urlParams.get("client_secret");
-    let orderId = null;
-
-    if (!clientSecret) {
-      const res = await fetch("/create-payment-intent", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amount: 2000 })
-      });
-      const data = await res.json();
-      clientSecret = data.clientSecret;
-      orderId = data.orderId;
-    }
-
-    const result = await stripe.confirmCardPayment(clientSecret, {
-      payment_method: { card: card }
     });
-
-    if (result.error) {
-      alert("Error: " + result.error.message);
-      spinner.style.display = "none";
-      submitBtn.disabled = false;
-    } else if (result.paymentIntent.status === "succeeded" || result.paymentIntent.status === "requires_capture") {
-      const finalOrderId = orderId || urlParams.get("orderId") || "undefined";
-      window.location.href = `/success.html?orderId=${finalOrderId}`;
-    }
-  });
-</script>
+  </script>
 </body>
 </html>
