@@ -174,7 +174,7 @@
     const stripe = Stripe("pk_test_51QzK6tG7utWo2rQvhFzSBxh59IMDentv5zN7jfKWtf5vkFiGkcuEENhumOpKGjkf33tGqrL3b3o05tp0DDvcJn4r00pQcvaQXR");
     const elements = stripe.elements();
     const style = { base: { color: "#fff" } };
-    const card = elements.create("card", { style });
+const card = elements.create("card", {style, hidePostalCode: true});
     card.mount("#card-element");
 
     const paymentRequest = stripe.paymentRequest({
