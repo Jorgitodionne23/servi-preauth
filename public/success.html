@@ -88,7 +88,7 @@
 
     <!-- Real order ID from server -->
     <div class="order-number">
-      Número de orden: #<span id="order-id"></span>
+      Número de orden: #<span id="order-id">cargando...</span>
     </div>
 
     <!-- WhatsApp CTA -->
@@ -110,11 +110,10 @@
   </div>
 
   <script>
-    // Extract the real orderId from the URL query string
     const params = new URLSearchParams(window.location.search);
-    const orderId = params.get('orderId') || '';
-    document.getElementById('order-id').textContent = orderId;
+    const orderId = params.get('orderId');
+    const target = document.getElementById('order-id');
+    target.textContent = orderId ? orderId : 'no disponible';
   </script>
 </body>
 </html>
-
