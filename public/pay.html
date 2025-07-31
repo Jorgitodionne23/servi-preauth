@@ -152,66 +152,83 @@ prButton.mount("#express-pay-button");
 
   // Manejador de Apple Pay
   paymentRequest.on("paymentmethod", async (ev) => {
+  // Get client_secret from URL
+  const urlParams = new URLSearchParams(window.location.search);
+  let clientSecret = urlParams.get("client_secret");
+
+  // If no client_secret in URL, create a new PaymentIntent as fallback
+  if (!clientSecret) {
     const res = await fetch("/create-payment-intent", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ amount: 2000 })
     });
+    const data = await res.json();
+    clientSecret = data.clientSecret;
+  }
 
-    const { clientSecret } = await res.json();
+  // Confirm payment with manual capture mode
+  const { error, paymentIntent } = await stripe.confirmCardPayment(
+    clientSecret,
+    { payment_method: ev.paymentMethod.id },
+    { handleActions: false }
+  );
 
-    const { error, paymentIntent } = await stripe.confirmCardPayment(
-      clientSecret,
-      { payment_method: ev.paymentMethod.id },
-      { handleActions: false }
-    );
-
-    if (error) {
-      ev.complete("fail");
-      alert(error.message);
+  if (error) {
+    ev.complete("fail");
+    alert(error.message);
+  } else {
+    ev.complete("success");
+    const result = await stripe.confirmCardPayment(clientSecret);
+    if (result.error) {
+      alert("Error al confirmar: " + result.error.message);
     } else {
-      ev.complete("success");
-      const result = await stripe.confirmCardPayment(clientSecret);
-      if (result.error) {
-        alert("Error al confirmar: " + result.error.message);
-      } else {
-        alert("¡Tu servicio ha sido confirmado!");
-        window.location.href = "/success.html";
-      }
+      alert("¡Tu servicio ha sido confirmado!");
+      window.location.href = "/success.html";
     }
-  });
+  }
+});
+
 
   // Formulario tradicional
   const form = document.getElementById("payment-form");
   const submitBtn = document.getElementById("submit");
   const spinner = document.getElementById("spinner");
 
-  form.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    submitBtn.disabled = true;
-    spinner.style.display = "block";
+form.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  submitBtn.disabled = true;
+  spinner.style.display = "block";
 
+  // Get client_secret from URL if available
+  const urlParams = new URLSearchParams(window.location.search);
+  let clientSecret = urlParams.get("client_secret");
+
+  // Fallback: create new intent only if none exists in URL
+  if (!clientSecret) {
     const res = await fetch("/create-payment-intent", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ amount: 2000 })
     });
+    const data = await res.json();
+    clientSecret = data.clientSecret;
+  }
 
-    const { clientSecret } = await res.json();
-
-    const result = await stripe.confirmCardPayment(clientSecret, {
-      payment_method: { card: card }
-    });
-
-    if (result.error) {
-      alert("Error: " + result.error.message);
-      spinner.style.display = "none";
-      submitBtn.disabled = false;
-    } else if (result.paymentIntent.status === "succeeded") {
-      alert("¡Tu servicio ha sido confirmado!");
-      window.location.href = "/success.html";
-    }
+  const result = await stripe.confirmCardPayment(clientSecret, {
+    payment_method: { card: card }
   });
+
+  if (result.error) {
+    alert("Error: " + result.error.message);
+    spinner.style.display = "none";
+    submitBtn.disabled = false;
+  } else if (result.paymentIntent.status === "succeeded" || result.paymentIntent.status === "requires_capture") {
+    alert("¡Tu servicio ha sido confirmado!");
+    window.location.href = "/success.html";
+  }
+});
+
 </script>
 
 </body>
