@@ -264,10 +264,24 @@
       }
     });
 
-    paymentRequest.on("paymentmethod", async (ev) => {
-      const urlParams = new URLSearchParams(window.location.search);
-      let clientSecret = urlParams.get("client_secret");
-      let orderId = null;
+     paymentRequest.on("paymentmethod", async (ev) => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const orderId = urlParams.get("orderId");
+
+    if (!orderId) {
+        alert("Falta el número de orden. Usa el link original de confirmación.");
+        return;
+    }
+
+    const response = await fetch(`/order/${orderId}`);
+    if (!response.ok) {
+        alert("Orden no encontrada. Contacta a soporte.");
+        return;
+    }
+
+    const order = await response.json();
+    const clientSecret = order.client_secret;
+
 
       const { error } = await stripe.confirmCardPayment(
         clientSecret,
@@ -306,8 +320,22 @@
       spinner.style.display = "block";
 
       const urlParams = new URLSearchParams(window.location.search);
-      const clientSecret = urlParams.get("client_secret");
-      const orderId = urlParams.get("orderId");
+        const orderId = urlParams.get("orderId");
+
+        if (!orderId) {
+        alert("Falta el número de orden. Usa el link original de confirmación.");
+        return;
+        }
+
+        const response = await fetch(`/order/${orderId}`);
+        if (!response.ok) {
+        alert("Orden no encontrada. Contacta a soporte.");
+        return;
+        }
+
+        const order = await response.json();
+        const clientSecret = order.client_secret;
+
 
       if (!clientSecret || !orderId) {
         alert("Link inválido o incompleto. Por favor contacta a soporte.");
@@ -315,8 +343,6 @@
         submitBtn.disabled = false;
         return;
        }
-
-
 
       const result = await stripe.confirmCardPayment(clientSecret, {
         payment_method: { card: card }
