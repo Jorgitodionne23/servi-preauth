@@ -269,17 +269,6 @@
       let clientSecret = urlParams.get("client_secret");
       let orderId = null;
 
-      if (!clientSecret) {
-        const res = await fetch("/create-payment-intent", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ amount: 2000 })
-        });
-        const data = await res.json();
-        clientSecret = data.clientSecret;
-        orderId = data.orderId;
-      }
-
       const { error } = await stripe.confirmCardPayment(
         clientSecret,
         { payment_method: ev.paymentMethod.id },
@@ -317,19 +306,17 @@
       spinner.style.display = "block";
 
       const urlParams = new URLSearchParams(window.location.search);
-      let clientSecret = urlParams.get("client_secret");
-      let orderId = null;
+      const clientSecret = urlParams.get("client_secret");
+      const orderId = urlParams.get("orderId");
 
-      if (!clientSecret) {
-        const res = await fetch("/create-payment-intent", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ amount: 2000 })
-        });
-        const data = await res.json();
-        clientSecret = data.clientSecret;
-        orderId = data.orderId;
-      }
+      if (!clientSecret || !orderId) {
+        alert("Link inválido o incompleto. Por favor contacta a soporte.");
+        spinner.style.display = "none";
+        submitBtn.disabled = false;
+        return;
+       }
+
+
 
       const result = await stripe.confirmCardPayment(clientSecret, {
         payment_method: { card: card }
