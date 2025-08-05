@@ -99,13 +99,31 @@ app.post('/webhook', (req, res) => {
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
+  const paymentIntentId = event.data.object.id;
+
   switch (event.type) {
     case 'payment_intent.succeeded':
-      console.log('✅ PaymentIntent succeeded:', event.data.object.id);
+      console.log('✅ PaymentIntent succeeded:', paymentIntentId);
+      db.run(
+        `UPDATE orders SET status = ? WHERE payment_intent_id = ?`,
+        ['Confirmed', paymentIntentId],
+        (err) => {
+          if (err) console.error('DB update error:', err.message);
+        }
+      );
       break;
+
     case 'payment_intent.payment_failed':
-      console.log('❌ PaymentIntent failed:', event.data.object.id);
+      console.log('❌ PaymentIntent failed:', paymentIntentId);
+      db.run(
+        `UPDATE orders SET status = ? WHERE payment_intent_id = ?`,
+        ['Failed', paymentIntentId],
+        (err) => {
+          if (err) console.error('DB update error:', err.message);
+        }
+      );
       break;
+
     default:
       console.log(`Unhandled event type: ${event.type}`);
   }

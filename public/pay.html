@@ -273,7 +273,7 @@
         return;
     }
 
-    const response = await fetch(`/order/${orderId}`);
+    const response = await fetch(`https://servi-preauth.onrender.com/order/${orderId}`);
     if (!response.ok) {
         alert("Orden no encontrada. Contacta a soporte.");
         return;
@@ -327,7 +327,7 @@
         return;
         }
 
-        const response = await fetch(`/order/${orderId}`);
+        const response = await fetch(`https://servi-preauth.onrender.com/order/${orderId}`);
         if (!response.ok) {
         alert("Orden no encontrada. Contacta a soporte.");
         return;
