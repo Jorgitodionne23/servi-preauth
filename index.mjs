@@ -60,22 +60,30 @@ app.get('/pay', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'pay.html'));
 });
 
-// 📦 Optional order fetch
+// 📦 Updated order fetch with client_secret
 app.get('/order/:orderId', (req, res) => {
   db.get(
-  `SELECT * FROM orders WHERE id = ?`,
-  [req.params.orderId],
-  (err, row) => {
-    if (err) {
-      console.error('DB fetch error:', err.message);
-      return res.status(500).send({ error: 'Internal server error' });
-    }
-    if (!row) return res.status(404).send({ error: 'Order not found' });
-    res.send(row);
-  }
-);
+    `SELECT * FROM orders WHERE id = ?`,
+    [req.params.orderId],
+    async (err, row) => {
+      if (err) {
+        console.error('DB fetch error:', err.message);
+        return res.status(500).send({ error: 'Internal server error' });
+      }
+      if (!row) return res.status(404).send({ error: 'Order not found' });
 
+      try {
+        const paymentIntent = await stripe.paymentIntents.retrieve(row.payment_intent_id);
+        row.client_secret = paymentIntent.client_secret; // ✅ Add secret to response
+        res.send(row);
+      } catch (err) {
+        console.error('Stripe fetch error:', err.message);
+        res.status(500).send({ error: 'Failed to retrieve PaymentIntent' });
+      }
+    }
+  );
 });
+
 
 // 📡 Stripe Webhook handler
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
