@@ -94,7 +94,12 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
-  const paymentIntentId = event.data.object.payment_intent;
+  let paymentIntentId;
+  if (event.type.startsWith('charge.')) {
+    paymentIntentId = event.data.object.payment_intent;
+  } else {
+    paymentIntentId = event.data.object.id;
+  }
 
   switch (event.type) {
     case 'charge.succeeded':
