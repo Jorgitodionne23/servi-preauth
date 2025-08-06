@@ -1,3 +1,4 @@
+/* eslint-env node */
 // index.mjs (ES Module version of your server)
 import 'dotenv/config';
 import express from 'express';
@@ -6,6 +7,7 @@ import path from 'path';
 import db from './db.mjs';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+import fetch from 'node-fetch';
 
 // For __dirname in ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -13,6 +15,8 @@ const __dirname = dirname(__filename);
 
 const app = express();
 const stripe = StripePackage(process.env.STRIPE_SECRET_KEY);
+const GOOGLE_SCRIPT_WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbweLYI8-4Z-kW_wahnkHw-Kgmc1GfjI9-YR6z9enOCO98oTXsd9DgTzN_Cm87Drcycb/exec'; // ✅ Replace with your actual deployed Google Web App URL
+
 
 // 🧠 Webhook-specific middleware: must go before express.json()
 app.use('/webhook', express.raw({ type: 'application/json' }));
@@ -35,13 +39,13 @@ app.post('/create-payment-intent', async (req, res) => {
 
     const orderId = `ORD-${Date.now()}`;
     db.run(
-  `INSERT INTO orders (id, payment_intent_id, amount, status)
+      `INSERT INTO orders (id, payment_intent_id, amount, status)
    VALUES (?, ?, ?, ?)`,
-  [orderId, paymentIntent.id, amount, 'pending'],
-  (err) => {
-    if (err) console.error('DB insert error:', err.message);
-  }
-);
+      [orderId, paymentIntent.id, amount, 'pending'],
+      (err) => {
+        if (err) console.error('DB insert error:', err.message);
+      }
+    );
 
 
     res.send({
@@ -88,7 +92,7 @@ app.get('/order/:orderId', (req, res) => {
 // 📡 Stripe Webhook handler
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
-app.post('/webhook', (req, res) => {
+app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
   const sig = req.headers['stripe-signature'];
   let event;
 
@@ -109,6 +113,16 @@ app.post('/webhook', (req, res) => {
         ['Confirmed', paymentIntentId],
         (err) => {
           if (err) console.error('DB update error:', err.message);
+          else {
+            fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                paymentIntentId,
+                status: 'Confirmed'
+              })
+            }).catch(console.error);
+          }
         }
       );
       break;
@@ -120,6 +134,16 @@ app.post('/webhook', (req, res) => {
         ['Failed', paymentIntentId],
         (err) => {
           if (err) console.error('DB update error:', err.message);
+          else {
+            fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                paymentIntentId,
+                status: 'Failed'
+              })
+            }).catch(console.error);
+          }
         }
       );
       break;
