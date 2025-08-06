@@ -8,6 +8,7 @@ import db from './db.mjs';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import fetch from 'node-fetch';
+import Database from 'better-sqlite3';
 
 // For __dirname in ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -38,14 +39,10 @@ app.post('/create-payment-intent', async (req, res) => {
     });
 
     const orderId = `ORD-${Date.now()}`;
-    db.run(
-      `INSERT INTO orders (id, payment_intent_id, amount, status)
-   VALUES (?, ?, ?, ?)`,
-      [orderId, paymentIntent.id, amount, 'pending'],
-      (err) => {
-        if (err) console.error('DB insert error:', err.message);
-      }
-    );
+    db.prepare(`
+      INSERT INTO orders (id, payment_intent_id, amount, status)
+      VALUES (?, ?, ?, ?)
+    `).run(orderId, paymentIntent.id, amount, 'pending');
 
 
     res.send({
@@ -65,27 +62,22 @@ app.get('/pay', (req, res) => {
 });
 
 // 📦 Updated order fetch with client_secret
-app.get('/order/:orderId', (req, res) => {
-  db.get(
-    `SELECT * FROM orders WHERE id = ?`,
-    [req.params.orderId],
-    async (err, row) => {
-      if (err) {
-        console.error('DB fetch error:', err.message);
-        return res.status(500).send({ error: 'Internal server error' });
-      }
-      if (!row) return res.status(404).send({ error: 'Order not found' });
+app.get('/order/:orderId', async (req, res) => {
+  try {
+    const row = db.prepare(`SELECT * FROM orders WHERE id = ?`).get(req.params.orderId);
 
-      try {
-        const paymentIntent = await stripe.paymentIntents.retrieve(row.payment_intent_id);
-        row.client_secret = paymentIntent.client_secret; // ✅ Add secret to response
-        res.send(row);
-      } catch (err) {
-        console.error('Stripe fetch error:', err.message);
-        res.status(500).send({ error: 'Failed to retrieve PaymentIntent' });
-      }
+    if (!row) {
+      return res.status(404).send({ error: 'Order not found' });
     }
-  );
+
+    const paymentIntent = await stripe.paymentIntents.retrieve(row.payment_intent_id);
+    row.client_secret = paymentIntent.client_secret;
+
+    res.send(row);
+  } catch (err) {
+    console.error('Error retrieving order:', err.message);
+    res.status(500).send({ error: 'Internal server error' });
+  }
 });
 
 
@@ -108,44 +100,28 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
   switch (event.type) {
     case 'payment_intent.succeeded':
       console.log('✅ PaymentIntent succeeded:', paymentIntentId);
-      db.run(
-        `UPDATE orders SET status = ? WHERE payment_intent_id = ?`,
-        ['Confirmed', paymentIntentId],
-        (err) => {
-          if (err) console.error('DB update error:', err.message);
-          else {
-            fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                paymentIntentId,
-                status: 'Confirmed'
-              })
-            }).catch(console.error);
-          }
-        }
-      );
+      db.prepare(`UPDATE orders SET status = ? WHERE payment_intent_id = ?`)
+        .run('Confirmed', paymentIntentId);
+
+      fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paymentIntentId, status: 'Confirmed' })
+      }).catch(console.error);
+
       break;
 
     case 'payment_intent.payment_failed':
       console.log('❌ PaymentIntent failed:', paymentIntentId);
-      db.run(
-        `UPDATE orders SET status = ? WHERE payment_intent_id = ?`,
-        ['Failed', paymentIntentId],
-        (err) => {
-          if (err) console.error('DB update error:', err.message);
-          else {
-            fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                paymentIntentId,
-                status: 'Failed'
-              })
-            }).catch(console.error);
-          }
-        }
-      );
+      db.prepare(`UPDATE orders SET status = ? WHERE payment_intent_id = ?`)
+        .run('Failed', paymentIntentId);
+
+      fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paymentIntentId, status: 'Failed' })
+      }).catch(console.error);
+
       break;
 
     default:
