@@ -16,8 +16,7 @@ const __dirname = dirname(__filename);
 
 const app = express();
 const stripe = StripePackage(process.env.STRIPE_SECRET_KEY);
-const GOOGLE_SCRIPT_WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbweLYI8-4Z-kW_wahnkHw-Kgmc1GfjI9-YR6z9enOCO98oTXsd9DgTzN_Cm87Drcycb/exec'; // ✅ Replace with your actual deployed Google Web App URL
-
+const GOOGLE_SCRIPT_WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbweLYI8-4Z-kW_wahnkHw-Kgmc1GfjI9-YR6z9enOCO98oTXsd9DgTzN_Cm87Drcycb/exec'
 
 // 🧠 Webhook-specific middleware: must go before express.json()
 app.use('/webhook', express.raw({ type: 'application/json' }));
@@ -98,8 +97,8 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
   const paymentIntentId = event.data.object.id;
 
   switch (event.type) {
-    case 'payment_intent.succeeded':
-      console.log('✅ PaymentIntent succeeded:', paymentIntentId);
+    case 'charge.succeeded':
+      console.log('✅ Charge succeeded:', paymentIntentId);
       db.prepare(`UPDATE orders SET status = ? WHERE payment_intent_id = ?`)
         .run('Confirmed', paymentIntentId);
 
