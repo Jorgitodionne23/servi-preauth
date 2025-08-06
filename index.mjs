@@ -106,7 +106,9 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
       fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ paymentIntentId, status: 'Confirmed' })
+        body: JSON.stringify({ 
+          paymentIntentId, 
+          status: 'Confirmed' })
       }).catch(console.error);
 
       break;
@@ -119,7 +121,9 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
       fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ paymentIntentId, status: 'Failed' })
+        body: JSON.stringify({ 
+          paymentIntentId, 
+          status: 'Failed' })
       }).catch(console.error);
 
       break;
