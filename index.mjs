@@ -41,7 +41,7 @@ const { amount, clientName, serviceDescription } = req.body;
     db.prepare(`
   INSERT INTO orders (id, payment_intent_id, amount, client_name, service_description, status)
   VALUES (?, ?, ?, ?, ?, ?)
-`).run(orderId, paymentIntent.id, amount, clientName, serviceDescription, 'Pending');
+`).run(orderId, paymentIntent.id, amount, clientName, serviceDescription, 'pending');
 
 
 

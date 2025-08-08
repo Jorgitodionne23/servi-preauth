@@ -16,7 +16,7 @@ db.prepare(`
     payment_intent_id TEXT,
     amount INTEGER,
     client_name TEXT,
-    service_description
+    service_description TEXT,
     status TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   )
