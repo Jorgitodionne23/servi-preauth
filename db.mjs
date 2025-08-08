@@ -15,6 +15,8 @@ db.prepare(`
     id TEXT PRIMARY KEY,
     payment_intent_id TEXT,
     amount INTEGER,
+    client_name TEXT,
+    service_description
     status TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   )

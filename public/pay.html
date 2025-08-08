@@ -167,6 +167,22 @@
   pointer-events: none;
 }
 
+.summary-box {
+  background-color: #1a1a1a;
+  padding: 16px;
+  border-radius: 10px;
+  margin-bottom: -5px;
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.05);
+  font-size: 14px;
+}
+
+.summary-box h3 {
+  margin-top: 0;
+  margin-bottom: 10px;
+  font-size: 18px;
+  color: #fff;
+}
+
 </style>
 
 
@@ -177,6 +193,13 @@
 
     <div class="container">
       <h2>Confirmar método de pago</h2>
+      
+      <div class="summary-box">
+        <h3>Resumen de tu solicitud</h3>
+        <p><strong>Cliente:</strong> <span id="client-name">Cargando...</span></p>
+        <p><strong>Servicio:</strong> <span id="service-desc">Cargando...</span></p>
+        <p><strong>Total:</strong> $<span id="amount">0.00</span> MXN</p>
+      </div>
 
       <div id="express-pay-container" style="display:none;">
         <div id="express-pay-button"></div>
@@ -236,50 +259,64 @@
     const card = elements.create("card", { style, hidePostalCode: true });
     card.mount("#card-element");
 
-    const paymentRequest = stripe.paymentRequest({
-      country: "MX",
-      currency: "mxn",
-      total: { label: "Servicio SERVI", amount: 2000 },
-      requestPayerName: true,
-      requestPayerEmail: true,
-    });
+    // 🆕 Fetch once, cache, and use everywhere
+    let cachedOrder = null;
+    async function getOrder() {
+      if (cachedOrder) return cachedOrder;
 
-    const prButton = elements.create("paymentRequestButton", {
-      paymentRequest,
-      style: {
-        paymentRequestButton: {
-          type: "default",
-          theme: "dark",
-          height: "40px"
+      const urlParams = new URLSearchParams(window.location.search);
+      const orderId = urlParams.get("orderId");
+      if (!orderId) return null;
+
+      const response = await fetch(`https://servi-preauth.onrender.com/order/${orderId}`);
+      if (!response.ok) return null;
+
+      cachedOrder = await response.json();
+      return cachedOrder;
+    }
+
+    // init: fill summary + build Apple/Google Pay with real amount
+    (async () => {
+      const order = await getOrder();
+      if (!order) return;
+
+      // Fill summary box
+      document.getElementById("client-name").textContent = order.client_name || "—";
+      document.getElementById("service-desc").textContent = order.service_description || "—";
+      document.getElementById("amount").textContent = (order.amount / 100).toFixed(2);
+
+      // Create paymentRequest using the actual amount
+      window.paymentRequest = stripe.paymentRequest({
+        country: "MX",
+        currency: "mxn",
+        total: { label: "Servicio SERVI", amount: order.amount },
+        requestPayerName: true,
+        requestPayerEmail: true,
+      });
+
+      const prButton = elements.create("paymentRequestButton", {
+        paymentRequest: window.paymentRequest,
+        style: {
+          paymentRequestButton: { type: "default", theme: "dark", height: "40px" }
         }
-      }
-    });
+      });
 
-    paymentRequest.canMakePayment().then(result => {
-      if (result) {
+      const can = await window.paymentRequest.canMakePayment();
+      if (can) {
         document.getElementById("express-pay-container").style.display = "block";
         prButton.mount("#express-pay-button");
       }
-    });
+    })();
 
-     paymentRequest.on("paymentmethod", async (ev) => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const orderId = urlParams.get("orderId");
 
-    if (!orderId) {
-        alert("Falta el número de orden. Usa el link original de confirmación.");
-        return;
-    }
-
-    const response = await fetch(`https://servi-preauth.onrender.com/order/${orderId}`);
-    if (!response.ok) {
+     window.paymentRequest.on("paymentmethod", async (ev) => {
+      const order = await getOrder();
+      if (!order) {
         alert("Orden no encontrada. Contacta a soporte.");
         return;
-    }
-
-    const order = await response.json();
-    const clientSecret = order.client_secret;
-
+      }
+      const orderId = order.id;
+      const clientSecret = order.client_secret;
 
       const { error } = await stripe.confirmCardPayment(
         clientSecret,
@@ -296,7 +333,7 @@
         if (result.error) {
           alert("Error al confirmar: " + result.error.message);
         } else {
-          const finalOrderId = orderId || urlParams.get("orderId") || "undefined";
+          const finalOrderId = orderId || "undefined";
           window.location.href = `/success.html?orderId=${finalOrderId}`;
         }
       }
@@ -317,22 +354,14 @@
       submitBtn.disabled = true;
       spinner.style.display = "block";
 
-      const urlParams = new URLSearchParams(window.location.search);
-        const orderId = urlParams.get("orderId");
-
-        if (!orderId) {
-        alert("Falta el número de orden. Usa el link original de confirmación.");
-        return;
-        }
-
-        const response = await fetch(`https://servi-preauth.onrender.com/order/${orderId}`);
-        if (!response.ok) {
+      const order = await getOrder();
+      if (!order) {
         alert("Orden no encontrada. Contacta a soporte.");
         return;
-        }
+      }
+      const orderId = order.id;
+      const clientSecret = order.client_secret;
 
-        const order = await response.json();
-        const clientSecret = order.client_secret;
 
 
       if (!clientSecret || !orderId) {
@@ -342,16 +371,18 @@
         return;
        }
 
+      const cardholder = document.getElementById("cardholder-name").value || "";
       const result = await stripe.confirmCardPayment(clientSecret, {
-        payment_method: { card: card }
+        payment_method: { card, billing_details: { name: cardholder } }
       });
+
 
       if (result.error) {
         alert("Error: " + result.error.message);
         spinner.style.display = "none";
         submitBtn.disabled = false;
       } else if (result.paymentIntent.status === "succeeded" || result.paymentIntent.status === "requires_capture") {
-        const finalOrderId = orderId || urlParams.get("orderId") || "undefined";
+        const finalOrderId = orderId || "undefined";
         window.location.href = `/success.html?orderId=${finalOrderId}`;
       }
     });

@@ -27,7 +27,7 @@ app.use(express.static('public'));
 
 // 🎯 Create PaymentIntent
 app.post('/create-payment-intent', async (req, res) => {
-  const { amount } = req.body;
+const { amount, clientName, serviceDescription } = req.body;
 
   try {
     const paymentIntent = await stripe.paymentIntents.create({
@@ -39,9 +39,10 @@ app.post('/create-payment-intent', async (req, res) => {
 
     const orderId = `ORD-${Date.now()}`;
     db.prepare(`
-      INSERT INTO orders (id, payment_intent_id, amount, status)
-      VALUES (?, ?, ?, ?)
-    `).run(orderId, paymentIntent.id, amount, 'pending');
+  INSERT INTO orders (id, payment_intent_id, amount, client_name, service_description, status)
+  VALUES (?, ?, ?, ?, ?, ?)
+`).run(orderId, paymentIntent.id, amount, clientName, serviceDescription, 'Pending');
+
 
 
     res.send({
