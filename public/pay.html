@@ -130,10 +130,10 @@
   }
 
   .footer {
-    margin-top: -100px;
+    margin-top: 24px;
     text-align: center;
     color: #aaa;
-    padding: 50px ;
+    padding: 24px ;
   }
 
   .footer img {
@@ -309,9 +309,10 @@
     })();
 
 
-     window.paymentRequest.on("paymentmethod", async (ev) => {
+     window.paymentRequest?.on("paymentmethod", async (ev) => {
       const order = await getOrder();
       if (!order) {
+        ev.complete ("fail");
         alert("Orden no encontrada. Contacta a soporte.");
         return;
       }
@@ -344,48 +345,48 @@
     const spinner = document.getElementById("spinner");
 
     form.addEventListener("submit", async (event) => {
-      const termsChecked = document.getElementById("terms-checkbox").checked;
-      if (!termsChecked) {
-        alert("Debes aceptar los Términos y Condiciones y el Aviso de Privacidad para continuar.");
-        return;
-      }
+        event.preventDefault(); // prevent page refresh first
+        const termsChecked = document.getElementById("terms-checkbox").checked;
+        if (!termsChecked) {
+          alert("Debes aceptar los Términos y Condiciones y el Aviso de Privacidad para continuar.");
+          return;
+        }
 
-      event.preventDefault();
-      submitBtn.disabled = true;
-      spinner.style.display = "block";
+        submitBtn.disabled = true;
+        spinner.style.display = "block";
 
-      const order = await getOrder();
-      if (!order) {
-        alert("Orden no encontrada. Contacta a soporte.");
-        return;
-      }
-      const orderId = order.id;
-      const clientSecret = order.client_secret;
+        const order = await getOrder();
+        if (!order) {
+          alert("Orden no encontrada. Contacta a soporte.");
+          spinner.style.display = "none";
+          submitBtn.disabled = false;
+          return;
+        }
+        const orderId = order.id;
+        const clientSecret = order.client_secret;
 
+        if (!clientSecret || !orderId) {
+          alert("Link inválido o incompleto. Por favor contacta a soporte.");
+          spinner.style.display = "none";
+          submitBtn.disabled = false;
+          return;
+        }
 
+        const cardholder = document.getElementById("cardholder-name").value || "";
+        const result = await stripe.confirmCardPayment(clientSecret, {
+          payment_method: { card, billing_details: { name: cardholder } }
+        });
 
-      if (!clientSecret || !orderId) {
-        alert("Link inválido o incompleto. Por favor contacta a soporte.");
-        spinner.style.display = "none";
-        submitBtn.disabled = false;
-        return;
-       }
-
-      const cardholder = document.getElementById("cardholder-name").value || "";
-      const result = await stripe.confirmCardPayment(clientSecret, {
-        payment_method: { card, billing_details: { name: cardholder } }
+        if (result.error) {
+          alert("Error: " + result.error.message);
+          spinner.style.display = "none";
+          submitBtn.disabled = false;
+        } else if (result.paymentIntent.status === "succeeded" || result.paymentIntent.status === "requires_capture") {
+          const finalOrderId = orderId || "undefined";
+          window.location.href = `/success.html?orderId=${finalOrderId}`;
+        }
       });
 
-
-      if (result.error) {
-        alert("Error: " + result.error.message);
-        spinner.style.display = "none";
-        submitBtn.disabled = false;
-      } else if (result.paymentIntent.status === "succeeded" || result.paymentIntent.status === "requires_capture") {
-        const finalOrderId = orderId || "undefined";
-        window.location.href = `/success.html?orderId=${finalOrderId}`;
-      }
-    });
   </script>
 </body>
 
