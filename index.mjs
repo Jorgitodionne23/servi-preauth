@@ -37,7 +37,7 @@ const { amount, clientName, serviceDescription, serviceDate } = req.body;
       payment_method_types: ['card'],
     });
 
-  const orderId = `ORD-${Date.now()}`;
+  const orderId = `${Date.now()}`;
 // Save row (now passing serviceDate and status correctly)
   db.prepare(`
     INSERT INTO orders (
