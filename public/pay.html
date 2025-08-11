@@ -176,6 +176,13 @@
   font-size: 14px;
 }
 
+#service-summary {
+  margin: 0;
+  line-height: 1.5;
+  font-size: 15px;
+}
+
+
 .summary-box h3 {
   margin-top: 0;
   margin-bottom: 10px;
@@ -195,11 +202,10 @@
       <h2>Confirmar método de pago</h2>
       
       <div class="summary-box">
-        <h3>Resumen de tu reserva</h3>
-        <p><strong>Fecha:</strong> <span id="service-date">Cargando...</span></p>
-        <p><strong>Servicio:</strong> <span id="service-desc">Cargando...</span></p>
-        <p><strong>Total:</strong> $<span id="amount">0.00</span> MXN</p>
+        <h3>Detalles de tu reserva</h3>
+        <p id="service-summary">Cargando…</p>
       </div>
+
 
       <div id="express-pay-container" style="display:none;">
         <div id="express-pay-button"></div>
@@ -280,12 +286,39 @@
       const order = await getOrder();
       if (!order) return;
 
-      // Fill summary box
-      document.getElementById("service-date").textContent = order.service_date 
-        ? new Date(order.service_date).toLocaleDateString("es-MX", { day: "2-digit", month: "long", year: "numeric" }) 
-        : "—";
-      document.getElementById("service-desc").textContent = order.service_description || "—";
-      document.getElementById("amount").textContent = (order.amount / 100).toFixed(2);
+      // Build one natural sentence, Uber-style
+      const servicio = (order.service_description || "servicio").trim();
+      const fechaTexto = formatFechaEs(order.service_date);
+      const monto = (Number(order.amount || 0) / 100);
+      const montoTexto = monto.toLocaleString("es-MX", { style: "currency", currency: "MXN" });
+
+      // If the date coming from Sheets already includes a time window, we use it as-is.
+      // Example Sheets value: "Lunes, 11 de Agosto entre 9:00 AM - 10:00"
+      const resumen = `Reserva de ${servicio} el ${fechaTexto}, por ${montoTexto}.`;
+
+      document.getElementById("service-summary").textContent = resumen;
+
+      function formatFechaEs(value) {
+        if (!value) return "—";
+
+        // If it's ISO-like (YYYY-MM-DD or YYYY-MM-DDTHH:mm), pretty-format in Spanish
+        if (/^\d{4}-\d{2}-\d{2}/.test(String(value))) {
+          const d = new Date(value);
+          if (!isNaN(d)) {
+            // lunes → Lunes, agosto → agosto (keep month lowercase per Spanish style)
+            const s = d.toLocaleDateString("es-MX", {
+              weekday: "long", day: "2-digit", month: "long", year: "numeric"
+            });
+            // Capitalize first letter of weekday
+            return s.charAt(0).toUpperCase() + s.slice(1);
+          }
+        }
+
+        // Otherwise assume it already contains the full phrase/time window from Sheets
+        return String(value);
+      }
+
+
 
       // Create paymentRequest using the actual amount
       window.paymentRequest = stripe.paymentRequest({
