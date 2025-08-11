@@ -1,22 +1,14 @@
-import Database from "better-sqlite3";
-import path from "path";
-import { fileURLToPath } from "url";
+// db.mjs
+import Database from 'better-sqlite3';
 
-// ⛳ Required for __dirname in ES modules
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// Use a file in the project directory (works on Render too)
+const db = new Database('orders.db');
 
-// ✅ Open the SQLite database
-const db = new Database(path.join(__dirname, "orders.db"));
+// Optional but recommended
+db.pragma('journal_mode = WAL');
 
-const cols = db.prepare(`PRAGMA table_info(orders)`).all().map(c => c.name);
-if (!cols.includes('service_date')) {
-  db.prepare(`ALTER TABLE orders ADD COLUMN service_date TEXT`).run();
-}
-
-
-// ✅ Create the table if it doesn't exist
-db.prepare(`
+// 1) Ensure the table exists with the full schema
+db.exec(`
   CREATE TABLE IF NOT EXISTS orders (
     id TEXT PRIMARY KEY,
     payment_intent_id TEXT,
@@ -26,8 +18,26 @@ db.prepare(`
     service_date TEXT,
     status TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-  )
-`).run();
+  );
+`);
 
-// ✅ Export the database instance
+// 2) Safe migrations for older DBs (add columns if they don't exist)
+const cols = db.prepare(`PRAGMA table_info(orders)`).all().map(c => c.name);
+
+if (!cols.includes('client_name')) {
+  db.exec(`ALTER TABLE orders ADD COLUMN client_name TEXT;`);
+}
+if (!cols.includes('service_description')) {
+  db.exec(`ALTER TABLE orders ADD COLUMN service_description TEXT;`);
+}
+if (!cols.includes('service_date')) {
+  db.exec(`ALTER TABLE orders ADD COLUMN service_date TEXT;`);
+}
+if (!cols.includes('status')) {
+  db.exec(`ALTER TABLE orders ADD COLUMN status TEXT;`);
+}
+if (!cols.includes('created_at')) {
+  db.exec(`ALTER TABLE orders ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;`);
+}
+
 export default db;
