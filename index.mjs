@@ -37,33 +37,36 @@ const { amount, clientName, serviceDescription, serviceDate } = req.body;
       payment_method_types: ['card'],
     });
 
-    const orderId = `ORD-${Date.now()}`;
-    const orderDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-
-    const order = {
-      orderId,
-      client_name: clientName,
-      service_description: serviceDescription,
+  const orderId = `ORD-${Date.now()}`;
+// Save row (now passing serviceDate and status correctly)
+  db.prepare(`
+    INSERT INTO orders (
+      id,
+      payment_intent_id,
       amount,
-      date: new Date().toISOString(),
-      client_secret: paymentIntent.client_secret
-    };
+      client_name,
+      service_description,
+      service_date,
+      status
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    orderId,
+    paymentIntent.id,
+    amount,
+    clientName || null,
+    serviceDescription || null,
+    serviceDate || null,   // <- was missing
+    'pending'
+  );
 
+  // Respond to Sheets
+  res.send({
+    clientSecret: paymentIntent.client_secret,
+    paymentIntentId: paymentIntent.id,
+    orderId,
+  });
 
-
-
-    db.prepare(`
-  INSERT INTO orders (id, payment_intent_id, amount, client_name, service_description, service_date, status)
-  VALUES (?, ?, ?, ?, ?, ?)
-`).run(orderId, paymentIntent.id, amount, clientName, serviceDescription, 'pending');
-
-
-
-    res.send({
-      clientSecret: paymentIntent.client_secret,
-      paymentIntentId: paymentIntent.id,
-      orderId,
-    });
   } catch (err) {
     console.error('Error creating payment intent:', err);
     res.status(400).send({ error: err.message });
