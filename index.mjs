@@ -77,19 +77,15 @@ app.get('/pay', (req, res) => {
 
 // 📦 Updated order fetch with client_secret
 // 📦 Order fetch (no client_secret returned)
-app.get('/order/:orderId', (req, res) => {
+// 📦 Order fetch (includes client_secret again so pay.html can confirm)
+app.get('/order/:orderId', async (req, res) => {
   try {
     const { orderId } = req.params;
-
-    // Optional: if you’re now using UUIDs, uncomment to validate format
-    // if (!/^[0-9a-f-]{36}$/i.test(orderId)) {
-    //   return res.status(400).send({ error: 'Bad order id format' });
-    // }
 
     const row = db.prepare(`
       SELECT 
         id,
-        payment_intent_id,   -- OK to expose; not secret
+        payment_intent_id,
         amount,
         client_name,
         service_description,
@@ -102,15 +98,14 @@ app.get('/order/:orderId', (req, res) => {
 
     if (!row) return res.status(404).send({ error: 'Order not found' });
 
-    // Do NOT attach client_secret here
-    res.send(row);
+    // add client_secret back for the payment page
+    const pi = await stripe.paymentIntents.retrieve(row.payment_intent_id);
+    res.send({ ...row, client_secret: pi.client_secret });
   } catch (err) {
     console.error('Error retrieving order:', err.message);
     res.status(500).send({ error: 'Internal server error' });
   }
 });
-
-
 
 // 📡 Stripe Webhook handler
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
