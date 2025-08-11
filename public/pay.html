@@ -196,7 +196,7 @@
       
       <div class="summary-box">
         <h3>Resumen de tu reserva</h3>
-        <p><strong>Cliente:</strong> <span id="client-name">Cargando...</span></p>
+        <p><strong>Fecha:</strong> <span id="service-date">Cargando...</span></p>
         <p><strong>Servicio:</strong> <span id="service-desc">Cargando...</span></p>
         <p><strong>Total:</strong> $<span id="amount">0.00</span> MXN</p>
       </div>
@@ -281,7 +281,7 @@
       if (!order) return;
 
       // Fill summary box
-      document.getElementById("client-name").textContent = order.service_date 
+      document.getElementById("service-date").textContent = order.service_date 
         ? new Date(order.service_date).toLocaleDateString("es-MX", { day: "2-digit", month: "long", year: "numeric" }) 
         : "—";
       document.getElementById("service-desc").textContent = order.service_description || "—";
