@@ -27,7 +27,7 @@ app.use(express.static('public'));
 
 // 🎯 Create PaymentIntent
 app.post('/create-payment-intent', async (req, res) => {
-const { amount, clientName, serviceDescription } = req.body;
+const { amount, clientName, serviceDescription, serviceDate } = req.body;
 
   try {
     const paymentIntent = await stripe.paymentIntents.create({
@@ -38,8 +38,22 @@ const { amount, clientName, serviceDescription } = req.body;
     });
 
     const orderId = `ORD-${Date.now()}`;
+    const orderDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+
+    const order = {
+      orderId,
+      client_name: clientName,
+      service_description: serviceDescription,
+      amount,
+      date: new Date().toISOString(),
+      client_secret: paymentIntent.client_secret
+    };
+
+
+
+
     db.prepare(`
-  INSERT INTO orders (id, payment_intent_id, amount, client_name, service_description, status)
+  INSERT INTO orders (id, payment_intent_id, amount, client_name, service_description, service_date, status)
   VALUES (?, ?, ?, ?, ?, ?)
 `).run(orderId, paymentIntent.id, amount, clientName, serviceDescription, 'pending');
 

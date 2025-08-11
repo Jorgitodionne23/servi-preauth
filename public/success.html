@@ -108,6 +108,16 @@
       Número de orden: #<span id="order-id">cargando...</span>
     </div>
 
+    <div class="client-name">
+      Cliente: <span id="client-name">cargando...</span>
+    </div>
+
+    <div class="service-date">
+      Fecha del servicio: <span id="service-date">cargando...</span>
+    </div>
+
+
+
     <!-- WhatsApp CTA -->
     <a href="https://wa.me/525525112588" class="button">
       Ver o modificar tu solicitud
@@ -128,8 +138,40 @@
   <script>
     const params = new URLSearchParams(window.location.search);
     const orderId = params.get('orderId');
-    const target = document.getElementById('order-id');
-    target.textContent = orderId ? orderId : 'no disponible';
-  </script>
+
+    // Elements on the page
+    const targetOrderId = document.getElementById('order-id');
+    const targetClientName = document.getElementById('client-name'); // make sure you added this span in HTML
+    const targetServiceDate = document.getElementById('service-date'); // optional, only if you add this span in HTML
+
+    if (orderId) {
+      targetOrderId.textContent = orderId;
+
+      fetch(`/order/${orderId}`)
+        .then(res => res.json())
+        .then(order => {
+          // Client name
+          if (targetClientName) {
+            targetClientName.textContent = order.client_name ? order.client_name : 'No disponible';
+          }
+          // (Optional) Service date
+          if (targetServiceDate) {
+            targetServiceDate.textContent = order.service_date
+              ? new Date(order.service_date).toLocaleDateString("es-MX", { day: "2-digit", month: "long", year: "numeric" })
+              : 'No disponible';
+          }
+        })
+        .catch(() => {
+          if (targetClientName) targetClientName.textContent = 'Error al cargar';
+          if (targetServiceDate) targetServiceDate.textContent = 'Error al cargar';
+        });
+  } else {
+    targetOrderId.textContent = 'no disponible';
+    if (targetClientName) targetClientName.textContent = 'no disponible';
+    if (targetServiceDate) targetServiceDate.textContent = 'no disponible';
+  }
+</script>
+
+
 </body>
 </html>

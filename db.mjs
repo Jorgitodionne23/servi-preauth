@@ -9,6 +9,12 @@ const __dirname = path.dirname(__filename);
 // ✅ Open the SQLite database
 const db = new Database(path.join(__dirname, "orders.db"));
 
+const cols = db.prepare(`PRAGMA table_info(orders)`).all().map(c => c.name);
+if (!cols.includes('service_date')) {
+  db.prepare(`ALTER TABLE orders ADD COLUMN service_date TEXT`).run();
+}
+
+
 // ✅ Create the table if it doesn't exist
 db.prepare(`
   CREATE TABLE IF NOT EXISTS orders (
@@ -17,6 +23,7 @@ db.prepare(`
     amount INTEGER,
     client_name TEXT,
     service_description TEXT,
+    service_date TEXT,
     status TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   )
