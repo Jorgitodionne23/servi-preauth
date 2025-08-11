@@ -274,7 +274,7 @@
       const orderId = urlParams.get("orderId");
       if (!orderId) return null;
 
-      const response = await fetch(`https://servi-preauth.onrender.com/order/${orderId}`);
+      const response = await fetch(`/order/${orderId}`);
       if (!response.ok) return null;
 
       cachedOrder = await response.json();

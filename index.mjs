@@ -8,7 +8,7 @@ import db from './db.mjs';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import fetch from 'node-fetch';
-import Database from 'better-sqlite3';
+import { randomUUID } from 'crypto';
 
 // For __dirname in ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -17,9 +17,6 @@ const __dirname = dirname(__filename);
 const app = express();
 const stripe = StripePackage(process.env.STRIPE_SECRET_KEY);
 const GOOGLE_SCRIPT_WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbweLYI8-4Z-kW_wahnkHw-Kgmc1GfjI9-YR6z9enOCO98oTXsd9DgTzN_Cm87Drcycb/exec'
-
-// 🧠 Webhook-specific middleware: must go before express.json()
-app.use('/webhook', express.raw({ type: 'application/json' }));
 
 // 📦 General middleware
 app.use(express.json());
@@ -37,7 +34,7 @@ const { amount, clientName, serviceDescription, serviceDate } = req.body;
       payment_method_types: ['card'],
     });
 
-  const orderId = `${Date.now()}`;
+  const orderId = randomUUID();
 // Save row (now passing serviceDate and status correctly)
   db.prepare(`
     INSERT INTO orders (
@@ -79,23 +76,40 @@ app.get('/pay', (req, res) => {
 });
 
 // 📦 Updated order fetch with client_secret
-app.get('/order/:orderId', async (req, res) => {
+// 📦 Order fetch (no client_secret returned)
+app.get('/order/:orderId', (req, res) => {
   try {
-    const row = db.prepare(`SELECT * FROM orders WHERE id = ?`).get(req.params.orderId);
+    const { orderId } = req.params;
 
-    if (!row) {
-      return res.status(404).send({ error: 'Order not found' });
-    }
+    // Optional: if you’re now using UUIDs, uncomment to validate format
+    // if (!/^[0-9a-f-]{36}$/i.test(orderId)) {
+    //   return res.status(400).send({ error: 'Bad order id format' });
+    // }
 
-    const paymentIntent = await stripe.paymentIntents.retrieve(row.payment_intent_id);
-    row.client_secret = paymentIntent.client_secret;
+    const row = db.prepare(`
+      SELECT 
+        id,
+        payment_intent_id,   -- OK to expose; not secret
+        amount,
+        client_name,
+        service_description,
+        service_date,
+        status,
+        created_at
+      FROM orders
+      WHERE id = ?
+    `).get(orderId);
 
+    if (!row) return res.status(404).send({ error: 'Order not found' });
+
+    // Do NOT attach client_secret here
     res.send(row);
   } catch (err) {
     console.error('Error retrieving order:', err.message);
     res.status(500).send({ error: 'Internal server error' });
   }
 });
+
 
 
 // 📡 Stripe Webhook handler
