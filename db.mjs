@@ -17,7 +17,8 @@ db.exec(`
     service_description TEXT,
     service_date TEXT,
     status TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    public_code TEXT UNIQUE
   );
 `);
 
@@ -39,5 +40,9 @@ if (!cols.includes('status')) {
 if (!cols.includes('created_at')) {
   db.exec(`ALTER TABLE orders ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;`);
 }
+if (!cols.includes('public_code')) {
+  db.exec(`ALTER TABLE orders ADD COLUMN public_code TEXT UNIQUE;`);
+}
+
 
 export default db;

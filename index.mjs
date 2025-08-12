@@ -8,7 +8,7 @@ import db from './db.mjs';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import fetch from 'node-fetch';
-import { randomUUID } from 'crypto';
+import { randomUUID, randomBytes } from 'crypto';
 
 // For __dirname in ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -35,7 +35,16 @@ const { amount, clientName, serviceDescription, serviceDate } = req.body;
     });
 
   const orderId = randomUUID();
-// Save row (now passing serviceDate and status correctly)
+  // 10-char, A–Z0–9, uppercase code (e.g., AB12CD34EF)
+  const makePublicCode = () =>
+    randomBytes(8).toString('base64url').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10);
+
+  // ensure uniqueness (extremely unlikely to collide, but be safe)
+  let publicCode;
+  do {
+    publicCode = makePublicCode();
+  } while (db.prepare('SELECT 1 FROM orders WHERE public_code = ?').get(publicCode));
+
   db.prepare(`
     INSERT INTO orders (
       id,
@@ -44,17 +53,19 @@ const { amount, clientName, serviceDescription, serviceDate } = req.body;
       client_name,
       service_description,
       service_date,
-      status
+      status,
+      public_code
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     orderId,
     paymentIntent.id,
     amount,
     clientName || null,
     serviceDescription || null,
-    serviceDate || null,   // <- was missing
-    'pending'
+    serviceDate || null,   
+    'pending',
+    publicCode
   );
 
   // Respond to Sheets
@@ -62,6 +73,7 @@ const { amount, clientName, serviceDescription, serviceDate } = req.body;
     clientSecret: paymentIntent.client_secret,
     paymentIntentId: paymentIntent.id,
     orderId,
+    publicCode
   });
 
   } catch (err) {
@@ -91,7 +103,8 @@ app.get('/order/:orderId', async (req, res) => {
         service_description,
         service_date,
         status,
-        created_at
+        created_at,
+        public_code
       FROM orders
       WHERE id = ?
     `).get(orderId);
@@ -105,6 +118,13 @@ app.get('/order/:orderId', async (req, res) => {
     console.error('Error retrieving order:', err.message);
     res.status(500).send({ error: 'Internal server error' });
   }
+});
+
+app.get('/o/:code', (req, res) => {
+  const code = String(req.params.code || '').toUpperCase();
+  const row = db.prepare(`SELECT id FROM orders WHERE public_code = ?`).get(code);
+  if (!row) return res.status(404).send('Not found');
+  res.redirect(302, `/pay?orderId=${row.id}`);
 });
 
 // 📡 Stripe Webhook handler

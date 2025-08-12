@@ -131,6 +131,7 @@
 
     // Elements on the page
     const targetOrderId = document.getElementById('order-id');
+    targetOrderId.textContent = String(order.id).slice(-8).toUpperCase();
     const targetClientName = document.getElementById('client-name'); // make sure you added this span in HTML
     const targetServiceDate = document.getElementById('service-date'); // optional, only if you add this span in HTML
 
