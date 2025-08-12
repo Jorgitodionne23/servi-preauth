@@ -118,7 +118,6 @@
   <div class="footer">
       ¿Necesitas ayuda?
       <a href="https://serviservices.my.canva.site/helpcenter/#reportar" target="_blank">Centro de ayuda</a>
-    </div>
   </div>
 
   <div class="footer-stripe">
@@ -126,43 +125,60 @@
   </div>
 
   <script>
-    const params = new URLSearchParams(window.location.search);
-    const orderId = params.get('orderId');
+  (async () => {
+    const params = new URLSearchParams(location.search);
+    let orderId = params.get('orderId') || localStorage.getItem('orderId');
 
     // Elements on the page
     const targetOrderId = document.getElementById('order-id');
-    targetOrderId.textContent = String(order.id).slice(-8).toUpperCase();
-    const targetClientName = document.getElementById('client-name'); // make sure you added this span in HTML
-    const targetServiceDate = document.getElementById('service-date'); // optional, only if you add this span in HTML
+    const targetClientName = document.getElementById('client-name');   // optional span
+    const targetServiceDate = document.getElementById('service-date'); // optional span
 
-    if (orderId) {
-      targetOrderId.textContent = orderId;
+    if (!orderId) {
+      targetOrderId.textContent = 'no disponible';
+      if (targetClientName) targetClientName.textContent = 'no disponible';
+      if (targetServiceDate) targetServiceDate.textContent = 'no disponible';
+      alert('Link inválido o incompleto. Por favor contacta a soporte.');
+      return;
+    }
 
-      fetch(`/order/${orderId}`)
-        .then(res => res.json())
-        .then(order => {
-          // Client name
-          if (targetClientName) {
-            targetClientName.textContent = order.client_name ? order.client_name : 'No disponible';
+    // keep a reliable copy for refreshes / redirects
+    localStorage.setItem('orderId', String(orderId));
+
+    try {
+      const res = await fetch(`/order/${encodeURIComponent(orderId)}`);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const order = await res.json();
+
+      // Show short, friendly code (public_code if present; else last 8 of UUID)
+      const friendly = (order.public_code ? String(order.public_code)
+                                          : String(order.id).slice(-8)).toUpperCase();
+      targetOrderId.textContent = friendly;
+
+      if (targetClientName) {
+        targetClientName.textContent = order.client_name || 'No disponible';
+      }
+      if (targetServiceDate) {
+        let sd = 'No disponible';
+        if (order.service_date) {
+          const d = new Date(order.service_date);
+          if (!isNaN(d)) {
+            sd = d.toLocaleDateString('es-MX', {
+              weekday: 'long', day: '2-digit', month: 'long', year: 'numeric'
+            });
+            sd = sd.charAt(0).toUpperCase() + sd.slice(1);
+          } else {
+            sd = String(order.service_date);
           }
-          // (Optional) Service date
-          if (targetServiceDate) {
-            targetServiceDate.textContent = order.service_date
-              ? new Date(order.service_date).toLocaleDateString("es-MX", { day: "2-digit", month: "long", year: "numeric" })
-              : 'No disponible';
-          }
-        })
-        .catch(() => {
-          if (targetClientName) targetClientName.textContent = 'Error al cargar';
-          if (targetServiceDate) targetServiceDate.textContent = 'Error al cargar';
-        });
-  } else {
-    targetOrderId.textContent = 'no disponible';
-    if (targetClientName) targetClientName.textContent = 'no disponible';
-    if (targetServiceDate) targetServiceDate.textContent = 'no disponible';
-  }
-</script>
-
-
+        }
+        targetServiceDate.textContent = sd;
+      }
+    } catch (err) {
+      targetOrderId.textContent = 'no disponible';
+      if (targetClientName) targetClientName.textContent = 'Error al cargar';
+      if (targetServiceDate) targetServiceDate.textContent = 'Error al cargar';
+    }
+  })();
+  </script>
 </body>
 </html>

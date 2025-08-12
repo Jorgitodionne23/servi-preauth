@@ -369,8 +369,9 @@
         if (result.error) {
           alert("Error al confirmar: " + result.error.message);
         } else {
-          const finalOrderId = orderId || "undefined";
-          window.location.href = `/success.html?orderId=${finalOrderId}`;
+          localStorage.setItem('orderId', String(orderId));
+          window.location.href = `/success.html?orderId=${encodeURIComponent(orderId)}`;
+
         }
       }
     });
@@ -417,8 +418,8 @@
           spinner.style.display = "none";
           submitBtn.disabled = false;
         } else if (result.paymentIntent.status === "succeeded" || result.paymentIntent.status === "requires_capture") {
-          const finalOrderId = orderId || "undefined";
-          window.location.href = `/success.html?orderId=${finalOrderId}`;
+          localStorage.setItem('orderId', String(orderId));
+          window.location.href = `/success.html?orderId=${encodeURIComponent(orderId)}`;
         }
       });
 
