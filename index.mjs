@@ -19,7 +19,11 @@ const stripe = StripePackage(process.env.STRIPE_SECRET_KEY);
 const GOOGLE_SCRIPT_WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbweLYI8-4Z-kW_wahnkHw-Kgmc1GfjI9-YR6z9enOCO98oTXsd9DgTzN_Cm87Drcycb/exec'
 
 // 📦 General middleware
-app.use(express.json());
+// Parse JSON for everything EXCEPT /webhook (Stripe needs raw body there)
+app.use((req, res, next) => {
+  if (req.originalUrl === '/webhook') return next();
+  return express.json()(req, res, next);
+});
 app.use(express.static('public'));
 
 // 🎯 Create PaymentIntent
@@ -131,6 +135,7 @@ app.get('/o/:code', (req, res) => {
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
 app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  
   const sig = req.headers['stripe-signature'];
   let event;
 
@@ -149,39 +154,57 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
   }
 
   switch (event.type) {
-    case 'charge.succeeded':
-      console.log('✅ Charge succeeded:', paymentIntentId);
+    // AUTHORIZED / CONFIRMED (manual-capture flow)
+    case 'charge.succeeded': {
+      console.log('✅ Confirmed (charge.succeeded):', paymentIntentId);
       db.prepare(`UPDATE orders SET status = ? WHERE payment_intent_id = ?`)
         .run('Confirmed', paymentIntentId);
 
       fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          paymentIntentId, 
-          status: 'Confirmed' })
-      }).catch(console.error);
-
+        body: JSON.stringify({ paymentIntentId, status: 'Confirmed' })
+      }).then(async r => console.log('Sheets confirm:', r.status, await r.text()))
+        .catch(e => console.error('Sheets confirm failed:', e));
       break;
+    }
 
+    // CAPTURED / PAID
+    case 'payment_intent.succeeded': {
+      console.log('💰 Captured (payment_intent.succeeded):', paymentIntentId);
+      db.prepare(`UPDATE orders SET status = ? WHERE payment_intent_id = ?`)
+        .run('Captured', paymentIntentId);
+
+      fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paymentIntentId, status: 'Captured' })
+      }).then(async r => console.log('Sheets captured:', r.status, await r.text()))
+        .catch(e => console.error('Sheets captured failed:', e));
+      break;
+    }
+
+    // (optional) failure/cancel hygiene
     case 'payment_intent.payment_failed':
-      console.log('❌ PaymentIntent failed:', paymentIntentId);
+    case 'charge.failed':
+    case 'charge.expired':
+    case 'payment_intent.canceled': {
+      console.log('❌ Failed/Cancelled:', paymentIntentId, event.type);
       db.prepare(`UPDATE orders SET status = ? WHERE payment_intent_id = ?`)
         .run('Failed', paymentIntentId);
 
       fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          paymentIntentId, 
-          status: 'Failed' })
-      }).catch(console.error);
-
+        body: JSON.stringify({ paymentIntentId, status: 'Failed' })
+      }).catch(e => console.error('Sheets fail notify failed:', e));
       break;
+    }
 
     default:
       console.log(`Unhandled event type: ${event.type}`);
   }
+
 
   res.status(200).send('Webhook received');
 });
