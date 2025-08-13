@@ -4,18 +4,20 @@ import 'dotenv/config';
 import express from 'express';
 import StripePackage from 'stripe';
 import path from 'path';
-import db from './db.mjs';
+import { pool, initDb } from './db.pg.mjs';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import fetch from 'node-fetch';
 import { randomUUID, randomBytes } from 'crypto';
 
 // For __dirname in ES modules
+await initDb(); // run before defining routes
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const app = express();
-const stripe = StripePackage(process.env.STRIPE_SECRET_KEY);
+const stripe = new StripePackage(process.env.STRIPE_SECRET_KEY);
 const GOOGLE_SCRIPT_WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbweLYI8-4Z-kW_wahnkHw-Kgmc1GfjI9-YR6z9enOCO98oTXsd9DgTzN_Cm87Drcycb/exec'
 
 // 📦 General middleware
@@ -39,38 +41,26 @@ const { amount, clientName, serviceDescription, serviceDate } = req.body;
     });
 
   const orderId = randomUUID();
-  // 10-char, A–Z0–9, uppercase code (e.g., AB12CD34EF)
-  const makePublicCode = () =>
-    randomBytes(8).toString('base64url').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10);
 
-  // ensure uniqueness (extremely unlikely to collide, but be safe)
-  let publicCode;
-  do {
-    publicCode = makePublicCode();
-  } while (db.prepare('SELECT 1 FROM orders WHERE public_code = ?').get(publicCode));
+  async function generateUniqueCode() {
+      for (let i = 0; i < 6; i++) {
+        const code = randomBytes(8).toString('base64url')
+          .toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10);
+        const { rows } = await pool.query('SELECT 1 FROM orders WHERE public_code = $1', [code]);
+        if (rows.length === 0) return code;
+      }
+      throw new Error('Could not generate unique public code');
+    }
+    const publicCode = await generateUniqueCode();
 
-  db.prepare(`
-    INSERT INTO orders (
-      id,
-      payment_intent_id,
-      amount,
-      client_name,
-      service_description,
-      service_date,
-      status,
-      public_code
-    )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    orderId,
-    paymentIntent.id,
-    amount,
-    clientName || null,
-    serviceDescription || null,
-    serviceDate || null,   
-    'pending',
-    publicCode
-  );
+    await pool.query(
+      `INSERT INTO orders
+       (id, payment_intent_id, amount, client_name, service_description, service_date, status, public_code)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       ON CONFLICT (id) DO NOTHING`,
+      [orderId, paymentIntent.id, amount, clientName || null, serviceDescription || null,
+       serviceDate || null, 'pending', publicCode]
+    );
 
   // Respond to Sheets
   res.send({
@@ -98,24 +88,16 @@ app.get('/order/:orderId', async (req, res) => {
   try {
     const { orderId } = req.params;
 
-    const row = db.prepare(`
-      SELECT 
-        id,
-        payment_intent_id,
-        amount,
-        client_name,
-        service_description,
-        service_date,
-        status,
-        created_at,
-        public_code
+    const { rows } = await pool.query(`
+      SELECT id, payment_intent_id, amount, client_name, service_description,
+             service_date, status, created_at, public_code
       FROM orders
-      WHERE id = ?
-    `).get(orderId);
+      WHERE id = $1
+    `, [orderId]);
 
+    const row = rows[0];
     if (!row) return res.status(404).send({ error: 'Order not found' });
 
-    // add client_secret back for the payment page
     const pi = await stripe.paymentIntents.retrieve(row.payment_intent_id);
     res.send({ ...row, client_secret: pi.client_secret });
   } catch (err) {
@@ -124,12 +106,13 @@ app.get('/order/:orderId', async (req, res) => {
   }
 });
 
-app.get('/o/:code', (req, res) => {
+app.get('/o/:code', async (req, res) => {
   const code = String(req.params.code || '').toUpperCase();
-  const row = db.prepare(`SELECT id FROM orders WHERE public_code = ?`).get(code);
-  if (!row) return res.status(404).send('Not found');
-  res.redirect(302, `/pay?orderId=${row.id}`);
+  const { rows } = await pool.query('SELECT id FROM orders WHERE public_code = $1', [code]);
+  if (!rows[0]) return res.status(404).send('Not found');
+  res.redirect(302, `/pay?orderId=${rows[0].id}`);
 });
+
 
 // 📡 Stripe Webhook handler
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
@@ -157,8 +140,8 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
     // AUTHORIZED / CONFIRMED (manual-capture flow)
     case 'charge.succeeded': {
       console.log('✅ Confirmed (charge.succeeded):', paymentIntentId);
-      db.prepare(`UPDATE orders SET status = ? WHERE payment_intent_id = ?`)
-        .run('Confirmed', paymentIntentId);
+      await pool.query('UPDATE orders SET status = $1 WHERE payment_intent_id = $2',
+                   ['Confirmed', paymentIntentId]);
 
       fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
         method: 'POST',
@@ -172,8 +155,8 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
     // CAPTURED / PAID
     case 'payment_intent.succeeded': {
       console.log('💰 Captured (payment_intent.succeeded):', paymentIntentId);
-      db.prepare(`UPDATE orders SET status = ? WHERE payment_intent_id = ?`)
-        .run('Captured', paymentIntentId);
+      await pool.query('UPDATE orders SET status = $1 WHERE payment_intent_id = $2',
+                      ['Captured', paymentIntentId]);
 
       fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
         method: 'POST',
@@ -184,14 +167,15 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
       break;
     }
 
+
     // (optional) failure/cancel hygiene
     case 'payment_intent.payment_failed':
     case 'charge.failed':
     case 'charge.expired':
     case 'payment_intent.canceled': {
       console.log('❌ Failed/Cancelled:', paymentIntentId, event.type);
-      db.prepare(`UPDATE orders SET status = ? WHERE payment_intent_id = ?`)
-        .run('Failed', paymentIntentId);
+      await pool.query('UPDATE orders SET status = $1 WHERE payment_intent_id = $2',
+                      ['Failed', paymentIntentId]);
 
       fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
         method: 'POST',
@@ -200,6 +184,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
       }).catch(e => console.error('Sheets fail notify failed:', e));
       break;
     }
+
 
     default:
       console.log(`Unhandled event type: ${event.type}`);
