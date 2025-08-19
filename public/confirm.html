@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SERVI — Confirmación adicional</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+<script src="https://js.stripe.com/v3/"></script>
+<style>
+  body{margin:0;background:#000;color:#fff;font-family:Inter,system-ui,Arial,sans-serif;
+       display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px}
+  .card{max-width:520px;width:100%;background:#0f1115;border:1px solid #1f2430;border-radius:16px;padding:24px;text-align:center}
+  .btn{display:inline-block;margin-top:14px;padding:10px 14px;font-weight:600;border:1px solid #232a3a;border-radius:10px;color:#fff;text-decoration:none}
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1 style="margin:0 0 8px">Confirma el ajuste</h1>
+    <p id="msg">Cargando…</p>
+    <a class="btn" id="back" href="/" style="display:none">Volver</a>
+  </div>
+<script>
+  const stripe = Stripe("YOUR_PUBLISHABLE_KEY");
+  const qs = new URLSearchParams(location.search);
+  const orderId = qs.get("orderId");
+
+  (async () => {
+    try {
+      const r = await fetch(`/order/${orderId}`);
+      const order = await r.json();
+      if (order.error) throw new Error(order.error);
+      if (order.status && /succeeded|captured|confirmed/i.test(order.status)) {
+        document.getElementById('msg').textContent = 'Listo. Tu pago adicional fue procesado.';
+        document.getElementById('back').style.display = 'inline-block';
+        return;
+      }
+      const { error, paymentIntent } = await stripe.confirmCardPayment(order.client_secret);
+      if (error) {
+        document.getElementById('msg').textContent = 'No se pudo confirmar. Intenta de nuevo o contáctanos.';
+        document.getElementById('back').style.display = 'inline-block';
+        return;
+      }
+      document.getElementById('msg').textContent =
+        paymentIntent.status === 'succeeded'
+          ? '¡Listo! Ajuste pagado.'
+          : 'Ajuste confirmado. Tu banco puede tardar en reflejar el cargo.';
+      document.getElementById('back').style.display = 'inline-block';
+    } catch {
+      document.getElementById('msg').textContent = 'No encontramos tu orden.';
+      document.getElementById('back').style.display = 'inline-block';
+    }
+  })();
+</script>
+</body>
+</html>

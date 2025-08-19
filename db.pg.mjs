@@ -18,8 +18,28 @@ export async function initDb() {
       service_date TEXT,
       status TEXT,
       created_at TIMESTAMPTZ DEFAULT NOW(),
-      public_code TEXT UNIQUE
+      public_code TEXT UNIQUE,
+      kind TEXT DEFAULT 'primary',
+      parent_id TEXT,
+      customer_id TEXT,
+      saved_payment_method_id TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);
+    CREATE INDEX IF NOT EXISTS idx_orders_parent ON orders(parent_id);
+
+    CREATE TABLE IF NOT EXISTS order_consents (
+      order_id TEXT PRIMARY KEY,
+      customer_id TEXT,
+      payment_method_id TEXT,
+      version TEXT,
+      consent_text TEXT,
+      text_hash TEXT,
+      checked_at TIMESTAMPTZ DEFAULT NOW(),
+      ip TEXT,
+      user_agent TEXT,
+      locale TEXT,
+      tz TEXT
+    );
   `);
 }
+
