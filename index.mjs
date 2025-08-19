@@ -46,9 +46,9 @@ app.post('/create-payment-intent', async (req, res) => {
       currency: 'mxn',
       capture_method: 'manual',
       payment_method_types: ['card'],
-      customer: customer.id,
-      setup_future_usage: 'off_session', // save card for later
+      customer: customer.id
     });
+
 
     const orderId = randomUUID();
 
@@ -171,9 +171,16 @@ app.post('/orders/:id/consent', async (req, res) => {
 
   if (r.rows[0].payment_intent_id) {
     await stripe.paymentIntents.update(r.rows[0].payment_intent_id, {
-      metadata: { cof_consent: 'true', cof_consent_version: version || '1.0', cof_consent_hash: serverHash }
+      // When confirmed, Stripe will attach PM to the customer for future off-session use
+      setup_future_usage: 'off_session',
+      metadata: {
+        cof_consent: 'true',
+        cof_consent_version: version || '1.0',
+        cof_consent_hash: serverHash
+      }
     });
   }
+
   res.send({ ok: true, hash: serverHash, version: version || '1.0' });
 });
 
@@ -192,6 +199,17 @@ app.post('/create-adjustment', async (req, res) => {
   const p = await pool.query('SELECT customer_id, saved_payment_method_id, payment_intent_id FROM orders WHERE id=$1', [parentOrderId]);
   if (!p.rows[0]) return res.status(404).send({ error: 'parent not found' });
 
+  // Check if parent order has consent on file
+  const consent = await pool.query('SELECT 1 FROM order_consents WHERE order_id=$1', [parentOrderId]);
+  const hasConsent = !!consent.rows.length;
+
+  // We can try off-session ONLY if we have consent and a saved PM on the same customer
+  const canChargeOffSession = !!(
+    hasConsent &&
+    p.rows[0].customer_id &&
+    p.rows[0].saved_payment_method_id
+  );
+
   const childId = randomUUID();
 
   async function generateUniqueCode() {
@@ -209,9 +227,9 @@ app.post('/create-adjustment', async (req, res) => {
     pi = await stripe.paymentIntents.create({
       amount, currency: 'mxn',
       customer: p.rows[0].customer_id || undefined,
-      payment_method: p.rows[0].saved_payment_method_id || undefined,
-      off_session: !!(p.rows[0].customer_id && p.rows[0].saved_payment_method_id),
-      confirm: !!(p.rows[0].customer_id && p.rows[0].saved_payment_method_id),
+      payment_method: canChargeOffSession ? (p.rows[0].saved_payment_method_id || undefined) : undefined,
+      off_session: canChargeOffSession || undefined,
+      confirm: canChargeOffSession || undefined,
       capture_method: 'automatic',
       description: note ? `SERVI ajuste: ${note}` : 'SERVI ajuste',
       metadata: {
@@ -220,7 +238,9 @@ app.post('/create-adjustment', async (req, res) => {
         initial_payment_intent: p.rows[0].payment_intent_id || ''
       }
     });
+
     mode = (pi && pi.status === 'succeeded') ? 'charged' : 'needs_action';
+    
   } catch (err) {
   // If Stripe returned a PI in the error, salvage it; else create a fresh PI
   const errPI = err?.raw?.payment_intent || err?.payment_intent || null;
@@ -247,7 +267,6 @@ app.post('/create-adjustment', async (req, res) => {
   }
   mode = 'needs_action';
 }
-
 
   await pool.query(`
     INSERT INTO orders (id, payment_intent_id, amount, status, public_code, kind, parent_id, customer_id, saved_payment_method_id)

@@ -479,10 +479,11 @@
         event.preventDefault(); // prevent page refresh first
         const termsChecked = document.getElementById("terms-checkbox").checked;
         const consentChecked = document.getElementById("consent-checkbox").checked;
-        if (!termsChecked || !consentChecked) {
-          alert("Debes aceptar los Términos y Condiciones y autorizar guardar la tarjeta para posibles cargos adicionales.");
+        if (!termsChecked) {
+          alert("Debes aceptar los Términos y Condiciones y el Aviso de Privacidad para continuar.");
           return;
         }
+
 
         submitBtn.disabled = true;
         spinner.style.display = "block";
@@ -505,7 +506,9 @@
         }
 
         const cardholder = document.getElementById("cardholder-name").value || "";
-        await recordConsent(orderId);
+        if (document.getElementById("consent-checkbox").checked) {
+          await recordConsent(orderId);
+        }
         const result = await stripe.confirmCardPayment(clientSecret, {
           payment_method: { card, billing_details: { name: cardholder } }
         });
