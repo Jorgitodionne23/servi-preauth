@@ -22,7 +22,7 @@
     <a class="btn" id="back" href="/" style="display:none">Volver</a>
   </div>
 <script>
-  const stripe = Stripe("YOUR_PUBLISHABLE_KEY");
+  const stripe = Stripe("pk_test_51QzK6tG7utWo2rQvhFzSBxh59IMDentv5zN7jfKWtf5vkFiGkcuEENhumOpKGjkf33tGqrL3b3o05tp0DDvcJn4r00pQcvaQXR");
   const qs = new URLSearchParams(location.search);
   const orderId = qs.get("orderId");
 
@@ -37,6 +37,7 @@
         return;
       }
       const { error, paymentIntent } = await stripe.confirmCardPayment(order.client_secret);
+      if (error) { console.error('confirmCardPayment error:', error); }
       if (error) {
         document.getElementById('msg').textContent = 'No se pudo confirmar. Intenta de nuevo o contáctanos.';
         document.getElementById('back').style.display = 'inline-block';
