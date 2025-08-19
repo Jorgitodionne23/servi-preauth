@@ -316,22 +316,35 @@
   </div>
 
   <script>
-    const stripe = Stripe("pk_test_51QzK6tG7utWo2rQvhFzSBxh59IMDentv5zN7jfKWtf5vkFiGkcuEENhumOpKGjkf33tGqrL3b3o05tp0DDvcJn4r00pQcvaQXR");
-    const elements = stripe.elements({ locale: 'es' });
-    const style = { base: { color: "#ffffff" } };
-    const card = elements.create("card", { 
-      style: {
-        base: {
-          fontFamily: '"Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-          fontSize: '16px',
-          color: '#ffffff',
-          '::placeholder': { color: '#9ca3af' }
+    // Initialize Stripe from server config and mount the Card Element.
+    // Expose stripe/elements/card on window so other code can use them.
+    const stripeReady = (async () => {
+      const resp = await fetch('/config/stripe');
+      const { pk } = await resp.json();
+      if (!pk) throw new Error('Missing STRIPE_PUBLISHABLE_KEY on server');
+
+      const stripe = Stripe(pk);
+      const elements = stripe.elements({ locale: 'es' });
+      const card = elements.create("card", {
+        style: {
+          base: {
+            fontFamily: '"Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+            fontSize: '16px',
+            color: '#ffffff',
+            '::placeholder': { color: '#9ca3af' }
+          },
+          invalid: { color: '#ef4444' }
         },
-        invalid: { color: '#ef4444' }
-      },  
-      hidePostalCode: true 
-    });
-    card.mount("#card-element");
+        hidePostalCode: true
+      });
+      card.mount("#card-element");
+
+      // make globally accessible for later code
+      window.stripe = stripe;
+      window.elements = elements;
+      window.card = card;
+    })();
+
 
     // 🆕 Fetch once, cache, and use everywhere
     let cachedOrder = null;
@@ -351,6 +364,7 @@
 
     // init: fill summary + build Apple/Google Pay with real amount
     (async () => {
+      await stripeReady;
       const order = await getOrder();
       if (!order) return;
 
@@ -408,41 +422,52 @@
       if (can) {
         document.getElementById("express-pay-container").style.display = "block";
         prButton.mount("#express-pay-button");
+
+        // Attach the handler now that the button & paymentRequest exist
+        window.paymentRequest.on("paymentmethod", async (ev) => {
+          const order = await getOrder();
+          if (!order) {
+            ev.complete("fail");
+            alert("Orden no encontrada. Contacta a soporte.");
+            return;
+          }
+
+          const orderId = order.id;
+          const clientSecret = order.client_secret;
+
+          // 1) Try to confirm with the wallet PM, but don't trigger 3DS yet
+          const first = await (window.stripe ?? stripe).confirmCardPayment(
+            clientSecret,
+            { payment_method: ev.paymentMethod.id },
+            { handleActions: false }
+          );
+
+          if (first.error) {
+            ev.complete("fail");
+            alert(first.error.message);
+            return;
+          }
+
+          // 2) Tell the wallet we accepted the PM
+          ev.complete("success");
+
+          // 3) If 3DS is required, handle it now
+          const second = await (window.stripe ?? stripe).confirmCardPayment(clientSecret);
+          if (second.error) {
+            alert("Error al confirmar: " + second.error.message);
+            return;
+          }
+
+          // 4) Success → redirect
+          localStorage.setItem('orderId', String(orderId));
+          window.location.href = `/success.html?orderId=${encodeURIComponent(orderId)}`;
+        });
       }
+
     })();
 
 
-     window.paymentRequest?.on("paymentmethod", async (ev) => {
-      const order = await getOrder();
-      if (!order) {
-        ev.complete ("fail");
-        alert("Orden no encontrada. Contacta a soporte.");
-        return;
-      }
-      const orderId = order.id;
-      const clientSecret = order.client_secret;
-
-      const { error } = await stripe.confirmCardPayment(
-        clientSecret,
-        { payment_method: ev.paymentMethod.id },
-        { handleActions: false }
-      );
-
-      if (error) {
-        ev.complete("fail");
-        alert(error.message);
-      } else {
-        ev.complete("success");
-        const result = await stripe.confirmCardPayment(clientSecret);
-        if (result.error) {
-          alert("Error al confirmar: " + result.error.message);
-        } else {
-          localStorage.setItem('orderId', String(orderId));
-          window.location.href = `/success.html?orderId=${encodeURIComponent(orderId)}`;
-
-        }
-      }
-    });
+     
 
     const form = document.getElementById("payment-form");
     const submitBtn = document.getElementById("submit");
@@ -477,6 +502,7 @@
 
     form.addEventListener("submit", async (event) => {
         event.preventDefault(); // prevent page refresh first
+        await stripeReady;
         const termsChecked = document.getElementById("terms-checkbox").checked;
         const consentChecked = document.getElementById("consent-checkbox").checked;
         if (!termsChecked) {

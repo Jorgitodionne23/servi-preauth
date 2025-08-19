@@ -92,6 +92,12 @@ app.get('/confirm', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'confirm.html'));
 });
 
+// Serve publishable key to the client (same origin, no CORS needed)
+app.get('/config/stripe', (_req, res) => {
+  res.send({ pk: process.env.STRIPE_PUBLISHABLE_KEY || '' });
+});
+
+
 app.get('/order/:orderId', async (req, res) => {
   try {
     const { orderId } = req.params;
@@ -240,7 +246,7 @@ app.post('/create-adjustment', async (req, res) => {
     });
 
     mode = (pi && pi.status === 'succeeded') ? 'charged' : 'needs_action';
-    
+
   } catch (err) {
   // If Stripe returned a PI in the error, salvage it; else create a fresh PI
   const errPI = err?.raw?.payment_intent || err?.payment_intent || null;
