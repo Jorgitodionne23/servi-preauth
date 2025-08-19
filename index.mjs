@@ -41,7 +41,7 @@ app.post('/create-payment-intent', async (req, res) => {
       phone: clientPhone || undefined,
     });
 
-    const paymentIntent = await stripe.payment_intents.create({
+    const paymentIntent = await stripe.paymentIntents.create({
       amount,
       currency: 'mxn',
       capture_method: 'manual',
