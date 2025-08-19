@@ -98,7 +98,8 @@ app.get('/order/:orderId', async (req, res) => {
 
     const { rows } = await pool.query(`
       SELECT id, payment_intent_id, amount, client_name, service_description,
-             service_date, status, created_at, public_code
+             service_date, status, created_at, public_code,
+             kind, parent_id, customer_id
       FROM orders
       WHERE id = $1
     `, [orderId]);
@@ -106,13 +107,33 @@ app.get('/order/:orderId', async (req, res) => {
     const row = rows[0];
     if (!row) return res.status(404).send({ error: 'Order not found' });
 
-    const pi = await stripe.paymentIntents.retrieve(row.payment_intent_id);
+    let pi;
+
+    if (!row.payment_intent_id) {
+      // Create a PI on the fly if missing (happens for some adjustments)
+      pi = await stripe.paymentIntents.create({
+        amount: row.amount,
+        currency: 'mxn',
+        payment_method_types: ['card'],
+        capture_method: (row.kind === 'adjustment') ? 'automatic' : 'manual',
+        customer: row.customer_id || undefined,
+        metadata: {
+          kind: row.kind || 'primary',
+          parent_order_id: row.parent_id || ''
+        }
+      });
+      await pool.query('UPDATE orders SET payment_intent_id=$1 WHERE id=$2', [pi.id, row.id]);
+    } else {
+      pi = await stripe.paymentIntents.retrieve(row.payment_intent_id);
+    }
+
     res.send({ ...row, client_secret: pi.client_secret });
   } catch (err) {
-    console.error('Error retrieving order:', err.message);
+    console.error('Error retrieving order:', err);
     res.status(500).send({ error: 'Internal server error' });
   }
 });
+
 
 app.get('/o/:code', async (req, res) => {
   const code = String(req.params.code || '').toUpperCase();
@@ -200,9 +221,33 @@ app.post('/create-adjustment', async (req, res) => {
       }
     });
     mode = (pi && pi.status === 'succeeded') ? 'charged' : 'needs_action';
-  } catch (_) {
-    // fall back to a client-side confirm if SCA is required or we lacked a saved PM
+  } catch (err) {
+  // If Stripe returned a PI in the error, salvage it; else create a fresh PI
+  const errPI = err?.raw?.payment_intent || err?.payment_intent || null;
+  if (errPI && (typeof errPI === 'string' || errPI.id)) {
+    // errPI can be an id or an object; normalize to a full object
+    pi = typeof errPI === 'string'
+      ? await stripe.paymentIntents.retrieve(errPI)
+      : errPI;
+  } else {
+    // Create an unconfirmed PI so the customer can complete 3DS on /confirm
+    pi = await stripe.paymentIntents.create({
+      amount,
+      currency: 'mxn',
+      payment_method_types: ['card'],
+      capture_method: 'automatic',
+      customer: p.rows[0].customer_id || undefined,
+      description: note ? `SERVI ajuste: ${note}` : 'SERVI ajuste',
+      metadata: {
+        kind: 'adjustment',
+        parent_order_id: parentOrderId,
+        initial_payment_intent: p.rows[0].payment_intent_id || ''
+      }
+    });
   }
+  mode = 'needs_action';
+}
+
 
   await pool.query(`
     INSERT INTO orders (id, payment_intent_id, amount, status, public_code, kind, parent_id, customer_id, saved_payment_method_id)
