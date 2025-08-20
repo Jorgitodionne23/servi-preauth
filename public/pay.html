@@ -460,7 +460,7 @@
 
           // 4) Success → redirect
           localStorage.setItem('orderId', String(orderId));
-          window.location.href = `/success.html?orderId=${encodeURIComponent(orderId)}`;
+          window.location.href = `/success?orderId=${encodeURIComponent(orderId)}`;
         });
       }
 
@@ -545,7 +545,7 @@
           submitBtn.disabled = false;
         } else if (result.paymentIntent.status === "succeeded" || result.paymentIntent.status === "requires_capture") {
           localStorage.setItem('orderId', String(orderId));
-          window.location.href = `/success.html?orderId=${encodeURIComponent(orderId)}`;
+          window.location.href = `/success?orderId=${encodeURIComponent(orderId)}`;
         }
       });
 

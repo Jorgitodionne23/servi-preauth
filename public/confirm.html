@@ -210,7 +210,7 @@
           }
         const ok = paymentIntent.status === 'succeeded' || paymentIntent.status === 'requires_capture';
         if (ok && currentOrderId) {
-            location.href = `/success.html?orderId=${encodeURIComponent(currentOrderId)}`;
+            location.href = `/success?orderId=${encodeURIComponent(currentOrderId)}`;
             return;
            }
            setMsg('Tu banco está procesando el pago.');
@@ -243,7 +243,7 @@
             }
             const ok = paymentIntent.status === 'succeeded' || paymentIntent.status === 'requires_capture';
             if (ok && currentOrderId) {
-            location.href = `/success.html?orderId=${encodeURIComponent(currentOrderId)}`;
+            location.href = `/success?orderId=${encodeURIComponent(currentOrderId)}`;
             return;
             }
             setMsg('Tu banco está procesando el pago.');

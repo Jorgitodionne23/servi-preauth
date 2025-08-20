@@ -27,6 +27,16 @@ app.use((req, res, next) => {
   if (req.originalUrl === '/webhook') return next();
   return express.json()(req, res, next);
 });
+
+// 🚫 Block direct access to the static success.html; force gated route instead
+app.get('/success.html', (req, res) => {
+  const orderId = req.query.orderId;
+  if (orderId) {
+    return res.redirect(302, `/success?orderId=${encodeURIComponent(orderId)}`);
+  }
+  return res.redirect(302, '/');
+});
+
 app.use(express.static('public'));
 
 // 🎯 Create PaymentIntent
@@ -379,6 +389,46 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
 
   res.status(200).send('Webhook received');
+});
+
+// ✅ Gate: only serve success after Stripe shows a paid/authorized PI
+app.get('/success', async (req, res) => {
+  try {
+    const { orderId } = req.query;
+    if (!orderId) return res.redirect(302, '/');
+
+    // Read order
+    const { rows } = await pool.query(
+      'SELECT id, payment_intent_id FROM orders WHERE id = $1',
+      [orderId]
+    );
+    const row = rows[0];
+    if (!row) return res.redirect(302, '/');
+
+    // If we don't even have a PI yet, treat as unpaid
+    if (!row.payment_intent_id) {
+      return res.redirect(302, `/pay?orderId=${encodeURIComponent(orderId)}`);
+    }
+
+    // Ask Stripe for the live status (webhook delays won’t matter)
+    const pi = await stripe.paymentIntents.retrieve(row.payment_intent_id);
+
+    // Consider these "OK" for showing success:
+    // - adjustments (auto-capture):  succeeded
+    // - primary (manual capture):    requires_capture (authorized) or succeeded (captured)
+    const ok = pi && (pi.status === 'succeeded' || pi.status === 'requires_capture');
+
+    if (!ok) {
+      // Not paid/authorized yet → send them back to the pay page
+      return res.redirect(302, `/pay?orderId=${encodeURIComponent(orderId)}`);
+    }
+
+    // OK → render the success UI
+    return res.sendFile(path.join(__dirname, 'public', 'success.html'));
+  } catch (e) {
+    console.error('success gate error:', e);
+    return res.redirect(302, `/pay?orderId=${encodeURIComponent(req.query.orderId || '')}`);
+  }
 });
 
 // 🚀 Start server
