@@ -131,7 +131,7 @@ app.get('/order/:orderId', async (req, res) => {
         amount: row.amount,
         currency: 'mxn',
         payment_method_types: ['card'],
-        capture_method: (row.kind === 'adjustment') ? 'automatic' : 'manual',
+        capture_method: 'manual',
         customer: row.customer_id || undefined,
         metadata: {
           kind: row.kind || 'primary',
@@ -207,9 +207,11 @@ app.get('/orders/:id/consent', async (req, res) => {
   res.send({ ok: true, version: r.rows[0].version || '1.0', hash: r.rows[0].text_hash });
 });
 
-// Create an adjustment child order; try off-session first, fall back to 3DS confirm
+
+// Create an adjustment child order; off-session if we can, else 3DS confirm.
+// HONORS Sheets "Capture Type" via req.body.capture = 'automatic' | 'manual'
 app.post('/create-adjustment', async (req, res) => {
-  const { parentOrderId, amount, note } = req.body || {};
+  const { parentOrderId, amount, note, capture } = req.body || {};
   if (!parentOrderId || !amount) return res.status(400).send({ error: 'missing fields' });
 
   const p = await pool.query('SELECT customer_id, saved_payment_method_id, payment_intent_id FROM orders WHERE id=$1', [parentOrderId]);
@@ -220,11 +222,7 @@ app.post('/create-adjustment', async (req, res) => {
   const hasConsent = !!consent.rows.length;
 
   // We can try off-session ONLY if we have consent and a saved PM on the same customer
-  const canChargeOffSession = !!(
-    hasConsent &&
-    p.rows[0].customer_id &&
-    p.rows[0].saved_payment_method_id
-  );
+  const canChargeOffSession = !!(hasConsent && p.rows[0].customer_id && p.rows[0].saved_payment_method_id);
 
   const childId = randomUUID();
 
@@ -238,51 +236,63 @@ app.post('/create-adjustment', async (req, res) => {
   }
   const publicCode = await generateUniqueCode();
 
+  const captureMethod = (String(capture).toLowerCase() === 'manual') ? 'manual' : 'automatic';
+  const baseCreate = {
+    amount,
+    currency: 'mxn',
+    customer: p.rows[0].customer_id || undefined,
+    capture_method: captureMethod,
+    description: note ? `SERVI ajuste: ${note}` : 'SERVI ajuste',
+    metadata: {
+      kind: 'adjustment',
+      parent_order_id: parentOrderId,
+      initial_payment_intent: p.rows[0].payment_intent_id || ''
+    }
+  };
+
   let pi = null, mode = 'needs_action';
   try {
-    pi = await stripe.paymentIntents.create({
-      amount, currency: 'mxn',
-      customer: p.rows[0].customer_id || undefined,
-      payment_method: canChargeOffSession ? (p.rows[0].saved_payment_method_id || undefined) : undefined,
-      off_session: canChargeOffSession || undefined,
-      confirm: canChargeOffSession || undefined,
-      capture_method: 'automatic',
-      description: note ? `SERVI ajuste: ${note}` : 'SERVI ajuste',
-      metadata: {
-        kind: 'adjustment',
-        parent_order_id: parentOrderId,
-        initial_payment_intent: p.rows[0].payment_intent_id || ''
-      }
-    });
-
-    mode = (pi && pi.status === 'succeeded') ? 'charged' : 'needs_action';
-
+    if (canChargeOffSession) {
+      // Try to confirm off-session with saved card
+      pi = await stripe.paymentIntents.create({
+        ...baseCreate,
+        payment_method: p.rows[0].saved_payment_method_id,
+        off_session: true,
+        confirm: true
+      });
+      // Interpret mode by capture_method
+      mode = (captureMethod === 'automatic')
+        ? (pi.status === 'succeeded' ? 'charged' : 'needs_action')
+        : (pi.status === 'requires_capture' ? 'authorized' : 'needs_action');
+    } else {
+      // No card on file or no consent → create unconfirmed PI for client flow
+      pi = await stripe.paymentIntents.create({
+        ...baseCreate,
+        payment_method_types: ['card']
+      });
+      mode = 'needs_action';
+    }
   } catch (err) {
-  // If Stripe returned a PI in the error, salvage it; else create a fresh PI
-  const errPI = err?.raw?.payment_intent || err?.payment_intent || null;
-  if (errPI && (typeof errPI === 'string' || errPI.id)) {
-    // errPI can be an id or an object; normalize to a full object
-    pi = typeof errPI === 'string'
-      ? await stripe.paymentIntents.retrieve(errPI)
-      : errPI;
-  } else {
-    // Create an unconfirmed PI so the customer can complete 3DS on /confirm
-    pi = await stripe.paymentIntents.create({
-      amount,
-      currency: 'mxn',
-      payment_method_types: ['card'],
-      capture_method: 'automatic',
-      customer: p.rows[0].customer_id || undefined,
-      description: note ? `SERVI ajuste: ${note}` : 'SERVI ajuste',
-      metadata: {
-        kind: 'adjustment',
-        parent_order_id: parentOrderId,
-        initial_payment_intent: p.rows[0].payment_intent_id || ''
-      }
-    });
+    console.error('[create-adjustment] primary create error:', err?.message);
+    // Salvage PI from error if present; else create unconfirmed with chosen capture_method
+    const errPI = err?.raw?.payment_intent || err?.payment_intent || null;
+    if (errPI) {
+      pi = (typeof errPI === 'string') ? await stripe.paymentIntents.retrieve(errPI) : errPI;
+    } else {
+      pi = await stripe.paymentIntents.create({
+        ...baseCreate,
+        payment_method_types: ['card']
+      });
+    }
+    mode = 'needs_action';
   }
-  mode = 'needs_action';
-}
+
+  console.log('[create-adjustment]', {
+    captureMethod,
+    canChargeOffSession,
+    pi: pi?.id,
+    pi_status: pi?.status
+  });
 
   await pool.query(`
     INSERT INTO orders (id, payment_intent_id, amount, status, public_code, kind, parent_id, customer_id, saved_payment_method_id)
@@ -298,8 +308,9 @@ app.post('/create-adjustment', async (req, res) => {
     p.rows[0].saved_payment_method_id || null
   ]);
 
-  res.send({ childOrderId: childId, paymentIntentId: pi?.id || null, publicCode, mode });
+  res.send({ childOrderId: childId, paymentIntentId: pi?.id || null, publicCode, mode, captureMethod });
 });
+
 
 
 app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
@@ -373,14 +384,29 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
       const obj = event.data.object;
       const pmId = obj.payment_method || null;
       const cust = obj.customer || null;
+
       if (pmId || cust) {
         await pool.query(
           'UPDATE orders SET saved_payment_method_id = COALESCE($1, saved_payment_method_id), customer_id = COALESCE($2, customer_id) WHERE payment_intent_id = $3',
           [pmId, cust, obj.id]
         );
       }
+
+      // If this is a manual-capture PI that just became capturable, mark as Confirmed
+      if (obj.capture_method === 'manual' && obj.status === 'requires_capture') {
+        await pool.query('UPDATE orders SET status = $1 WHERE payment_intent_id = $2', ['Confirmed', obj.id]);
+
+        if (GOOGLE_SCRIPT_WEBHOOK_URL) {
+          fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ paymentIntentId: obj.id, status: 'Confirmed' })
+          }).catch(() => {});
+        }
+      }
       break;
     }
+
 
 
     default:
