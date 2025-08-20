@@ -311,7 +311,67 @@ app.post('/create-adjustment', async (req, res) => {
   res.send({ childOrderId: childId, paymentIntentId: pi?.id || null, publicCode, mode, captureMethod });
 });
 
+// Capture an authorized manual-capture PaymentIntent (optionally partial).
+// Body: { orderId?: string, paymentIntentId?: string, amount?: number }  // amount in CENTS
+app.post('/capture-order', async (req, res) => {
+  try {
+    const { orderId, paymentIntentId, amount } = req.body || {};
+    let piId = paymentIntentId;
 
+    if (!piId && orderId) {
+      const r = await pool.query('SELECT payment_intent_id FROM orders WHERE id=$1', [orderId]);
+      if (!r.rows[0] || !r.rows[0].payment_intent_id) return res.status(404).send({ error: 'order not found' });
+      piId = r.rows[0].payment_intent_id;
+    }
+    if (!piId) return res.status(400).send({ error: 'missing paymentIntentId or orderId' });
+
+    const current = await stripe.paymentIntents.retrieve(piId);
+    if (current.capture_method !== 'manual') {
+      return res.status(400).send({ error: 'not a manual-capture intent' });
+    }
+    if (current.status !== 'requires_capture') {
+      return res.status(400).send({ error: `PI not capturable (status=${current.status})` });
+    }
+
+    const params = {};
+    if (Number.isInteger(amount) && amount > 0) {
+      // Stripe expects amount_to_capture in the smallest currency unit
+      params.amount_to_capture = amount;
+    }
+
+    const updated = await stripe.paymentIntents.capture(piId, params);
+    // Webhook will mark as Captured and notify Sheets; we just echo back
+    return res.send({ ok: true, paymentIntentId: updated.id, status: updated.status, captured: params.amount_to_capture || 'full' });
+  } catch (e) {
+    console.error('capture-order error:', e);
+    return res.status(500).send({ error: e.message || 'capture failed' });
+  }
+});
+
+// Cancel a manual-capture PaymentIntent to release the hold.
+// Body: { orderId?: string, paymentIntentId?: string, reason?: string }
+app.post('/void-order', async (req, res) => {
+  try {
+    const { orderId, paymentIntentId, reason } = req.body || {};
+    let piId = paymentIntentId;
+
+    if (!piId && orderId) {
+      const r = await pool.query('SELECT payment_intent_id FROM orders WHERE id=$1', [orderId]);
+      if (!r.rows[0] || !r.rows[0].payment_intent_id) return res.status(404).send({ error: 'order not found' });
+      piId = r.rows[0].payment_intent_id;
+    }
+    if (!piId) return res.status(400).send({ error: 'missing paymentIntentId or orderId' });
+
+    const updated = await stripe.paymentIntents.cancel(piId, {
+      cancellation_reason: reason || 'requested_by_customer'
+    });
+    // Webhook will update Sheets on payment_intent.canceled
+    return res.send({ ok: true, paymentIntentId: updated.id, status: updated.status });
+  } catch (e) {
+    console.error('void-order error:', e);
+    return res.status(500).send({ error: e.message || 'void failed' });
+  }
+});
 
 app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
   
@@ -366,19 +426,28 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
     // (optional) failure/cancel hygiene
     case 'payment_intent.payment_failed':
     case 'charge.failed':
-    case 'charge.expired':
-    case 'payment_intent.canceled': {
-      console.log('❌ Failed/Cancelled:', paymentIntentId, event.type);
+    case 'charge.expired': {
+      console.log('❌ Failed:', paymentIntentId, event.type);
       await pool.query('UPDATE orders SET status = $1 WHERE payment_intent_id = $2',
                       ['Failed', paymentIntentId]);
-
       fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({ paymentIntentId, status: 'Failed' })
-      }).catch(e => console.error('Sheets fail notify failed:', e));
+      }).catch(()=>{});
       break;
     }
+
+    case 'payment_intent.canceled': {
+      console.log('🚫 Canceled (authorization voided):', paymentIntentId);
+      await pool.query('UPDATE orders SET status = $1 WHERE payment_intent_id = $2',
+                      ['Canceled', paymentIntentId]);
+      fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ paymentIntentId, status: 'Canceled' })
+      }).catch(()=>{});
+      break;
+    }
+
 
     case 'payment_intent.amount_capturable_updated': {
       const obj = event.data.object;
