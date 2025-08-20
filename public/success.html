@@ -5,20 +5,20 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Pago confirmado - SERVI</title>
 
+  <!-- Stripe.js so we can read the PI description for adjustment reason -->
+  <script src="https://js.stripe.com/v3/"></script>
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 
   <style>
-
-    /* optional global reset */
     *, *::before, *::after { box-sizing: border-box; }
-
 
     body {
       background-color: #000;
       color: #fff;
-      font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; /* was 'Poppins' */
+      font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
       display: flex;
@@ -31,11 +31,7 @@
       line-height: 1.6;
     }
 
-
-    .logo {
-      width: 150px;
-      margin-bottom: 30px;
-    }
+    .logo { width: 150px; margin-bottom: 30px; }
 
     .container {
       background-color: #111;
@@ -50,24 +46,22 @@
       gap: 17px;
     }
 
-    .checkmark-img {
-      width: 48px;
-      height: 48px;
-      object-fit: contain;
-    }
+    .checkmark-img { width: 48px; height: 48px; object-fit: contain; }
 
-    h1 {
-      font-size: 19px; 
-      font-weight: 600; 
-      margin: 0; 
-      line-height: 27px; 
-      letter-spacing: .5px; 
-    }
+    h1 { font-size: 19px; font-weight: 600; margin: 0; line-height: 27px; letter-spacing: .5px; }
 
-    .order-number {
-      font-size: 14px;
-      color: #ccc;
+    .order-number { font-size: 14px; color: #ccc; }
+
+    .summary-box {
+      background:#1a1a1a;
+      width:100%;
+      padding:16px;
+      border-radius:10px;
+      text-align:left;
     }
+    .row { display:flex; justify-content:space-between; margin:6px 0; }
+    .label { color:#9ca3af; }
+    .value { color:#fff; }
 
     a.button {
       display: inline-block;
@@ -80,28 +74,11 @@
       font-size: 15px;
     }
 
-    .footer {
-      font-size: 11.5px;
-      color: #aaa;
-      margin-top: 30px;
-      text-align: center;
-    }
+    .footer { font-size: 11.5px; color: #aaa; margin-top: 30px; text-align: center; }
+    .footer a { color: #fff; text-decoration: none; }
 
-    .footer a {
-    color: rgb(255, 255, 255);
-    text-decoration: none;
-  }
-
-    .footer-stripe {
-      margin-top: 30px;
-      text-align: center;
-    }
-    
-    .footer-stripe img {
-      height: 32px;
-      max-width: 100%;
-      object-fit: contain;
-    } 
+    .footer-stripe { margin-top: 30px; text-align: center; }
+    .footer-stripe img { height: 32px; max-width: 100%; object-fit: contain; }
   </style>
 </head>
 <body>
@@ -113,14 +90,30 @@
     <img src="checkmark-green.png" alt="Éxito" class="checkmark-img" />
 
     <!-- Confirmation message -->
-    <h1 style="margin-bottom: 0.5em;">¡Tu servicio ha sido reservado!</h1>
-    <p style="margin-top: -1em; color: #ccc; font-size: 15px;">
+    <h1 id="title" style="margin-bottom: 0.5em;">¡Tu servicio ha sido reservado!</h1>
+    <p id="subtitle" style="margin-top: -1em; color: #ccc; font-size: 15px;">
       Te mandaremos un mensaje recordatorio antes de tu servicio.
     </p>
 
-    <!-- Real order ID from server -->
+    <!-- Real order code from server -->
     <div class="order-number">
       Número de orden: <span id="order-id">cargando...</span>
+    </div>
+
+    <!-- Summary (amount, status, and adjustment reason when applicable) -->
+    <div class="summary-box">
+      <div class="row">
+        <div class="label">Monto</div>
+        <div class="value" id="amount">—</div>
+      </div>
+      <div class="row" id="reason-row" style="display:none">
+        <div class="label">Motivo del ajuste</div>
+        <div class="value" id="reason">—</div>
+      </div>
+      <div class="row">
+        <div class="label">Estado</div>
+        <div class="value" id="status">—</div>
+      </div>
     </div>
 
     <!-- WhatsApp CTA -->
@@ -131,8 +124,8 @@
 
   <!-- footer -->
   <div class="footer">
-      ¿Necesitas ayuda?
-      <a href="https://serviservices.my.canva.site/helpcenter/#reportar" target="_blank">Centro de ayuda</a>
+    ¿Necesitas ayuda?
+    <a href="https://serviservices.my.canva.site/helpcenter/#reportar" target="_blank" rel="noopener">Centro de ayuda</a>
   </div>
 
   <div class="footer-stripe">
@@ -140,60 +133,82 @@
   </div>
 
   <script>
-  (async () => {
-    const params = new URLSearchParams(location.search);
-    let orderId = params.get('orderId') || localStorage.getItem('orderId');
+    const qs = new URLSearchParams(location.search);
+    let orderId = qs.get('orderId') || localStorage.getItem('orderId');
 
-    // Elements on the page
     const targetOrderId = document.getElementById('order-id');
-    const targetClientName = document.getElementById('client-name');   // optional span
-    const targetServiceDate = document.getElementById('service-date'); // optional span
+    const amountEl = document.getElementById('amount');
+    const statusEl = document.getElementById('status');
+    const reasonRow = document.getElementById('reason-row');
+    const reasonEl = document.getElementById('reason');
+    const titleEl = document.getElementById('title');
+    const subtitleEl = document.getElementById('subtitle');
 
-    if (!orderId) {
-      targetOrderId.textContent = 'no disponible';
-      if (targetClientName) targetClientName.textContent = 'no disponible';
-      if (targetServiceDate) targetServiceDate.textContent = 'no disponible';
-      alert('Link inválido o incompleto. Por favor contacta a soporte.');
-      return;
+    function fmtAmount(cents) {
+      try { return (Number(cents||0)/100).toLocaleString('es-MX', { style:'currency', currency:'MXN' }); }
+      catch { return '—'; }
+    }
+    function friendlyCode(order) {
+      return (order.public_code
+        ? String(order.public_code)
+        : String(order.id).replace(/-/g,'').slice(-8)
+      ).toUpperCase();
+    }
+    function extractReason(desc) {
+      const m = (desc||'').match(/SERVI ajuste:\s*(.*)$/i);
+      return m && m[1] ? m[1] : null;
     }
 
-    // keep a reliable copy for refreshes / redirects
-    localStorage.setItem('orderId', String(orderId));
-
-    try {
-      const res = await fetch(`/order/${encodeURIComponent(orderId)}`);
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      const order = await res.json();
-
-      // Show short, friendly code (public_code if present; else last 8 of UUID)
-      const friendly = (order.public_code ? String(order.public_code)
-                                          : String(order.id).slice(-8)).toUpperCase();
-      targetOrderId.textContent = friendly;
-
-      if (targetClientName) {
-        targetClientName.textContent = order.client_name || 'No disponible';
+    (async () => {
+      if (!orderId) {
+        targetOrderId.textContent = 'no disponible';
+        alert('Link inválido o incompleto. Por favor contacta a soporte.');
+        return;
       }
-      if (targetServiceDate) {
-        let sd = 'No disponible';
-        if (order.service_date) {
-          const d = new Date(order.service_date);
-          if (!isNaN(d)) {
-            sd = d.toLocaleDateString('es-MX', {
-              weekday: 'long', day: '2-digit', month: 'long', year: 'numeric'
-            });
-            sd = sd.charAt(0).toUpperCase() + sd.slice(1);
-          } else {
-            sd = String(order.service_date);
+      localStorage.setItem('orderId', String(orderId));
+
+      try {
+        // 1) Read order from your server (also gives us client_secret)
+        const res = await fetch(`/order/${encodeURIComponent(orderId)}`);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const order = await res.json();
+
+        // friendly code
+        targetOrderId.textContent = friendlyCode(order);
+
+        // Show amount & status (always)
+        amountEl.textContent = fmtAmount(order.amount || 0);
+        statusEl.textContent = order.status || '—';
+
+        // 2) If it’s an adjustment, tweak copy and show reason
+        const isAdjustment = (order.kind || '').toLowerCase() === 'adjustment';
+        if (isAdjustment) {
+          titleEl.textContent = '¡Ajuste confirmado!';
+          subtitleEl.textContent = 'Gracias, hemos recibido tu pago adicional.';
+
+          // Try to read reason from the PI description
+          try {
+            const cfg = await fetch('/config/stripe').then(r => r.json()).catch(() => ({}));
+            if (cfg && cfg.pk && order.client_secret) {
+              const stripe = Stripe(cfg.pk);
+              const { paymentIntent } = await stripe.retrievePaymentIntent(order.client_secret);
+              const reason = extractReason(paymentIntent?.description);
+              if (reason) {
+                reasonEl.textContent = reason;
+                reasonRow.style.display = 'flex';
+              }
+            }
+          } catch (_) {
+            /* non-fatal – still show rest of info */
           }
         }
-        targetServiceDate.textContent = sd;
+      } catch (err) {
+        targetOrderId.textContent = 'no disponible';
+        amountEl.textContent = '—';
+        statusEl.textContent = '—';
+        // Leave the page usable; user still has WhatsApp CTA for support
       }
-    } catch (err) {
-      targetOrderId.textContent = 'no disponible';
-      if (targetClientName) targetClientName.textContent = 'Error al cargar';
-      if (targetServiceDate) targetServiceDate.textContent = 'Error al cargar';
-    }
-  })();
+    })();
   </script>
 </body>
 </html>

@@ -1,158 +1,273 @@
 <!doctype html>
 <html lang="es">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>SERVI — Confirmación adicional</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Confirmar ajuste — SERVI</title>
+
+  <script src="https://js.stripe.com/v3/"></script>
+
+  <!-- Fonts (match pay.html/success.html) -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
-  <script src="https://js.stripe.com/v3/"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
   <style>
-    body{margin:0;background:#000;color:#fff;font-family:Inter,system-ui,Arial,sans-serif;
-         display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px}
-    .card{max-width:520px;width:100%;background:#0f1115;border:1px solid #1f2430;border-radius:16px;padding:24px;text-align:center}
-    .btn{display:inline-block;margin-top:14px;padding:10px 14px;font-weight:600;border:1px solid #232a3a;border-radius:10px;color:#fff;text-decoration:none}
-    #card-wrap{display:none;margin-top:12px;text-align:left}
-    #card-element{padding:12px;border-radius:10px;border:1px solid #232a3a;background:#0b0d12}
-    #err{color:#f87171;margin-top:8px;min-height:1.2em}
-    .muted{color:#9aa4b2;font-size:14px;margin-top:6px}
+    * { box-sizing: border-box; }
+
+    body {
+      background:#000; color:#fff; margin:0;
+      font-family:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+      -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
+      display:flex; flex-direction:column; min-height:80vh; line-height:1.6;
+    }
+
+    .page {
+      flex:1; display:flex; flex-direction:column; justify-content:center; align-items:center; padding:20px;
+    }
+
+    .logo {
+      max-width:150px; margin-bottom:20px;
+    }
+
+    .container {
+      max-width:400px; width:100%;
+      background:#111; padding:36px 24px; border-radius:12px;
+      box-shadow:0 0 20px rgba(255,255,255,0.1);
+      display:flex; flex-direction:column; gap:22px;
+    }
+
+    h2 { text-align:center; margin:0; font-weight:600; font-size:22px; letter-spacing:.2px; }
+
+    .summary-box {
+      background:#1a1a1a; padding:16px; border-radius:10px; box-shadow:0 0 10px rgba(255,255,255,.05);
+      font-size:15px;
+    }
+    .summary-box h3 { margin:0 0 8px; font-size:18px; font-weight:600; letter-spacing:.2px; }
+    .summary-item { margin:4px 0; color:#ddd; }
+    .summary-item b { color:#fff; }
+
+    #card-wrap { display:none; }
+    #card-element {
+      background:#222; padding:12px; border-radius:6px; border:1px solid #444;
+    }
+
+    .btn {
+      background:#fff; color:#000; border:none; padding:11px; border-radius:6px;
+      font-size:17px; font-weight:700; cursor:pointer;
+    }
+
+    #msg { text-align:center; color:#ccc; min-height:1.4em; }
+
+    /* Spinner (same style as pay.html) */
+    #spinner { display:none; text-align:center; margin-top:6px; font-size:14px; color:#fff; }
+    .spinner-circle {
+      border:3px solid rgba(255,255,255,0.2); border-top:3px solid #fff;
+      border-radius:50%; width:20px; height:20px; animation:spin 1s linear infinite; margin:8px auto 0;
+    }
+    @keyframes spin { 0%{transform:rotate(0)} 100%{transform:rotate(360deg)} }
+
+    .support {
+      font-size:12px; color:#ccc; text-align:center; margin-top:16px;
+    }
+    .support a { color:#fff; text-decoration:none; }
+
+    .footer { margin-top:24px; text-align:center; color:#aaa; padding:24px; }
+    .footer img { height:32px; object-fit:contain; }
   </style>
 </head>
 <body>
-  <div class="card">
-    <h1 style="margin:0 0 8px">Confirma el ajuste</h1>
-    <p id="summary" class="muted"></p>
-    <p id="msg">Cargando…</p>
+  <div class="page">
+    <!-- Top logo (same as pay.html) -->
+    <img src="logo-servi-white.png" alt="SERVI" class="logo" />
 
-    <div id="card-wrap">
-      <label class="muted" for="card-element">Ingresa los datos de tu tarjeta para confirmar este ajuste:</label>
-      <div id="card-element"></div>
-      <div id="err"></div>
-      <a class="btn" id="payBtn" href="javascript:void(0)">Pagar ajuste</a>
+    <div class="container">
+      <h2>Confirmar ajuste</h2>
+
+      <div class="summary-box">
+        <h3>Detalles del ajuste</h3>
+        <div class="summary-item"><b>Monto:</b> <span id="adj-amount">—</span></div>
+        <div class="summary-item"><b>Motivo:</b> <span id="adj-reason">—</span></div>
+      </div>
+
+      <p id="msg">Cargando…</p>
+      <div id="spinner"><div class="spinner-circle"></div></div>
+
+      <!-- If the PI has no payment method, show Card Element -->
+      <div id="card-wrap">
+        <label for="card-element" style="color:#9ca3af; font-size:14px;">Ingresa tu tarjeta para confirmar este ajuste:</label>
+        <div id="card-element"></div>
+        <button class="btn" id="payBtn" style="margin-top:14px">Pagar ajuste</button>
+      </div>
     </div>
 
-    <a class="btn" id="back" href="/" style="display:none">Volver</a>
+    <div class="support">
+      ¿Necesitas ayuda?
+      <a href="https://serviservices.my.canva.site/helpcenter/#reportar" target="_blank" rel="noopener">Centro de ayuda</a>
+      o
+      <a href="https://wa.me/525525112588" target="_blank" rel="noopener">WhatsApp</a>
+    </div>
+  </div>
+
+  <div class="footer">
+    <img src="poweredbystripe.png" alt="Powered by Stripe" />
   </div>
 
   <script>
-    // 🔑 Use your TEST key while testing; swap to pk_live_... in production
-    const stripe = Stripe("pk_test_51QzK6tG7utWo2rQvhFzSBxh59IMDentv5zN7jfKWtf5vkFiGkcuEENhumOpKGjkf33tGqrL3b3o05tp0DDvcJn4r00pQcvaQXR");
-
     const qs = new URLSearchParams(location.search);
-    const orderId = qs.get("orderId");
-    const backBtn = document.getElementById('back');
+    const orderId = qs.get('orderId');
+    let currentOrderId = null;
+
     const msg = document.getElementById('msg');
-    const errBox = document.getElementById('err');
+    const spinner = document.getElementById('spinner');
+    const adjAmountEl = document.getElementById('adj-amount');
+    const adjReasonEl = document.getElementById('adj-reason');
     const cardWrap = document.getElementById('card-wrap');
     const payBtn = document.getElementById('payBtn');
-    const summary = document.getElementById('summary');
 
-    const elements = stripe.elements({ locale: 'es' });
-    const card = elements.create('card', {
-      style: {
-        base: {
-          fontFamily: 'Inter, system-ui, Arial, sans-serif',
-          fontSize: '16px',
-          color: '#fff',
-          '::placeholder': { color: '#94a3b8' }
+    function showSpinner(on) {
+      spinner.style.display = on ? 'block' : 'none';
+    }
+    function setMsg(text) { msg.textContent = text || ''; }
+
+    async function initStripe() {
+      const r = await fetch('/config/stripe');
+      const { pk } = await r.json();
+      if (!pk) throw new Error('Missing STRIPE_PUBLISHABLE_KEY on server');
+      const stripe = Stripe(pk);
+      const elements = stripe.elements({ locale: 'es' });
+      const card = elements.create('card', {
+        style: {
+          base: {
+            fontFamily: '"Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+            fontSize: '16px',
+            color: '#ffffff',
+            '::placeholder': { color: '#9ca3af' }
+          },
+          invalid: { color: '#ef4444' }
         },
-        invalid: { color: '#f87171' }
-      },
-      hidePostalCode: true
-    });
-    card.mount('#card-element');
+        hidePostalCode: true
+      });
+      card.mount('#card-element');
+      return { stripe, card };
+    }
 
-    async function loadAndConfirm() {
+    async function fetchOrder() {
+      const r = await fetch(`/order/${encodeURIComponent(orderId)}`);
+      const data = await r.json();
+      if (!r.ok || data.error) throw new Error(data.error || 'No encontramos tu orden.');
+      return data;
+    }
+
+    function fmtAmount(cents) {
+      try { return (Number(cents||0)/100).toLocaleString('es-MX', { style:'currency', currency:'MXN' }); }
+      catch { return '—'; }
+    }
+
+    function extractReasonFromPI(pi) {
+      // Server sets description like "SERVI ajuste: <reason>" when available
+      const d = pi?.description || '';
+      const m = d.match(/SERVI ajuste:\s*(.*)$/i);
+      return (m && m[1]) ? m[1] : (d || 'Ajuste');
+    }
+
+    (async () => {
       try {
-        // 1) Fetch order (gets client_secret)
-        const r = await fetch(`/order/${encodeURIComponent(orderId)}`);
-        const order = await r.json();
-        if (order.error) throw new Error(order.error);
+        if (!orderId) throw new Error('Link inválido.');
 
-        // Show amount summary (optional)
-        if (order.amount) {
-          try {
-            const amt = (Number(order.amount) / 100);
-            summary.textContent = `Monto del ajuste: ${amt.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}`;
-          } catch (_) {}
-        }
+        // Get server-side order (and client_secret)
+        const order = await fetchOrder();
+        currentOrderId = order.id;
 
-        // Shortcut: already paid?
-        if (order.status && /succeeded|captured|confirmed/i.test(order.status)) {
-          msg.textContent = 'Listo. Tu pago adicional fue procesado.';
-          backBtn.style.display = 'inline-block';
+
+        // Retrieve PaymentIntent to get live status/description
+        const { pk } = await (await fetch('/config/stripe')).json();
+        const stripeTmp = Stripe(pk);
+        const { paymentIntent: pi, error: piErr } = await stripeTmp.retrievePaymentIntent(order.client_secret);
+        if (piErr || !pi) throw new Error(piErr?.message || 'No pudimos recuperar la intención de pago.');
+
+        // Fill summary (amount + reason)
+        adjAmountEl.textContent = fmtAmount(pi.amount ?? order.amount);
+        adjReasonEl.textContent = extractReasonFromPI(pi);
+
+        // If already paid or authorized, show success
+        if (/(succeeded|requires_capture)/.test(pi.status) || /(succeeded|captured|confirmed)/i.test(order.status||'')) {
+          setMsg('¡Listo! Ajuste confirmado.');
+          showSpinner(false);
           return;
         }
 
-        // 2) Inspect PI to decide the path
-        const piResp = await stripe.retrievePaymentIntent(order.client_secret);
-        const pi = piResp.paymentIntent;
-        if (!pi) throw new Error('No pudimos recuperar la intención de pago.');
-
-        // If PI needs customer action and ALREADY has a payment method → just confirm (3DS)
+        // Path A: PI has PM and needs 3DS → confirm without collecting card
         if (pi.status === 'requires_action' && pi.payment_method) {
-          msg.textContent = 'Redirigiendo a tu banco para confirmar…';
-          const { error, paymentIntent } = await stripe.confirmCardPayment(order.client_secret);
-          if (error) return showError(error);
-          return showResult(paymentIntent);
+          setMsg('Procesando con tu banco…');
+          showSpinner(true);
+          const { error, paymentIntent } = await stripeTmp.confirmCardPayment(order.client_secret);
+          showSpinner(false);
+          if (error) {
+            console.error('confirm error:', error);
+            setMsg('No se pudo confirmar. Intenta de nuevo o contáctanos.');
+            return;
+          }
+        const ok = paymentIntent.status === 'succeeded' || paymentIntent.status === 'requires_capture';
+        if (ok && currentOrderId) {
+            location.href = `/success.html?orderId=${encodeURIComponent(currentOrderId)}`;
+            return;
+           }
+           setMsg('Tu banco está procesando el pago.');
+
+          return;
         }
 
-        // If PI needs a payment method → show Card Element and let user confirm
+        // Path B: PI needs a payment method → collect card and confirm
         if (pi.status === 'requires_payment_method' || !pi.payment_method) {
-          msg.textContent = 'Ingresa tu tarjeta para confirmar este ajuste.';
+          const { stripe, card } = await initStripe();
+          setMsg('Ingresa tu tarjeta para confirmar este ajuste.');
           cardWrap.style.display = 'block';
 
           payBtn.onclick = async () => {
-            payBtn.textContent = 'Procesando…';
-            payBtn.style.pointerEvents = 'none';
-            errBox.textContent = '';
+            payBtn.disabled = true;
+            setMsg('Procesando…');
+            showSpinner(true);
+
             const { error, paymentIntent } = await stripe.confirmCardPayment(order.client_secret, {
               payment_method: { card }
             });
-            if (error) { payBtn.textContent = 'Pagar ajuste'; payBtn.style.pointerEvents = 'auto'; return showError(error); }
-            return showResult(paymentIntent);
+
+            showSpinner(false);
+            payBtn.disabled = false;
+
+            if (error) {
+              console.error('confirmCardPayment error:', error);
+              setMsg(error.message || 'Ocurrió un error al confirmar tu pago.');
+              return;
+            }
+            const ok = paymentIntent.status === 'succeeded' || paymentIntent.status === 'requires_capture';
+            if (ok && currentOrderId) {
+            location.href = `/success.html?orderId=${encodeURIComponent(currentOrderId)}`;
+            return;
+            }
+            setMsg('Tu banco está procesando el pago.');
           };
           return;
         }
 
-        // If it's already processing or succeeded
+        // Path C: Processing or odd states
         if (pi.status === 'processing') {
-          msg.textContent = 'Estamos procesando el pago. Esto puede tardar unos segundos…';
-          backBtn.style.display = 'inline-block';
-          return;
-        }
-        if (pi.status === 'succeeded' || pi.status === 'requires_capture') {
-          msg.textContent = '¡Listo! Ajuste confirmado.';
-          backBtn.style.display = 'inline-block';
+          setMsg('Estamos procesando el pago. Esto puede tardar unos segundos…');
+          showSpinner(true);
           return;
         }
 
         // Fallback
-        msg.textContent = 'No se pudo confirmar. Intenta de nuevo o contáctanos.';
-        backBtn.style.display = 'inline-block';
+        setMsg('No se pudo confirmar. Intenta de nuevo o contáctanos.');
+        showSpinner(false);
 
       } catch (e) {
         console.error(e);
-        msg.textContent = 'No encontramos tu orden.';
-        backBtn.style.display = 'inline-block';
+        setMsg(e.message || 'No encontramos tu orden.');
+        showSpinner(false);
       }
-    }
-
-    function showError(error) {
-      console.error('confirmCardPayment error:', error);
-      errBox.textContent = error && error.message ? error.message : 'Ocurrió un error al confirmar tu pago.';
-      msg.textContent = 'Corrige la información o intenta de nuevo.';
-      backBtn.style.display = 'inline-block';
-    }
-
-    function showResult(paymentIntent) {
-      const ok = paymentIntent && (paymentIntent.status === 'succeeded' || paymentIntent.status === 'requires_capture');
-      msg.textContent = ok ? '¡Listo! Ajuste confirmado.' : 'Tu banco está procesando el pago.';
-      backBtn.style.display = 'inline-block';
-    }
-
-    loadAndConfirm();
+    })();
   </script>
 </body>
 </html>
