@@ -392,42 +392,48 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 });
 
 // ✅ Gate: only serve success after Stripe shows a paid/authorized PI
+// ✅ Gate: only serve success after Stripe shows paid/authorized
 app.get('/success', async (req, res) => {
   try {
     const { orderId } = req.query;
     if (!orderId) return res.redirect(302, '/');
 
-    // Read order
+    // Get the order, including kind so we know where to send them back
     const { rows } = await pool.query(
-      'SELECT id, payment_intent_id FROM orders WHERE id = $1',
+      'SELECT id, payment_intent_id, kind FROM orders WHERE id = $1',
       [orderId]
     );
     const row = rows[0];
     if (!row) return res.redirect(302, '/');
 
-    // If we don't even have a PI yet, treat as unpaid
+    const isAdjustment = String(row.kind || '').toLowerCase() === 'adjustment';
+    const redirectTarget = isAdjustment ? '/confirm' : '/pay';
+
+    // If no PI yet, treat as unpaid and send to the right page
     if (!row.payment_intent_id) {
-      return res.redirect(302, `/pay?orderId=${encodeURIComponent(orderId)}`);
+      return res.redirect(302, `${redirectTarget}?orderId=${encodeURIComponent(orderId)}`);
     }
 
-    // Ask Stripe for the live status (webhook delays won’t matter)
+    // Ask Stripe for the live status (don’t rely on webhook timing)
     const pi = await stripe.paymentIntents.retrieve(row.payment_intent_id);
 
-    // Consider these "OK" for showing success:
-    // - adjustments (auto-capture):  succeeded
-    // - primary (manual capture):    requires_capture (authorized) or succeeded (captured)
+    // OK statuses for showing success:
+    // - adjustments (auto-capture):        succeeded
+    // - primary (manual capture):          requires_capture (authorized) or succeeded (captured)
     const ok = pi && (pi.status === 'succeeded' || pi.status === 'requires_capture');
 
     if (!ok) {
-      // Not paid/authorized yet → send them back to the pay page
-      return res.redirect(302, `/pay?orderId=${encodeURIComponent(orderId)}`);
+      // Not paid/authorized → send them to confirm (adjustment) or pay (primary)
+      return res.redirect(302, `${redirectTarget}?orderId=${encodeURIComponent(orderId)}`);
     }
 
-    // OK → render the success UI
+    // Good to show success UI
     return res.sendFile(path.join(__dirname, 'public', 'success.html'));
   } catch (e) {
     console.error('success gate error:', e);
-    return res.redirect(302, `/pay?orderId=${encodeURIComponent(req.query.orderId || '')}`);
+    const orderId = req.query.orderId || '';
+    // Fallback to confirm for adjustments, pay for primaries (best-effort: default to /pay)
+    return res.redirect(302, `/pay?orderId=${encodeURIComponent(orderId)}`);
   }
 });
 
