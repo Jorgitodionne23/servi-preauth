@@ -393,31 +393,49 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
   }
 
   switch (event.type) {
-    // AUTHORIZED / CONFIRMED (manual-capture flow)
+    // 1) charge.succeeded  (manual-capture authorized)
     case 'charge.succeeded': {
       console.log('✅ Confirmed (charge.succeeded):', paymentIntentId);
-      await pool.query('UPDATE orders SET status = $1 WHERE payment_intent_id = $2',
-                   ['Confirmed', paymentIntentId]);
+
+      // look up order row to send orderId + customerId
+      const r = await pool.query('SELECT id, customer_id FROM orders WHERE payment_intent_id = $1 LIMIT 1', [paymentIntentId]);
+      const row = r.rows[0] || {};
+
+      await pool.query('UPDATE orders SET status = $1 WHERE payment_intent_id = $2', ['Confirmed', paymentIntentId]);
 
       fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ paymentIntentId, status: 'Confirmed' })
+        body: JSON.stringify({
+          paymentIntentId,
+          status: 'Confirmed',
+          orderId: row.id || '',
+          customerId: row.customer_id || ''
+        })
       }).then(async r => console.log('Sheets confirm:', r.status, await r.text()))
         .catch(e => console.error('Sheets confirm failed:', e));
       break;
     }
 
-    // CAPTURED / PAID
+
+    // 2) payment_intent.succeeded  (captured/paid)
     case 'payment_intent.succeeded': {
       console.log('💰 Captured (payment_intent.succeeded):', paymentIntentId);
-      await pool.query('UPDATE orders SET status = $1 WHERE payment_intent_id = $2',
-                      ['Captured', paymentIntentId]);
+
+      const r = await pool.query('SELECT id, customer_id FROM orders WHERE payment_intent_id = $1 LIMIT 1', [paymentIntentId]);
+      const row = r.rows[0] || {};
+
+      await pool.query('UPDATE orders SET status = $1 WHERE payment_intent_id = $2', ['Captured', paymentIntentId]);
 
       fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ paymentIntentId, status: 'Captured' })
+        body: JSON.stringify({
+          paymentIntentId,
+          status: 'Captured',
+          orderId: row.id || '',
+          customerId: row.customer_id || ''
+        })
       }).then(async r => console.log('Sheets captured:', r.status, await r.text()))
         .catch(e => console.error('Sheets captured failed:', e));
       break;
@@ -449,6 +467,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
     }
 
 
+    // 3) payment_intent.amount_capturable_updated (when a manual PI becomes capturable)
     case 'payment_intent.amount_capturable_updated': {
       const obj = event.data.object;
       const pmId = obj.payment_method || null;
@@ -461,22 +480,27 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
         );
       }
 
-      // If this is a manual-capture PI that just became capturable, mark as Confirmed
       if (obj.capture_method === 'manual' && obj.status === 'requires_capture') {
+        const r = await pool.query('SELECT id, customer_id FROM orders WHERE payment_intent_id = $1 LIMIT 1', [obj.id]);
+        const row = r.rows[0] || {};
+
         await pool.query('UPDATE orders SET status = $1 WHERE payment_intent_id = $2', ['Confirmed', obj.id]);
 
         if (GOOGLE_SCRIPT_WEBHOOK_URL) {
           fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ paymentIntentId: obj.id, status: 'Confirmed' })
+            body: JSON.stringify({
+              paymentIntentId: obj.id,
+              status: 'Confirmed',
+              orderId: row.id || '',
+              customerId: row.customer_id || ''
+            })
           }).catch(() => {});
         }
       }
       break;
     }
-
-
 
     default:
       console.log(`Unhandled event type: ${event.type}`);
