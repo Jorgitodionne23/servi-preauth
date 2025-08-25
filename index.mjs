@@ -44,13 +44,30 @@ app.use(express.static('public'));
 app.post('/create-payment-intent', async (req, res) => {
   const { amount, clientName, serviceDescription, serviceDate, clientEmail, clientPhone } = req.body;
   try {
-    // Create a lightweight Customer to attach the card to
-    const customer = await stripe.customers.create({
-      name: clientName || undefined,
-      email: clientEmail || undefined,
-      phone: clientPhone || undefined,
-    });
+    // 1) Try to find an existing Stripe Customer (email first, then phone)
+    let existingCustomer = null;
 
+    // Helper to escape single quotes for Stripe search query
+    const esc = (s) => String(s || '').replace(/'/g, "\\'");
+    if (clientEmail) {
+      const found = await stripe.customers.search({ query: `email:'${esc(clientEmail)}'` });
+      if (found.data && found.data.length) existingCustomer = found.data[0];
+    }
+    if (!existingCustomer && clientPhone) {
+      const found = await stripe.customers.search({ query: `phone:'${esc(clientPhone)}'` });
+      if (found.data && found.data.length) existingCustomer = found.data[0];
+    }
+
+    // 2) Reuse if found; otherwise create a new customer
+    const customer =
+      existingCustomer ||
+      await stripe.customers.create({
+        name: clientName || undefined,
+        email: clientEmail || undefined,
+        phone: clientPhone || undefined,
+      });
+
+    // 3) Create a manual-capture PI under that customer
     const paymentIntent = await stripe.paymentIntents.create({
       amount,
       currency: 'mxn',
@@ -59,7 +76,7 @@ app.post('/create-payment-intent', async (req, res) => {
       customer: customer.id
     });
 
-
+    // 4) Create the order row
     const orderId = randomUUID();
 
     async function generateUniqueCode() {
@@ -91,6 +108,7 @@ app.post('/create-payment-intent', async (req, res) => {
     res.status(400).send({ error: err.message });
   }
 });
+
 
 
 // 📄 Serve pay page
