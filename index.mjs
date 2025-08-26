@@ -39,7 +39,6 @@ app.get('/success.html', (req, res) => {
 
 app.use(express.static('public'));
 
-// 🎯 Create PaymentIntent
 // 🎯 Create PaymentIntent (save card for later off-session charges)
 app.post('/create-payment-intent', async (req, res) => {
   const { amount, clientName, serviceDescription, serviceDate, clientEmail, clientPhone } = req.body;
@@ -66,6 +65,15 @@ app.post('/create-payment-intent', async (req, res) => {
         email: clientEmail || undefined,
         phone: clientPhone || undefined,
       });
+
+    // right after you have `const customer = ...`
+    const pmList = await stripe.paymentMethods.list({
+      customer: customer.id,
+      type: 'card',
+      limit: 1
+    });
+    const hasSavedCard = pmList.data.length > 0;
+
 
     // 3) Create a manual-capture PI under that customer
     const paymentIntent = await stripe.paymentIntents.create({
@@ -101,7 +109,8 @@ app.post('/create-payment-intent', async (req, res) => {
       clientSecret: paymentIntent.client_secret,
       paymentIntentId: paymentIntent.id,
       orderId,
-      publicCode
+      publicCode,
+      hasSavedCard
     });
   } catch (err) {
     console.error('Error creating payment intent:', err);
@@ -161,7 +170,29 @@ app.get('/order/:orderId', async (req, res) => {
       pi = await stripe.paymentIntents.retrieve(row.payment_intent_id);
     }
 
-    res.send({ ...row, client_secret: pi.client_secret });
+    let saved_card = null;
+    if (row.customer_id) {
+      const pmList = await stripe.paymentMethods.list({
+        customer: row.customer_id,
+        type: 'card',
+        limit: 1
+      });
+      if (pmList.data.length) {
+        const pm = pmList.data[0];
+        saved_card = {
+          id: pm.id,
+          brand: pm.card?.brand || '',
+          last4: pm.card?.last4 || '',
+          exp_month: pm.card?.exp_month || null,
+          exp_year: pm.card?.exp_year || null
+        };
+      }
+    }
+
+    res.set('Cache-Control', 'no-store');
+    return res.json({ ...row, client_secret: pi.client_secret, saved_card: saved_card || null });
+
+
   } catch (err) {
     console.error('Error retrieving order:', err);
     res.status(500).send({ error: 'Internal server error' });
@@ -171,11 +202,31 @@ app.get('/order/:orderId', async (req, res) => {
 
 app.get('/o/:code', async (req, res) => {
   const code = String(req.params.code || '').toUpperCase();
-  const { rows } = await pool.query('SELECT id, kind FROM orders WHERE public_code = $1', [code]);
+  const { rows } = await pool.query(
+    'SELECT id, kind, customer_id FROM orders WHERE public_code = $1',
+    [code]
+  );
   if (!rows[0]) return res.status(404).send('Not found');
-  const target = rows[0].kind === 'adjustment' ? '/confirm' : '/pay';
-  res.redirect(302, `${target}?orderId=${rows[0].id}`);
+
+  const row = rows[0];
+  if (row.kind === 'adjustment') {
+    return res.redirect(302, `/confirm?orderId=${encodeURIComponent(row.id)}`);
+  }
+
+  // primary: check if customer has a saved card
+  let hasSaved = false;
+  if (row.customer_id) {
+    const pmList = await stripe.paymentMethods.list({ customer: row.customer_id, type: 'card', limit: 1 });
+    hasSaved = pmList.data.length > 0;
+  }
+  return res.redirect(302,
+    hasSaved
+      ? `/book?orderId=${encodeURIComponent(row.id)}`
+      : `/pay?orderId=${encodeURIComponent(row.id)}`
+  );
 });
+
+
 
 
 
@@ -225,6 +276,9 @@ app.get('/orders/:id/consent', async (req, res) => {
   res.send({ ok: true, version: r.rows[0].version || '1.0', hash: r.rows[0].text_hash });
 });
 
+app.get('/book', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'book.html'));
+});
 
 // Create an adjustment child order; off-session if we can, else 3DS confirm.
 // HONORS Sheets "Capture Type" via req.body.capture = 'automatic' | 'manual'
@@ -528,8 +582,81 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
   res.status(200).send('Webhook received');
 });
 
-// ✅ Gate: only serve success after Stripe shows a paid/authorized PI
-// ✅ Gate: only serve success after Stripe shows paid/authorized
+app.post('/confirm-with-saved', async (req, res) => {
+  try {
+    const { orderId } = req.body || {};
+    if (!orderId) return res.status(400).send({ error: 'orderId required' });
+
+    const { rows } = await pool.query(
+      'SELECT id, payment_intent_id, customer_id FROM orders WHERE id=$1',
+      [orderId]
+    );
+    const row = rows[0];
+    if (!row) return res.status(404).send({ error: 'order not found' });
+
+    const pmList = await stripe.paymentMethods.list({
+      customer: row.customer_id,
+      type: 'card'
+    });
+    const pm = pmList.data[0];
+    if (!pm) return res.status(409).send({ error: 'no_saved_card' });
+
+    // attach saved PM to PI and confirm
+    await stripe.paymentIntents.update(row.payment_intent_id, {
+      payment_method: pm.id
+    });
+
+    try {
+      const confirmed = await stripe.paymentIntents.confirm(row.payment_intent_id);
+      if (confirmed.status === 'requires_action') {
+        return res.status(402).send({
+          ok: false,
+          reason: 'requires_action',
+          clientSecret: confirmed.client_secret,
+          paymentIntentId: confirmed.id
+        });
+      }
+      return res.send({ ok: true, status: confirmed.status, paymentIntentId: confirmed.id });
+    } catch (e) {
+      if (e?.code === 'authentication_required' && e?.raw?.payment_intent?.client_secret) {
+        return res.status(402).send({
+          ok: false,
+          reason: 'requires_action',
+          clientSecret: e.raw.payment_intent.client_secret,
+          paymentIntentId: e.raw.payment_intent.id
+        });
+      }
+      throw e;
+    }
+  } catch (err) {
+    console.error('confirm-with-saved error:', err);
+    res.status(500).send({ error: 'Internal error' });
+  }
+});
+
+app.post('/billing-portal', async (req, res) => {
+  try {
+    const { orderId, returnUrl } = req.body || {};
+    if (!orderId) return res.status(400).send({ error: 'orderId required' });
+
+    const { rows } = await pool.query('SELECT customer_id FROM orders WHERE id=$1', [orderId]);
+    const row = rows[0];
+    if (!row?.customer_id) return res.status(404).send({ error: 'customer not found' });
+
+    const base = process.env.PUBLIC_BASE_URL || 'https://servi-preauth.onrender.com';
+    const session = await stripe.billingPortal.sessions.create({
+      customer: row.customer_id,
+      return_url: returnUrl || `${base}/book?orderId=${encodeURIComponent(orderId)}`
+    });
+
+    res.send({ url: session.url });
+  } catch (err) {
+    console.error('billing-portal error:', err);
+    res.status(500).send({ error: 'Internal error' });
+  }
+});
+
+
 app.get('/success', async (req, res) => {
   try {
     const { orderId } = req.query;
