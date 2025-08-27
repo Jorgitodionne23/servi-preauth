@@ -637,25 +637,33 @@ app.post('/confirm-with-saved', async (req, res) => {
 app.post('/billing-portal', async (req, res) => {
   try {
     const { orderId, returnUrl } = req.body || {};
-    if (!orderId) return res.status(400).send({ error: 'orderId required' });
+    if (!orderId) return res.status(400).json({ error: 'orderId required' });
 
+    // Find the linked customer for this order
     const { rows } = await pool.query('SELECT customer_id FROM orders WHERE id=$1', [orderId]);
     const row = rows[0];
-    if (!row?.customer_id) return res.status(404).send({ error: 'customer not found' });
+    if (!row) return res.status(404).json({ error: 'order not found' });
+    if (!row.customer_id) {
+      return res.status(409).json({ error: 'no_customer', message: 'Order has no linked customer_id' });
+    }
 
+    // Where to return after portal (book page fits the saved-card flow)
     const base = process.env.PUBLIC_BASE_URL || 'https://servi-preauth.onrender.com';
     const session = await stripe.billingPortal.sessions.create({
       customer: row.customer_id,
       return_url: returnUrl || `${base}/book?orderId=${encodeURIComponent(orderId)}`
     });
 
-    res.send({ url: session.url });
+    return res.json({ url: session.url });
   } catch (err) {
-    console.error('billing-portal error:', err);
-    res.status(500).send({ error: 'Internal error' });
+    // Surface useful details in logs and a readable message to the client
+    console.error('billing-portal error:', err?.type, err?.code, err?.message);
+    const message = err?.message || 'Stripe Billing Portal error';
+    const code = err?.code || 'stripe_error';
+    const status = err?.statusCode || 500;
+    return res.status(status).json({ error: message, code });
   }
 });
-
 
 app.get('/success', async (req, res) => {
   try {

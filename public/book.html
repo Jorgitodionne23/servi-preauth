@@ -310,22 +310,36 @@
 
     // Button: Administrar pago (Stripe Billing Portal)
     $('#btn-manage').onclick = async () => {
-      $('#btn-book').disabled = true;
-      $('#btn-manage').disabled = true;
+        const btnBook = $('#btn-book');
+        const btnManage = $('#btn-manage');
+        btnBook.disabled = true;
+        btnManage.disabled = true;
 
-      const r = await fetch('/billing-portal', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId, returnUrl: location.href })
-      });
-      const out = await r.json();
-      if (out?.url) location.href = out.url;
-      else {
-        alert('No se pudo abrir el portal de pago.');
-        $('#btn-book').disabled = false;
-        $('#btn-manage').disabled = false;
-      }
-    };
+        try {
+            const r = await fetch('/billing-portal', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ orderId, returnUrl: location.href })
+            });
+
+            // Try to parse JSON even on non-200 responses
+            const out = await r.json().catch(() => ({}));
+
+            if (r.ok && out?.url) {
+            // Success → go to Stripe Billing Portal
+            location.href = out.url;
+            return;
+            }
+
+            // Show server-provided error (if any)
+            alert(out?.error || out?.message || 'No se pudo abrir el portal de pago.');
+        } catch (e) {
+            alert('No se pudo abrir el portal de pago.');
+        } finally {
+            btnBook.disabled = false;
+            btnManage.disabled = false;
+        }
+      };
   </script>
 </body>
 </html>
