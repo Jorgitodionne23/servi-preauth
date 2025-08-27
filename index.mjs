@@ -574,6 +574,33 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
       break;
     }
 
+    case 'customer.updated': {
+      const c = event.data.object; // Stripe Customer
+
+      // (A) If you later add a DB 'clients' table, you could sync it here.
+      // await pool.query(
+      //   'UPDATE clients SET name=$1, email=$2, phone=$3 WHERE customer_id=$4',
+      //   [c.name || null, c.email || null, c.phone || null, c.id]
+      // );
+
+      // (B) Tell your Google Apps Script to upsert the SERVI Clients row.
+      //     Reuse your existing Apps Script webhook URL constant.
+      if (GOOGLE_SCRIPT_WEBHOOK_URL) {
+        await fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'customer.updated',
+            id: c.id,
+            name: c.name || '',
+            email: c.email || '',
+            phone: c.phone || ''
+          })
+        }).catch(()=>{});
+      }
+      break;
+    }
+
     default:
       console.log(`Unhandled event type: ${event.type}`);
   }
