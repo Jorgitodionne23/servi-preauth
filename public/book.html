@@ -1,69 +1,284 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Reservar — SERVI</title>
+  <!-- Purpose (pseudocode): show a 1-click “Review & Book” page for saved clients using their stored card, with fallback to 3DS if required. -->
+
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reservar - SERVI</title>
+
+  <script src="https://js.stripe.com/v3/"></script>
+
+  <!-- Same font as pay.html -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
   <meta http-equiv="Cache-Control" content="no-store" />
+
   <style>
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:0;padding:24px;background:#fff;color:#111}
-    .card{max-width:520px;margin:0 auto;border:1px solid #eee;border-radius:14px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,.04)}
-    h1{font-size:20px;margin:0 0 8px}
-    .row{display:flex;justify-content:space-between;margin:8px 0}
-    .btn{display:inline-block;padding:12px 16px;border-radius:10px;border:none;cursor:pointer}
-    .primary{background:#111;color:#fff}
-    .ghost{background:#f5f5f5}
+    /* === COPY of pay.html look & feel (only additions are noted) === */
+    * { box-sizing: border-box; }
+
+    body {
+      background-color: #000;
+      color: #fff;
+      font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      min-height: 80vh;
+      line-height: 1.6;
+    }
+
+    .page {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+    }
+
+    .logo {
+      max-width: 150px;
+      margin-bottom: 20px;
+    }
+
+    .container {
+      max-width: 400px;
+      width: 100%;
+      background: #111;
+      padding: 36px 24px;
+      border-radius: 12px;
+      box-shadow: 0 0 20px rgba(255, 255, 255, 0.1);
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    h2 {
+      text-align: center;
+      margin: 0;
+      font-weight: 600;
+      font-size: 22px;
+      letter-spacing: .2px;
+    }
+
+    .summary-box {
+      background-color: #1a1a1a;
+      padding: 16px;
+      border-radius: 10px;
+      margin-bottom: -5px;
+      box-shadow: 0 0 10px rgba(255, 255, 255, 0.05);
+      font-size: 16px;
+    }
+    .summary-box h3 {
+      margin-top: 0;
+      margin-bottom: 10px;
+      font-size: 18px;
+      color: #fff;
+      font-weight: 600;
+      letter-spacing: .2px;
+    }
+    #service-summary { margin: 0; line-height: 1.5; font-size: 15px; }
+
+    .method-line {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 15px;
+      background-color: #1a1a1a;
+      padding: 12px 16px;
+      border-radius: 10px;
+      border: 1px solid #222;
+    }
+
+    .two-buttons {
+      display: flex;
+      gap: 10px;
+      margin-top: 6px;
+    }
+
+    button {
+      background-color: #fff;
+      color: #000;
+      border: none;
+      padding: 11px;
+      border-radius: 6px;
+      font-size: 17px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .ghost {
+      background: #1a1a1a;
+      color: #fff;
+      border: 1px solid #444;
+    }
+
+    .note {
+      font-size: 12px;
+      color: #ccc;
+      margin: 0;
+    }
+
+    .support {
+      font-size: 12px;
+      color: #ccc;
+      text-align: center;
+      margin-top: 16px;
+    }
+    .support a { color: #fff; text-decoration: none; }
+
+    .footer {
+      margin-top: 24px;
+      text-align: center;
+      color: #aaa;
+      padding: 24px;
+    }
+    .footer img {
+      height: 32px;
+      max-width: 100%;
+      object-fit: contain;
+    }
+
+    /* Spinner (same visual language) */
+    #spinner {
+      display: none;
+      text-align: center;
+      font-size: 14px;
+      color: #fff;
+    }
+    .spinner-circle {
+      border: 3px solid rgba(255, 255, 255, 0.2);
+      border-top: 3px solid #fff;
+      border-radius: 50%;
+      width: 20px;
+      height: 20px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto;
+    }
+    @keyframes spin { 0% {transform:rotate(0)} 100% {transform:rotate(360deg)} }
   </style>
 </head>
+
 <body>
-  <div class="card">
-    <h1>Revisa y confirma tu reserva</h1>
-    <div class="row"><span>Total</span><strong id="amount">—</strong></div>
-    <div class="row"><span>Método de pago</span><span id="cardMask">—</span></div>
-    <div style="margin-top:16px">
-      <button id="btnBook" class="btn primary">Reservar</button>
-      <button id="btnManage" class="btn ghost">Administrar pago</button>
+  <div class="page">
+    <!-- Same header logo as pay.html -->
+    <img src="logo-servi-white.png" alt="SERVI Logo" class="logo" />
+
+    <div class="container">
+      <h2>Revisa y confirma tu reserva</h2>
+
+      <div class="summary-box">
+        <h3>Detalles de tu reserva</h3>
+        <p id="service-summary">Cargando…</p>
+      </div>
+
+      <div class="method-line">
+        <span>Método de pago</span>
+        <strong id="card-mask">—</strong>
+      </div>
+
+      <div class="two-buttons">
+        <button id="btn-book">Reservar</button>
+        <button id="btn-manage" class="ghost">Administrar pago</button>
+      </div>
+
+      <p class="note">Se usará tu método guardado. Puedes cambiarlo desde el portal.</p>
+
+      <div id="spinner">
+        <div class="spinner-circle"></div>
+      </div>
     </div>
-    <p id="note" style="font-size:12px;color:#666;margin-top:12px">
-      Se usará tu método guardado. Puedes cambiarlo desde el portal.
-    </p>
+
+    <div class="support">
+      ¿Necesitas ayuda?
+      <a href="https://serviservices.my.canva.site/helpcenter/#reportar" target="_blank">Centro de ayuda</a>
+      o
+      <a href="https://wa.me/525525112588" target="_blank">WhatsApp</a>
+    </div>
+  </div>
+
+  <div class="footer">
+    <!-- Stripe slogan/lockup identical to pay.html -->
+    <img src="poweredbystripe.png" alt="Powered by Stripe" />
   </div>
 
   <script type="module">
-    import { loadStripe } from "https://js.stripe.com/v3/";
-
+    // Minimal helpers
+    const $ = (sel) => document.querySelector(sel);
     const params = new URLSearchParams(location.search);
     const orderId = params.get('orderId');
-    const { pk } = await fetch('/config/stripe').then(r=>r.json());
-    const stripe = await loadStripe(pk);
 
-    const order = await fetch(`/order/${encodeURIComponent(orderId)}`).then(r=>r.json());
+    // Load Stripe publishable key
+    const { pk } = await fetch('/config/stripe').then(r => r.json());
+    if (!pk) { alert('Stripe no está configurado.'); throw new Error('Missing Stripe key'); }
+    const stripe = Stripe(pk);
 
+    // Get order (expects saved_card + client_secret)
+    const res = await fetch(`/order/${encodeURIComponent(orderId)}`);
+    if (!res.ok) { alert('Orden no encontrada.'); throw new Error('Order not found'); }
+    const order = await res.json();
+
+    // If no saved card, fallback to full payment form
     if (!order?.saved_card) {
-      // No saved card -> fallback to payment form
       location.href = `/pay?orderId=${encodeURIComponent(orderId)}`;
     }
 
-    const amountMXN = (order.amount/100).toLocaleString('es-MX',{style:'currency',currency:'MXN'});
-    document.querySelector('#amount').textContent = amountMXN;
-    document.querySelector('#cardMask').textContent =
-      `${order.saved_card.brand || 'Tarjeta'} •••• ${order.saved_card.last4}`;
+    // Fill summary
+    const servicio = (order.service_description || "servicio").trim();
+    const fechaTexto = formatFechaEs(order.service_date);
+    const monto = Number(order.amount || 0) / 100;
+    const montoTexto = monto.toLocaleString("es-MX", { style: "currency", currency: "MXN" });
+    $('#service-summary').textContent = `Reserva de ${servicio} el ${fechaTexto}, por ${montoTexto}.`;
+    $('#card-mask').textContent = `${order.saved_card.brand || 'Tarjeta'} •••• ${order.saved_card.last4}`;
 
-    // 1) Book with saved card (off-session; 3DS fallback if required)
-    document.querySelector('#btnBook').onclick = async () => {
-      // optional: record consent text
+    function formatFechaEs(value) {
+      if (!value) return "—";
+      if (/^\d{4}-\d{2}-\d{2}/.test(String(value))) {
+        const d = new Date(value);
+        if (!isNaN(d)) {
+          const s = d.toLocaleDateString("es-MX", {
+            weekday: "long", day: "2-digit", month: "long", year: "numeric"
+          });
+          return s.charAt(0).toUpperCase() + s.slice(1);
+        }
+      }
+      return String(value);
+    }
+
+    // Record consent (audit trail)
+    async function recordConsent() {
+      const text = `Autorizo el cargo por ${montoTexto} a mi tarjeta •••• ${order.saved_card.last4}`;
+      const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+      const hash = [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
       try {
-        const text = `Autorizo el cargo por ${amountMXN} a mi tarjeta •••• ${order.saved_card.last4}`;
-        const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-        const hash = [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');
         await fetch(`/orders/${encodeURIComponent(orderId)}/consent`, {
-          method:'POST', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({ version:'v1', text, hash, locale:navigator.language, tz:Intl.DateTimeFormat().resolvedOptions().timeZone })
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            version: 'v1', text, hash,
+            locale: navigator.language || 'es-MX',
+            tz: Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Mexico_City'
+          })
         });
       } catch {}
+    }
+
+    // Button: Reservar (off-session confirm; 3DS fallback)
+    $('#btn-book').onclick = async () => {
+      $('#btn-book').disabled = true;
+      $('#btn-manage').disabled = true;
+      $('#spinner').style.display = 'block';
+
+      await recordConsent();
 
       const r = await fetch('/confirm-with-saved', {
-        method:'POST', headers:{'Content-Type':'application/json'},
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ orderId })
       });
 
@@ -71,24 +286,45 @@
         location.href = `/success?orderId=${encodeURIComponent(orderId)}`;
         return;
       }
-      const out = await r.json();
+
+      const out = await r.json().catch(() => ({}));
+
+      // 3DS required → confirm in browser
       if (r.status === 402 && out?.clientSecret) {
         const result = await stripe.confirmCardPayment(out.clientSecret);
-        if (result.error) alert(result.error.message || 'Error de autenticación');
-        else location.href = `/success?orderId=${encodeURIComponent(orderId)}`;
+        if (result.error) {
+          alert(result.error.message || 'Error de autenticación');
+          $('#spinner').style.display = 'none';
+          $('#btn-book').disabled = false;
+          $('#btn-manage').disabled = false;
+        } else {
+          location.href = `/success?orderId=${encodeURIComponent(orderId)}`;
+        }
       } else {
         alert(out?.error || 'No se pudo confirmar el pago.');
+        $('#spinner').style.display = 'none';
+        $('#btn-book').disabled = false;
+        $('#btn-manage').disabled = false;
       }
     };
 
-    // 2) Open Stripe Billing Portal
-    document.querySelector('#btnManage').onclick = async () => {
+    // Button: Administrar pago (Stripe Billing Portal)
+    $('#btn-manage').onclick = async () => {
+      $('#btn-book').disabled = true;
+      $('#btn-manage').disabled = true;
+
       const r = await fetch('/billing-portal', {
-        method:'POST', headers:{'Content-Type':'application/json'},
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ orderId, returnUrl: location.href })
       });
       const out = await r.json();
-      if (out.url) location.href = out.url;
+      if (out?.url) location.href = out.url;
+      else {
+        alert('No se pudo abrir el portal de pago.');
+        $('#btn-book').disabled = false;
+        $('#btn-manage').disabled = false;
+      }
     };
   </script>
 </body>
