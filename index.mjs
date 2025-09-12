@@ -230,7 +230,7 @@ app.get('/o/:code', async (req, res) => {
 
 
 
-// 📡 Stripe Webhook handler
+// 📡 Stripe Webhook handler ex
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
 // Record consent (called from pay.html before confirming)
