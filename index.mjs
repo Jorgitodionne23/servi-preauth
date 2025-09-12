@@ -465,32 +465,6 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
   }
 
   switch (event.type) {
-    // 1) charge.succeeded  (manual-capture authorized)
-    case 'charge.succeeded': {
-      console.log('✅ Confirmed (charge.succeeded):', paymentIntentId);
-
-      // look up order row to send orderId + customerId
-      const r = await pool.query('SELECT id, customer_id FROM orders WHERE payment_intent_id = $1 LIMIT 1', [paymentIntentId]);
-      const row = r.rows[0] || {};
-
-      await pool.query('UPDATE orders SET status = $1 WHERE payment_intent_id = $2', ['Confirmed', paymentIntentId]);
-
-      fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          paymentIntentId,
-          status: 'Confirmed',
-          orderId: row.id || '',
-          customerId: row.customer_id || ''
-        })
-      }).then(async r => console.log('Sheets confirm:', r.status, await r.text()))
-        .catch(e => console.error('Sheets confirm failed:', e));
-      break;
-    }
-
-
-    // 2) payment_intent.succeeded  (captured/paid)
     case 'payment_intent.succeeded': {
       console.log('💰 Captured (payment_intent.succeeded):', paymentIntentId);
 
@@ -513,11 +487,10 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
       break;
     }
 
-    // (optional) failure/cancel hygiene
-    case 'payment_intent.payment_failed':
-    case 'charge.failed':
-    case 'charge.expired': {
-      console.log('❌ Failed:', paymentIntentId, event.type);
+    // === true declines / authentication failures at the charge layer ===
+    // You said "Failed" should mean this specific event.
+    case 'charge.failed': {
+      console.log('❌ Failed (charge.failed):', paymentIntentId);
       await pool.query('UPDATE orders SET status = $1 WHERE payment_intent_id = $2',
                       ['Failed', paymentIntentId]);
       fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
@@ -527,16 +500,48 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
       break;
     }
 
-    case 'payment_intent.canceled': {
-      console.log('🚫 Canceled (authorization voided):', paymentIntentId);
+    // === PI-level failure (keep distinct label so it never looks like 'expired') ===
+    case 'payment_intent.payment_failed': {
+      console.log('⛔ Declined (payment_intent.payment_failed):', paymentIntentId);
       await pool.query('UPDATE orders SET status = $1 WHERE payment_intent_id = $2',
-                      ['Canceled', paymentIntentId]);
+                      ['Declined', paymentIntentId]); // <-- not "Failed"
       fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ paymentIntentId, status: 'Canceled' })
+        body: JSON.stringify({ paymentIntentId, status: 'Declined' })
       }).catch(()=>{});
       break;
     }
+
+    // === legacy/processor-side authorization expiry signal ===
+    case 'charge.expired': {
+      console.log('🕒 Canceled (expired) via charge.expired:', paymentIntentId);
+      await pool.query('UPDATE orders SET status = $1 WHERE payment_intent_id = $2',
+                      ['Canceled (expired)', paymentIntentId]);
+      fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ paymentIntentId, status: 'Canceled (expired)' })
+      }).catch(()=>{});
+      break;
+    }
+
+
+    case 'payment_intent.canceled': {
+      const pi = event.data.object;
+      const reason = pi.cancellation_reason || 'canceled';
+      const label = (reason === 'expired') ? 'Canceled (expired)' : `Canceled (${reason})`;
+
+      console.log(`🚫 ${label}:`, paymentIntentId);
+
+      await pool.query('UPDATE orders SET status = $1 WHERE payment_intent_id = $2',
+                      [label, paymentIntentId]);
+
+      fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ paymentIntentId, status: label })
+      }).catch(()=>{});
+      break;
+    }
+
 
 
     // 3) payment_intent.amount_capturable_updated (when a manual PI becomes capturable)
