@@ -10,6 +10,20 @@ import { dirname } from 'path';
 import fetch from 'node-fetch';
 import { randomUUID, randomBytes, createHash } from 'crypto';
 
+// --- helpers (add) ---
+const MS_PER_DAY = 86_400_000;
+function daysAheadFromYMD(ymd) {
+  if (!ymd) return 0;
+  const [y,m,d] = String(ymd).split('-').map(Number);
+  if (!y || !m || !d) return 0;
+  const serviceUTC = Date.UTC(y, m - 1, d);
+  return Math.ceil((serviceUTC - Date.now()) / MS_PER_DAY);
+}
+async function hasSavedCard(customerId, stripe) {
+  if (!customerId) return false;
+  const pm = await stripe.paymentMethods.list({ customer: customerId, type: 'card', limit: 1 });
+  return pm.data.length > 0;
+}
 
 // For __dirname in ES modules
 await initDb(); // run before defining routes
@@ -41,52 +55,27 @@ app.use(express.static('public'));
 
 // 🎯 Create PaymentIntent (save card for later off-session charges)
 app.post('/create-payment-intent', async (req, res) => {
-  const { amount, clientName, serviceDescription, serviceDate, clientEmail, clientPhone } = req.body;
+  const { amount, clientName, serviceDescription, serviceDate, clientEmail, clientPhone, consent } = req.body;
   try {
-    // 1) Try to find an existing Stripe Customer (email first, then phone)
+    // 1) Find or create Stripe Customer by email/phone (your existing logic)
     let existingCustomer = null;
-
-    // Helper to escape single quotes for Stripe search query
     const esc = (s) => String(s || '').replace(/'/g, "\\'");
     if (clientEmail) {
       const found = await stripe.customers.search({ query: `email:'${esc(clientEmail)}'` });
-      if (found.data && found.data.length) existingCustomer = found.data[0];
+      if (found.data?.length) existingCustomer = found.data[0];
     }
     if (!existingCustomer && clientPhone) {
       const found = await stripe.customers.search({ query: `phone:'${esc(clientPhone)}'` });
-      if (found.data && found.data.length) existingCustomer = found.data[0];
+      if (found.data?.length) existingCustomer = found.data[0];
     }
-
-    // 2) Reuse if found; otherwise create a new customer
-    const customer =
-      existingCustomer ||
-      await stripe.customers.create({
-        name: clientName || undefined,
-        email: clientEmail || undefined,
-        phone: clientPhone || undefined,
-      });
-
-    // right after you have `const customer = ...`
-    const pmList = await stripe.paymentMethods.list({
-      customer: customer.id,
-      type: 'card',
-      limit: 1
-    });
-    const hasSavedCard = pmList.data.length > 0;
-
-
-    // 3) Create a manual-capture PI under that customer
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount,
-      currency: 'mxn',
-      capture_method: 'manual',
-      payment_method_types: ['card'],
-      customer: customer.id
+    const customer = existingCustomer || await stripe.customers.create({
+      name: clientName || undefined,
+      email: clientEmail || undefined,
+      phone: clientPhone || undefined,
     });
 
-    // 4) Create the order row
+    // 2) Create the order row FIRST (pending, kind='primary')
     const orderId = randomUUID();
-
     async function generateUniqueCode() {
       for (let i = 0; i < 6; i++) {
         const code = randomBytes(8).toString('base64url').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10);
@@ -99,26 +88,67 @@ app.post('/create-payment-intent', async (req, res) => {
 
     await pool.query(
       `INSERT INTO orders
-       (id, payment_intent_id, amount, client_name, service_description, service_date, status, public_code, kind, customer_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'primary',$9)
+       (id, amount, client_name, service_description, service_date, status, public_code, kind, customer_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,'primary',$8)
        ON CONFLICT (id) DO NOTHING`,
-      [orderId, paymentIntent.id, amount, clientName || null, serviceDescription || null, serviceDate || null, 'pending', publicCode, customer.id]
+      [orderId, amount, clientName || null, serviceDescription || null, serviceDate || null, 'pending', publicCode, customer.id]
     );
 
-    res.send({
+    // 3) 7-day gate
+    const longLead = daysAheadFromYMD(serviceDate) > 7;
+    const saved = await hasSavedCard(customer.id, stripe);
+
+    if (longLead) {
+      // Only “account users” (consent or saved card) can reserve >7d in advance
+      if (!consent && !saved) {
+        await pool.query('UPDATE orders SET status=$1, kind=$2 WHERE id=$3', ['Blocked', 'setup_required', orderId]);
+        return res.status(403).send({
+          error: 'account_required',
+          message: 'Solo usuarios con cuenta pueden reservar con más de 7 días de anticipación.',
+          orderId,
+          publicCode
+        });
+      }
+
+      // If card not saved yet → user must save now (SetupIntent will be created on /create-setup-intent)
+      if (!saved) {
+        await pool.query('UPDATE orders SET kind=$1 WHERE id=$2', ['setup', orderId]);
+        return res.send({ orderId, publicCode, requiresSetup: true, hasSavedCard: false });
+      }
+
+      // Card saved → booking flow (no PI yet; /order/:id or /confirm-with-saved will create/confirm later)
+      await pool.query('UPDATE orders SET kind=$1 WHERE id=$2', ['book', orderId]);
+      return res.send({ orderId, publicCode, hasSavedCard: true });
+    }
+
+    // 4) ≤ 7 days → create manual-capture PI now
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount,
+      currency: 'mxn',
+      capture_method: 'manual',
+      payment_method_types: ['card'],
+      customer: customer.id,
+      ...(consent ? { setup_future_usage: 'off_session' } : {}),
+      metadata: { order_id: orderId, kind: 'primary' }
+    });
+
+    await pool.query(
+      'UPDATE orders SET payment_intent_id=$1 WHERE id=$2',
+      [paymentIntent.id, orderId]
+    );
+
+    return res.send({
       clientSecret: paymentIntent.client_secret,
       paymentIntentId: paymentIntent.id,
       orderId,
       publicCode,
-      hasSavedCard
+      hasSavedCard: saved
     });
   } catch (err) {
     console.error('Error creating payment intent:', err);
     res.status(400).send({ error: err.message });
   }
 });
-
-
 
 // 📄 Serve pay page
 app.get('/pay', (req, res) => {
@@ -150,26 +180,77 @@ app.get('/order/:orderId', async (req, res) => {
     const row = rows[0];
     if (!row) return res.status(404).send({ error: 'Order not found' });
 
-    let pi;
+    let pi = null;
+    let intentType = null;       // 'payment' | 'setup' | null
+    let consentRequired = false; // true when kind='setup_required' and no consent recorded
 
-    if (!row.payment_intent_id) {
-      // Create a PI on the fly if missing (happens for some adjustments)
-      pi = await stripe.paymentIntents.create({
-        amount: row.amount,
-        currency: 'mxn',
-        payment_method_types: ['card'],
-        capture_method: 'manual',
-        customer: row.customer_id || undefined,
-        metadata: {
-          kind: row.kind || 'primary',
-          parent_order_id: row.parent_id || ''
-        }
-      });
-      await pool.query('UPDATE orders SET payment_intent_id=$1 WHERE id=$2', [pi.id, row.id]);
-    } else {
-      pi = await stripe.paymentIntents.retrieve(row.payment_intent_id);
+    // helper: check if we already recorded consent for this order
+    async function hasConsent(orderId) {
+      const c = await pool.query('SELECT 1 FROM order_consents WHERE order_id=$1', [orderId]);
+      return !!c.rows.length;
     }
 
+    if (!row.payment_intent_id) {
+      const kind = String(row.kind || '').toLowerCase();
+
+      if (kind === 'setup_required') {
+        // >7d and user hasn't consented yet → don't create any Intent
+        const ok = await hasConsent(row.id);
+        if (!ok) {
+          consentRequired = true;
+          intentType = null;   // no client_secret returned
+          // leave pi = null
+        } else {
+          // consent exists now → promote to 'setup' and create SetupIntent
+          await pool.query('UPDATE orders SET kind=$1 WHERE id=$2', ['setup', row.id]);
+          const si = await stripe.setupIntents.create({
+            customer: row.customer_id || undefined,
+            payment_method_types: ['card'],
+            usage: 'off_session',
+            metadata: { kind: 'setup', order_id: row.id }
+          });
+          await pool.query('UPDATE orders SET payment_intent_id=$1 WHERE id=$2', [si.id, row.id]);
+          pi = si;
+          intentType = 'setup';
+        }
+
+      } else if (kind === 'setup') {
+        // Save-card flow (consent presumably on file already)
+        const si = await stripe.setupIntents.create({
+          customer: row.customer_id || undefined,
+          payment_method_types: ['card'],
+          usage: 'off_session',
+          metadata: { kind: 'setup', order_id: row.id }
+        });
+        await pool.query('UPDATE orders SET payment_intent_id=$1 WHERE id=$2', [si.id, row.id]);
+        pi = si;
+        intentType = 'setup';
+
+      } else {
+        // Default: manual-capture PI for ≤7d / primary flow
+        pi = await stripe.paymentIntents.create({
+          amount: row.amount,
+          currency: 'mxn',
+          payment_method_types: ['card'],
+          capture_method: 'manual',
+          customer: row.customer_id || undefined,
+          metadata: { kind: row.kind || 'primary', parent_order_id: row.parent_id || '' }
+        });
+        await pool.query('UPDATE orders SET payment_intent_id=$1 WHERE id=$2', [pi.id, row.id]);
+        intentType = 'payment';
+      }
+
+    } else {
+      // Retrieve existing Intent
+      const id = row.payment_intent_id;
+      const isSetup = id.startsWith('seti_');
+      pi = isSetup
+        ? await stripe.setupIntents.retrieve(id)
+        : await stripe.paymentIntents.retrieve(id);
+      intentType = isSetup ? 'setup' : 'payment';
+    }
+
+    // expose basic saved-card summary (unchanged)
     let saved_card = null;
     if (row.customer_id) {
       const pmList = await stripe.paymentMethods.list({
@@ -190,14 +271,20 @@ app.get('/order/:orderId', async (req, res) => {
     }
 
     res.set('Cache-Control', 'no-store');
-    return res.json({ ...row, client_secret: pi.client_secret, saved_card: saved_card || null });
-
+    return res.json({
+      ...row,
+      client_secret: pi?.client_secret || null, // null when consent_required
+      intentType,                               // 'payment' | 'setup' | null
+      consent_required: consentRequired,        // true → UI must block and POST /orders/:id/consent
+      saved_card: saved_card || null
+    });
 
   } catch (err) {
     console.error('Error retrieving order:', err);
     res.status(500).send({ error: 'Internal server error' });
   }
 });
+
 
 
 app.get('/o/:code', async (req, res) => {
@@ -209,11 +296,14 @@ app.get('/o/:code', async (req, res) => {
   if (!rows[0]) return res.status(404).send('Not found');
 
   const row = rows[0];
-  if (row.kind === 'adjustment') {
-    return res.redirect(302, `/confirm?orderId=${encodeURIComponent(row.id)}`);
-  }
 
-  // primary: check if customer has a saved card
+  // 🔹 explicit routing by kind
+  if (row.kind === 'adjustment')      return res.redirect(302, `/confirm?orderId=${encodeURIComponent(row.id)}`);
+  if (row.kind === 'setup_required')  return res.redirect(302, `/pay?orderId=${encodeURIComponent(row.id)}`); // consent gate lives in /pay
+  if (row.kind === 'setup')           return res.redirect(302, `/pay?orderId=${encodeURIComponent(row.id)}`); // setup flow also handled on /pay
+  if (row.kind === 'book')            return res.redirect(302, `/book?orderId=${encodeURIComponent(row.id)}`);
+
+  // legacy 'primary': decide by saved card
   let hasSaved = false;
   if (row.customer_id) {
     const pmList = await stripe.paymentMethods.list({ customer: row.customer_id, type: 'card', limit: 1 });
@@ -225,10 +315,6 @@ app.get('/o/:code', async (req, res) => {
       : `/pay?orderId=${encodeURIComponent(row.id)}`
   );
 });
-
-
-
-
 
 // 📡 Stripe Webhook handler ex
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
@@ -265,6 +351,11 @@ app.post('/orders/:id/consent', async (req, res) => {
       }
     });
   }
+
+  await pool.query(
+    "UPDATE orders SET kind='setup' WHERE id=$1 AND kind='setup_required'",
+    [id]
+  );
 
   res.send({ ok: true, hash: serverHash, version: version || '1.0' });
 });
@@ -487,8 +578,44 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
       break;
     }
 
-    // === true declines / authentication failures at the charge layer ===
-    // You said "Failed" should mean this specific event.
+    case 'setup_intent.succeeded': {
+      const si = event.data.object;
+      const pmId = si.payment_method || null;
+      const cust = si.customer || null;
+      const orderId = si.metadata?.order_id || null;
+
+      if (orderId) {
+        // Mark Saved; store PM and Customer; promote to 'book' so future links route to one-click booking
+        await pool.query(
+          `UPDATE orders
+            SET status=$1,
+                saved_payment_method_id=COALESCE($2, saved_payment_method_id),
+                customer_id=COALESCE($3, customer_id),
+                kind='book'
+          WHERE id=$4`,
+          ['Saved', pmId, cust, orderId]
+        );
+
+        // Notify Sheets (Status column becomes "Saved")
+        fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ paymentIntentId: si.id, status: 'Saved', orderId })
+        }).catch(()=>{});
+      }
+
+      // Optionally push a customer.updated to keep Clients synced
+      if (cust) {
+        try {
+          const c = await stripe.customers.retrieve(cust);
+          fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ type:'customer.updated', id:c.id, name:c.name||'', email:c.email||'', phone:c.phone||'' })
+          }).catch(()=>{});
+        } catch {}
+      }
+      break;
+    }
+
     case 'charge.failed': {
       console.log('❌ Failed (charge.failed):', paymentIntentId);
       await pool.query('UPDATE orders SET status = $1 WHERE payment_intent_id = $2',
