@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Crear cuenta - SERVI</title>
+  <script src="https://js.stripe.com/v3/"></script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <style>
+    * { box-sizing: border-box; }
+    body { background:#000; color:#fff; font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; margin:0; }
+    .page { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:20px; }
+    .container { width:100%; max-width:420px; background:#111; padding:28px 22px; border-radius:12px; box-shadow:0 0 20px rgba(255,255,255,.08); }
+    .logo { display:block; margin:0 auto 16px; max-width:140px; }
+    h2 { margin:0 0 14px; font-size:22px; font-weight:600; text-align:center; }
+    .summary { font-size:14px; background:#1a1a1a; padding:12px; border-radius:10px; margin-bottom:14px; }
+    .row { margin:12px 0; }
+    label { font-size:13px; color:#ccc; }
+    #payment-element { background:#1a1a1a; padding:12px; border-radius:10px; display:none; }
+    .btn { width:100%; padding:12px; border:0; border-radius:8px; font-weight:700; cursor:pointer; }
+    .btn.primary { background:#fff; color:#000; }
+    .btn.ghost { background:#1a1a1a; color:#fff; border:1px solid #444; }
+    .note { font-size:12px; color:#bbb; margin-top:8px; }
+    #spinner { display:none; text-align:center; margin-top:10px; }
+    .spinner-circle { border:3px solid rgba(255,255,255,.2); border-top:3px solid #fff; border-radius:50%; width:20px; height:20px; animation:spin 1s linear infinite; margin:0 auto; }
+    @keyframes spin { 0%{transform:rotate(0)} 100%{transform:rotate(360deg)} }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="container">
+      <img src="logo-servi-white.png" class="logo" alt="SERVI" />
+      <h2>Crear cuenta y guardar método</h2>
+
+      <div class="summary" id="summary">Cargando…</div>
+
+      <div class="row">
+        <label><input type="checkbox" id="consent" /> Autorizo a SERVI a <strong>guardar este método</strong> y realizar
+          <strong>cargos adicionales</strong> relacionados con mi servicio, previa confirmación por WhatsApp.</label>
+        <div class="note">Tus datos se guardan de forma segura en Stripe. Puedes eliminarlos cuando quieras.</div>
+      </div>
+
+      <div id="payment-element"></div>
+
+      <div class="row">
+        <button id="continue" class="btn primary">Continuar</button>
+        <div id="spinner"><div class="spinner-circle"></div></div>
+      </div>
+
+      <div class="row">
+        <button id="back" class="btn ghost">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    const params = new URLSearchParams(location.search);
+    const orderId = params.get('orderId');
+    if (!orderId) { alert('Falta orderId'); throw new Error('orderId'); }
+
+    const { pk } = await fetch('/config/stripe').then(r=>r.json());
+    if (!pk) { alert('Stripe no configurado'); throw new Error('pk'); }
+    const stripe = Stripe(pk);
+
+    async function getOrder() {
+      const r = await fetch(`/order/${encodeURIComponent(orderId)}`);
+      if (!r.ok) throw new Error('order fetch');
+      return r.json();
+    }
+
+    function fmtFechaEs(v) {
+      if (!v) return '—';
+      if (/^\\d{4}-\\d{2}-\\d{2}/.test(String(v))) {
+        const d = new Date(v); if (!isNaN(d)) {
+          const s = d.toLocaleDateString('es-MX',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
+          return s.charAt(0).toUpperCase() + s.slice(1);
+        }
+      }
+      return String(v);
+    }
+
+    async function recordConsent(text) {
+      const enc = new TextEncoder().encode(text);
+      const buf = await crypto.subtle.digest('SHA-256', enc);
+      const hash = [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');
+      await fetch(`/orders/${encodeURIComponent(orderId)}/consent`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          version:'1.0', text, hash,
+          locale: navigator.language || 'es-MX',
+          tz: Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Mexico_City'
+        })
+      });
+    }
+
+    // Init
+    const order = await getOrder();
+    document.getElementById('summary').textContent =
+      `Reserva de ${(order.service_description||'servicio').trim()} el ${fmtFechaEs(order.service_date)}.`;
+
+    const consentBox = document.getElementById('consent');
+    const btn = document.getElementById('continue');
+    const spinner = document.getElementById('spinner');
+
+    btn.onclick = async () => {
+      // 1) Gate on consent
+      if (!consentBox.checked) { alert('Debes autorizar guardar el método.'); return; }
+
+      btn.disabled = true; spinner.style.display = 'block';
+
+      // 2) If server still in setup_required, record consent so it promotes to 'setup'
+      if (order.consent_required) {
+        await recordConsent('Autorizo a SERVI a guardar mi método de pago para cargos relacionados con mi servicio.');
+      }
+
+      // 3) Re-fetch → should now have SetupIntent client_secret
+      const refreshed = await getOrder();
+      if (refreshed.intentType !== 'setup' || !refreshed.client_secret) {
+        spinner.style.display = 'none'; btn.disabled = false;
+        alert('No se pudo preparar el guardado del método. Intenta de nuevo.');
+        return;
+      }
+
+      // 4) Mount Payment Element and confirm setup
+      const elements = stripe.elements({ clientSecret: refreshed.client_secret, locale: 'es', appearance:{theme:'night'} });
+      const paymentElement = elements.create('payment');
+      document.getElementById('payment-element').style.display = 'block';
+      paymentElement.mount('#payment-element');
+
+      // Change CTA to “Guardar método”
+      btn.textContent = 'Guardar método y crear cuenta';
+      btn.onclick = async () => {
+        btn.disabled = true; spinner.style.display = 'block';
+        const { error } = await stripe.confirmSetup({ elements, redirect: 'if_required' });
+        if (error) {
+          alert('No se pudo guardar el método: ' + (error.message || 'Se ha producido un error de procesamiento.'));
+          spinner.style.display = 'none'; btn.disabled = false;
+          return;
+        }
+        // success → webhook marks Saved + kind='book'
+        location.href = `/book?orderId=${encodeURIComponent(orderId)}`;
+      };
+      spinner.style.display = 'none'; btn.disabled = false;
+    };
+
+    document.getElementById('back').onclick = () => history.back();
+  </script>
+</body>
+</html>

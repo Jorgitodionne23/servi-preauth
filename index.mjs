@@ -215,6 +215,11 @@ app.get('/confirm', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'confirm.html'));
 });
 
+app.get('/save', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'save.html'));
+});
+
+
 // Serve publishable key to the client (same origin, no CORS needed)
 app.get('/config/stripe', (_req, res) => {
   res.send({ pk: process.env.STRIPE_PUBLISHABLE_KEY || '' });
@@ -260,7 +265,7 @@ app.get('/order/:orderId', async (req, res) => {
           await pool.query('UPDATE orders SET kind=$1 WHERE id=$2', ['setup', row.id]);
           const si = await stripe.setupIntents.create({
             customer: row.customer_id || undefined,
-            payment_method_types: ['card'],
+            automatic_payment_methods: { enabled: true },
             usage: 'off_session',
             metadata: { kind: 'setup', order_id: row.id }
           });
@@ -273,7 +278,7 @@ app.get('/order/:orderId', async (req, res) => {
         // Save-card flow (consent presumably on file already)
         const si = await stripe.setupIntents.create({
           customer: row.customer_id || undefined,
-          payment_method_types: ['card'],
+          automatic_payment_methods: { enabled: true },
           usage: 'off_session',
           metadata: { kind: 'setup', order_id: row.id }
         });
@@ -359,8 +364,8 @@ app.get('/o/:code', async (req, res) => {
 
   // 🔹 explicit routing by kind
   if (row.kind === 'adjustment')      return res.redirect(302, `/confirm?orderId=${encodeURIComponent(row.id)}`);
-  if (row.kind === 'setup_required')  return res.redirect(302, `/pay?orderId=${encodeURIComponent(row.id)}`); // consent gate lives in /pay
-  if (row.kind === 'setup')           return res.redirect(302, `/pay?orderId=${encodeURIComponent(row.id)}`); // setup flow also handled on /pay
+  if (row.kind === 'setup_required')  return res.redirect(302, `/save?orderId=${encodeURIComponent(row.id)}`); // consent gate lives in /pay
+  if (row.kind === 'setup')           return res.redirect(302, `/save?orderId=${encodeURIComponent(row.id)}`); // setup flow also handled on /pay
   if (row.kind === 'book')            return res.redirect(302, `/book?orderId=${encodeURIComponent(row.id)}`);
 
   // legacy 'primary': decide by saved card
