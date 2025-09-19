@@ -241,6 +241,8 @@
         <p id="service-summary">Cargando…</p>
       </div>
 
+      <!-- Setup (save-card) UI mounts here when intentType === 'setup' -->
+      <div id="payment-element" style="display:none;"></div>
 
       <div id="express-pay-container" style="display:none;">
         <div id="express-pay-button"></div>
@@ -315,35 +317,13 @@
   </div>
 
   <script>
-    // Initialize Stripe from server config and mount the Card Element.
-    // Expose stripe/elements/card on window so other code can use them.
+    // Initialize Stripe only (no Elements yet)
     const stripeReady = (async () => {
       const resp = await fetch('/config/stripe');
       const { pk } = await resp.json();
       if (!pk) throw new Error('Missing STRIPE_PUBLISHABLE_KEY on server');
-
-      const stripe = Stripe(pk);
-      const elements = stripe.elements({ locale: 'es' });
-      const card = elements.create("card", {
-        style: {
-          base: {
-            fontFamily: '"Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-            fontSize: '16px',
-            color: '#ffffff',
-            '::placeholder': { color: '#9ca3af' }
-          },
-          invalid: { color: '#ef4444' }
-        },
-        hidePostalCode: true
-      });
-      card.mount("#card-element");
-
-      // make globally accessible for later code
-      window.stripe = stripe;
-      window.elements = elements;
-      window.card = card;
+      window.stripe = Stripe(pk);
     })();
-
 
     // 🆕 Fetch once, cache, and use everywhere
     let cachedOrder = null;
@@ -367,107 +347,142 @@
       const order = await getOrder();
       if (!order) return;
 
-      // Build one natural sentence, Uber-style
+      // ---- SUMMARY (same as before, but try full timestamp if present) ----
+      function formatFechaEs(value) {
+        if (!value) return "—";
+        // Prefer service_datetime if your server returns it, else service_date
+        const v = order.service_datetime || order.service_date || value;
+        if (/^\d{4}-\d{2}-\d{2}/.test(String(v))) {
+          const d = new Date(v);
+          if (!isNaN(d)) {
+            const s = d.toLocaleDateString("es-MX", {
+              weekday: "long", day: "2-digit", month: "long", year: "numeric"
+            });
+            return s.charAt(0).toUpperCase() + s.slice(1);
+          }
+        }
+        return String(v);
+      }
+
       const servicio = (order.service_description || "servicio").trim();
       const fechaTexto = formatFechaEs(order.service_date);
       const monto = (Number(order.amount || 0) / 100);
       const montoTexto = monto.toLocaleString("es-MX", { style: "currency", currency: "MXN" });
+      document.getElementById("service-summary").textContent =
+        `Reserva de ${servicio} el ${fechaTexto}, por ${montoTexto}.`;
 
-      // If the date coming from Sheets already includes a time window, we use it as-is.
-      // Example Sheets value: "Lunes, 11 de Agosto entre 9:00 AM - 10:00"
-      const resumen = `Reserva de ${servicio} el ${fechaTexto}, por ${montoTexto}.`;
+      // Helpers for showing/hiding areas
+      const show = (sel) => (document.querySelector(sel).style.display = 'block');
+      const hide = (sel) => (document.querySelector(sel).style.display = 'none');
 
-      document.getElementById("service-summary").textContent = resumen;
+      // We’ll mount the correct Element depending on what the server says.
+      const intentType = order.intentType;          // 'payment' | 'setup' | null
+      const consentRequired = !!order.consent_required;
+      const clientSecret = order.client_secret || null;
 
-      function formatFechaEs(value) {
-        if (!value) return "—";
+      // Grab existing containers
+      const cardBox = document.getElementById('card-element');
+      const payElBox = document.getElementById('payment-element');
+      const expressWrap = document.getElementById('express-pay-container');
 
-        // If it's ISO-like (YYYY-MM-DD or YYYY-MM-DDTHH:mm), pretty-format in Spanish
-        if (/^\d{4}-\d{2}-\d{2}/.test(String(value))) {
-          const d = new Date(value);
-          if (!isNaN(d)) {
-            // lunes → Lunes, agosto → agosto (keep month lowercase per Spanish style)
-            const s = d.toLocaleDateString("es-MX", {
-              weekday: "long", day: "2-digit", month: "long", year: "numeric"
-            });
-            // Capitalize first letter of weekday
-            return s.charAt(0).toUpperCase() + s.slice(1);
-          }
-        }
+      // We’ll reuse your #submit button and checkboxes
+      const submitBtn = document.getElementById('submit');
 
-        // Otherwise assume it already contains the full phrase/time window from Sheets
-        return String(value);
+      // ------------- CASE A: >7d gate hit, user hasn't given consent yet -------------
+      if (consentRequired && !clientSecret && !intentType) {
+        // Block payment UI; require consent first.
+        hide('#card-element');
+        hide('#payment-element');
+        hide('#express-pay-container');
+
+        // Change CTA text to make it clear
+        submitBtn.textContent = 'Dar consentimiento y crear cuenta';
+        submitBtn.dataset.mode = 'gate-consent';
+        return; // submit handler will take it from here
       }
 
+      // ------------- CASE B: Setup flow (save now); wallets allowed via Payment Element -------------
+      if (intentType === 'setup' && clientSecret) {
+        hide('#card-element');          // we won't use raw Card Element here
+        hide('#express-pay-container'); // PR Button not used in setup
+        show('#payment-element');
 
+        // Create Elements in setup mode using the SetupIntent client secret
+        const elements = (window.elements = (window.stripe).elements({
+          clientSecret: clientSecret,
+          locale: 'es',
+          appearance: { theme: 'night' } // optional
+        }));
+        const paymentElement = (window.paymentElement = elements.create('payment', {
+          // Wallets (Apple/Google) will appear automatically when available/enabled for the merchant
+          // You can tweak layout here if you want
+        }));
+        paymentElement.mount('#payment-element');
 
-      // Create paymentRequest using the actual amount
-      window.paymentRequest = stripe.paymentRequest({
-        country: "MX",
-        currency: "mxn",
-        total: { label: "Servicio SERVI", amount: order.amount },
-        requestPayerName: true,
-        requestPayerEmail: true,
-      });
+        // Adjust button label
+        submitBtn.textContent = 'Guardar método y crear cuenta';
+        submitBtn.dataset.mode = 'confirm-setup';
+        return;
+      }
 
-      const prButton = elements.create("paymentRequestButton", {
-        paymentRequest: window.paymentRequest,
-        style: {
-          paymentRequestButton: { type: "default", theme: "dark", height: "40px" }
-        }
-      });
+      // ------------- CASE C: Normal ≤7d payment (manual capture): keep Card Element + PR Button -------------
+      if (intentType === 'payment' && clientSecret) {
+        // Build Card Element
+        const elements = (window.elements = (window.stripe).elements({ locale: 'es' }));
+        const card = (window.card = elements.create('card', {
+          style: {
+            base: {
+              fontFamily: '"Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+              fontSize: '16px',
+              color: '#ffffff',
+              '::placeholder': { color: '#9ca3af' }
+            },
+            invalid: { color: '#ef4444' }
+          },
+          hidePostalCode: true
+        }));
+        card.mount('#card-element');
 
-      const can = await window.paymentRequest.canMakePayment();
-      if (can) {
-        document.getElementById("express-pay-container").style.display = "block";
-        prButton.mount("#express-pay-button");
-
-        // Attach the handler now that the button & paymentRequest exist
-        window.paymentRequest.on("paymentmethod", async (ev) => {
-          const order = await getOrder();
-          if (!order) {
-            ev.complete("fail");
-            alert("Orden no encontrada. Contacta a soporte.");
-            return;
-          }
-
-          const orderId = order.id;
-          const clientSecret = order.client_secret;
-
-          // 1) Try to confirm with the wallet PM, but don't trigger 3DS yet
-          const first = await (window.stripe ?? stripe).confirmCardPayment(
-            clientSecret,
-            { payment_method: ev.paymentMethod.id },
-            { handleActions: false }
-          );
-
-          if (first.error) {
-            ev.complete("fail");
-            alert(first.error.message);
-            return;
-          }
-
-          // 2) Tell the wallet we accepted the PM
-          ev.complete("success");
-
-          // 3) If 3DS is required, handle it now
-          const second = await (window.stripe ?? stripe).confirmCardPayment(clientSecret);
-          if (second.error) {
-            alert("Error al confirmar: " + second.error.message);
-            return;
-          }
-
-          // 4) Success → redirect
-          localStorage.setItem('orderId', String(orderId));
-          window.location.href = `/success?orderId=${encodeURIComponent(orderId)}`;
+        // Express wallets remain for *payment* mode
+        const paymentRequest = (window.paymentRequest = (window.stripe).paymentRequest({
+          country: "MX",
+          currency: "mxn",
+          total: { label: "Servicio SERVI", amount: order.amount },
+          requestPayerName: true,
+          requestPayerEmail: true,
+        }));
+        const prButton = elements.create("paymentRequestButton", {
+          paymentRequest,
+          style: { paymentRequestButton: { type: "default", theme: "dark", height: "40px" } }
         });
+        const can = await paymentRequest.canMakePayment();
+        if (can) {
+          show('#express-pay-container');
+          prButton.mount("#express-pay-button");
+          paymentRequest.on("paymentmethod", async (ev) => {
+            const first = await (window.stripe).confirmCardPayment(
+              clientSecret,
+              { payment_method: ev.paymentMethod.id },
+              { handleActions: false }
+            );
+            if (first.error) { ev.complete("fail"); alert(first.error.message); return; }
+            ev.complete("success");
+            const second = await (window.stripe).confirmCardPayment(clientSecret);
+            if (second.error) { alert("Error al confirmar: " + second.error.message); return; }
+            localStorage.setItem('orderId', String(order.id));
+            window.location.href = `/success?orderId=${encodeURIComponent(order.id)}`;
+          });
+        }
+
+        submitBtn.textContent = 'Reservar servicio';
+        submitBtn.dataset.mode = 'confirm-payment';
+        return;
       }
 
+      // Fallback
+      alert('No se pudo inicializar el flujo de pago. Contacta a soporte.');
     })();
-
-
      
-
     const form = document.getElementById("payment-form");
     const submitBtn = document.getElementById("submit");
     const spinner = document.getElementById("spinner");
@@ -500,53 +515,89 @@
 
 
     form.addEventListener("submit", async (event) => {
-        event.preventDefault(); // prevent page refresh first
-        await stripeReady;
-        const termsChecked = document.getElementById("terms-checkbox").checked;
-        const consentChecked = document.getElementById("consent-checkbox").checked;
-        if (!termsChecked) {
-          alert("Debes aceptar los Términos y Condiciones y el Aviso de Privacidad para continuar.");
+      event.preventDefault();
+      await stripeReady;
+
+      const termsChecked = document.getElementById("terms-checkbox").checked;
+      const consentChecked = document.getElementById("consent-checkbox").checked;
+      if (!termsChecked) {
+        alert("Debes aceptar los Términos y Condiciones y el Aviso de Privacidad para continuar.");
+        return;
+      }
+
+      const order = await getOrder();
+      if (!order) { alert("Orden no encontrada."); return; }
+
+      const mode = document.getElementById("submit").dataset.mode || '';
+      const spinner = document.getElementById("spinner");
+      const submitBtn = document.getElementById("submit");
+      submitBtn.disabled = true; spinner.style.display = "block";
+
+      try {
+        // GATE: user must consent first for >7d requests
+        if (mode === 'gate-consent') {
+          if (!consentChecked) {
+            alert("Para reservar con más de 7 días de anticipación debes autorizar guardar tu método de pago.");
+            return;
+          }
+          // Record consent → server promotes order.kind from 'setup_required' to 'setup'
+          await recordConsent(order.id);
+          // Re-fetch order so we receive a SetupIntent client_secret
+          cachedOrder = null;
+          const updated = await getOrder();
+          if (updated.intentType !== 'setup' || !updated.client_secret) {
+            alert("No se pudo preparar el guardado de tarjeta. Intenta de nuevo.");
+            return;
+          }
+          // Reload to let the init code mount the Payment Element
+          location.reload();
           return;
         }
 
-
-        submitBtn.disabled = true;
-        spinner.style.display = "block";
-
-        const order = await getOrder();
-        if (!order) {
-          alert("Orden no encontrada. Contacta a soporte.");
-          spinner.style.display = "none";
-          submitBtn.disabled = false;
+        // SETUP: confirm SetupIntent (saves wallet/card). Wallets appear inside Payment Element.
+        if (mode === 'confirm-setup') {
+          if (!consentChecked) {
+            alert("Debes autorizar guardar tu método de pago para crear tu cuenta.");
+            return;
+          }
+          const { error } = await (window.stripe).confirmSetup({
+            elements: window.elements,
+            redirect: 'if_required',
+            confirmParams: {
+              // optional: attach billing_details collected elsewhere
+            }
+          });
+          if (error) { alert("No se pudo guardar el método: " + error.message); return; }
+          // Success → webhook will mark Status=Saved and kind='book'
+          localStorage.setItem('orderId', String(order.id));
+          window.location.href = `/success?orderId=${encodeURIComponent(order.id)}`;
           return;
         }
-        const orderId = order.id;
-        const clientSecret = order.client_secret;
 
-        if (!clientSecret || !orderId) {
-          alert("Link inválido o incompleto. Por favor contacta a soporte.");
-          spinner.style.display = "none";
-          submitBtn.disabled = false;
-          return;
+        // PAYMENT: normal manual-capture payment intent (≤7d)
+        if (mode === 'confirm-payment') {
+          const cardholder = document.getElementById("cardholder-name").value || "";
+          if (document.getElementById("consent-checkbox").checked) {
+            await recordConsent(order.id); // lets Stripe save PM on capture later
+          }
+          const result = await (window.stripe).confirmCardPayment(order.client_secret, {
+            payment_method: { card: window.card, billing_details: { name: cardholder } }
+          });
+          if (result.error) { alert("Error: " + result.error.message); return; }
+          if (result.paymentIntent.status === "succeeded" || result.paymentIntent.status === "requires_capture") {
+            localStorage.setItem('orderId', String(order.id));
+            window.location.href = `/success?orderId=${encodeURIComponent(order.id)}`;
+            return;
+          }
         }
 
-        const cardholder = document.getElementById("cardholder-name").value || "";
-        if (document.getElementById("consent-checkbox").checked) {
-          await recordConsent(orderId);
-        }
-        const result = await stripe.confirmCardPayment(clientSecret, {
-          payment_method: { card, billing_details: { name: cardholder } }
-        });
+        alert("No se pudo completar la operación.");
+      } finally {
+        spinner.style.display = "none";
+        submitBtn.disabled = false;
+      }
+    });
 
-        if (result.error) {
-          alert("Error: " + result.error.message);
-          spinner.style.display = "none";
-          submitBtn.disabled = false;
-        } else if (result.paymentIntent.status === "succeeded" || result.paymentIntent.status === "requires_capture") {
-          localStorage.setItem('orderId', String(orderId));
-          window.location.href = `/success?orderId=${encodeURIComponent(orderId)}`;
-        }
-      });
 
   </script>
 </body>

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <!-- Purpose (pseudocode): show a 1-click “Review & Book” page for saved clients using their stored card, with fallback to 3DS if required. -->
+  <!-- Purpose: 1-click “Review & Book” for saved clients using their stored card, with 3DS fallback and Billing Portal. -->
 
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -203,7 +203,7 @@
   </div>
 
   <div class="footer">
-    <!-- Stripe slogan/lockup identical to pay.html -->
+    <!-- Stripe lockup identical to pay.html -->
     <img src="poweredbystripe.png" alt="Powered by Stripe" />
   </div>
 
@@ -213,33 +213,46 @@
     const params = new URLSearchParams(location.search);
     const orderId = params.get('orderId');
 
+    if (!orderId) {
+      alert('Falta el parámetro orderId.');
+      throw new Error('Missing orderId');
+    }
+
     // Load Stripe publishable key
     const { pk } = await fetch('/config/stripe').then(r => r.json());
     if (!pk) { alert('Stripe no está configurado.'); throw new Error('Missing Stripe key'); }
     const stripe = Stripe(pk);
 
-    // Get order (expects saved_card + client_secret)
+    // Get order (expects saved_card and (if needed) client_secret for 3DS)
     const res = await fetch(`/order/${encodeURIComponent(orderId)}`);
     if (!res.ok) { alert('Orden no encontrada.'); throw new Error('Order not found'); }
     const order = await res.json();
 
     // If no saved card, fallback to full payment form
     if (!order?.saved_card) {
+      // Extra guard: if server returns 409 later, we still redirect from the click handler.
       location.href = `/pay?orderId=${encodeURIComponent(orderId)}`;
     }
 
-    // Fill summary
+    // Prefer richer display if server provides it
+    const fechaTexto = formatFecha(order);
     const servicio = (order.service_description || "servicio").trim();
-    const fechaTexto = formatFechaEs(order.service_date);
     const monto = Number(order.amount || 0) / 100;
     const montoTexto = monto.toLocaleString("es-MX", { style: "currency", currency: "MXN" });
     $('#service-summary').textContent = `Reserva de ${servicio} el ${fechaTexto}, por ${montoTexto}.`;
-    $('#card-mask').textContent = `${order.saved_card.brand || 'Tarjeta'} •••• ${order.saved_card.last4}`;
 
-    function formatFechaEs(value) {
-      if (!value) return "—";
-      if (/^\d{4}-\d{2}-\d{2}/.test(String(value))) {
-        const d = new Date(value);
+    // Saved card mask (brand + last4 + expiry if available)
+    const sc = order.saved_card || {};
+    const brand = String(sc.brand || 'Tarjeta').toUpperCase();
+    const exp = (sc.exp_month && sc.exp_year)
+      ? ` • vence ${String(sc.exp_month).padStart(2,'0')}/${String(sc.exp_year).slice(-2)}`
+      : '';
+    $('#card-mask').textContent = `${brand} •••• ${sc.last4 || '----'}${exp}`;
+
+    function formatFecha(orderObj) {
+      const v = orderObj.service_display || orderObj.service_datetime || orderObj.service_date || '';
+      if (/^\d{4}-\d{2}-\d{2}/.test(String(v))) {
+        const d = new Date(v);
         if (!isNaN(d)) {
           const s = d.toLocaleDateString("es-MX", {
             weekday: "long", day: "2-digit", month: "long", year: "numeric"
@@ -247,15 +260,15 @@
           return s.charAt(0).toUpperCase() + s.slice(1);
         }
       }
-      return String(value);
+      return String(v || '—');
     }
 
-    // Record consent (audit trail)
+    // Record consent (audit trail) — harmless if already recorded
     async function recordConsent() {
-      const text = `Autorizo el cargo por ${montoTexto} a mi tarjeta •••• ${order.saved_card.last4}`;
-      const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-      const hash = [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+      const text = `Autorizo el cargo por ${montoTexto} a mi tarjeta •••• ${sc.last4 || ''}`;
       try {
+        const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+        const hash = [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
         await fetch(`/orders/${encodeURIComponent(orderId)}/consent`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -268,7 +281,7 @@
       } catch {}
     }
 
-    // Button: Reservar (off-session confirm; 3DS fallback)
+    // Button: Reservar (off-session with saved card; 3DS fallback)
     $('#btn-book').onclick = async () => {
       $('#btn-book').disabled = true;
       $('#btn-manage').disabled = true;
@@ -282,14 +295,21 @@
         body: JSON.stringify({ orderId })
       });
 
+      // Success (off-session authorized/captured)
       if (r.status === 200) {
         location.href = `/success?orderId=${encodeURIComponent(orderId)}`;
         return;
       }
 
-      const out = await r.json().catch(() => ({}));
+      // If server says "no_saved_card" or similar, bounce to pay.html
+      if (r.status === 409) {
+        alert('No hay tarjeta guardada. Te llevaremos a ingresar un método.');
+        location.href = `/pay?orderId=${encodeURIComponent(orderId)}`;
+        return;
+      }
 
       // 3DS required → confirm in browser
+      const out = await r.json().catch(() => ({}));
       if (r.status === 402 && out?.clientSecret) {
         const result = await stripe.confirmCardPayment(out.clientSecret);
         if (result.error) {
@@ -310,36 +330,31 @@
 
     // Button: Administrar pago (Stripe Billing Portal)
     $('#btn-manage').onclick = async () => {
-        const btnBook = $('#btn-book');
-        const btnManage = $('#btn-manage');
-        btnBook.disabled = true;
-        btnManage.disabled = true;
+      const btnBook = $('#btn-book');
+      const btnManage = $('#btn-manage');
+      btnBook.disabled = true;
+      btnManage.disabled = true;
 
-        try {
-            const r = await fetch('/billing-portal', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ orderId, returnUrl: location.href })
-            });
+      try {
+        const r = await fetch('/billing-portal', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ orderId, returnUrl: location.href })
+        });
 
-            // Try to parse JSON even on non-200 responses
-            const out = await r.json().catch(() => ({}));
-
-            if (r.ok && out?.url) {
-            // Success → go to Stripe Billing Portal
-            location.href = out.url;
-            return;
-            }
-
-            // Show server-provided error (if any)
-            alert(out?.error || out?.message || 'No se pudo abrir el portal de pago.');
-        } catch (e) {
-            alert('No se pudo abrir el portal de pago.');
-        } finally {
-            btnBook.disabled = false;
-            btnManage.disabled = false;
+        const out = await r.json().catch(() => ({}));
+        if (r.ok && out?.url) {
+          location.href = out.url; // Stripe Billing Portal
+          return;
         }
-      };
+        alert(out?.error || out?.message || 'No se pudo abrir el portal de pago.');
+      } catch {
+        alert('No se pudo abrir el portal de pago.');
+      } finally {
+        btnBook.disabled = false;
+        btnManage.disabled = false;
+      }
+    };
   </script>
 </body>
 </html>

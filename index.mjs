@@ -25,6 +25,48 @@ async function hasSavedCard(customerId, stripe) {
   return pm.data.length > 0;
 }
 
+// Pretty Spanish display for service date/time
+function displayEsMX(serviceDateTime, serviceDate, tz = 'America/Mexico_City') {
+  try {
+    let d;
+    if (serviceDateTime) {
+      d = new Date(serviceDateTime);
+    } else if (serviceDate) {
+      // if only a date exists, set noon to avoid DST edges
+      d = new Date(`${serviceDate}T12:00:00`);
+    } else {
+      return null;
+    }
+    const parts = new Intl.DateTimeFormat('es-MX', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+      timeZone: tz
+    }).formatToParts(d);
+
+    const get = t => parts.find(p => p.type === t)?.value || '';
+    let weekday = get('weekday');
+    let day     = get('day');
+    let month   = get('month');
+    let hour    = get('hour');
+    let minute  = get('minute');
+    let period  = get('dayPeriod'); // "a. m." / "p. m."
+
+    const cap = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+    weekday = cap(weekday);
+    month   = cap(month);
+
+    const ampm = (period || '').toLowerCase().includes('a') ? 'A.M.' : 'P.M.';
+    return `${weekday}, ${day} de ${month}, a las ${hour}:${minute} ${ampm}`;
+  } catch {
+    return null;
+  }
+}
+
+
 // For __dirname in ES modules
 await initDb(); // run before defining routes
 
@@ -55,7 +97,7 @@ app.use(express.static('public'));
 
 // 🎯 Create PaymentIntent (save card for later off-session charges)
 app.post('/create-payment-intent', async (req, res) => {
-  const { amount, clientName, serviceDescription, serviceDate, clientEmail, clientPhone, consent } = req.body;
+  const { amount, clientName, serviceDescription, serviceDate, serviceDateTime, clientEmail, clientPhone, consent } = req.body;
   try {
     // 1) Find or create Stripe Customer by email/phone (your existing logic)
     let existingCustomer = null;
@@ -93,6 +135,20 @@ app.post('/create-payment-intent', async (req, res) => {
        ON CONFLICT (id) DO NOTHING`,
       [orderId, amount, clientName || null, serviceDescription || null, serviceDate || null, 'pending', publicCode, customer.id]
     );
+
+    // NEW: persist normalized date-only + full timestamp for display
+    await pool.query(
+      'UPDATE orders SET service_date=$1, service_datetime=$2 WHERE id=$3',
+      [serviceDate || null, serviceDateTime || null, orderId]
+    );
+
+    // [DEBUG LOG] ← This is the exact place for the debug line you asked about
+    console.log('[create-payment-intent] persisted dates', {
+      orderId,
+      serviceDate,      // e.g., '2025-09-25'
+      serviceDateTime,  // e.g., '2025-09-25T16:00:00-05:00'
+      publicCode
+    });
 
     // 3) 7-day gate
     const longLead = daysAheadFromYMD(serviceDate) > 7;
@@ -171,7 +227,7 @@ app.get('/order/:orderId', async (req, res) => {
 
     const { rows } = await pool.query(`
       SELECT id, payment_intent_id, amount, client_name, service_description,
-             service_date, status, created_at, public_code,
+             service_date, service_datetime, status, created_at, public_code,
              kind, parent_id, customer_id
       FROM orders
       WHERE id = $1
@@ -199,7 +255,6 @@ app.get('/order/:orderId', async (req, res) => {
         if (!ok) {
           consentRequired = true;
           intentType = null;   // no client_secret returned
-          // leave pi = null
         } else {
           // consent exists now → promote to 'setup' and create SetupIntent
           await pool.query('UPDATE orders SET kind=$1 WHERE id=$2', ['setup', row.id]);
@@ -250,7 +305,7 @@ app.get('/order/:orderId', async (req, res) => {
       intentType = isSetup ? 'setup' : 'payment';
     }
 
-    // expose basic saved-card summary (unchanged)
+    // saved-card summary (unchanged)
     let saved_card = null;
     if (row.customer_id) {
       const pmList = await stripe.paymentMethods.list({
@@ -270,13 +325,17 @@ app.get('/order/:orderId', async (req, res) => {
       }
     }
 
+    // NEW: pretty display string for UI
+    const service_display = displayEsMX(row.service_datetime, row.service_date, 'America/Mexico_City');
+
     res.set('Cache-Control', 'no-store');
     return res.json({
       ...row,
       client_secret: pi?.client_secret || null, // null when consent_required
       intentType,                               // 'payment' | 'setup' | null
       consent_required: consentRequired,        // true → UI must block and POST /orders/:id/consent
-      saved_card: saved_card || null
+      saved_card: saved_card || null,
+      service_display                           // 👈 "Jueves, 25 de Septiembre, a las 4:00 P.M."
     });
 
   } catch (err) {
@@ -284,6 +343,7 @@ app.get('/order/:orderId', async (req, res) => {
     res.status(500).send({ error: 'Internal server error' });
   }
 });
+
 
 
 

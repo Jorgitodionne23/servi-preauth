@@ -9,13 +9,14 @@ export const pool = new Pool({
 
 export async function initDb() {
   await pool.query(`
+    -- Main orders table
     CREATE TABLE IF NOT EXISTS orders (
       id TEXT PRIMARY KEY,
       payment_intent_id TEXT UNIQUE,
       amount INTEGER,
       client_name TEXT,
       service_description TEXT,
-      service_date TEXT,
+      service_date TEXT,              -- date-only (YYYY-MM-DD) for >7d rule
       status TEXT,
       created_at TIMESTAMPTZ DEFAULT NOW(),
       public_code TEXT UNIQUE,
@@ -24,9 +25,17 @@ export async function initDb() {
       customer_id TEXT,
       saved_payment_method_id TEXT
     );
+
+    -- NEW: store full timestamp (ISO with tz) for display/use in UI
+    ALTER TABLE orders
+      ADD COLUMN IF NOT EXISTS service_datetime TEXT;
+
     CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);
     CREATE INDEX IF NOT EXISTS idx_orders_parent ON orders(parent_id);
+    -- (optional but handy for queries by date)
+    CREATE INDEX IF NOT EXISTS idx_orders_service_date ON orders(service_date);
 
+    -- Consent audit
     CREATE TABLE IF NOT EXISTS order_consents (
       order_id TEXT PRIMARY KEY,
       customer_id TEXT,
@@ -42,4 +51,5 @@ export async function initDb() {
     );
   `);
 }
+
 
