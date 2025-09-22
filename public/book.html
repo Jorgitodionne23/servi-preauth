@@ -250,18 +250,34 @@
     $('#card-mask').textContent = `${brand} •••• ${sc.last4 || '----'}${exp}`;
 
     function formatFecha(orderObj) {
-      const v = orderObj.service_display || orderObj.service_datetime || orderObj.service_date || '';
-      if (/^\d{4}-\d{2}-\d{2}/.test(String(v))) {
-        const d = new Date(v);
-        if (!isNaN(d)) {
-          const s = d.toLocaleDateString("es-MX", {
-            weekday: "long", day: "2-digit", month: "long", year: "numeric"
-          });
-          return s.charAt(0).toUpperCase() + s.slice(1);
-        }
-      }
-      return String(v || '—');
+      const dateOnly  = orderObj.service_date || null;
+      const dateTime  = orderObj.service_datetime || null;
+      const raw = dateTime || dateOnly;
+      if (!raw) return "—";
+
+      const d = new Date(raw);
+      if (isNaN(d)) return String(raw);
+
+      // Date WITHOUT year
+      const fecha = d.toLocaleDateString("es-MX", {
+        weekday: "long",
+        day: "2-digit",
+        month: "long",
+      });
+      const cap = fecha.charAt(0).toUpperCase() + fecha.slice(1);
+
+      // Show time only when we actually have a timestamp (service_datetime)
+      if (!dateTime) return cap;
+
+      const hora = d.toLocaleTimeString("es-MX", {
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true
+      });
+
+      return `${cap}, a las ${hora}`;
     }
+
 
     // Record consent (audit trail) — harmless if already recorded
     async function recordConsent() {

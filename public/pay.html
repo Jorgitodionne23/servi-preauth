@@ -347,25 +347,42 @@
       const order = await getOrder();
       if (!order) return;
 
-      // ---- SUMMARY (same as before, but try full timestamp if present) ----
-      function formatFechaEs(value) {
-        if (!value) return "—";
-        // Prefer service_datetime if your server returns it, else service_date
-        const v = order.service_datetime || order.service_date || value;
-        if (/^\d{4}-\d{2}-\d{2}/.test(String(v))) {
-          const d = new Date(v);
-          if (!isNaN(d)) {
-            const s = d.toLocaleDateString("es-MX", {
-              weekday: "long", day: "2-digit", month: "long", year: "numeric"
-            });
-            return s.charAt(0).toUpperCase() + s.slice(1);
-          }
-        }
-        return String(v);
+      // Replace your existing formatFechaEs with this version:
+      function formatFechaEs(dateOnly, dateTime) {
+        // Prefer full timestamp for display (so we can show the hour)
+        const raw = dateTime || dateOnly;
+        if (!raw) return "—";
+
+        // Accept "YYYY-MM-DD" or ISO-like values
+        const d = new Date(raw);
+        if (isNaN(d)) return String(raw);
+
+        // (1) Date WITHOUT year
+        const fecha = d.toLocaleDateString("es-MX", {
+          weekday: "long",
+          day: "2-digit",
+          month: "long",
+          // year intentionally omitted
+        });
+        const cap = fecha.charAt(0).toUpperCase() + fecha.slice(1);
+
+        // (2) Time, only if we have a timestamp (service_datetime)
+        // Force 12-hour with minutes, Spanish style (e.g., "4:00 p. m.")
+        const showTime = !!dateTime;
+        if (!showTime) return cap;
+
+        const hora = d.toLocaleTimeString("es-MX", {
+          hour: "numeric",
+          minute: "2-digit",
+          hour12: true
+        });
+
+        return `${cap}, a las ${hora}`;
       }
 
+
       const servicio = (order.service_description || "servicio").trim();
-      const fechaTexto = formatFechaEs(order.service_date);
+      const fechaTexto = formatFechaEs(order.service_date, order.service_datetime);
       const monto = (Number(order.amount || 0) / 100);
       const montoTexto = monto.toLocaleString("es-MX", { style: "currency", currency: "MXN" });
       document.getElementById("service-summary").textContent =
