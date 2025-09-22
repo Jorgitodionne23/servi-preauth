@@ -17,26 +17,52 @@
       font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
       display:flex; flex-direction:column; min-height:100vh;
     }
-    .page { flex:1; display:flex; align-items:center; justify-content:center; padding:20px; }
+    .page {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+    }
 
     /* Logo ABOVE the gray card */
     .header-logo { display:block; width:140px; height:auto; margin:0 auto 16px; }
 
-    .container { width:100%; max-width:420px; background:#111; padding:28px 22px; border-radius:12px; box-shadow:0 0 20px rgba(255,255,255,.08); }
+    .container {
+        width: 100%;
+        max-width: 560px;           /* was 420 — gives Payment Element room */
+        background: #111;
+        padding: 28px 22px;
+        border-radius: 12px;
+        box-shadow: 0 0 20px rgba(255,255,255,.08);
+    }
+
+    html, body { overflow-x: hidden; }
+
     h2 { margin:0 0 14px; font-size:22px; font-weight:600; text-align:center; }
+
     .summary { font-size:14px; background:#1a1a1a; padding:12px; border-radius:10px; margin-bottom:14px; }
     .row { margin:12px 0; }
+
     label { font-size:13px; color:#ccc; line-height:1.5; display:block; }
+
     #payment-element { background:#1a1a1a; padding:12px; border-radius:10px; display:none; }
+
     .btn { width:100%; padding:12px; border:0; border-radius:8px; font-weight:700; cursor:pointer; }
+
     .btn.primary { background:#fff; color:#000; }
+
     .btn.ghost { background:#1a1a1a; color:#fff; border:1px solid #444; }
+
     .note { font-size:12px; color:#bbb; margin-top:8px; }
+
     #spinner { display:none; text-align:center; margin-top:10px; }
+
     .spinner-circle { border:3px solid rgba(255,255,255,.2); border-top:3px solid #fff; border-radius:50%; width:20px; height:20px; animation:spin 1s linear infinite; margin:0 auto; }
     @keyframes spin { 0%{transform:rotate(0)} 100%{transform:rotate(360deg)} }
 
     .footer { padding:18px 0 28px; text-align:center; }
+
     .footer img { height:32px; width:auto; }
   </style>
 </head>
@@ -92,27 +118,39 @@
       return r.json();
     }
 
-    // NEW: pretty date for client – prefers service_datetime (shows time), omits year
     function fmtReserva(order) {
-      const raw = order.service_datetime || order.service_date || '';
-      if (!raw) return '—';
-      // ISO-like?
-      if (/^\d{4}-\d{2}-\d{2}/.test(String(raw))) {
-        const d = new Date(raw);
-        if (!isNaN(d)) {
-          const fecha = d.toLocaleDateString('es-MX', {
-            weekday:'long', day:'2-digit', month:'long' // <- no year displayed
-          });
-          const cap = fecha.charAt(0).toUpperCase() + fecha.slice(1);
-          if (order.service_datetime) {
-            const hora = d.toLocaleTimeString('es-MX', { hour:'numeric', minute:'2-digit', hour12:true });
-            return `${cap}, a las ${hora}`;
-          }
-          return cap;
+        const raw = order.service_datetime || order.service_date || '';
+        if (!raw) return '—';
+
+        // YYYY-MM-DD or YYYY-MM-DDTHH:mm...
+        if (/^\d{4}-\d{2}-\d{2}/.test(String(raw))) {
+            const d = new Date(raw);
+            if (!isNaN(d)) {
+            // weekday + day + month  (no year)
+            const fecha = d.toLocaleDateString('es-MX', {
+                weekday: 'long',
+                day: '2-digit',
+                month: 'long'
+            });
+            const nice = fecha.charAt(0).toUpperCase() + fecha.slice(1);
+
+            // If timestamp includes time (or service_datetime existed), show it
+            const hasTime =
+                /T\d{2}:\d{2}/.test(String(raw)) || Boolean(order.service_datetime);
+            if (hasTime) {
+                const hora = d.toLocaleTimeString('es-MX', {
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true
+                });
+                return `${nice}, a las ${hora}`;
+            }
+            return nice;
+            }
         }
-      }
-      return String(raw);
+        return String(raw);
     }
+
 
     async function recordConsent(text) {
       const enc = new TextEncoder().encode(text);
@@ -156,6 +194,10 @@
         return;
       }
 
+      const consentLock = document.getElementById('consent');
+      consentLock.checked = true;       // keep it on
+      consentLock.disabled = true;      // user can’t uncheck now
+
       // 4) Mount Payment Element and confirm setup
       const elements = stripe.elements({ clientSecret: refreshed.client_secret, locale: 'es', appearance:{theme:'night'} });
       const paymentElement = elements.create('payment');
@@ -166,6 +208,12 @@
       btn.textContent = 'Guardar método y crear cuenta';
       btn.onclick = async () => {
         btn.disabled = true; spinner.style.display = 'block';
+        const stillConsented = document.getElementById('consent').checked;
+        if (!stillConsented) {
+            alert('Debes autorizar guardar tu método.');
+            spinner.style.display = 'none'; btn.disabled = false;
+            return;
+        }
         const { error } = await stripe.confirmSetup({ elements, redirect: 'if_required' });
         if (error) {
           alert('No se pudo guardar el método: ' + (error.message || 'Se ha producido un error de procesamiento.'));
