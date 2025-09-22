@@ -923,7 +923,6 @@ app.get('/success', async (req, res) => {
     const { orderId } = req.query;
     if (!orderId) return res.redirect(302, '/');
 
-    // Get the order, including kind so we know where to send them back
     const { rows } = await pool.query(
       'SELECT id, payment_intent_id, kind FROM orders WHERE id = $1',
       [orderId]
@@ -934,33 +933,38 @@ app.get('/success', async (req, res) => {
     const isAdjustment = String(row.kind || '').toLowerCase() === 'adjustment';
     const redirectTarget = isAdjustment ? '/confirm' : '/pay';
 
-    // If no PI yet, treat as unpaid and send to the right page
+    // If no intent yet, send them back to the right page
     if (!row.payment_intent_id) {
       return res.redirect(302, `${redirectTarget}?orderId=${encodeURIComponent(orderId)}`);
     }
 
-    // Ask Stripe for the live status (don’t rely on webhook timing)
-    const pi = await stripe.paymentIntents.retrieve(row.payment_intent_id);
+    const id = row.payment_intent_id;
+    let ok = false;
 
-    // OK statuses for showing success:
-    // - adjustments (auto-capture):        succeeded
-    // - primary (manual capture):          requires_capture (authorized) or succeeded (captured)
-    const ok = pi && (pi.status === 'succeeded' || pi.status === 'requires_capture');
+    if (id.startsWith('seti_')) {
+      // SetupIntent (saved card flow)
+      const si = await stripe.setupIntents.retrieve(id);
+      // ok when the card was saved
+      ok = si && si.status === 'succeeded';
+    } else {
+      // PaymentIntent (primary/adjustment flows)
+      const pi = await stripe.paymentIntents.retrieve(id);
+      // ok when captured (succeeded) or authorized (manual capture → requires_capture)
+      ok = pi && (pi.status === 'succeeded' || pi.status === 'requires_capture');
+    }
 
     if (!ok) {
-      // Not paid/authorized → send them to confirm (adjustment) or pay (primary)
       return res.redirect(302, `${redirectTarget}?orderId=${encodeURIComponent(orderId)}`);
     }
 
-    // Good to show success UI
     return res.sendFile(path.join(__dirname, 'public', 'success.html'));
   } catch (e) {
     console.error('success gate error:', e);
     const orderId = req.query.orderId || '';
-    // Fallback to confirm for adjustments, pay for primaries (best-effort: default to /pay)
     return res.redirect(302, `/pay?orderId=${encodeURIComponent(orderId)}`);
   }
 });
+
 
 // 🚀 Start server
 const PORT = process.env.PORT || 4242;
