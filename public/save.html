@@ -12,14 +12,21 @@
 
   <style>
     * { box-sizing: border-box; }
-    body { background:#000; color:#fff; font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; margin:0; }
-    .page { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:20px; }
+    body {
+      background:#000; color:#fff; margin:0;
+      font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+      display:flex; flex-direction:column; min-height:100vh;
+    }
+    .page { flex:1; display:flex; align-items:center; justify-content:center; padding:20px; }
+
+    /* Logo ABOVE the gray card */
+    .header-logo { display:block; width:140px; height:auto; margin:0 auto 16px; }
+
     .container { width:100%; max-width:420px; background:#111; padding:28px 22px; border-radius:12px; box-shadow:0 0 20px rgba(255,255,255,.08); }
-    .logo { display:block; margin:0 auto 16px; max-width:140px; }
     h2 { margin:0 0 14px; font-size:22px; font-weight:600; text-align:center; }
     .summary { font-size:14px; background:#1a1a1a; padding:12px; border-radius:10px; margin-bottom:14px; }
     .row { margin:12px 0; }
-    label { font-size:13px; color:#ccc; }
+    label { font-size:13px; color:#ccc; line-height:1.5; display:block; }
     #payment-element { background:#1a1a1a; padding:12px; border-radius:10px; display:none; }
     .btn { width:100%; padding:12px; border:0; border-radius:8px; font-weight:700; cursor:pointer; }
     .btn.primary { background:#fff; color:#000; }
@@ -28,19 +35,27 @@
     #spinner { display:none; text-align:center; margin-top:10px; }
     .spinner-circle { border:3px solid rgba(255,255,255,.2); border-top:3px solid #fff; border-radius:50%; width:20px; height:20px; animation:spin 1s linear infinite; margin:0 auto; }
     @keyframes spin { 0%{transform:rotate(0)} 100%{transform:rotate(360deg)} }
+
+    .footer { padding:18px 0 28px; text-align:center; }
+    .footer img { height:32px; width:auto; }
   </style>
 </head>
 <body>
   <div class="page">
+    <!-- Logo now above the card -->
+    <img src="logo-servi-white.png" class="header-logo" alt="SERVI" />
+
     <div class="container">
-      <img src="logo-servi-white.png" class="logo" alt="SERVI" />
       <h2>Crear cuenta y guardar método</h2>
 
       <div class="summary" id="summary">Cargando…</div>
 
       <div class="row">
-        <label><input type="checkbox" id="consent" /> Autorizo a SERVI a <strong>guardar este método</strong> y realizar
-          <strong>cargos adicionales</strong> relacionados con mi servicio, previa confirmación por WhatsApp.</label>
+        <label>
+          <input type="checkbox" id="consent" />
+          Autorizo a SERVI a <strong>guardar este método</strong> y realizar
+          <strong>cargos adicionales</strong> relacionados con mi servicio, previa confirmación por WhatsApp.
+        </label>
         <div class="note">Tus datos se guardan de forma segura en Stripe. Puedes eliminarlos cuando quieras.</div>
       </div>
 
@@ -52,9 +67,14 @@
       </div>
 
       <div class="row">
-        <button id="back" class="btn ghost">Cancelar</button>
+        <button id="back" class="btn ghost" type="button">Cancelar</button>
       </div>
     </div>
+  </div>
+
+  <!-- Stripe lockup, like other pages -->
+  <div class="footer">
+    <img src="poweredbystripe.png" alt="Powered by Stripe" />
   </div>
 
   <script type="module">
@@ -72,15 +92,26 @@
       return r.json();
     }
 
-    function fmtFechaEs(v) {
-      if (!v) return '—';
-      if (/^\\d{4}-\\d{2}-\\d{2}/.test(String(v))) {
-        const d = new Date(v); if (!isNaN(d)) {
-          const s = d.toLocaleDateString('es-MX',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
-          return s.charAt(0).toUpperCase() + s.slice(1);
+    // NEW: pretty date for client – prefers service_datetime (shows time), omits year
+    function fmtReserva(order) {
+      const raw = order.service_datetime || order.service_date || '';
+      if (!raw) return '—';
+      // ISO-like?
+      if (/^\d{4}-\d{2}-\d{2}/.test(String(raw))) {
+        const d = new Date(raw);
+        if (!isNaN(d)) {
+          const fecha = d.toLocaleDateString('es-MX', {
+            weekday:'long', day:'2-digit', month:'long' // <- no year displayed
+          });
+          const cap = fecha.charAt(0).toUpperCase() + fecha.slice(1);
+          if (order.service_datetime) {
+            const hora = d.toLocaleTimeString('es-MX', { hour:'numeric', minute:'2-digit', hour12:true });
+            return `${cap}, a las ${hora}`;
+          }
+          return cap;
         }
       }
-      return String(v);
+      return String(raw);
     }
 
     async function recordConsent(text) {
@@ -100,7 +131,7 @@
     // Init
     const order = await getOrder();
     document.getElementById('summary').textContent =
-      `Reserva de ${(order.service_description||'servicio').trim()} el ${fmtFechaEs(order.service_date)}.`;
+      `Reserva de ${(order.service_description||'servicio').trim()} el ${fmtReserva(order)}.`;
 
     const consentBox = document.getElementById('consent');
     const btn = document.getElementById('continue');
