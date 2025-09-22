@@ -811,13 +811,39 @@ app.post('/confirm-with-saved', async (req, res) => {
     const { orderId } = req.body || {};
     if (!orderId) return res.status(400).send({ error: 'orderId required' });
 
+    // We need enough fields to (re)create a PI if missing/outdated
     const { rows } = await pool.query(
-      'SELECT id, payment_intent_id, customer_id FROM orders WHERE id=$1',
+      `SELECT id, payment_intent_id, customer_id, amount, kind, parent_id
+         FROM orders
+        WHERE id = $1`,
       [orderId]
     );
     const row = rows[0];
     if (!row) return res.status(404).send({ error: 'order not found' });
 
+    // 1) Ensure we have a PaymentIntent (not a SetupIntent)
+    let piId = row.payment_intent_id || null;
+    if (!piId || String(piId).startsWith('seti_')) {
+      // create a fresh manual-capture PI for this booking
+      const pi = await stripe.paymentIntents.create({
+        amount: row.amount,
+        currency: 'mxn',
+        payment_method_types: ['card'],
+        capture_method: 'manual',
+        customer: row.customer_id || undefined,
+        metadata: {
+          kind: 'primary',                // or row.kind if you prefer
+          parent_order_id: row.parent_id || ''
+        }
+      });
+      await pool.query(
+        'UPDATE orders SET payment_intent_id=$1 WHERE id=$2',
+        [pi.id, row.id]
+      );
+      piId = pi.id;
+    }
+
+    // 2) Pick a saved card
     const pmList = await stripe.paymentMethods.list({
       customer: row.customer_id,
       type: 'card'
@@ -825,14 +851,13 @@ app.post('/confirm-with-saved', async (req, res) => {
     const pm = pmList.data[0];
     if (!pm) return res.status(409).send({ error: 'no_saved_card' });
 
-    // attach saved PM to PI and confirm
-    await stripe.paymentIntents.update(row.payment_intent_id, {
-      payment_method: pm.id
-    });
+    // 3) Attach PM to PI and confirm
+    await stripe.paymentIntents.update(piId, { payment_method: pm.id });
 
     try {
-      const confirmed = await stripe.paymentIntents.confirm(row.payment_intent_id);
+      const confirmed = await stripe.paymentIntents.confirm(piId);
       if (confirmed.status === 'requires_action') {
+        // Tell the frontend to run 3DS in-browser
         return res.status(402).send({
           ok: false,
           reason: 'requires_action',
@@ -842,21 +867,25 @@ app.post('/confirm-with-saved', async (req, res) => {
       }
       return res.send({ ok: true, status: confirmed.status, paymentIntentId: confirmed.id });
     } catch (e) {
-      if (e?.code === 'authentication_required' && e?.raw?.payment_intent?.client_secret) {
+      // Authentication required but Stripe threw early: surface 3DS to the browser
+      const pi = e?.raw?.payment_intent || e?.payment_intent;
+      if (e?.code === 'authentication_required' && pi?.client_secret) {
         return res.status(402).send({
           ok: false,
           reason: 'requires_action',
-          clientSecret: e.raw.payment_intent.client_secret,
-          paymentIntentId: e.raw.payment_intent.id
+          clientSecret: pi.client_secret,
+          paymentIntentId: pi.id
         });
       }
       throw e;
     }
   } catch (err) {
     console.error('confirm-with-saved error:', err);
+    // Keep a readable, stable message for the UI
     res.status(500).send({ error: 'Internal error' });
   }
 });
+
 
 app.post('/billing-portal', async (req, res) => {
   try {
