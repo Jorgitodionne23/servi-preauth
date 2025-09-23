@@ -671,7 +671,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
             status: 'Saved'
           })
         }).catch(() => {});
-      };
+      }
 
       // Optionally push a customer.updated to keep Clients synced
       if (cust) {
@@ -760,6 +760,8 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
         await pool.query('UPDATE orders SET status = $1 WHERE payment_intent_id = $2', ['Confirmed', obj.id]);
 
+        console.log('[PI capturable] order:', row.id, 'pi:', obj.id, 'status → Confirmed'); // <— add
+
         if (GOOGLE_SCRIPT_WEBHOOK_URL) {
           fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
             method: 'POST',
@@ -802,6 +804,17 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
       }
       break;
     }
+
+    case 'customer.created': {
+      // We don't need to do anything here; customer.updated will sync the sheet if needed.
+      break;
+    }
+
+    case 'charge.succeeded': {
+      // Paid-in-full charge when capture_method=automatic — we rely on PI events instead.
+      break;
+    }
+
 
     default:
       console.log(`Unhandled event type: ${event.type}`);
