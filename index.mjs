@@ -576,28 +576,39 @@ app.post('/capture-order', async (req, res) => {
   }
 });
 
-// Cancel a manual-capture PaymentIntent to release the hold. bb
-// Body: { orderId?: string, paymentIntentId?: string, reason?: string }
 app.post('/void-order', async (req, res) => {
   try {
     const { orderId, paymentIntentId, reason } = req.body || {};
-    let piId = paymentIntentId;
+    let intentId = paymentIntentId;
 
-    if (!piId && orderId) {
+    if (!intentId && orderId) {
       const r = await pool.query('SELECT payment_intent_id FROM orders WHERE id=$1', [orderId]);
-      if (!r.rows[0] || !r.rows[0].payment_intent_id) return res.status(404).send({ error: 'order not found' });
-      piId = r.rows[0].payment_intent_id;
+      if (!r.rows[0] || !r.rows[0].payment_intent_id) {
+        return res.status(404).send({ error: 'Order not found or has no linked Intent' });
+      }
+      intentId = r.rows[0].payment_intent_id;
     }
-    if (!piId) return res.status(400).send({ error: 'missing paymentIntentId or orderId' });
+    if (!intentId) {
+      return res.status(400).send({ error: 'Missing paymentIntentId or orderId' });
+    }
+    
+    // Check the ID prefix to determine the type
+    let updated;
+    if (intentId.startsWith('seti_')) {
+      updated = await stripe.setupIntents.cancel(intentId, {
+        cancellation_reason: reason || 'requested_by_customer'
+      });
+    } else {
+      updated = await stripe.paymentIntents.cancel(intentId, {
+        cancellation_reason: reason || 'requested_by_customer'
+      });
+    }
 
-    const updated = await stripe.paymentIntents.cancel(piId, {
-      cancellation_reason: reason || 'requested_by_customer'
-    });
-    // Webhook will update Sheets on payment_intent.canceled
-    return res.send({ ok: true, paymentIntentId: updated.id, status: updated.status });
+    // Webhook will update Sheets on payment_intent.canceled or setup_intent.canceled
+    return res.send({ ok: true, intentId: updated.id, status: updated.status });
   } catch (e) {
     console.error('void-order error:', e);
-    return res.status(500).send({ error: e.message || 'void failed' });
+    return res.status(500).send({ error: e.message || 'Void failed' });
   }
 });
 
