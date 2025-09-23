@@ -671,7 +671,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
             status: 'Saved'
           })
         }).catch(() => {});
-
+      };
 
       // Optionally push a customer.updated to keep Clients synced
       if (cust) {
