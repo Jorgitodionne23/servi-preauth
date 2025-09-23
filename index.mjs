@@ -661,12 +661,17 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
           ['Saved', pmId, cust, orderId]
         );
 
-        // Notify Sheets (Status column becomes "Saved")
+        // Notify Sheets (explicit type for SetupIntent path)
         fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
-          method:'POST', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({ paymentIntentId: si.id, status: 'Saved', orderId })
-        }).catch(()=>{});
-      }
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'order.status',
+            orderId,
+            status: 'Saved'
+          })
+        }).catch(() => {});
+
 
       // Optionally push a customer.updated to keep Clients synced
       if (cust) {
