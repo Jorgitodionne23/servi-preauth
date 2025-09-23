@@ -405,9 +405,10 @@ app.post('/orders/:id/consent', async (req, res) => {
       checked_at=NOW(), ip=EXCLUDED.ip, user_agent=EXCLUDED.user_agent, locale=EXCLUDED.locale, tz=EXCLUDED.tz
   `, [id, r.rows[0].customer_id, r.rows[0].saved_payment_method_id, version || '1.0', text || '', serverHash, ip, ua, locale || null, tz || null]);
 
-  if (r.rows[0].payment_intent_id) {
-    await stripe.paymentIntents.update(r.rows[0].payment_intent_id, {
-      // When confirmed, Stripe will attach PM to the customer for future off-session use
+  const maybeIntentId = r.rows[0].payment_intent_id || '';
+  // Only touch a real PaymentIntent (pi_...). Skip if it's a SetupIntent (seti_...)
+  if (maybeIntentId.startsWith('pi_')) {
+    await stripe.paymentIntents.update(maybeIntentId, {
       setup_future_usage: 'off_session',
       metadata: {
         cof_consent: 'true',
@@ -416,6 +417,7 @@ app.post('/orders/:id/consent', async (req, res) => {
       }
     });
   }
+
 
   await pool.query(
     "UPDATE orders SET kind='setup' WHERE id=$1 AND kind='setup_required'",
@@ -750,8 +752,6 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
       break;
     }
 
-
-
     // 3) payment_intent.amount_capturable_updated (when a manual PI becomes capturable)
     case 'payment_intent.amount_capturable_updated': {
       const obj = event.data.object;
@@ -914,7 +914,6 @@ app.post('/confirm-with-saved', async (req, res) => {
     res.status(500).send({ error: 'Internal error' });
   }
 });
-
 
 app.post('/billing-portal', async (req, res) => {
   try {
