@@ -249,6 +249,15 @@
       : '';
     $('#card-mask').textContent = `${brand} •••• ${sc.last4 || '----'}${exp}`;
 
+    // If PI window not open yet, disable reservar and change copy
+    if (order.kind === 'book' && order.preauth_window_open === false) {
+      const btn = document.querySelector('#btn-book');
+      btn.disabled = true;
+      btn.textContent = 'Método guardado — te confirmaremos 7 días antes';
+      // Keep "Administrar métodos de pago" enabled
+    }
+
+
     function formatFecha(orderObj) {
       const dateOnly  = orderObj.service_date || null;
       const dateTime  = orderObj.service_datetime || null;
@@ -299,8 +308,11 @@
 
     // Button: Reservar (off-session with saved card; 3DS fallback)
     $('#btn-book').onclick = async () => {
-      $('#btn-book').disabled = true;
-      $('#btn-manage').disabled = true;
+      const btnBook = $('#btn-book');
+      const btnManage = $('#btn-manage');
+
+      btnBook.disabled = true;
+      btnManage.disabled = true;
       $('#spinner').style.display = 'block';
 
       await recordConsent();
@@ -311,16 +323,23 @@
         body: JSON.stringify({ orderId })
       });
 
-      // Success (off-session authorized/captured)
+      // ✅ Success (off-session authorized/captured)
       if (r.status === 200) {
         location.href = `/success?orderId=${encodeURIComponent(orderId)}`;
         return;
       }
 
-      // If server says "no_saved_card" or similar, bounce to pay.html
+      // ✅ NEW: Preauth window closed (>7 days) — gracefully inform the user
       if (r.status === 409) {
-        alert('No hay tarjeta guardada. Te llevaremos a ingresar un método.');
-        location.href = `/pay?orderId=${encodeURIComponent(orderId)}`;
+        const out = await r.json().catch(() => ({}));
+        alert(out.message || 'Tu servicio quedó programado. Realizaremos la preautorización 7 días antes de la fecha.');
+        // Option 1: send them to a simple success/thanks screen
+        // location.href = `/success?orderId=${encodeURIComponent(orderId)}`;
+
+        // Option 2 (default here): keep them on page, but prevent re-clicks
+        $('#spinner').style.display = 'none';
+        btnBook.disabled = true;   // prevent repeated clicks
+        btnManage.disabled = false;
         return;
       }
 
@@ -331,18 +350,21 @@
         if (result.error) {
           alert(result.error.message || 'Error de autenticación');
           $('#spinner').style.display = 'none';
-          $('#btn-book').disabled = false;
-          $('#btn-manage').disabled = false;
+          btnBook.disabled = false;
+          btnManage.disabled = false;
         } else {
           location.href = `/success?orderId=${encodeURIComponent(orderId)}`;
         }
-      } else {
-        alert(out?.error || 'No se pudo confirmar el pago.');
-        $('#spinner').style.display = 'none';
-        $('#btn-book').disabled = false;
-        $('#btn-manage').disabled = false;
+        return;
       }
+
+      // Other errors
+      alert(out?.error || 'No se pudo confirmar el pago.');
+      $('#spinner').style.display = 'none';
+      btnBook.disabled = false;
+      btnManage.disabled = false;
     };
+
 
     // Button: Administrar pago (Stripe Billing Portal)
     $('#btn-manage').onclick = async () => {

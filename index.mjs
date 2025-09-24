@@ -286,8 +286,28 @@ app.get('/order/:orderId', async (req, res) => {
         pi = si;
         intentType = 'setup';
 
+      } else if (kind === 'book') {
+        // Booking with a saved card. Only create PI when within the T-7 day window.
+        const daysAhead = daysAheadFromYMD(row.service_date);
+        if (daysAhead > 7) {
+          // Too early → DO NOT create a PI yet.
+          intentType = null;          // no client_secret
+          pi = null;
+        } else {
+          // Within window → create a manual-capture PI now
+          pi = await stripe.paymentIntents.create({
+            amount: row.amount,
+            currency: 'mxn',
+            payment_method_types: ['card'],
+            capture_method: 'manual',
+            customer: row.customer_id || undefined,
+            metadata: { kind: 'primary', parent_order_id: row.parent_id || '' }
+          });
+          await pool.query('UPDATE orders SET payment_intent_id=$1 WHERE id=$2', [pi.id, row.id]);
+          intentType = 'payment';
+        }
       } else {
-        // Default: manual-capture PI for ≤7d / primary flow
+        // Default (legacy primary or adjustments)
         pi = await stripe.paymentIntents.create({
           amount: row.amount,
           currency: 'mxn',
@@ -333,6 +353,10 @@ app.get('/order/:orderId', async (req, res) => {
     // NEW: pretty display string for UI
     const service_display = displayEsMX(row.service_datetime, row.service_date, 'America/Mexico_City');
 
+    // NEW: expose how far the date is and whether preauth window is open (<= 7 days)
+    const days_ahead = daysAheadFromYMD(row.service_date);
+    const preauth_window_open = days_ahead <= 7;
+
     res.set('Cache-Control', 'no-store');
     return res.json({
       ...row,
@@ -340,7 +364,9 @@ app.get('/order/:orderId', async (req, res) => {
       intentType,                               // 'payment' | 'setup' | null
       consent_required: consentRequired,        // true → UI must block and POST /orders/:id/consent
       saved_card: saved_card || null,
-      service_display                           // 👈 "Jueves, 25 de Septiembre, a las 4:00 P.M."
+      service_display,
+      days_ahead,                 // 👈 NEW
+      preauth_window_open         // 👈 NEW
     });
 
   } catch (err) {
@@ -849,6 +875,17 @@ app.post('/confirm-with-saved', async (req, res) => {
     );
     const row = rows[0];
     if (!row) return res.status(404).send({ error: 'order not found' });
+
+    // Do not preauthorize if the service date is still more than 7 days away.
+    // Just acknowledge the booking; the frontend will show a message and prevent re-clicks.
+    const daysAhead = daysAheadFromYMD(row.service_date);
+    if (daysAhead > 7) {
+      return res.status(409).json({
+        error: 'preauth_window_closed',
+        message:
+          'Confirmaste tu reserva. Preautorizaremos el pago 7 días antes de la fecha del servicio.'
+      });
+    }
 
     // 1) Ensure we have a PaymentIntent (not a SetupIntent)
     let piId = row.payment_intent_id || null;
