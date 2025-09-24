@@ -868,13 +868,25 @@ app.post('/confirm-with-saved', async (req, res) => {
 
     // We need enough fields to (re)create a PI if missing/outdated
     const { rows } = await pool.query(
-      `SELECT id, payment_intent_id, customer_id, amount, kind, parent_id
+      `SELECT id, payment_intent_id, customer_id, amount, kind, parent_id, service_date
          FROM orders
         WHERE id = $1`,
       [orderId]
     );
     const row = rows[0];
     if (!row) return res.status(404).send({ error: 'order not found' });
+
+    // Do not create/confirm a PI if this is a saved-card booking (>7d before service)
+    const kind = String(row.kind || '').toLowerCase();
+    if (kind === 'book') {
+      const daysAhead = daysAheadFromYMD(row.service_date);
+      if (daysAhead > 7) {
+        return res.status(409).send({
+          error: 'preauth_window_closed',
+          message: `La preautorización se hará automáticamente 7 días antes (faltan ${daysAhead} días).`
+        });
+      }
+    }
 
     // Do not preauthorize if the service date is still more than 7 days away.
     // Just acknowledge the booking; the frontend will show a message and prevent re-clicks.
