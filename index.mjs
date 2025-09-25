@@ -410,6 +410,62 @@ app.get('/o/:code', async (req, res) => {
 // 📡 Stripe Webhook handler ex
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
+// Cron-safe endpoint: preauthorize “book” orders that just entered T-7
+app.post('/tasks/preauth-due', async (req, res) => {
+  try {
+    // Select orders that:
+    //  - are 'book' (saved card on file)
+    //  - have a saved PM and customer
+    //  - have no PI yet
+    //  - service_date is within 7 days (and not in the past)
+    const { rows } = await pool.query(`
+      SELECT id, amount, customer_id, saved_payment_method_id, parent_id
+      FROM orders
+      WHERE kind = 'book'
+        AND customer_id IS NOT NULL
+        AND saved_payment_method_id IS NOT NULL
+        AND payment_intent_id IS NULL
+        AND service_date <= CURRENT_DATE + INTERVAL '7 days'
+        AND service_date >= CURRENT_DATE
+      ORDER BY service_date ASC
+      LIMIT 50
+    `);
+
+    const results = [];
+    for (const row of rows) {
+      try {
+        // Create MANUAL-CAPTURE PI and CONFRIM it off-session with the saved PM.
+        // This places the authorization hold; webhook will set status=Confirmed.
+        const pi = await stripe.paymentIntents.create({
+          amount: row.amount,
+          currency: 'mxn',
+          capture_method: 'manual',
+          customer: row.customer_id,
+          payment_method: row.saved_payment_method_id,
+          confirm: true,              // off-session auth
+          off_session: true,
+          metadata: { kind: 'primary', parent_order_id: row.parent_id || '' }
+        });
+
+        await pool.query(
+          'UPDATE orders SET payment_intent_id=$1 WHERE id=$2',
+          [pi.id, row.id]
+        );
+
+        results.push({ orderId: row.id, pi: pi.id, status: pi.status });
+      } catch (e) {
+        console.error('[preauth-due] failed for', row.id, e?.message);
+        results.push({ orderId: row.id, error: e?.message || 'stripe_error' });
+      }
+    }
+
+    res.json({ ok: true, processed: results.length, results });
+  } catch (e) {
+    console.error('preauth-due error:', e);
+    res.status(500).json({ ok: false, error: e.message || 'internal' });
+  }
+});
+
 // Record consent (called from pay.html before confirming)
 app.post('/orders/:id/consent', async (req, res) => {
   const { id } = req.params;

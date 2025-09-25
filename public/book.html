@@ -329,17 +329,10 @@
         return;
       }
 
-      // ✅ NEW: Preauth window closed (>7 days) — gracefully inform the user
       if (r.status === 409) {
         const out = await r.json().catch(() => ({}));
         alert(out.message || 'Tu servicio quedó programado. Realizaremos la preautorización 7 días antes de la fecha.');
-        // Option 1: send them to a simple success/thanks screen
-        // location.href = `/success?orderId=${encodeURIComponent(orderId)}`;
-
-        // Option 2 (default here): keep them on page, but prevent re-clicks
-        $('#spinner').style.display = 'none';
-        btnBook.disabled = true;   // prevent repeated clicks
-        btnManage.disabled = false;
+        location.href = `/success?orderId=${encodeURIComponent(orderId)}`;
         return;
       }
 
