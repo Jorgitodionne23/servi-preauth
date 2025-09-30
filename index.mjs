@@ -742,17 +742,24 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
       const si   = event.data.object;
       const pmId = si.payment_method || null;
       const cust = si.customer || null;
-      const orderId = si.metadata?.order_id || null;
+
+      // Try to get the orderId from metadata; otherwise pick the most recent setup-related order for this customer
+      let orderId = si.metadata?.order_id || null;
+      if (!orderId && cust) {
+        try {
+          const r = await pool.query(
+            `SELECT id FROM orders
+            WHERE customer_id=$1 AND kind IN ('setup_required','setup','book')
+            ORDER BY created_at DESC
+            LIMIT 1`,
+            [cust]
+          );
+          orderId = r.rows[0]?.id || null;
+        } catch {}
+      }
 
       if (orderId) {
-        // Read the current kind BEFORE we change it
-        let prevKind = null;
-        try {
-          const r0 = await pool.query('SELECT kind FROM orders WHERE id=$1', [orderId]);
-          prevKind = (r0.rows[0]?.kind || '').toLowerCase();   // e.g. 'setup_required' | 'setup' | 'primary' | 'book'
-        } catch {}
-
-        // Update DB: mark as Saved and promote to 'book' for future 1-click booking
+        // Store PM & customer; promote order to 'book' so links route to /book
         await pool.query(
           `UPDATE orders
             SET status=$1,
@@ -763,25 +770,19 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
           ['Saved', pmId, cust, orderId]
         );
 
-        // Pick the exact sheet label we want to show
-        const isScheduled = prevKind === 'setup_required' || prevKind === 'setup';
-        const statusLabel = isScheduled
-          ? 'Setup created for scheduled order'
-          : 'Setup created';
-
-        // Notify the Apps Script webhook so the SERVI Orders row updates col H
+        // 👉 Always “Setup created” here (NOT the scheduled variant)
         fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             type: 'order.status',
             orderId,
-            status: statusLabel
+            status: 'Setup created'
           })
-        }).catch(() => {});
+        }).catch(()=>{});
       }
 
-      // (optional) still upsert client in the Clients sheet
+      // Optional: keep Clients sheet in sync
       if (cust) {
         try {
           const c = await stripe.customers.retrieve(cust);
@@ -951,22 +952,26 @@ app.post('/confirm-with-saved', async (req, res) => {
     if (kind === 'book') {
       const daysAhead = daysAheadFromYMD(row.service_date);
       if (daysAhead > 7) {
+        // NEW: mark “scheduled booking” now that the user clicked Reservar
+        await pool.query('UPDATE orders SET status=$1 WHERE id=$2',
+          ['Setup created for scheduled order', row.id]);
+
+        // Update the Sheet
+        fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'order.status',
+            orderId: row.id,
+            status: 'Setup created for scheduled order'
+          })
+        }).catch(() => {});
+
         return res.status(409).send({
           error: 'preauth_window_closed',
           message: `La preautorización se hará automáticamente 7 días antes (faltan ${daysAhead} días).`
         });
       }
-    }
-
-    // Do not preauthorize if the service date is still more than 7 days away.
-    // Just acknowledge the booking; the frontend will show a message and prevent re-clicks.
-    const daysAhead = daysAheadFromYMD(row.service_date);
-    if (daysAhead > 7) {
-      return res.status(409).json({
-        error: 'preauth_window_closed',
-        message:
-          'Confirmaste tu reserva. Preautorizaremos el pago 7 días antes de la fecha del servicio.'
-      });
     }
 
     // 1) Ensure we have a PaymentIntent (not a SetupIntent)
