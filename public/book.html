@@ -249,13 +249,13 @@
       : '';
     $('#card-mask').textContent = `${brand} •••• ${sc.last4 || '----'}${exp}`;
 
-    // If PI window not open yet, disable reservar and change copy
+   // If PI window not open yet (>7 days), keep button ENABLED but change copy
     if (order.kind === 'book' && order.preauth_window_open === false) {
       const btn = document.querySelector('#btn-book');
-      btn.disabled = true;
-      btn.textContent = 'Método guardado — te confirmaremos 7 días antes';
-      // Keep "Administrar métodos de pago" enabled
+      btn.disabled = false; // keep clickable
+      btn.textContent = 'Confirmar reserva (cargo 7 días antes)';
     }
+
 
 
     function formatFecha(orderObj) {
