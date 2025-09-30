@@ -739,13 +739,20 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
     }
 
     case 'setup_intent.succeeded': {
-      const si = event.data.object;
+      const si   = event.data.object;
       const pmId = si.payment_method || null;
       const cust = si.customer || null;
       const orderId = si.metadata?.order_id || null;
 
       if (orderId) {
-        // Mark Saved; store PM and Customer; promote to 'book' so future links route to one-click booking
+        // Read the current kind BEFORE we change it
+        let prevKind = null;
+        try {
+          const r0 = await pool.query('SELECT kind FROM orders WHERE id=$1', [orderId]);
+          prevKind = (r0.rows[0]?.kind || '').toLowerCase();   // e.g. 'setup_required' | 'setup' | 'primary' | 'book'
+        } catch {}
+
+        // Update DB: mark as Saved and promote to 'book' for future 1-click booking
         await pool.query(
           `UPDATE orders
             SET status=$1,
@@ -756,19 +763,25 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
           ['Saved', pmId, cust, orderId]
         );
 
-        // Notify Sheets (explicit type for SetupIntent path)
+        // Pick the exact sheet label we want to show
+        const isScheduled = prevKind === 'setup_required' || prevKind === 'setup';
+        const statusLabel = isScheduled
+          ? 'Setup created for scheduled order'
+          : 'Setup created';
+
+        // Notify the Apps Script webhook so the SERVI Orders row updates col H
         fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             type: 'order.status',
             orderId,
-            status: 'Saved'
+            status: statusLabel
           })
         }).catch(() => {});
       }
 
-      // Optionally push a customer.updated to keep Clients synced
+      // (optional) still upsert client in the Clients sheet
       if (cust) {
         try {
           const c = await stripe.customers.retrieve(cust);
@@ -780,6 +793,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
       }
       break;
     }
+
 
     case 'charge.failed': {
       console.log('❌ Failed (charge.failed):', paymentIntentId);
