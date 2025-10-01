@@ -555,7 +555,7 @@
         // GATE: user must consent first for >7d requests
         if (mode === 'gate-consent') {
           if (!consentChecked) {
-            alert("Para reservar con más de 5 días de anticipación debes autorizar guardar tu método de pago.");
+            alert("Para reservas con 5 días o más de anticipación debes autorizar guardar tu método de pago.");
             return;
           }
           // Record consent → server promotes order.kind from 'setup_required' to 'setup'
