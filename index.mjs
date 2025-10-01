@@ -185,9 +185,9 @@ app.post('/create-payment-intent', async (req, res) => {
         return res.send({ orderId, publicCode, requiresSetup: true, hasSavedCard: false });
       }
 
-      // Card saved → booking flow (no PI yet; /order/:id or /confirm-with-saved will create/confirm later)
-      await pool.query('UPDATE orders SET kind=$1 WHERE id=$2', ['book', orderId]);
-      return res.send({ orderId, publicCode, hasSavedCard: true });
+      // Card saved → scheduled booking: no PI yet. Mark as Scheduled in DB.
+      await pool.query('UPDATE orders SET kind=$1, status=$2 WHERE id=$3', ['book', 'Scheduled', orderId]);
+      return res.send({ orderId, publicCode, hasSavedCard: true, scheduled: true });
     }
 
     const paymentIntent = await stripe.paymentIntents.create({
