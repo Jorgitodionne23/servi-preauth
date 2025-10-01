@@ -505,7 +505,6 @@ app.post('/orders/:id/consent', async (req, res) => {
     });
   }
 
-
   await pool.query(
     "UPDATE orders SET kind='setup' WHERE id=$1 AND kind='setup_required'",
     [id]
@@ -942,7 +941,6 @@ app.post('/confirm-with-saved', async (req, res) => {
     const { orderId } = req.body || {};
     if (!orderId) return res.status(400).send({ error: 'orderId required' });
 
-    // We need enough fields to (re)create a PI if needed
     const { rows } = await pool.query(
       `SELECT id, payment_intent_id, customer_id, amount, kind, parent_id, service_date, service_datetime
          FROM orders
@@ -952,12 +950,11 @@ app.post('/confirm-with-saved', async (req, res) => {
     const row = rows[0];
     if (!row) return res.status(404).send({ error: 'order not found' });
 
-    // Always allow pressing “Reservar”, but if we’re still >12h out, DO NOT create a PI.
     const hoursAhead = hoursUntilService(row);
     if (hoursAhead > 12) {
-      // Mark on Sheets that the customer booked the scheduled order
-      try {
-        await fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
+      const cameFromSetup = !!(row.payment_intent_id && String(row.payment_intent_id).startsWith('seti_'));
+      if (cameFromSetup && GOOGLE_SCRIPT_WEBHOOK_URL) {
+        fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -965,10 +962,9 @@ app.post('/confirm-with-saved', async (req, res) => {
             orderId: row.id,
             status: 'Setup created for scheduled order'
           })
-        });
-      } catch {}
+        }).catch(() => {});
+      }
 
-      // Tell the client “we’ll preauth later”; frontend will still redirect to /success
       return res.status(409).json({
         error: 'preauth_window_closed',
         message: 'Tu servicio quedó programado. Realizaremos la preautorización 12 horas antes del servicio.'
