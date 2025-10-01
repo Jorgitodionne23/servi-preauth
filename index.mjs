@@ -267,12 +267,12 @@ app.get('/order/:orderId', async (req, res) => {
       const kind = String(row.kind || '').toLowerCase();
 
       if (kind === 'setup_required') {
-        const ok = await hasConsent(row.id);
-        if (!ok) {
+        const c = await pool.query('SELECT 1 FROM order_consents WHERE order_id=$1', [row.id]);
+        if (!c.rows.length) {
           consentRequired = true;
-          intentType = null;   // no client_secret returned
+          pi = null;
+          intentType = null; // no client_secret returned
         } else {
-          // consent exists now → promote to 'setup' and create SetupIntent
           await pool.query('UPDATE orders SET kind=$1 WHERE id=$2', ['setup', row.id]);
           const si = await stripe.setupIntents.create({
             customer: row.customer_id || undefined,
@@ -286,7 +286,6 @@ app.get('/order/:orderId', async (req, res) => {
         }
 
       } else if (kind === 'setup') {
-        // Save-card flow (consent presumably on file already)
         const si = await stripe.setupIntents.create({
           customer: row.customer_id || undefined,
           automatic_payment_methods: { enabled: true },
@@ -299,26 +298,13 @@ app.get('/order/:orderId', async (req, res) => {
 
       } else if (kind === 'book') {
         // Saved-card booking: never create a PI here.
-        // Frontend button stays active; /confirm-with-saved decides if PI is needed now.
-        intentType = null;
+        // The /confirm-with-saved route decides when to create/confirm (≤12h).
         pi = null;
-      } else {
+        intentType = null;
 
-          // Within window → create a manual-capture PI now
-          pi = await stripe.paymentIntents.create({
-            amount: row.amount,
-            currency: 'mxn',
-            payment_method_types: ['card'],
-            capture_method: 'manual',
-            customer: row.customer_id || undefined,
-            metadata: { kind: 'primary', parent_order_id: row.parent_id || '' }
-          });
-          await pool.query('UPDATE orders SET payment_intent_id=$1 WHERE id=$2', [pi.id, row.id]);
-          intentType = 'payment';
-        }
       } else {
-        // Default (legacy primary or adjustments)
-        pi = await stripe.paymentIntents.create({
+        // Default (legacy primary or adjustments): create a PI now
+        const created = await stripe.paymentIntents.create({
           amount: row.amount,
           currency: 'mxn',
           payment_method_types: ['card'],
@@ -326,7 +312,8 @@ app.get('/order/:orderId', async (req, res) => {
           customer: row.customer_id || undefined,
           metadata: { kind: row.kind || 'primary', parent_order_id: row.parent_id || '' }
         });
-        await pool.query('UPDATE orders SET payment_intent_id=$1 WHERE id=$2', [pi.id, row.id]);
+        await pool.query('UPDATE orders SET payment_intent_id=$1 WHERE id=$2', [created.id, row.id]);
+        pi = created;
         intentType = 'payment';
       }
 
@@ -339,6 +326,7 @@ app.get('/order/:orderId', async (req, res) => {
         : await stripe.paymentIntents.retrieve(id);
       intentType = isSetup ? 'setup' : 'payment';
     }
+
 
     // saved-card summary (unchanged)
     let saved_card = null;
@@ -360,12 +348,10 @@ app.get('/order/:orderId', async (req, res) => {
       }
     }
 
-    // NEW: pretty display string for UI
     const service_display = displayEsMX(row.service_datetime, row.service_date, 'America/Mexico_City');
-
     const hours_ahead = hoursUntilService(row);
     const preauth_window_open = hours_ahead <= 12 && hours_ahead >= 0;
-    const days_ahead = Math.ceil(hours_ahead / 24); // add this or remove days_ahead from the JSON
+    const days_ahead = Math.ceil(Math.max(0, hours_ahead) / 24);
 
     res.set('Cache-Control', 'no-store');
     return res.json({
@@ -376,8 +362,8 @@ app.get('/order/:orderId', async (req, res) => {
       saved_card: saved_card || null,
       service_display,
       days_ahead,
-      hours_ahead,             // 👈 new
-      preauth_window_open      // 👈 now based on 12h
+      hours_ahead,             
+      preauth_window_open      
     });
 
 
@@ -386,9 +372,6 @@ app.get('/order/:orderId', async (req, res) => {
     res.status(500).send({ error: 'Internal server error' });
   }
 });
-
-
-
 
 app.get('/o/:code', async (req, res) => {
   const code = String(req.params.code || '').toUpperCase();
