@@ -25,6 +25,21 @@ async function hasSavedCard(customerId, stripe) {
   return pm.data.length > 0;
 }
 
+function hoursUntilService(row) {
+  // Prefer exact timestamp if you store it
+  if (row.service_datetime) {
+    const t = new Date(row.service_datetime).getTime();
+    return Math.floor((t - Date.now()) / 3_600_000);
+  }
+  // Fallback: date-only anchored at local noon to avoid DST edges
+  if (row.service_date) {
+    const [y,m,d] = String(row.service_date).split('-').map(Number);
+    const t = new Date(y, (m||1)-1, d||1, 12, 0, 0, 0).getTime();
+    return Math.floor((t - Date.now()) / 3_600_000);
+  }
+  return Infinity;
+}
+
 // Pretty Spanish display for service date/time
 function displayEsMX(serviceDateTime, serviceDate, tz = 'America/Mexico_City') {
   try {
@@ -150,17 +165,15 @@ app.post('/create-payment-intent', async (req, res) => {
       publicCode
     });
 
-    // 3) 7-day gate
-    const longLead = daysAheadFromYMD(serviceDate) > 7;
+    const longLead = daysAheadFromYMD(serviceDate) >= 5;
     const saved = await hasSavedCard(customer.id, stripe);
 
     if (longLead) {
-      // Only “account users” (consent or saved card) can reserve >7d in advance
       if (!consent && !saved) {
         await pool.query('UPDATE orders SET status=$1, kind=$2 WHERE id=$3', ['Blocked', 'setup_required', orderId]);
         return res.status(403).send({
           error: 'account_required',
-          message: 'Solo usuarios con cuenta pueden reservar con más de 7 días de anticipación.',
+          message: 'Solo usuarios con cuenta pueden reservar con 5 días o mas de anticipación.',
           orderId,
           publicCode
         });
@@ -177,7 +190,6 @@ app.post('/create-payment-intent', async (req, res) => {
       return res.send({ orderId, publicCode, hasSavedCard: true });
     }
 
-    // 4) ≤ 7 days → create manual-capture PI now
     const paymentIntent = await stripe.paymentIntents.create({
       amount,
       currency: 'mxn',
@@ -255,7 +267,6 @@ app.get('/order/:orderId', async (req, res) => {
       const kind = String(row.kind || '').toLowerCase();
 
       if (kind === 'setup_required') {
-        // >7d and user hasn't consented yet → don't create any Intent
         const ok = await hasConsent(row.id);
         if (!ok) {
           consentRequired = true;
@@ -287,13 +298,12 @@ app.get('/order/:orderId', async (req, res) => {
         intentType = 'setup';
 
       } else if (kind === 'book') {
-        // Booking with a saved card. Only create PI when within the T-7 day window.
-        const daysAhead = daysAheadFromYMD(row.service_date);
-        if (daysAhead > 7) {
-          // Too early → DO NOT create a PI yet.
-          intentType = null;          // no client_secret
-          pi = null;
-        } else {
+        // Saved-card booking: never create a PI here.
+        // Frontend button stays active; /confirm-with-saved decides if PI is needed now.
+        intentType = null;
+        pi = null;
+      } else {
+
           // Within window → create a manual-capture PI now
           pi = await stripe.paymentIntents.create({
             amount: row.amount,
@@ -353,21 +363,23 @@ app.get('/order/:orderId', async (req, res) => {
     // NEW: pretty display string for UI
     const service_display = displayEsMX(row.service_datetime, row.service_date, 'America/Mexico_City');
 
-    // NEW: expose how far the date is and whether preauth window is open (<= 7 days)
-    const days_ahead = daysAheadFromYMD(row.service_date);
-    const preauth_window_open = days_ahead <= 7;
+    const hours_ahead = hoursUntilService(row);
+    const preauth_window_open = hours_ahead <= 12 && hours_ahead >= 0;
+    const days_ahead = Math.ceil(hours_ahead / 24); // add this or remove days_ahead from the JSON
 
     res.set('Cache-Control', 'no-store');
     return res.json({
       ...row,
-      client_secret: pi?.client_secret || null, // null when consent_required
-      intentType,                               // 'payment' | 'setup' | null
-      consent_required: consentRequired,        // true → UI must block and POST /orders/:id/consent
+      client_secret: pi?.client_secret || null,
+      intentType,
+      consent_required: consentRequired,
       saved_card: saved_card || null,
       service_display,
-      days_ahead,                 // 👈 NEW
-      preauth_window_open         // 👈 NEW
+      days_ahead,
+      hours_ahead,             // 👈 new
+      preauth_window_open      // 👈 now based on 12h
     });
+
 
   } catch (err) {
     console.error('Error retrieving order:', err);
@@ -410,26 +422,36 @@ app.get('/o/:code', async (req, res) => {
 // 📡 Stripe Webhook handler ex
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
-// Cron-safe endpoint: preauthorize “book” orders that just entered T-7
 app.post('/tasks/preauth-due', async (req, res) => {
   try {
-    // Select orders that:
-    //  - are 'book' (saved card on file)
-    //  - have a saved PM and customer
-    //  - have no PI yet
-    //  - service_date is within 7 days (and not in the past)
     const { rows } = await pool.query(`
+      /* Pick saved-card "book" orders that are entering the 12h preauth window */
+      WITH service_ts AS (
+        SELECT
+          id,
+          amount,
+          customer_id,
+          saved_payment_method_id,
+          parent_id,
+          /* Use full timestamp if present; otherwise assume 08:00 local on service_date */
+          COALESCE(
+            service_datetime,
+            (service_date::timestamp AT TIME ZONE 'America/Mexico_City') + INTERVAL '8 hours'
+          ) AS svc_at
+        FROM orders
+        WHERE kind = 'book'
+          AND customer_id IS NOT NULL
+          AND saved_payment_method_id IS NOT NULL
+          AND payment_intent_id IS NULL
+      )
       SELECT id, amount, customer_id, saved_payment_method_id, parent_id
-      FROM orders
-      WHERE kind = 'book'
-        AND customer_id IS NOT NULL
-        AND saved_payment_method_id IS NOT NULL
-        AND payment_intent_id IS NULL
-        AND service_date <= CURRENT_DATE + INTERVAL '7 days'
-        AND service_date >= CURRENT_DATE
-      ORDER BY service_date ASC
+      FROM service_ts
+      WHERE svc_at >= NOW()
+        AND svc_at <  NOW() + INTERVAL '12 hours'
+      ORDER BY svc_at ASC
       LIMIT 50
     `);
+
 
     const results = [];
     for (const row of rows) {
@@ -937,9 +959,9 @@ app.post('/confirm-with-saved', async (req, res) => {
     const { orderId } = req.body || {};
     if (!orderId) return res.status(400).send({ error: 'orderId required' });
 
-    // We need enough fields to (re)create a PI if missing/outdated
+    // We need enough fields to (re)create a PI if needed
     const { rows } = await pool.query(
-      `SELECT id, payment_intent_id, customer_id, amount, kind, parent_id, service_date
+      `SELECT id, payment_intent_id, customer_id, amount, kind, parent_id, service_date, service_datetime
          FROM orders
         WHERE id = $1`,
       [orderId]
@@ -947,17 +969,12 @@ app.post('/confirm-with-saved', async (req, res) => {
     const row = rows[0];
     if (!row) return res.status(404).send({ error: 'order not found' });
 
-    // Do not create/confirm a PI if this is a saved-card booking (>7d before service)
-    const kind = String(row.kind || '').toLowerCase();
-    if (kind === 'book') {
-      const daysAhead = daysAheadFromYMD(row.service_date);
-      if (daysAhead > 7) {
-        // NEW: mark “scheduled booking” now that the user clicked Reservar
-        await pool.query('UPDATE orders SET status=$1 WHERE id=$2',
-          ['Setup created for scheduled order', row.id]);
-
-        // Update the Sheet
-        fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
+    // Always allow pressing “Reservar”, but if we’re still >12h out, DO NOT create a PI.
+    const hoursAhead = hoursUntilService(row);
+    if (hoursAhead > 12) {
+      // Mark on Sheets that the customer booked the scheduled order
+      try {
+        await fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -965,19 +982,22 @@ app.post('/confirm-with-saved', async (req, res) => {
             orderId: row.id,
             status: 'Setup created for scheduled order'
           })
-        }).catch(() => {});
-
-        return res.status(409).send({
-          error: 'preauth_window_closed',
-          message: `La preautorización se hará automáticamente 7 días antes (faltan ${daysAhead} días).`
         });
-      }
+      } catch {}
+
+      // Tell the client “we’ll preauth later”; frontend will still redirect to /success
+      return res.status(409).json({
+        error: 'preauth_window_closed',
+        message: 'Tu servicio quedó programado. Realizaremos la preautorización 12 horas antes del servicio.'
+      });
     }
 
-    // 1) Ensure we have a PaymentIntent (not a SetupIntent)
+    // ≤12h → create/confirm a manual-capture PI now
     let piId = row.payment_intent_id || null;
-    if (!piId || String(piId).startsWith('seti_')) {
-      // create a fresh manual-capture PI for this booking
+    const isSetup = piId && String(piId).startsWith('seti_');
+
+    // Ensure we have a real PI (not a SetupIntent)
+    if (!piId || isSetup) {
       const pi = await stripe.paymentIntents.create({
         amount: row.amount,
         currency: 'mxn',
@@ -985,32 +1005,25 @@ app.post('/confirm-with-saved', async (req, res) => {
         capture_method: 'manual',
         customer: row.customer_id || undefined,
         metadata: {
-          kind: 'primary',                // or row.kind if you prefer
+          kind: 'primary',
           parent_order_id: row.parent_id || ''
         }
       });
-      await pool.query(
-        'UPDATE orders SET payment_intent_id=$1 WHERE id=$2',
-        [pi.id, row.id]
-      );
+      await pool.query('UPDATE orders SET payment_intent_id=$1 WHERE id=$2', [pi.id, row.id]);
       piId = pi.id;
     }
 
-    // 2) Pick a saved card
-    const pmList = await stripe.paymentMethods.list({
-      customer: row.customer_id,
-      type: 'card'
-    });
+    // Pick a saved card
+    const pmList = await stripe.paymentMethods.list({ customer: row.customer_id, type: 'card' });
     const pm = pmList.data[0];
     if (!pm) return res.status(409).send({ error: 'no_saved_card' });
 
-    // 3) Attach PM to PI and confirm
+    // Attach and confirm (off-session if possible)
     await stripe.paymentIntents.update(piId, { payment_method: pm.id });
-
     try {
-      const confirmed = await stripe.paymentIntents.confirm(piId);
+      const confirmed = await stripe.paymentIntents.confirm(piId, { off_session: true });
       if (confirmed.status === 'requires_action') {
-        // Tell the frontend to run 3DS in-browser
+        // needs 3DS in browser
         return res.status(402).send({
           ok: false,
           reason: 'requires_action',
@@ -1020,7 +1033,6 @@ app.post('/confirm-with-saved', async (req, res) => {
       }
       return res.send({ ok: true, status: confirmed.status, paymentIntentId: confirmed.id });
     } catch (e) {
-      // Authentication required but Stripe threw early: surface 3DS to the browser
       const pi = e?.raw?.payment_intent || e?.payment_intent;
       if (e?.code === 'authentication_required' && pi?.client_secret) {
         return res.status(402).send({
@@ -1034,10 +1046,10 @@ app.post('/confirm-with-saved', async (req, res) => {
     }
   } catch (err) {
     console.error('confirm-with-saved error:', err);
-    // Keep a readable, stable message for the UI
     res.status(500).send({ error: 'Internal error' });
   }
 });
+
 
 app.post('/billing-portal', async (req, res) => {
   try {
@@ -1076,46 +1088,48 @@ app.get('/success', async (req, res) => {
     if (!orderId) return res.redirect(302, '/');
 
     const { rows } = await pool.query(
-      'SELECT id, payment_intent_id, kind FROM orders WHERE id = $1',
+      'SELECT id, payment_intent_id, kind, service_date, service_datetime FROM orders WHERE id = $1',
       [orderId]
     );
     const row = rows[0];
     if (!row) return res.redirect(302, '/');
 
-    const isAdjustment = String(row.kind || '').toLowerCase() === 'adjustment';
-    const redirectTarget = isAdjustment ? '/confirm' : '/pay';
-
-    // If no intent yet, send them back to the right page
-    if (!row.payment_intent_id) {
-      return res.redirect(302, `${redirectTarget}?orderId=${encodeURIComponent(orderId)}`);
+    // If this is a saved-card booking (kind='book') and we are still >12h away,
+    // we intentionally have no PI yet → show success immediately.
+    if (String(row.kind || '').toLowerCase() === 'book') {
+      const h = hoursUntilService(row);
+      if (!row.payment_intent_id || h > 12) {
+        return res.sendFile(path.join(__dirname, 'public', 'success.html'));
+      }
     }
 
-    const id = row.payment_intent_id;
-    let ok = false;
-
-    if (id.startsWith('seti_')) {
-      // SetupIntent (saved card flow)
-      const si = await stripe.setupIntents.retrieve(id);
-      // ok when the card was saved
-      ok = si && si.status === 'succeeded';
-    } else {
-      // PaymentIntent (primary/adjustment flows)
-      const pi = await stripe.paymentIntents.retrieve(id);
-      // ok when captured (succeeded) or authorized (manual capture → requires_capture)
-      ok = pi && (pi.status === 'succeeded' || pi.status === 'requires_capture');
+    // If we have a PI, require it to be authorized or captured to show success
+    if (row.payment_intent_id) {
+      const id = row.payment_intent_id;
+      if (id.startsWith('seti_')) {
+        // SetupIntent path (usually not used for /success in book flow, but safe)
+        const si = await stripe.setupIntents.retrieve(id);
+        if (si && si.status === 'succeeded') {
+          return res.sendFile(path.join(__dirname, 'public', 'success.html'));
+        }
+      } else {
+        const pi = await stripe.paymentIntents.retrieve(id);
+        if (pi && (pi.status === 'succeeded' || pi.status === 'requires_capture')) {
+          return res.sendFile(path.join(__dirname, 'public', 'success.html'));
+        }
+      }
     }
 
-    if (!ok) {
-      return res.redirect(302, `${redirectTarget}?orderId=${encodeURIComponent(orderId)}`);
-    }
-
-    return res.sendFile(path.join(__dirname, 'public', 'success.html'));
+    // Otherwise bounce back to the appropriate page
+    const redirectTarget = (String(row.kind || '').toLowerCase() === 'adjustment') ? '/confirm' : '/pay';
+    return res.redirect(302, `${redirectTarget}?orderId=${encodeURIComponent(orderId)}`);
   } catch (e) {
     console.error('success gate error:', e);
     const orderId = req.query.orderId || '';
     return res.redirect(302, `/pay?orderId=${encodeURIComponent(orderId)}`);
   }
 });
+
 
 
 // 🚀 Start server

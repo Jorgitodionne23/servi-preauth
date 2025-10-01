@@ -253,7 +253,7 @@
     if (order.kind === 'book' && order.preauth_window_open === false) {
       const btn = document.querySelector('#btn-book');
       btn.disabled = false; // keep clickable
-      btn.textContent = 'Confirmar reserva (cargo 7 días antes)';
+      btn.textContent = 'Confirmar reserva';
     }
 
 
@@ -293,7 +293,8 @@
       const text = `Autorizo el cargo por ${montoTexto} a mi tarjeta •••• ${sc.last4 || ''}`;
       try {
         const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-        const hash = [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+        const bytes = new Uint8Array(buf);
+        const hash  = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
         await fetch(`/orders/${encodeURIComponent(orderId)}/consent`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -331,7 +332,7 @@
 
       if (r.status === 409) {
         const out = await r.json().catch(() => ({}));
-        alert(out.message || 'Tu servicio quedó programado. Realizaremos la preautorización 7 días antes de la fecha.');
+        alert(out.message || 'Tu servicio quedó programado. Realizaremos la preautorización 12 horas antes de la fecha.');
         location.href = `/success?orderId=${encodeURIComponent(orderId)}`;
         return;
       }
