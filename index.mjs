@@ -186,8 +186,9 @@ app.post('/create-payment-intent', async (req, res) => {
       }
 
       // Card saved → scheduled booking: no PI yet. Mark as Scheduled in DB.
-      await pool.query('UPDATE orders SET kind=$1, status=$2 WHERE id=$3', ['book', 'Scheduled', orderId]);
-      return res.send({ orderId, publicCode, hasSavedCard: true, scheduled: true });
+      await pool.query('UPDATE orders SET kind=$1 WHERE id=$2', ['book', orderId]);
+      // Don’t mark scheduled yet; we’ll do that on click
+      return res.send({ orderId, publicCode, hasSavedCard: true });
     }
 
     const paymentIntent = await stripe.paymentIntents.create({
@@ -953,14 +954,17 @@ app.post('/confirm-with-saved', async (req, res) => {
     const hoursAhead = hoursUntilService(row);
     if (hoursAhead > 12) {
       const cameFromSetup = !!(row.payment_intent_id && String(row.payment_intent_id).startsWith('seti_'));
-      if (cameFromSetup && GOOGLE_SCRIPT_WEBHOOK_URL) {
+      if (GOOGLE_SCRIPT_WEBHOOK_URL) {
+        const statusLabel = cameFromSetup
+          ? 'Setup created for scheduled order' // new user who just saved card
+          : 'Scheduled';                         // existing SERVI Client
         fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             type: 'order.status',
             orderId: row.id,
-            status: 'Setup created for scheduled order'
+            status: statusLabel
           })
         }).catch(() => {});
       }
@@ -970,6 +974,7 @@ app.post('/confirm-with-saved', async (req, res) => {
         message: 'Tu servicio quedó programado. Realizaremos la preautorización 12 horas antes del servicio.'
       });
     }
+
 
     // ≤12h → create/confirm a manual-capture PI now
     let piId = row.payment_intent_id || null;
