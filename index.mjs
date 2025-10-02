@@ -493,19 +493,6 @@ app.post('/orders/:id/consent', async (req, res) => {
       checked_at=NOW(), ip=EXCLUDED.ip, user_agent=EXCLUDED.user_agent, locale=EXCLUDED.locale, tz=EXCLUDED.tz
   `, [id, r.rows[0].customer_id, r.rows[0].saved_payment_method_id, version || '1.0', text || '', serverHash, ip, ua, locale || null, tz || null]);
 
-  const maybeIntentId = r.rows[0].payment_intent_id || '';
-  // Only touch a real PaymentIntent (pi_...). Skip if it's a SetupIntent (seti_...)
-  if (maybeIntentId.startsWith('pi_')) {
-    await stripe.paymentIntents.update(maybeIntentId, {
-      setup_future_usage: 'off_session',
-      metadata: {
-        cof_consent: 'true',
-        cof_consent_version: version || '1.0',
-        cof_consent_hash: serverHash
-      }
-    });
-  }
-
   await pool.query(
     "UPDATE orders SET kind='setup' WHERE id=$1 AND kind='setup_required'",
     [id]
@@ -1113,8 +1100,6 @@ app.get('/success', async (req, res) => {
     return res.redirect(302, `/pay?orderId=${encodeURIComponent(orderId)}`);
   }
 });
-
-
 
 // 🚀 Start server
 const PORT = process.env.PORT || 4242;
