@@ -375,33 +375,56 @@ app.get('/order/:orderId', async (req, res) => {
 });
 
 app.get('/o/:code', async (req, res) => {
-  const code = String(req.params.code || '').toUpperCase();
-  const { rows } = await pool.query(
-    'SELECT id, kind, customer_id FROM orders WHERE public_code = $1',
-    [code]
-  );
-  if (!rows[0]) return res.status(404).send('Not found');
+  try {
+    const code = String(req.params.code || '').toUpperCase();
 
-  const row = rows[0];
+    // 1) Find the order by code
+    const { rows } = await pool.query(
+      'SELECT id, kind, customer_id, saved_payment_method_id FROM orders WHERE public_code = $1',
+      [code]
+    );
+    if (!rows[0]) return res.status(404).send('Not found');
+    const row = rows[0];
 
-  // 🔹 explicit routing by kind
-  if (row.kind === 'adjustment')      return res.redirect(302, `/confirm?orderId=${encodeURIComponent(row.id)}`);
-  if (row.kind === 'setup_required')  return res.redirect(302, `/save?orderId=${encodeURIComponent(row.id)}`); // consent gate lives in /pay
-  if (row.kind === 'setup')           return res.redirect(302, `/save?orderId=${encodeURIComponent(row.id)}`); // setup flow also handled on /pay
-  if (row.kind === 'book')            return res.redirect(302, `/book?orderId=${encodeURIComponent(row.id)}`);
+    // 2) Explicit routing by kind
+    if (row.kind === 'adjustment')     return res.redirect(302, `/confirm?orderId=${encodeURIComponent(row.id)}`);
+    if (row.kind === 'setup_required') return res.redirect(302, `/save?orderId=${encodeURIComponent(row.id)}`);
+    if (row.kind === 'setup')          return res.redirect(302, `/save?orderId=${encodeURIComponent(row.id)}`);
+    if (row.kind === 'book')           return res.redirect(302, `/book?orderId=${encodeURIComponent(row.id)}`);
 
-  // legacy 'primary': decide by saved card
-  let hasSaved = false;
-  if (row.customer_id) {
-    const pmList = await stripe.paymentMethods.list({ customer: row.customer_id, type: 'card', limit: 1 });
-    hasSaved = pmList.data.length > 0;
+    // 3) Legacy 'primary' → check Stripe for saved PMs
+    let hasSaved = false;
+    let firstPmId = null;
+    if (row.customer_id) {
+      const pmList = await stripe.paymentMethods.list({
+        customer: row.customer_id,
+        type: 'card',
+        limit: 1
+      });
+      hasSaved = pmList.data.length > 0;
+      firstPmId = hasSaved ? pmList.data[0].id : null;
+    }
+
+    // 4) 🩹 Self-heal: persist what we learned so next time it routes directly
+    if (hasSaved) {
+      await pool.query(
+        `UPDATE orders
+           SET kind='book',
+               saved_payment_method_id = COALESCE($1, saved_payment_method_id)
+         WHERE id=$2`,
+        [firstPmId, row.id]
+      );
+      return res.redirect(302, `/book?orderId=${encodeURIComponent(row.id)}`);
+    }
+
+    // 5) No saved PM → pay flow
+    return res.redirect(302, `/pay?orderId=${encodeURIComponent(row.id)}`);
+  } catch (e) {
+    console.error('/o/:code error:', e);
+    return res.status(500).send('Internal error');
   }
-  return res.redirect(302,
-    hasSaved
-      ? `/book?orderId=${encodeURIComponent(row.id)}`
-      : `/pay?orderId=${encodeURIComponent(row.id)}`
-  );
 });
+
 
 // 📡 Stripe Webhook handler ex
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
@@ -1029,6 +1052,27 @@ app.post('/confirm-with-saved', async (req, res) => {
   }
 });
 
+// Mark the current PaymentIntent so Stripe saves the card on success
+app.post('/orders/:id/apply-consent-to-current-pi', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const r = await pool.query('SELECT payment_intent_id FROM orders WHERE id=$1', [id]);
+    const row = r.rows[0];
+    if (!row || !row.payment_intent_id) {
+      return res.status(400).json({ error: 'no_pi' });
+    }
+
+    // Important: update BEFORE confirmCardPayment happens on the client
+    const updated = await stripe.paymentIntents.update(row.payment_intent_id, {
+      setup_future_usage: 'off_session'
+    });
+
+    res.json({ ok: true, payment_intent_id: updated.id, setup_future_usage: updated.setup_future_usage });
+  } catch (e) {
+    console.error('apply-consent-to-current-pi error:', e?.message);
+    res.status(500).json({ error: e?.message || 'internal' });
+  }
+});
 
 app.post('/billing-portal', async (req, res) => {
   try {
