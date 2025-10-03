@@ -40,6 +40,34 @@ function hoursUntilService(row) {
   return Infinity;
 }
 
+// ── NEW: generate a unique public_code for /o/:code ────────────────────────────
+async function generateUniqueCode(len = 10) {
+  for (let i = 0; i < 6; i++) {
+    const code = randomBytes(8)
+      .toString('base64url')
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, '')
+      .slice(0, len);
+
+    const { rows } = await pool.query('SELECT 1 FROM orders WHERE public_code = $1', [code]);
+    if (rows.length === 0) return code;
+  }
+  throw new Error('Could not generate unique public code');
+}
+
+// ── NEW: ensure the order has a Stripe customer; return its id ─────────────────
+async function ensureCustomerForOrder(stripe, orderRow) {
+  if (orderRow.customer_id) return orderRow.customer_id;
+
+  // Create a basic customer (you can add email/phone if you have them on the row)
+  const customer = await stripe.customers.create({
+    name: orderRow.client_name || undefined,
+  });
+
+  await pool.query('UPDATE orders SET customer_id=$1 WHERE id=$2', [customer.id, orderRow.id]);
+  return customer.id;
+}
+
 // Pretty Spanish display for service date/time
 function displayEsMX(serviceDateTime, serviceDate, tz = 'America/Mexico_City') {
   try {
@@ -557,15 +585,6 @@ app.post('/create-adjustment', async (req, res) => {
   const canChargeOffSession = !!(hasConsent && p.rows[0].customer_id && p.rows[0].saved_payment_method_id);
 
   const childId = randomUUID();
-
-  async function generateUniqueCode() {
-    for (let i = 0; i < 6; i++) {
-      const code = randomBytes(8).toString('base64url').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10);
-      const { rows } = await pool.query('SELECT 1 FROM orders WHERE public_code = $1', [code]);
-      if (!rows.length) return code;
-    }
-    throw new Error('Could not generate unique public code');
-  }
   const publicCode = await generateUniqueCode();
 
   const captureMethod = (String(capture).toLowerCase() === 'manual') ? 'manual' : 'automatic';
