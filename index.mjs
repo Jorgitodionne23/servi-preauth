@@ -735,13 +735,16 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
       const pmId = si.payment_method || null;
       const cust = si.customer || null;
 
-      // Try to get the orderId from metadata; otherwise pick the most recent setup-related order for this customer
+      // Use metadata.order_id when present (we set this when creating the SetupIntent)
       let orderId = si.metadata?.order_id || null;
+
+      // Fallback: most recent order for this customer in setup/book states
       if (!orderId && cust) {
         try {
           const r = await pool.query(
             `SELECT id FROM orders
-            WHERE customer_id=$1 AND kind IN ('setup_required','setup','book')
+            WHERE customer_id = $1
+              AND kind IN ('setup_required','setup','book')
             ORDER BY created_at DESC
             LIMIT 1`,
             [cust]
@@ -751,41 +754,46 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
       }
 
       if (orderId) {
-        // Store PM & customer; promote order to 'book' so links route to /book
+        // Persist the saved PM + customer, and promote to 'book'
         await pool.query(
           `UPDATE orders
-            SET status=$1,
-                saved_payment_method_id=COALESCE($2, saved_payment_method_id),
-                customer_id=COALESCE($3, customer_id),
-                kind='book'
-          WHERE id=$4`,
-          ['Saved', pmId, cust, orderId]
+              SET status                  = 'Setup created',
+                  saved_payment_method_id = COALESCE($1, saved_payment_method_id),
+                  customer_id             = COALESCE($2, customer_id),
+                  kind                    = 'book'
+            WHERE id = $3`,
+          [pmId, cust, orderId]
         );
 
-        // 👉 Always “Setup created” here (NOT the scheduled variant)
-        fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            type: 'order.status',
-            orderId,
-            status: 'Setup created'
-          })
-        }).catch(()=>{});
+        // Notify your Sheet (status column)
+        if (GOOGLE_SCRIPT_WEBHOOK_URL) {
+          fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type: 'order.status', orderId, status: 'Setup created' })
+          }).catch(()=>{});
+        }
       }
 
-      // Optional: keep Clients sheet in sync
+      // Optional: keep a Clients sheet in sync
       if (cust) {
         try {
           const c = await stripe.customers.retrieve(cust);
-          fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
-            method:'POST', headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({ type:'customer.updated', id:c.id, name:c.name||'', email:c.email||'', phone:c.phone||'' })
-          }).catch(()=>{});
+          if (GOOGLE_SCRIPT_WEBHOOK_URL) {
+            fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                type: 'customer.updated',
+                id: c.id, name: c.name || '', email: c.email || '', phone: c.phone || ''
+              })
+            }).catch(()=>{});
+          }
         } catch {}
       }
       break;
     }
+
 
 
     case 'charge.failed': {
