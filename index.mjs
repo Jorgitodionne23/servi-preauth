@@ -34,7 +34,7 @@ function hoursUntilService(row) {
   // Fallback: date-only anchored at local noon to avoid DST edges
   if (row.service_date) {
     const [y,m,d] = String(row.service_date).split('-').map(Number);
-    const t = new Date(y, (m||1)-1, d||1, 12, 0, 0, 0).getTime();
+    const t = new Date(y, (m||1)-1, d||1, 0, 0, 0, 0).getTime();
     return Math.floor((t - Date.now()) / 3_600_000);
   }
   return Infinity;
@@ -420,7 +420,7 @@ app.post('/tasks/preauth-due', async (req, res) => {
           /* Use full timestamp if present; otherwise assume 08:00 local on service_date */
           COALESCE(
             service_datetime,
-            (service_date::timestamp AT TIME ZONE 'America/Mexico_City') + INTERVAL '8 hours'
+            (service_date::timestamp AT TIME ZONE 'America/Mexico_City') + INTERVAL '0 hours'
           ) AS svc_at
         FROM orders
         WHERE kind = 'book'
