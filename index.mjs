@@ -115,6 +115,7 @@ app.post('/create-payment-intent', async (req, res) => {
   const { amount, clientName, serviceDescription, serviceDate, serviceDateTime, clientEmail, clientPhone, consent } = req.body;
   try {
     // 1) Find or create Stripe Customer by email/phone (your existing logic)
+    // 1) Only SEARCH for an existing customer now; don't create yet
     let existingCustomer = null;
     const esc = (s) => String(s || '').replace(/'/g, "\\'");
     if (clientEmail) {
@@ -125,52 +126,40 @@ app.post('/create-payment-intent', async (req, res) => {
       const found = await stripe.customers.search({ query: `phone:'${esc(clientPhone)}'` });
       if (found.data?.length) existingCustomer = found.data[0];
     }
-    const customer = existingCustomer || await stripe.customers.create({
-      name: clientName || undefined,
-      email: clientEmail || undefined,
-      phone: clientPhone || undefined,
-    });
 
-    // 2) Create the order row FIRST (pending, kind='primary')
-    const orderId = randomUUID();
-    async function generateUniqueCode() {
-      for (let i = 0; i < 6; i++) {
-        const code = randomBytes(8).toString('base64url').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10);
-        const { rows } = await pool.query('SELECT 1 FROM orders WHERE public_code = $1', [code]);
-        if (rows.length === 0) return code;
-      }
-      throw new Error('Could not generate unique public code');
+    // Compute policy early
+    const longLead = daysAheadFromYMD(serviceDate) >= 5;
+
+    // If long lead and NO consent, do not create a new customer yet
+    // We can still check for saved card if an existing customer was found
+    let saved = false;
+    if (existingCustomer) {
+      saved = await hasSavedCard(existingCustomer.id, stripe);
     }
-    const publicCode = await generateUniqueCode();
 
+    // Create the order row (allow NULL customer_id for now)
+    const orderId = randomUUID();
+    const publicCode = await generateUniqueCode();
     await pool.query(
       `INSERT INTO orders
-       (id, amount, client_name, service_description, service_date, status, public_code, kind, customer_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,'primary',$8)
-       ON CONFLICT (id) DO NOTHING`,
-      [orderId, amount, clientName || null, serviceDescription || null, serviceDate || null, 'pending', publicCode, customer.id]
+      (id, amount, client_name, service_description, service_date, status, public_code, kind, customer_id)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,'primary',$8)
+      ON CONFLICT (id) DO NOTHING`,
+      [orderId, amount, clientName || null, serviceDescription || null, serviceDate || null, 'pending', publicCode, existingCustomer?.id || null]
     );
 
-    // NEW: persist normalized date-only + full timestamp for display
+    // also persist service_date/service_datetime (you already do)
     await pool.query(
       'UPDATE orders SET service_date=$1, service_datetime=$2 WHERE id=$3',
       [serviceDate || null, serviceDateTime || null, orderId]
     );
 
-    // [DEBUG LOG] ← This is the exact place for the debug line you asked about
-    console.log('[create-payment-intent] persisted dates', {
-      orderId,
-      serviceDate,      // e.g., '2025-09-25'
-      serviceDateTime,  // e.g., '2025-09-25T16:00:00-05:00'
-      publicCode
-    });
-
-    const longLead = daysAheadFromYMD(serviceDate) >= 5;
-    const saved = await hasSavedCard(customer.id, stripe);
-
+    // Long-lead policy handling
     if (longLead) {
-      if (!consent && !saved) {
+      if (!saved && !consent) {
+        // no saved card and no consent → gate; DON'T create a Stripe customer yet
         await pool.query('UPDATE orders SET status=$1, kind=$2 WHERE id=$3', ['Blocked', 'setup_required', orderId]);
+
         return res.status(403).send({
           error: 'account_required',
           message: 'Solo usuarios con cuenta pueden reservar con 5 días o mas de anticipación.',
@@ -179,17 +168,25 @@ app.post('/create-payment-intent', async (req, res) => {
         });
       }
 
-      // If card not saved yet → user must save now (SetupIntent will be created on /create-setup-intent)
       if (!saved) {
+        // we have consent but no saved card: we'll create a Customer later when we start SetupIntent
         await pool.query('UPDATE orders SET kind=$1 WHERE id=$2', ['setup', orderId]);
         return res.send({ orderId, publicCode, requiresSetup: true, hasSavedCard: false });
       }
 
-      // Card saved → scheduled booking: no PI yet. Mark as Scheduled in DB.
+      // already saved (because existingCustomer had PMs) → book flow, no PI yet
       await pool.query('UPDATE orders SET kind=$1 WHERE id=$2', ['book', orderId]);
-      // Don’t mark scheduled yet; we’ll do that on click
       return res.send({ orderId, publicCode, hasSavedCard: true });
     }
+
+    // Short-lead (≤5d): we DO need a customer now
+    const customer = existingCustomer || await stripe.customers.create({
+      name: clientName || undefined,
+      email: clientEmail || undefined,
+      phone: clientPhone || undefined,
+    });
+
+    await pool.query('UPDATE orders SET customer_id=$1 WHERE id=$2', [customer.id, orderId]);
 
     const paymentIntent = await stripe.paymentIntents.create({
       amount,
@@ -201,10 +198,7 @@ app.post('/create-payment-intent', async (req, res) => {
       metadata: { order_id: orderId, kind: 'primary' }
     });
 
-    await pool.query(
-      'UPDATE orders SET payment_intent_id=$1 WHERE id=$2',
-      [paymentIntent.id, orderId]
-    );
+    await pool.query('UPDATE orders SET payment_intent_id=$1 WHERE id=$2', [paymentIntent.id, orderId]);
 
     return res.send({
       clientSecret: paymentIntent.client_secret,
@@ -213,6 +207,7 @@ app.post('/create-payment-intent', async (req, res) => {
       publicCode,
       hasSavedCard: saved
     });
+
   } catch (err) {
     console.error('Error creating payment intent:', err);
     res.status(400).send({ error: err.message });
@@ -274,28 +269,38 @@ app.get('/order/:orderId', async (req, res) => {
           pi = null;
           intentType = null; // no client_secret returned
         } else {
+          // User already consented → ensure we have a Customer, then create the SetupIntent
+          const customerId = await ensureCustomerForOrder(stripe, row);
+
           await pool.query('UPDATE orders SET kind=$1 WHERE id=$2', ['setup', row.id]);
+
           const si = await stripe.setupIntents.create({
-            customer: row.customer_id || undefined,
+            customer: customerId,
             automatic_payment_methods: { enabled: true },
             usage: 'off_session',
             metadata: { kind: 'setup', order_id: row.id }
           });
+
           await pool.query('UPDATE orders SET payment_intent_id=$1 WHERE id=$2', [si.id, row.id]);
           pi = si;
           intentType = 'setup';
         }
 
       } else if (kind === 'setup') {
+        // Lazily create the Customer if this order doesn't have one yet
+        const customerId = await ensureCustomerForOrder(stripe, row);
+
         const si = await stripe.setupIntents.create({
-          customer: row.customer_id || undefined,
+          customer: customerId,
           automatic_payment_methods: { enabled: true },
           usage: 'off_session',
           metadata: { kind: 'setup', order_id: row.id }
         });
+
         await pool.query('UPDATE orders SET payment_intent_id=$1 WHERE id=$2', [si.id, row.id]);
         pi = si;
         intentType = 'setup';
+
 
       } else if (kind === 'book') {
         // Saved-card booking: never create a PI here.
