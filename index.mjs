@@ -981,7 +981,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
 app.post('/confirm-with-saved', async (req, res) => {
   try {
-    const { orderId } = req.body || {};
+    const { orderId, force } = req.body || {};
     if (!orderId) return res.status(400).send({ error: 'orderId required' });
 
     const { rows } = await pool.query(
@@ -994,12 +994,12 @@ app.post('/confirm-with-saved', async (req, res) => {
     if (!row) return res.status(404).send({ error: 'order not found' });
 
     const hoursAhead = hoursUntilService(row);
-    if (hoursAhead > 12) {
+    if (hoursAhead > 12 && !force) {
       const cameFromSetup = !!(row.payment_intent_id && String(row.payment_intent_id).startsWith('seti_'));
       if (GOOGLE_SCRIPT_WEBHOOK_URL) {
         const statusLabel = cameFromSetup
-          ? 'Setup created for scheduled order' // new user who just saved card
-          : 'Scheduled';                         // existing SERVI Client
+          ? 'Setup created for scheduled order'
+          : 'Scheduled';
         fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1011,11 +1011,20 @@ app.post('/confirm-with-saved', async (req, res) => {
         }).catch(() => {});
       }
 
+      // helpful metadata for the UI
+      const serviceMs = row.service_datetime
+        ? new Date(row.service_datetime).getTime()
+        : new Date(String(row.service_date) + 'T08:00:00-05:00').getTime(); // adjust default time if needed
+      const opensAtMs = serviceMs - (12 * 60 * 60 * 1000);
+
       return res.status(409).json({
         error: 'preauth_window_closed',
-        message: 'Tu servicio quedó programado. Realizaremos la preautorización 12 horas antes del servicio.'
+        message: 'Tu servicio quedó programado. Realizaremos la preautorización 12 horas antes del servicio.',
+        remaining_hours: Math.ceil(hoursAhead),
+        preauth_window_opens_at: new Date(opensAtMs).toISOString()
       });
     }
+
 
 
     // ≤12h → create/confirm a manual-capture PI now
