@@ -1019,7 +1019,6 @@ app.post('/confirm-with-saved', async (req, res) => {
 
       return res.status(409).json({
         error: 'preauth_window_closed',
-        message: 'Tu servicio quedó programado. Realizaremos la preautorización 12 horas antes del servicio.',
         remaining_hours: Math.ceil(hoursAhead),
         preauth_window_opens_at: new Date(opensAtMs).toISOString()
       });
