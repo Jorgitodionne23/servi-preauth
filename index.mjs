@@ -291,30 +291,75 @@ app.get('/order/:orderId', async (req, res) => {
       const kind = String(row.kind || '').toLowerCase();
 
       if (kind === 'setup_required') {
-        const c = await pool.query('SELECT 1 FROM order_consents WHERE order_id=$1', [row.id]);
-        if (!c.rows.length) {
-          consentRequired = true;
-          pi = null;
-          intentType = null; // no client_secret returned
+        // OPTIONAL: if this customer already has global consent, skip re-consent for this order
+        if (row.customer_id) {
+          const cc = await pool.query('SELECT 1 FROM customer_consents WHERE customer_id = $1', [row.customer_id]);
+          if (cc.rows.length) {
+            // If they already have a saved card, move straight to 'book'; otherwise create a SetupIntent
+            const alreadySaved = await hasSavedCard(row.customer_id, stripe);
+            if (alreadySaved) {
+              await pool.query('UPDATE orders SET kind=$1 WHERE id=$2', ['book', row.id]);
+              pi = null;           // book flow has no client_secret
+              intentType = null;
+            } else {
+              const customerId = await ensureCustomerForOrder(stripe, row);
+              await pool.query('UPDATE orders SET kind=$1 WHERE id=$2', ['setup', row.id]);
+              const si = await stripe.setupIntents.create({
+                customer: customerId,
+                automatic_payment_methods: { enabled: true },
+                usage: 'off_session',
+                metadata: { kind: 'setup', order_id: row.id }
+              });
+              await pool.query('UPDATE orders SET payment_intent_id=$1 WHERE id=$2', [si.id, row.id]);
+              pi = si;
+              intentType = 'setup';
+            }
+          } else {
+            // No global consent → fall back to per-order consent requirement
+            const c = await pool.query('SELECT 1 FROM order_consents WHERE order_id=$1', [row.id]);
+            if (!c.rows.length) {
+              consentRequired = true;
+              pi = null;
+              intentType = null; // no client_secret returned
+            } else {
+              const customerId = await ensureCustomerForOrder(stripe, row);
+              await pool.query('UPDATE orders SET kind=$1 WHERE id=$2', ['setup', row.id]);
+              const si = await stripe.setupIntents.create({
+                customer: customerId,
+                automatic_payment_methods: { enabled: true },
+                usage: 'off_session',
+                metadata: { kind: 'setup', order_id: row.id }
+              });
+              await pool.query('UPDATE orders SET payment_intent_id=$1 WHERE id=$2', [si.id, row.id]);
+              pi = si;
+              intentType = 'setup';
+            }
+          }
         } else {
-          // User already consented → ensure we have a Customer, then create the SetupIntent
-          const customerId = await ensureCustomerForOrder(stripe, row);
-
-          await pool.query('UPDATE orders SET kind=$1 WHERE id=$2', ['setup', row.id]);
-
-          const si = await stripe.setupIntents.create({
-            customer: customerId,
-            automatic_payment_methods: { enabled: true },
-            usage: 'off_session',
-            metadata: { kind: 'setup', order_id: row.id }
-          });
-
-          await pool.query('UPDATE orders SET payment_intent_id=$1 WHERE id=$2', [si.id, row.id]);
-          pi = si;
-          intentType = 'setup';
+          // No customer yet → original per-order logic
+          const c = await pool.query('SELECT 1 FROM order_consents WHERE order_id=$1', [row.id]);
+          if (!c.rows.length) {
+            consentRequired = true;
+            pi = null;
+            intentType = null; // no client_secret returned
+          } else {
+            const customerId = await ensureCustomerForOrder(stripe, row);
+            await pool.query('UPDATE orders SET kind=$1 WHERE id=$2', ['setup', row.id]);
+            const si = await stripe.setupIntents.create({
+              customer: customerId,
+              automatic_payment_methods: { enabled: true },
+              usage: 'off_session',
+              metadata: { kind: 'setup', order_id: row.id }
+            });
+            await pool.query('UPDATE orders SET payment_intent_id=$1 WHERE id=$2', [si.id, row.id]);
+            pi = si;
+            intentType = 'setup';
+          }
         }
+      }
 
-      } else if (kind === 'setup') {
+      
+      else if (kind === 'setup') {
         // Lazily create the Customer if this order doesn't have one yet
         const customerId = await ensureCustomerForOrder(stripe, row);
 
@@ -562,38 +607,41 @@ app.post('/orders/:id/consent', async (req, res) => {
       tz = EXCLUDED.tz
   `, [id, row.customer_id, row.saved_payment_method_id, version || '1.0', text || '', serverHash, ip, ua, locale || null, tz || null]);
 
-  // 2) One-row-per-customer registry (NEW)
-  await pool.query(`
-    INSERT INTO customer_consents (
-      customer_id, customer_name,
-      latest_payment_method_id, latest_text_hash, latest_version,
-      first_checked_at, last_checked_at,
-      first_order_id, last_order_id,
-      ip, user_agent, locale, tz
-    )
-    VALUES ($1,$2,$3,$4,$5, NOW(), NOW(), $6, $6, $7,$8,$9,$10)
-    ON CONFLICT (customer_id) DO UPDATE SET
-      customer_name            = COALESCE(EXCLUDED.customer_name, customer_consents.customer_name),
-      latest_payment_method_id = COALESCE(EXCLUDED.latest_payment_method_id, customer_consents.latest_payment_method_id),
-      latest_text_hash         = COALESCE(EXCLUDED.latest_text_hash, customer_consents.latest_text_hash),
-      latest_version           = COALESCE(EXCLUDED.latest_version, customer_consents.latest_version),
-      first_checked_at         = COALESCE(customer_consents.first_checked_at, EXCLUDED.first_checked_at),
-      first_order_id           = COALESCE(customer_consents.first_order_id,   EXCLUDED.first_order_id),
-      last_checked_at          = EXCLUDED.last_checked_at,
-      last_order_id            = EXCLUDED.last_order_id,
-      ip                       = EXCLUDED.ip,
-      user_agent               = EXCLUDED.user_agent,
-      locale                   = EXCLUDED.locale,
-      tz                       = EXCLUDED.tz
-  `, [
-    row.customer_id || null,
-    row.client_name || null,
-    row.saved_payment_method_id || null,
-    serverHash,
-    version || '1.0',
-    id, // parent/first order id (set on first insert, preserved on conflict)
-    ip, ua, locale || null, tz || null
-  ]);
+  // 2) One-row-per-customer registry (NEW) — only if we already have a customer_id
+  if (row.customer_id) {
+    await pool.query(`
+      INSERT INTO customer_consents (
+        customer_id, customer_name,
+        latest_payment_method_id, latest_text_hash, latest_version,
+        first_checked_at, last_checked_at,
+        first_order_id, last_order_id,
+        ip, user_agent, locale, tz
+      )
+      VALUES ($1,$2,$3,$4,$5, NOW(), NOW(), $6, $6, $7,$8,$9,$10)
+      ON CONFLICT (customer_id) DO UPDATE SET
+        customer_name            = COALESCE(EXCLUDED.customer_name, customer_consents.customer_name),
+        latest_payment_method_id = COALESCE(EXCLUDED.latest_payment_method_id, customer_consents.latest_payment_method_id),
+        latest_text_hash         = COALESCE(EXCLUDED.latest_text_hash, customer_consents.latest_text_hash),
+        latest_version           = COALESCE(EXCLUDED.latest_version, customer_consents.latest_version),
+        first_checked_at         = COALESCE(customer_consents.first_checked_at, EXCLUDED.first_checked_at),
+        first_order_id           = COALESCE(customer_consents.first_order_id,   EXCLUDED.first_order_id),
+        last_checked_at          = EXCLUDED.last_checked_at,
+        last_order_id            = EXCLUDED.last_order_id,
+        ip                       = EXCLUDED.ip,
+        user_agent               = EXCLUDED.user_agent,
+        locale                   = EXCLUDED.locale,
+        tz                       = EXCLUDED.tz
+    `, [
+      row.customer_id,
+      row.client_name || null,
+      row.saved_payment_method_id || null,
+      serverHash,
+      version || '1.0',
+      id, // parent/first order id (set on first insert, preserved on conflict)
+      ip, ua, locale || null, tz || null
+    ]);
+  }
+
 
   // Promote order if it was gated
   await pool.query("UPDATE orders SET kind='setup' WHERE id=$1 AND kind='setup_required'", [id]);
@@ -1059,8 +1107,21 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
       // Paid-in-full charge when capture_method=automatic — we rely on PI events instead.
       break;
     }
-
-
+    
+    case 'payment_method.attached': {
+      const pm = event.data.object;
+      const customerId = pm.customer;
+      if (customerId) {
+        await pool.query(`
+          INSERT INTO customer_consents (customer_id, latest_payment_method_id, last_checked_at)
+          VALUES ($1,$2,NOW())
+          ON CONFLICT (customer_id) DO UPDATE SET
+            latest_payment_method_id = $2,
+            last_checked_at = NOW()
+        `, [customerId, pm.id]);
+      }
+      break;
+    }
     default:
       console.log(`Unhandled event type: ${event.type}`);
   }
