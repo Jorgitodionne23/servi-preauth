@@ -35,7 +35,7 @@ export async function initDb() {
     -- (optional but handy for queries by date)
     CREATE INDEX IF NOT EXISTS idx_orders_service_date ON orders(service_date);
 
-    -- Consent audit
+    -- Consent audit (per-order)
     CREATE TABLE IF NOT EXISTS order_consents (
       order_id TEXT PRIMARY KEY,
       customer_id TEXT,
@@ -49,7 +49,28 @@ export async function initDb() {
       locale TEXT,
       tz TEXT
     );
+
+    -- 1-row-per-customer consent registry
+    CREATE TABLE IF NOT EXISTS customer_consents (
+      customer_id              TEXT PRIMARY KEY,
+      customer_name            TEXT,
+      latest_payment_method_id TEXT,
+      latest_text_hash         TEXT,
+      latest_version           TEXT,
+      first_checked_at         TIMESTAMPTZ,
+      last_checked_at          TIMESTAMPTZ,
+      first_order_id           TEXT,   -- "parent" order: first consent
+      last_order_id            TEXT,   -- most recent order that touched consent
+      ip                       TEXT,
+      user_agent               TEXT,
+      locale                   TEXT,
+      tz                       TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_customer_consents_last_checked_at
+      ON customer_consents (last_checked_at DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_customer_consents_latest_pm
+      ON customer_consents (latest_payment_method_id);
   `);
 }
-
-

@@ -538,31 +538,112 @@ app.post('/orders/:id/consent', async (req, res) => {
   const serverHash = createHash('sha256').update(String(text || ''), 'utf8').digest('hex');
   if (hash && hash !== serverHash) return res.status(400).send({ error: 'bad hash' });
 
-  const r = await pool.query('SELECT payment_intent_id, customer_id, saved_payment_method_id FROM orders WHERE id=$1', [id]);
-  if (!r.rows[0]) return res.status(404).send({ error: 'order not found' });
+  // Pull order info
+  const or = await pool.query(`
+    SELECT id, customer_id, saved_payment_method_id, client_name
+    FROM orders
+    WHERE id = $1
+  `, [id]);
+  const row = or.rows[0];
+  if (!row) return res.status(404).send({ error: 'order not found' });
 
+  // 1) Per-order audit (kept as is)
   await pool.query(`
     INSERT INTO order_consents (order_id, customer_id, payment_method_id, version, consent_text, text_hash, checked_at, ip, user_agent, locale, tz)
     VALUES ($1,$2,$3,$4,$5,$6,NOW(),$7,$8,$9,$10)
     ON CONFLICT (order_id) DO UPDATE SET
-      version=EXCLUDED.version, consent_text=EXCLUDED.consent_text, text_hash=EXCLUDED.text_hash,
-      checked_at=NOW(), ip=EXCLUDED.ip, user_agent=EXCLUDED.user_agent, locale=EXCLUDED.locale, tz=EXCLUDED.tz
-  `, [id, r.rows[0].customer_id, r.rows[0].saved_payment_method_id, version || '1.0', text || '', serverHash, ip, ua, locale || null, tz || null]);
+      version = EXCLUDED.version,
+      consent_text = EXCLUDED.consent_text,
+      text_hash = EXCLUDED.text_hash,
+      checked_at = NOW(),
+      ip = EXCLUDED.ip,
+      user_agent = EXCLUDED.user_agent,
+      locale = EXCLUDED.locale,
+      tz = EXCLUDED.tz
+  `, [id, row.customer_id, row.saved_payment_method_id, version || '1.0', text || '', serverHash, ip, ua, locale || null, tz || null]);
 
-  await pool.query(
-    "UPDATE orders SET kind='setup' WHERE id=$1 AND kind='setup_required'",
-    [id]
-  );
+  // 2) One-row-per-customer registry (NEW)
+  await pool.query(`
+    INSERT INTO customer_consents (
+      customer_id, customer_name,
+      latest_payment_method_id, latest_text_hash, latest_version,
+      first_checked_at, last_checked_at,
+      first_order_id, last_order_id,
+      ip, user_agent, locale, tz
+    )
+    VALUES ($1,$2,$3,$4,$5, NOW(), NOW(), $6, $6, $7,$8,$9,$10)
+    ON CONFLICT (customer_id) DO UPDATE SET
+      customer_name            = COALESCE(EXCLUDED.customer_name, customer_consents.customer_name),
+      latest_payment_method_id = COALESCE(EXCLUDED.latest_payment_method_id, customer_consents.latest_payment_method_id),
+      latest_text_hash         = COALESCE(EXCLUDED.latest_text_hash, customer_consents.latest_text_hash),
+      latest_version           = COALESCE(EXCLUDED.latest_version, customer_consents.latest_version),
+      first_checked_at         = COALESCE(customer_consents.first_checked_at, EXCLUDED.first_checked_at),
+      first_order_id           = COALESCE(customer_consents.first_order_id,   EXCLUDED.first_order_id),
+      last_checked_at          = EXCLUDED.last_checked_at,
+      last_order_id            = EXCLUDED.last_order_id,
+      ip                       = EXCLUDED.ip,
+      user_agent               = EXCLUDED.user_agent,
+      locale                   = EXCLUDED.locale,
+      tz                       = EXCLUDED.tz
+  `, [
+    row.customer_id || null,
+    row.client_name || null,
+    row.saved_payment_method_id || null,
+    serverHash,
+    version || '1.0',
+    id, // parent/first order id (set on first insert, preserved on conflict)
+    ip, ua, locale || null, tz || null
+  ]);
+
+  // Promote order if it was gated
+  await pool.query("UPDATE orders SET kind='setup' WHERE id=$1 AND kind='setup_required'", [id]);
 
   res.send({ ok: true, hash: serverHash, version: version || '1.0' });
 });
 
+
 // Read consent (used by the Sheet for the Adjustments tab)
 app.get('/orders/:id/consent', async (req, res) => {
-  const r = await pool.query('SELECT version, text_hash FROM order_consents WHERE order_id=$1', [req.params.id]);
-  if (!r.rows[0]) return res.send({ ok: false });
-  res.send({ ok: true, version: r.rows[0].version || '1.0', hash: r.rows[0].text_hash });
+  const { id } = req.params;
+
+  // Find order's customer_id
+  const o = await pool.query('SELECT customer_id FROM orders WHERE id=$1', [id]);
+  const cId = o.rows[0]?.customer_id;
+  if (!cId) {
+    // Fallback: check only this order’s legacy row
+    const r0 = await pool.query('SELECT version, text_hash FROM order_consents WHERE order_id=$1', [id]);
+    if (!r0.rows[0]) return res.send({ ok:false });
+    return res.send({ ok:true, version: r0.rows[0].version || '1.0', hash: r0.rows[0].text_hash });
+  }
+
+  // Prefer canonical customer-level registry
+  const r = await pool.query(`
+    SELECT latest_version AS version,
+           latest_text_hash AS hash,
+           first_order_id,
+           first_checked_at,
+           last_checked_at
+    FROM customer_consents
+    WHERE customer_id=$1
+  `, [cId]);
+
+  if (r.rows[0]) {
+    return res.send({
+      ok: true,
+      version: r.rows[0].version || '1.0',
+      hash: r.rows[0].hash || null,
+      first_order_id: r.rows[0].first_order_id || null,
+      first_checked_at: r.rows[0].first_checked_at || null,
+      last_checked_at: r.rows[0].last_checked_at || null
+    });
+  }
+
+  // Legacy fallback
+  const r2 = await pool.query('SELECT version, text_hash FROM order_consents WHERE order_id=$1', [id]);
+  if (!r2.rows[0]) return res.send({ ok:false });
+  return res.send({ ok:true, version: r2.rows[0].version || '1.0', hash: r2.rows[0].text_hash });
 });
+
 
 app.get('/book', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'book.html'));
@@ -812,6 +893,16 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
           [pmId, cust, orderId]
         );
 
+        if (cust) {
+          await pool.query(`
+            INSERT INTO customer_consents (customer_id, latest_payment_method_id, last_checked_at)
+            VALUES ($1,$2,NOW())
+            ON CONFLICT (customer_id) DO UPDATE SET
+              latest_payment_method_id = COALESCE($2, customer_consents.latest_payment_method_id),
+              last_checked_at = NOW()
+          `, [cust, pmId || null]);
+        }
+
         // Notify your Sheet (status column)
         if (GOOGLE_SCRIPT_WEBHOOK_URL) {
           fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
@@ -935,15 +1026,6 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
     case 'customer.updated': {
       const c = event.data.object; // Stripe Customer
-
-      // (A) If you later add a DB 'clients' table, you could sync it here.
-      // await pool.query(
-      //   'UPDATE clients SET name=$1, email=$2, phone=$3 WHERE customer_id=$4',
-      //   [c.name || null, c.email || null, c.phone || null, c.id]
-      // );
-
-      // (B) Tell your Google Apps Script to upsert the SERVI Clients row.
-      //     Reuse your existing Apps Script webhook URL constant.
       if (GOOGLE_SCRIPT_WEBHOOK_URL) {
         await fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
           method: 'POST',
@@ -957,6 +1039,14 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
           })
         }).catch(()=>{});
       }
+
+      await pool.query(`
+        INSERT INTO customer_consents (customer_id, customer_name, last_checked_at)
+        VALUES ($1,$2,NOW())
+        ON CONFLICT (customer_id) DO UPDATE SET
+          customer_name = COALESCE($2, customer_consents.customer_name),
+          last_checked_at = NOW()
+      `, [c.id, c.name || null]);
       break;
     }
 
