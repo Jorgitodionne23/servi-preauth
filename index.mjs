@@ -233,7 +233,6 @@ app.post('/create-payment-intent', async (req, res) => {
     // Short-lead (≤5d)
     if (!longLead) {
       // If the customer ALREADY has a saved card and we're still >12h out,
-      // DO NOT create a PI yet—just mark the order as a scheduled “book” flow.
         if (saved && hoursAhead > 12) {
           if (hasConsent) {
             await pool.query('UPDATE orders SET kind=$1 WHERE id=$2', ['book', orderId]);
@@ -241,7 +240,6 @@ app.post('/create-payment-intent', async (req, res) => {
               orderId,
               publicCode,
               hasSavedCard: true,
-              scheduled: true,        // Sheet can show "Scheduled"
               paymentIntentId: null   // no PI yet
             });
           } else {
@@ -1213,30 +1211,6 @@ app.post('/confirm-with-saved', async (req, res) => {
 
     const hoursAhead = hoursUntilService(row);
     if (hoursAhead > 12 && !force) {
-      // Only push a "Scheduled" webhook if we truly have consent
-      let hasConsent = false;
-      if (row.customer_id) {
-        const cc = await pool.query('SELECT 1 FROM customer_consents WHERE customer_id = $1', [row.customer_id]);
-        hasConsent = !!cc.rows.length;
-      }
-      if (!hasConsent) {
-        const oc = await pool.query('SELECT 1 FROM order_consents WHERE order_id = $1', [row.id]);
-        hasConsent = !!oc.rows.length;
-      }
-
-      if (hasConsent && GOOGLE_SCRIPT_WEBHOOK_URL) {
-        const cameFromSetup = !!(row.payment_intent_id && String(row.payment_intent_id).startsWith('seti_'));
-        const statusLabel = cameFromSetup
-          ? 'Setup created for scheduled order'
-          : 'Scheduled';
-        fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type: 'order.status', orderId: row.id, status: statusLabel })
-        }).catch(() => {});
-      }
-
-      // helpful metadata for the UI
       const serviceMs = row.service_datetime
         ? new Date(row.service_datetime).getTime()
         : new Date(String(row.service_date) + 'T08:00:00-05:00').getTime();
@@ -1248,6 +1222,7 @@ app.post('/confirm-with-saved', async (req, res) => {
         preauth_window_opens_at: new Date(opensAtMs).toISOString()
       });
     }
+
 
 
 
@@ -1375,14 +1350,28 @@ app.get('/success', async (req, res) => {
     const row = rows[0];
     if (!row) return res.redirect(302, '/');
 
-    // If this is a saved-card booking (kind='book') and we are still >12h away,
-    // we intentionally have no PI yet → show success immediately.
+  
     if (String(row.kind || '').toLowerCase() === 'book') {
       const h = hoursUntilService(row);
       if (!row.payment_intent_id || h > 12) {
+        // Mark as Scheduled server-side (idempotent)…
+        await pool.query(
+          "UPDATE orders SET status = 'Scheduled' WHERE id = $1 AND (status IS NULL OR status NOT IN ('Confirmed','Captured'))",
+          [row.id]
+        );
+        // …and notify the Sheet
+        if (GOOGLE_SCRIPT_WEBHOOK_URL) {
+          fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type: 'order.status', orderId: row.id, status: 'Scheduled' })
+          }).catch(()=>{});
+        }
+
         return res.sendFile(path.join(__dirname, 'public', 'success.html'));
       }
     }
+
 
     // If we have a PI, require it to be authorized or captured to show success
     if (row.payment_intent_id) {
