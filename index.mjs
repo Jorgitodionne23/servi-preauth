@@ -194,6 +194,16 @@ app.post('/create-payment-intent', async (req, res) => {
       'UPDATE orders SET service_date=$1, service_datetime=$2 WHERE id=$3',
       [serviceDate || null, serviceDateTime || null, orderId]
     );
+    // --- NEW: determine if we already have consent (customer-level or order-level) ---
+    let hasConsent = false;
+    if (existingCustomer?.id) {
+      const cc = await pool.query('SELECT 1 FROM customer_consents WHERE customer_id = $1', [existingCustomer.id]);
+      hasConsent = !!cc.rows.length;
+    }
+    if (!hasConsent) {
+      const oc = await pool.query('SELECT 1 FROM order_consents WHERE order_id = $1', [orderId]);
+      hasConsent = !!oc.rows.length;
+    }
 
     // Long-lead policy handling
     if (longLead) {
@@ -224,16 +234,28 @@ app.post('/create-payment-intent', async (req, res) => {
     if (!longLead) {
       // If the customer ALREADY has a saved card and we're still >12h out,
       // DO NOT create a PI yet—just mark the order as a scheduled “book” flow.
-      if (saved && hoursAhead > 12) {
-        await pool.query('UPDATE orders SET kind=$1 WHERE id=$2', ['book', orderId]);
-        return res.send({
-          orderId,
-          publicCode,
-          hasSavedCard: true,
-          scheduled: true,        // lets the Sheet show "Scheduled"
-          paymentIntentId: null   // IMPORTANT: no PI yet
-        });
-      }
+        if (saved && hoursAhead > 12) {
+          if (hasConsent) {
+            await pool.query('UPDATE orders SET kind=$1 WHERE id=$2', ['book', orderId]);
+            return res.send({
+              orderId,
+              publicCode,
+              hasSavedCard: true,
+              scheduled: true,        // Sheet can show "Scheduled"
+              paymentIntentId: null   // no PI yet
+            });
+          } else {
+            // Saved card found but no consent recorded → collect consent with Setup flow
+            await pool.query('UPDATE orders SET kind=$1 WHERE id=$2', ['setup', orderId]);
+            return res.send({
+              orderId,
+              publicCode,
+              requiresSetup: true,    // Sheet should NOT set "Scheduled"
+              hasSavedCard: true
+            });
+          }
+        }
+
 
       // Otherwise proceed (create or reuse customer, then create a PI now)
       const customer = existingCustomer || await stripe.customers.create({
@@ -1191,26 +1213,33 @@ app.post('/confirm-with-saved', async (req, res) => {
 
     const hoursAhead = hoursUntilService(row);
     if (hoursAhead > 12 && !force) {
-      const cameFromSetup = !!(row.payment_intent_id && String(row.payment_intent_id).startsWith('seti_'));
-      if (GOOGLE_SCRIPT_WEBHOOK_URL) {
+      // Only push a "Scheduled" webhook if we truly have consent
+      let hasConsent = false;
+      if (row.customer_id) {
+        const cc = await pool.query('SELECT 1 FROM customer_consents WHERE customer_id = $1', [row.customer_id]);
+        hasConsent = !!cc.rows.length;
+      }
+      if (!hasConsent) {
+        const oc = await pool.query('SELECT 1 FROM order_consents WHERE order_id = $1', [row.id]);
+        hasConsent = !!oc.rows.length;
+      }
+
+      if (hasConsent && GOOGLE_SCRIPT_WEBHOOK_URL) {
+        const cameFromSetup = !!(row.payment_intent_id && String(row.payment_intent_id).startsWith('seti_'));
         const statusLabel = cameFromSetup
           ? 'Setup created for scheduled order'
           : 'Scheduled';
         fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            type: 'order.status',
-            orderId: row.id,
-            status: statusLabel
-          })
+          body: JSON.stringify({ type: 'order.status', orderId: row.id, status: statusLabel })
         }).catch(() => {});
       }
 
       // helpful metadata for the UI
       const serviceMs = row.service_datetime
         ? new Date(row.service_datetime).getTime()
-        : new Date(String(row.service_date) + 'T08:00:00-05:00').getTime(); // adjust default time if needed
+        : new Date(String(row.service_date) + 'T08:00:00-05:00').getTime();
       const opensAtMs = serviceMs - (12 * 60 * 60 * 1000);
 
       return res.status(409).json({
@@ -1219,6 +1248,7 @@ app.post('/confirm-with-saved', async (req, res) => {
         preauth_window_opens_at: new Date(opensAtMs).toISOString()
       });
     }
+
 
 
 
