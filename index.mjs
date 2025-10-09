@@ -158,6 +158,19 @@ app.post('/create-payment-intent', async (req, res) => {
     // Compute policy early
     const longLead = daysAheadFromYMD(serviceDate) >= 5;
 
+    // NEW: compute hoursAhead from serviceDateTime (or date-only as fallback)
+    const hoursAhead = (() => {
+      try {
+        if (serviceDateTime) {
+          return Math.floor((new Date(serviceDateTime).getTime() - Date.now()) / 3_600_000);
+        }
+        if (serviceDate) {
+          // choose a local anchor time that matches your sheet logic (e.g., midnight)
+          return Math.floor((new Date(`${serviceDate}T00:00:00-06:00`).getTime() - Date.now()) / 3_600_000);
+        }
+      } catch {}
+      return Infinity;
+    })();
     // If long lead and NO consent, do not create a new customer yet
     // We can still check for saved card if an existing customer was found
     let saved = false;
@@ -207,34 +220,51 @@ app.post('/create-payment-intent', async (req, res) => {
       return res.send({ orderId, publicCode, hasSavedCard: true });
     }
 
-    // Short-lead (≤5d): we DO need a customer now
-    const customer = existingCustomer || await stripe.customers.create({
-      name: clientName || undefined,
-      email: clientEmail || undefined,
-      phone: clientPhone || undefined,
-    });
+    // Short-lead (≤5d)
+    if (!longLead) {
+      // If the customer ALREADY has a saved card and we're still >12h out,
+      // DO NOT create a PI yet—just mark the order as a scheduled “book” flow.
+      if (saved && hoursAhead > 12) {
+        await pool.query('UPDATE orders SET kind=$1 WHERE id=$2', ['book', orderId]);
+        return res.send({
+          orderId,
+          publicCode,
+          hasSavedCard: true,
+          scheduled: true,        // lets the Sheet show "Scheduled"
+          paymentIntentId: null   // IMPORTANT: no PI yet
+        });
+      }
 
-    await pool.query('UPDATE orders SET customer_id=$1 WHERE id=$2', [customer.id, orderId]);
+      // Otherwise proceed (create or reuse customer, then create a PI now)
+      const customer = existingCustomer || await stripe.customers.create({
+        name: clientName || undefined,
+        email: clientEmail || undefined,
+        phone: clientPhone || undefined,
+      });
 
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount,
-      currency: 'mxn',
-      capture_method: 'manual',
-      payment_method_types: ['card'],
-      customer: customer.id,
-      ...(consent ? { setup_future_usage: 'off_session' } : {}),
-      metadata: { order_id: orderId, kind: 'primary' }
-    });
+      await pool.query('UPDATE orders SET customer_id=$1 WHERE id=$2', [customer.id, orderId]);
 
-    await pool.query('UPDATE orders SET payment_intent_id=$1 WHERE id=$2', [paymentIntent.id, orderId]);
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount,
+        currency: 'mxn',
+        capture_method: 'manual',
+        payment_method_types: ['card'],
+        customer: customer.id,
+        ...(consent ? { setup_future_usage: 'off_session' } : {}),
+        metadata: { order_id: orderId, kind: 'primary' }
+      });
 
-    return res.send({
-      clientSecret: paymentIntent.client_secret,
-      paymentIntentId: paymentIntent.id,
-      orderId,
-      publicCode,
-      hasSavedCard: saved
-    });
+      await pool.query('UPDATE orders SET payment_intent_id=$1 WHERE id=$2', [paymentIntent.id, orderId]);
+
+      return res.send({
+        clientSecret: paymentIntent.client_secret,
+        paymentIntentId: paymentIntent.id,
+        orderId,
+        publicCode,
+        hasSavedCard: saved
+      });
+    }
+
 
   } catch (err) {
     console.error('Error creating payment intent:', err);
@@ -382,19 +412,34 @@ app.get('/order/:orderId', async (req, res) => {
         intentType = null;
 
       } else {
-        // Default (legacy primary or adjustments): create a PI now
-        const created = await stripe.paymentIntents.create({
-          amount: row.amount,
-          currency: 'mxn',
-          payment_method_types: ['card'],
-          capture_method: 'manual',
-          customer: row.customer_id || undefined,
-          metadata: { kind: row.kind || 'primary', parent_order_id: row.parent_id || '' }
-        });
-        await pool.query('UPDATE orders SET payment_intent_id=$1 WHERE id=$2', [created.id, row.id]);
-        pi = created;
-        intentType = 'payment';
+        // Default (legacy primary/adjustments) — but DON'T create a PI early for saved + >12h
+        const hours_ahead = hoursUntilService(row);
+
+        let alreadySaved = false;
+        if (row.customer_id) {
+          alreadySaved = await hasSavedCard(row.customer_id, stripe);
+        }
+
+        if (alreadySaved && hours_ahead > 12) {
+          // Convert legacy "primary" into "book" lazily, with no PI on read
+          await pool.query('UPDATE orders SET kind=$1 WHERE id=$2', ['book', row.id]);
+          pi = null;
+          intentType = null;
+        } else {
+          const created = await stripe.paymentIntents.create({
+            amount: row.amount,
+            currency: 'mxn',
+            payment_method_types: ['card'],
+            capture_method: 'manual',
+            customer: row.customer_id || undefined,
+            metadata: { kind: row.kind || 'primary', parent_order_id: row.parent_id || '' }
+          });
+          await pool.query('UPDATE orders SET payment_intent_id=$1 WHERE id=$2', [created.id, row.id]);
+          pi = created;
+          intentType = 'payment';
+        }
       }
+
 
     } else {
       // Retrieve existing Intent
