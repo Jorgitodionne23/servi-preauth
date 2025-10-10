@@ -156,7 +156,7 @@
       background-color: #222;
       border: 1px solid #444;
       border-radius: 6px;
-      padding: 12px 12px 12px 43px; /* space for icon */
+      padding: 12px 12px 12px 43px;
       color: #9ca3af;
       font-size: 16px;
       width: 100%;
@@ -263,8 +263,6 @@
             />
         </div>
 
-
-
         <div class="form-row">
           <div class="terms-checkbox-wrapper">
             <input type="checkbox" id="terms-checkbox" />
@@ -295,7 +293,6 @@
           </div>
         </div>
 
-
         <button id="submit">Reservar servicio</button>
         
         <div id="spinner" style="display: none;">
@@ -325,7 +322,7 @@
       window.stripe = Stripe(pk);
     })();
 
-    // 🆕 Fetch once, cache, and use everywhere
+    // Fetch once, cache, and use everywhere
     let cachedOrder = null;
     async function getOrder() {
       if (cachedOrder) return cachedOrder;
@@ -341,46 +338,40 @@
       return cachedOrder;
     }
 
-    // init: fill summary + build Apple/Google Pay with real amount
+    // Format date helper
+    function formatFechaEs(dateOnly, dateTime) {
+      const raw = dateTime || dateOnly;
+      if (!raw) return "—";
+
+      const d = new Date(raw);
+      if (isNaN(d)) return String(raw);
+
+      const fecha = d.toLocaleDateString("es-MX", {
+        weekday: "long",
+        day: "2-digit",
+        month: "long",
+      });
+      const cap = fecha.charAt(0).toUpperCase() + fecha.slice(1);
+
+      const showTime = !!dateTime;
+      if (!showTime) return cap;
+
+      const hora = d.toLocaleTimeString("es-MX", {
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true
+      });
+
+      return `${cap}, a las ${hora}`;
+    }
+
+    // Init: fill summary + mount appropriate payment UI
     (async () => {
       await stripeReady;
       const order = await getOrder();
       if (!order) return;
 
-      // Replace your existing formatFechaEs with this version:
-      function formatFechaEs(dateOnly, dateTime) {
-        // Prefer full timestamp for display (so we can show the hour)
-        const raw = dateTime || dateOnly;
-        if (!raw) return "—";
-
-        // Accept "YYYY-MM-DD" or ISO-like values
-        const d = new Date(raw);
-        if (isNaN(d)) return String(raw);
-
-        // (1) Date WITHOUT year
-        const fecha = d.toLocaleDateString("es-MX", {
-          weekday: "long",
-          day: "2-digit",
-          month: "long",
-          // year intentionally omitted
-        });
-        const cap = fecha.charAt(0).toUpperCase() + fecha.slice(1);
-
-        // (2) Time, only if we have a timestamp (service_datetime)
-        // Force 12-hour with minutes, Spanish style (e.g., "4:00 p. m.")
-        const showTime = !!dateTime;
-        if (!showTime) return cap;
-
-        const hora = d.toLocaleTimeString("es-MX", {
-          hour: "numeric",
-          minute: "2-digit",
-          hour12: true
-        });
-
-        return `${cap}, a las ${hora}`;
-      }
-
-
+      // ✅ ALWAYS show service summary (even when consent_required)
       const servicio = (order.service_description || "servicio").trim();
       const fechaTexto = formatFechaEs(order.service_date, order.service_datetime);
       const monto = (Number(order.amount || 0) / 100);
@@ -388,63 +379,48 @@
       document.getElementById("service-summary").textContent =
         `Reserva de ${servicio} el ${fechaTexto}, por ${montoTexto}.`;
 
-      // Helpers for showing/hiding areas
+      // Helpers
       const show = (sel) => (document.querySelector(sel).style.display = 'block');
       const hide = (sel) => (document.querySelector(sel).style.display = 'none');
 
-      // We’ll mount the correct Element depending on what the server says.
-      const intentType = order.intentType;          // 'payment' | 'setup' | null
+      const intentType = order.intentType;
       const consentRequired = !!order.consent_required;
       const clientSecret = order.client_secret || null;
-
-      // Grab existing containers
-      const cardBox = document.getElementById('card-element');
-      const payElBox = document.getElementById('payment-element');
-      const expressWrap = document.getElementById('express-pay-container');
-
-      // We’ll reuse your #submit button and checkboxes
       const submitBtn = document.getElementById('submit');
 
-      // ------------- CASE A: >7d gate hit, user hasn't given consent yet -------------
+      // ------------- CASE A: >5d gate (consent_required, no client_secret yet) -------------
       if (consentRequired && !clientSecret && !intentType) {
-        // Block payment UI; require consent first.
+        // Don't mount any payment UI yet; just set button mode
         hide('#card-element');
         hide('#payment-element');
         hide('#express-pay-container');
 
-        // Change CTA text to make it clear
-        submitBtn.textContent = 'Dar consentimiento y crear cuenta';
+        submitBtn.textContent = 'Crear cuenta y continuar';
         submitBtn.dataset.mode = 'gate-consent';
-        return; // submit handler will take it from here
+        return;
       }
 
-      // ------------- CASE B: Setup flow (save now); wallets allowed via Payment Element -------------
+      // ------------- CASE B: Setup flow (save card via SetupIntent) -------------
       if (intentType === 'setup' && clientSecret) {
-        hide('#card-element');          // we won't use raw Card Element here
-        hide('#express-pay-container'); // PR Button not used in setup
+        hide('#card-element');
+        hide('#express-pay-container');
         show('#payment-element');
 
-        // Create Elements in setup mode using the SetupIntent client secret
         const elements = (window.elements = (window.stripe).elements({
           clientSecret: clientSecret,
           locale: 'es',
-          appearance: { theme: 'night' } // optional
+          appearance: { theme: 'night' }
         }));
-        const paymentElement = (window.paymentElement = elements.create('payment', {
-          // Wallets (Apple/Google) will appear automatically when available/enabled for the merchant
-          // You can tweak layout here if you want
-        }));
+        const paymentElement = (window.paymentElement = elements.create('payment'));
         paymentElement.mount('#payment-element');
 
-        // Adjust button label
         submitBtn.textContent = 'Guardar método y crear cuenta';
         submitBtn.dataset.mode = 'confirm-setup';
         return;
       }
 
-      // ------------- CASE C: Normal ≤7d payment (manual capture): keep Card Element + PR Button -------------
+      // ------------- CASE C: Normal payment (manual capture PI) -------------
       if (intentType === 'payment' && clientSecret) {
-        // Build Card Element
         const elements = (window.elements = (window.stripe).elements({ locale: 'es' }));
         const card = (window.card = elements.create('card', {
           style: {
@@ -460,7 +436,7 @@
         }));
         card.mount('#card-element');
 
-        // Express wallets remain for *payment* mode
+        // Express wallets
         const paymentRequest = (window.paymentRequest = (window.stripe).paymentRequest({
           country: "MX",
           currency: "mxn",
@@ -477,7 +453,6 @@
           show('#express-pay-container');
           prButton.mount("#express-pay-button");
           paymentRequest.on("paymentmethod", async (ev) => {
-            // If user consented, persist consent and make current PI save the card
             const consentBox = document.getElementById("consent-checkbox");
             if (consentBox && consentBox.checked) {
               await recordConsent(order.id);
@@ -522,11 +497,10 @@
       await fetch(`/orders/${encodeURIComponent(orderId)}/apply-consent-to-current-pi`, { method: 'POST' });
     }
 
-    // Record consent on the server (evidence for audits)
+    // Record consent on the server
     async function recordConsent(orderId){
       const CONSENT_VERSION = '1.0';
       const text = 'Autorizo a SERVI a guardar esta tarjeta y realizar cargos adicionales relacionados con mi servicio, previa confirmación por WhatsApp. Si mi banco exige verificación, se me pedirá confirmarlo (3-D Secure). Puedo solicitar la eliminación de mi método de pago en cualquier momento.';
-      const enc = new TextEncoder().encode(text);
       const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
       const bytes = new Uint8Array(buf);
       const hash  = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
@@ -542,55 +516,13 @@
       });
     }
 
-    // NEW: Handle consent gate for >5-day orders
-    if (mode === 'gate-consent') {
-      if (!consentChecked) {
-        // Show inline blocking message instead of alert
-        alert("Para reservas con 5 días o más de anticipación necesitas crear tu cuenta y guardar un método de pago.\n\nMarca la casilla de consentimiento para continuar.");
-        return;
-      }
-      
-      // Record consent → server promotes order.kind from 'setup_required' to 'setup'
-      await recordConsent(order.id);
-      
-      // Re-fetch order to get SetupIntent client_secret
-      cachedOrder = null;
-      const updated = await getOrder();
-      
-      if (updated.intentType !== 'setup' || !updated.client_secret) {
-        alert("No se pudo preparar el guardado de tarjeta. Intenta de nuevo.");
-        return;
-      }
-      
-      // Now mount Payment Element for setup (same as existing setup flow)
-      const elements = (window.elements = (window.stripe).elements({
-        clientSecret: updated.client_secret,
-        locale: 'es',
-        appearance: { theme: 'night' }
-      }));
-      
-      const paymentElement = (window.paymentElement = elements.create('payment'));
-      paymentElement.mount('#payment-element');
-      
-      // Hide card element, show payment element
-      document.getElementById('card-element').parentElement.style.display = 'none';
-      document.getElementById('payment-element').style.display = 'block';
-      
-      // Update button
-      submitBtn.textContent = 'Guardar método y crear cuenta';
-      submitBtn.dataset.mode = 'confirm-setup';
-      
-      spinner.style.display = "none";
-      submitBtn.disabled = false;
-      return;
-    }
-
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       await stripeReady;
 
       const termsChecked = document.getElementById("terms-checkbox").checked;
       const consentChecked = document.getElementById("consent-checkbox").checked;
+      
       if (!termsChecked) {
         alert("Debes aceptar los Términos y Condiciones y el Aviso de Privacidad para continuar.");
         return;
@@ -599,63 +531,94 @@
       const order = await getOrder();
       if (!order) { alert("Orden no encontrada."); return; }
 
-      const mode = document.getElementById("submit").dataset.mode || '';
-      const spinner = document.getElementById("spinner");
-      const submitBtn = document.getElementById("submit");
-      submitBtn.disabled = true; spinner.style.display = "block";
+      const mode = submitBtn.dataset.mode || '';
+      submitBtn.disabled = true;
+      spinner.style.display = "block";
 
       try {
+        // ========== CASE A: Consent gate (>5 days, no saved card) ==========
         if (mode === 'gate-consent') {
           if (!consentChecked) {
-            alert("Para reservas con 5 días o más de anticipación debes autorizar guardar tu método de pago.");
+            alert("Para reservas con 5 días o más de anticipación necesitas crear tu cuenta y guardar un método de pago.\n\nMarca la casilla de consentimiento para continuar.");
             return;
           }
+          
           // Record consent → server promotes order.kind from 'setup_required' to 'setup'
           await recordConsent(order.id);
-          // Re-fetch order so we receive a SetupIntent client_secret
+          
+          // Re-fetch order to get SetupIntent client_secret
           cachedOrder = null;
           const updated = await getOrder();
+          
           if (updated.intentType !== 'setup' || !updated.client_secret) {
             alert("No se pudo preparar el guardado de tarjeta. Intenta de nuevo.");
             return;
           }
-          // Reload to let the init code mount the Payment Element
-          location.reload();
+          
+          // Mount Payment Element for setup
+          const elements = (window.elements = (window.stripe).elements({
+            clientSecret: updated.client_secret,
+            locale: 'es',
+            appearance: { theme: 'night' }
+          }));
+          
+          const paymentElement = (window.paymentElement = elements.create('payment'));
+          
+          // Hide card element, show payment element
+          document.getElementById('card-element').parentElement.style.display = 'none';
+          document.getElementById('payment-element').style.display = 'block';
+          paymentElement.mount('#payment-element');
+          
+          // Update button
+          submitBtn.textContent = 'Guardar método y crear cuenta';
+          submitBtn.dataset.mode = 'confirm-setup';
+          
+          spinner.style.display = "none";
+          submitBtn.disabled = false;
           return;
         }
 
-        // SETUP: confirm SetupIntent (saves wallet/card). Wallets appear inside Payment Element.
+        // ========== CASE B: Setup confirmation ==========
         if (mode === 'confirm-setup') {
           if (!consentChecked) {
             alert("Debes autorizar guardar tu método de pago para crear tu cuenta.");
             return;
           }
-          await recordConsent(order.id); // <-- add this
+          
+          await recordConsent(order.id);
           const { error } = await (window.stripe).confirmSetup({
             elements: window.elements,
-            redirect: 'if_required',
-            confirmParams: {
-              // optional: attach billing_details collected elsewhere
-            }
+            redirect: 'if_required'
           });
-          if (error) { alert("No se pudo guardar el método: " + error.message); return; }
-          // Success → webhook will mark Status=Saved and kind='book'
+          
+          if (error) {
+            alert("No se pudo guardar el método: " + error.message);
+            return;
+          }
+          
           localStorage.setItem('orderId', String(order.id));
           window.location.href = `/success?orderId=${encodeURIComponent(order.id)}`;
           return;
         }
 
+        // ========== CASE C: Normal payment confirmation ==========
         if (mode === 'confirm-payment') {
           const cardholder = document.getElementById("cardholder-name").value || "";
-          if (document.getElementById("consent-checkbox").checked) {
+          
+          if (consentChecked) {
             await recordConsent(order.id);
-            // 🔑 tell the server to set setup_future_usage='off_session' on this PI BEFORE confirm
             await applyConsentToCurrentPI(order.id);
           }
+          
           const result = await (window.stripe).confirmCardPayment(order.client_secret, {
             payment_method: { card: window.card, billing_details: { name: cardholder } }
           });
-          if (result.error) { alert("Error: " + result.error.message); return; }
+          
+          if (result.error) {
+            alert("Error: " + result.error.message);
+            return;
+          }
+          
           if (result.paymentIntent.status === "succeeded" || result.paymentIntent.status === "requires_capture") {
             localStorage.setItem('orderId', String(order.id));
             window.location.href = `/success?orderId=${encodeURIComponent(order.id)}`;
@@ -669,9 +632,6 @@
         submitBtn.disabled = false;
       }
     });
-
-
   </script>
 </body>
-
 </html>
