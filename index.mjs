@@ -1049,15 +1049,16 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
       }
 
       if (orderId) {
-        // Persist the saved PM + customer, and promote to 'book'
+        const statusLabel = 'Scheduled';
+
         await pool.query(
           `UPDATE orders
-              SET status                  = 'Setup created',
-                  saved_payment_method_id = COALESCE($1, saved_payment_method_id),
-                  customer_id             = COALESCE($2, customer_id),
+              SET status                  = $1,
+                  saved_payment_method_id = COALESCE($2, saved_payment_method_id),
+                  customer_id             = COALESCE($3, customer_id),
                   kind                    = 'book'
-            WHERE id = $3`,
-          [pmId, cust, orderId]
+            WHERE id = $4`,
+          [statusLabel, pmId, cust, orderId]
         );
 
         if (cust) {
@@ -1070,12 +1071,16 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
           `, [cust, pmId || null]);
         }
 
-        // Notify your Sheet (status column)
         if (GOOGLE_SCRIPT_WEBHOOK_URL) {
           fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ type: 'order.status', orderId, status: 'Setup created' })
+            body: JSON.stringify({
+              type: 'order.status',
+              orderId,
+              status: statusLabel,
+              customerId: cust || ''
+            })
           }).catch(()=>{});
         }
       }
@@ -1398,7 +1403,7 @@ app.get('/success', async (req, res) => {
     if (!orderId) return res.redirect(302, '/');
 
     const { rows } = await pool.query(
-      'SELECT id, payment_intent_id, kind, service_date, service_datetime FROM orders WHERE id = $1',
+      'SELECT id, payment_intent_id, kind, service_date, service_datetime, customer_id FROM orders WHERE id = $1',
       [orderId]
     );
     const row = rows[0];
@@ -1418,7 +1423,12 @@ app.get('/success', async (req, res) => {
           fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ type: 'order.status', orderId: row.id, status: 'Scheduled' })
+            body: JSON.stringify({
+              type: 'order.status',
+              orderId: row.id,
+              status: 'Scheduled',
+              customerId: row.customer_id || ''
+            })
           }).catch(()=>{});
         }
 
