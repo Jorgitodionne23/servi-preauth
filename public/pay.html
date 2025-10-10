@@ -522,27 +522,29 @@
 
       const termsChecked = document.getElementById("terms-checkbox").checked;
       const consentChecked = document.getElementById("consent-checkbox").checked;
-      
+
+      const mode = submitBtn.dataset.mode || '';
+      const missingAlerts = [];
       if (!termsChecked) {
-        alert("Debes aceptar los Términos y Condiciones y el Aviso de Privacidad para continuar.");
+        missingAlerts.push("Debes aceptar los Términos y Condiciones y el Aviso de Privacidad para continuar.");
+      }
+      if (mode === 'gate-consent' && !consentChecked) {
+        missingAlerts.push("Para reservas con 5 días o más de anticipación necesitas crear tu cuenta y guardar un método de pago.\n\nMarca la casilla de consentimiento para continuar.");
+      }
+      if (missingAlerts.length) {
+        alert(missingAlerts.join('\n\n'));
         return;
       }
 
       const order = await getOrder();
       if (!order) { alert("Orden no encontrada."); return; }
 
-      const mode = submitBtn.dataset.mode || '';
       submitBtn.disabled = true;
       spinner.style.display = "block";
 
       try {
         // ========== CASE A: Consent gate (>5 days, no saved card) ==========
         if (mode === 'gate-consent') {
-          if (!consentChecked) {
-            alert("Para reservas con 5 días o más de anticipación necesitas crear tu cuenta y guardar un método de pago.\n\nMarca la casilla de consentimiento para continuar.");
-            return;
-          }
-          
           // Record consent → server promotes order.kind from 'setup_required' to 'setup'
           await recordConsent(order.id);
           
