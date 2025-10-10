@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Crear cuenta - SERVI</title>
+  <title>Mi cuenta - SERVI</title>
   <script src="https://js.stripe.com/v3/"></script>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -18,215 +18,245 @@
       display:flex; flex-direction:column; min-height:100vh;
     }
     .page {
-        min-height: 100vh;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 20px;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
     }
 
-    /* Logo ABOVE the gray card */
     .header-logo { display:block; width:140px; height:auto; margin:0 auto 16px; }
 
     .container {
-        width: 100%;
-        max-width: 560px;           /* was 420 — gives Payment Element room */
-        background: #111;
-        padding: 28px 22px;
-        border-radius: 12px;
-        box-shadow: 0 0 20px rgba(255,255,255,.08);
+      width: 100%;
+      max-width: 560px;
+      background: #111;
+      padding: 28px 22px;
+      border-radius: 12px;
+      box-shadow: 0 0 20px rgba(255,255,255,.08);
     }
 
-    html, body { overflow-x: hidden; }
+    h2 { margin:0 0 8px; font-size:22px; font-weight:600; text-align:center; }
+    .subtitle { text-align:center; color:#ccc; font-size:14px; margin:0 0 20px; }
 
-    h2 { margin:0 0 14px; font-size:22px; font-weight:600; text-align:center; }
+    .section { background:#1a1a1a; padding:16px; border-radius:10px; margin-bottom:16px; }
+    .section h3 { margin:0 0 12px; font-size:16px; font-weight:600; }
+    .section p { margin:8px 0; font-size:14px; color:#ccc; line-height:1.5; }
 
-    .summary { font-size:14px; background:#1a1a1a; padding:12px; border-radius:10px; margin-bottom:14px; }
-    .row { margin:12px 0; }
+    label { font-size:13px; color:#ccc; line-height:1.5; display:block; margin:12px 0; }
 
-    label { font-size:13px; color:#ccc; line-height:1.5; display:block; }
+    #payment-element { background:#1a1a1a; padding:12px; border-radius:10px; display:none; margin:16px 0; }
 
-    #payment-element { background:#1a1a1a; padding:12px; border-radius:10px; display:none; }
-
-    .btn { width:100%; padding:12px; border:0; border-radius:8px; font-weight:700; cursor:pointer; }
-
+    .btn { width:100%; padding:12px; border:0; border-radius:8px; font-weight:700; cursor:pointer; margin:8px 0; }
     .btn.primary { background:#fff; color:#000; }
+    .btn.secondary { background:#1a1a1a; color:#fff; border:1px solid #444; }
 
-    .btn.ghost { background:#1a1a1a; color:#fff; border:1px solid #444; }
+    .note { font-size:12px; color:#bbb; margin:8px 0; }
 
-    .note { font-size:12px; color:#bbb; margin-top:8px; }
-
-    #spinner { display:none; text-align:center; margin-top:10px; }
-
-    .spinner-circle { border:3px solid rgba(255,255,255,.2); border-top:3px solid #fff; border-radius:50%; width:20px; height:20px; animation:spin 1s linear infinite; margin:0 auto; }
+    #spinner { display:none; text-align:center; margin:10px 0; }
+    .spinner-circle { 
+      border:3px solid rgba(255,255,255,.2); 
+      border-top:3px solid #fff; 
+      border-radius:50%; 
+      width:20px; 
+      height:20px; 
+      animation:spin 1s linear infinite; 
+      margin:0 auto; 
+    }
     @keyframes spin { 0%{transform:rotate(0)} 100%{transform:rotate(360deg)} }
 
     .footer { padding:18px 0 28px; text-align:center; }
-
     .footer img { height:32px; width:auto; }
+
+    .hidden { display:none !important; }
   </style>
 </head>
 <body>
   <div class="page">
-    <!-- Logo now above the card -->
     <img src="logo-servi-white.png" class="header-logo" alt="SERVI" />
 
     <div class="container">
-      <h2>Crear cuenta y guardar método</h2>
+      <h2>Mi cuenta SERVI</h2>
+      <p class="subtitle">Administra tu método de pago y preferencias</p>
 
-      <div class="summary" id="summary">Cargando…</div>
+      <!-- Section: Existing customers -->
+      <div class="section" id="existing-section">
+        <h3>¿Ya tienes una cuenta?</h3>
+        <p>Accede a tu portal de pagos para ver y administrar tus métodos guardados.</p>
+        
+        <div style="margin:12px 0;">
+          <input type="tel" id="phone-lookup" placeholder="+52 55 1234 5678" 
+                 style="width:100%; padding:12px; border-radius:6px; border:1px solid #444; background:#222; color:#fff; font-size:14px;">
+        </div>
+        
+        <button class="btn primary" id="btn-portal">Acceder a mi portal</button>
+        <p class="note">Ingresa el teléfono que usaste al crear tu cuenta.</p>
+      </div>
 
-      <div class="row">
+      <!-- Section: New customers -->
+      <div class="section" id="new-section">
+        <h3>Crear cuenta nueva</h3>
+        <p>Guarda tu método de pago para hacer pedidos más rápido y con anticipación.</p>
+        
         <label>
-          <input type="checkbox" id="consent" />
+          <input type="checkbox" id="consent-new" />
           Autorizo a SERVI a <strong>guardar este método</strong> y realizar
-          <strong>cargos adicionales</strong> relacionados con mi servicio, previa confirmación por WhatsApp.
+          <strong>cargos relacionados con mis servicios</strong>, previa confirmación por WhatsApp.
         </label>
-        <div class="note">Tus datos se guardan de forma segura en Stripe. Puedes eliminarlos cuando quieras.</div>
-      </div>
-
-      <div id="payment-element"></div>
-
-      <div class="row">
-        <button id="continue" class="btn primary">Continuar</button>
+        
+        <div id="payment-element"></div>
+        
+        <button class="btn primary hidden" id="btn-save">Guardar método y crear cuenta</button>
+        <button class="btn secondary" id="btn-start-setup">Continuar</button>
+        
         <div id="spinner"><div class="spinner-circle"></div></div>
-      </div>
-
-      <div class="row">
-        <button id="back" class="btn ghost" type="button">Cancelar</button>
+        
+        <p class="note">Tus datos se guardan de forma segura con Stripe. Puedes eliminarlos cuando quieras.</p>
       </div>
     </div>
   </div>
 
-  <!-- Stripe lockup, like other pages -->
   <div class="footer">
     <img src="poweredbystripe.png" alt="Powered by Stripe" />
   </div>
 
   <script type="module">
-    const params = new URLSearchParams(location.search);
-    const orderId = params.get('orderId');
-    if (!orderId) { alert('Falta orderId'); throw new Error('orderId'); }
-
+    const $ = (sel) => document.querySelector(sel);
+    
+    // Load Stripe
     const { pk } = await fetch('/config/stripe').then(r=>r.json());
     if (!pk) { alert('Stripe no configurado'); throw new Error('pk'); }
     const stripe = Stripe(pk);
 
-    async function getOrder() {
-      const r = await fetch(`/order/${encodeURIComponent(orderId)}`);
-      if (!r.ok) throw new Error('order fetch');
-      return r.json();
-    }
+    let elements = null;
+    let setupClientSecret = null;
 
-    function fmtReserva(order) {
-        const raw = order.service_datetime || order.service_date || '';
-        if (!raw) return '—';
-
-        // YYYY-MM-DD or YYYY-MM-DDTHH:mm...
-        if (/^\d{4}-\d{2}-\d{2}/.test(String(raw))) {
-            const d = new Date(raw);
-            if (!isNaN(d)) {
-            // weekday + day + month  (no year)
-            const fecha = d.toLocaleDateString('es-MX', {
-                weekday: 'long',
-                day: '2-digit',
-                month: 'long'
-            });
-            const nice = fecha.charAt(0).toUpperCase() + fecha.slice(1);
-
-            // If timestamp includes time (or service_datetime existed), show it
-            const hasTime =
-                /T\d{2}:\d{2}/.test(String(raw)) || Boolean(order.service_datetime);
-            if (hasTime) {
-                const hora = d.toLocaleTimeString('es-MX', {
-                hour: 'numeric',
-                minute: '2-digit',
-                hour12: true
-                });
-                return `${nice}, a las ${hora}`;
-            }
-            return nice;
-            }
-        }
-        return String(raw);
-    }
-
-
-    async function recordConsent(text) {
-      const enc = new TextEncoder().encode(text);
-      const buf = await crypto.subtle.digest('SHA-256', enc);
-      const hash = [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');
-      await fetch(`/orders/${encodeURIComponent(orderId)}/consent`, {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({
-          version:'1.0', text, hash,
-          locale: navigator.language || 'es-MX',
-          tz: Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Mexico_City'
-        })
-      });
-    }
-
-    // Init
-    const order = await getOrder();
-    document.getElementById('summary').textContent =
-      `Reserva de ${(order.service_description||'servicio').trim()} el ${fmtReserva(order)}.`;
-
-    const consentBox = document.getElementById('consent');
-    const btn = document.getElementById('continue');
-    const spinner = document.getElementById('spinner');
-
-    btn.onclick = async () => {
-      // 1) Gate on consent
-      if (!consentBox.checked) { alert('Debes autorizar guardar el método.'); return; }
-
-      btn.disabled = true; spinner.style.display = 'block';
-
-      // 2) If server still in setup_required, record consent so it promotes to 'setup'
-      if (order.consent_required) {
-        await recordConsent('Autorizo a SERVI a guardar mi método de pago para cargos relacionados con mi servicio.');
-      }
-
-      // 3) Re-fetch → should now have SetupIntent client_secret
-      const refreshed = await getOrder();
-      if (refreshed.intentType !== 'setup' || !refreshed.client_secret) {
-        spinner.style.display = 'none'; btn.disabled = false;
-        alert('No se pudo preparar el guardado del método. Intenta de nuevo.');
+    // === Existing Customer: Access Billing Portal ===
+    $('#btn-portal').onclick = async () => {
+      const phone = $('#phone-lookup').value.trim();
+      if (!phone) {
+        alert('Ingresa tu número de teléfono.');
         return;
       }
 
-      const consentLock = document.getElementById('consent');
-      consentLock.checked = true;       // keep it on
-      consentLock.disabled = true;      // user can’t uncheck now
+      $('#btn-portal').disabled = true;
+      $('#spinner').style.display = 'block';
 
-      // 4) Mount Payment Element and confirm setup
-      const elements = stripe.elements({ clientSecret: refreshed.client_secret, locale: 'es', appearance:{theme:'night'} });
-      const paymentElement = elements.create('payment');
-      document.getElementById('payment-element').style.display = 'block';
-      paymentElement.mount('#payment-element');
-
-      // Change CTA to “Guardar método”
-      btn.textContent = 'Guardar método y crear cuenta';
-      btn.onclick = async () => {
-        btn.disabled = true; spinner.style.display = 'block';
-        const stillConsented = document.getElementById('consent').checked;
-        if (!stillConsented) {
-            alert('Debes autorizar guardar tu método.');
-            spinner.style.display = 'none'; btn.disabled = false;
-            return;
-        }
-        const { error } = await stripe.confirmSetup({ elements, redirect: 'if_required' });
-        if (error) {
-          alert('No se pudo guardar el método: ' + (error.message || 'Se ha producido un error de procesamiento.'));
-          spinner.style.display = 'none'; btn.disabled = false;
+      try {
+        // Search for customer by phone
+        const normalized = normalizePhone(phone);
+        const searchResp = await fetch(`/customer-lookup?phone=${encodeURIComponent(normalized)}`);
+        
+        if (!searchResp.ok) {
+          alert('No encontramos una cuenta con ese teléfono. Verifica el número o crea una cuenta nueva.');
           return;
         }
-        // success → webhook marks Saved + kind='book'
-        location.href = `/book?orderId=${encodeURIComponent(orderId)}`;
-      };
-      spinner.style.display = 'none'; btn.disabled = false;
+
+        const { customerId } = await searchResp.json();
+        
+        // Get billing portal session
+        const portalResp = await fetch('/billing-portal-standalone', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ customerId, returnUrl: location.href })
+        });
+
+        const { url } = await portalResp.json();
+        if (url) {
+          location.href = url;
+        } else {
+          alert('No se pudo abrir el portal. Intenta de nuevo.');
+        }
+      } catch (e) {
+        alert('Error al buscar tu cuenta. Verifica tu conexión.');
+      } finally {
+        $('#btn-portal').disabled = false;
+        $('#spinner').style.display = 'none';
+      }
     };
 
-    document.getElementById('back').onclick = () => history.back();
+    // === New Customer: Create Account ===
+    $('#btn-start-setup').onclick = async () => {
+      const consentChecked = $('#consent-new').checked;
+      if (!consentChecked) {
+        alert('Debes autorizar guardar tu método de pago.');
+        return;
+      }
+
+      $('#btn-start-setup').disabled = true;
+      $('#spinner').style.display = 'block';
+
+      try {
+        // Create a standalone SetupIntent (no order)
+        const resp = await fetch('/create-standalone-setup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+
+        const { client_secret } = await resp.json();
+        if (!client_secret) {
+          alert('No se pudo preparar el guardado. Intenta de nuevo.');
+          return;
+        }
+
+        setupClientSecret = client_secret;
+
+        // Mount Payment Element
+        elements = stripe.elements({ 
+          clientSecret: client_secret, 
+          locale: 'es', 
+          appearance: { theme: 'night' } 
+        });
+        
+        const paymentElement = elements.create('payment');
+        $('#payment-element').style.display = 'block';
+        paymentElement.mount('#payment-element');
+
+        // Show save button, hide start button
+        $('#btn-start-setup').classList.add('hidden');
+        $('#btn-save').classList.remove('hidden');
+        $('#consent-new').disabled = true; // Lock consent once they proceed
+
+      } finally {
+        $('#btn-start-setup').disabled = false;
+        $('#spinner').style.display = 'none';
+      }
+    };
+
+    $('#btn-save').onclick = async () => {
+      if (!elements || !setupClientSecret) return;
+
+      $('#btn-save').disabled = true;
+      $('#spinner').style.display = 'block';
+
+      try {
+        const { error } = await stripe.confirmSetup({
+          elements,
+          redirect: 'if_required'
+        });
+
+        if (error) {
+          alert('No se pudo guardar el método: ' + (error.message || 'Error'));
+          return;
+        }
+
+        // Success!
+        alert('¡Cuenta creada! Tu método de pago ha sido guardado de forma segura.');
+        location.reload(); // Reset to show portal access
+      } finally {
+        $('#btn-save').disabled = false;
+        $('#spinner').style.display = 'none';
+      }
+    };
+
+    // Helper: Normalize phone to E.164
+    function normalizePhone(raw) {
+      const digits = raw.replace(/\D+/g, '');
+      if (raw.startsWith('+')) return '+' + digits;
+      if (digits.length === 10) return '+52' + digits;
+      if (digits.length === 11 && digits[0] === '1') return '+' + digits;
+      return '+' + digits;
+    }
   </script>
 </body>
 </html>

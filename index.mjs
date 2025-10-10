@@ -531,8 +531,8 @@ app.get('/o/:code', async (req, res) => {
 
     // 2) Explicit routing by kind
     if (row.kind === 'adjustment')     return res.redirect(302, `/confirm?orderId=${encodeURIComponent(row.id)}`);
-    if (row.kind === 'setup_required') return res.redirect(302, `/save?orderId=${encodeURIComponent(row.id)}`);
-    if (row.kind === 'setup')          return res.redirect(302, `/save?orderId=${encodeURIComponent(row.id)}`);
+    if (row.kind === 'setup_required') return res.redirect(302, `/pay?orderId=${encodeURIComponent(row.id)}`);
+    if (row.kind === 'setup')          return res.redirect(302, `/pay?orderId=${encodeURIComponent(row.id)}`);
     if (row.kind === 'book')           return res.redirect(302, `/book?orderId=${encodeURIComponent(row.id)}`);
 
     // 3) Legacy 'primary' → check Stripe for saved PMs
@@ -568,6 +568,60 @@ app.get('/o/:code', async (req, res) => {
   }
 });
 
+// Customer lookup by phone (for save.html portal access)
+app.get('/customer-lookup', async (req, res) => {
+  try {
+    const { phone } = req.query;
+    if (!phone) return res.status(400).json({ error: 'phone required' });
+
+    const esc = (s) => String(s || '').replace(/'/g, "\\'");
+    const found = await stripe.customers.search({ query: `phone:'${esc(phone)}'` });
+    
+    if (!found.data?.length) {
+      return res.status(404).json({ error: 'customer not found' });
+    }
+
+    return res.json({ customerId: found.data[0].id });
+  } catch (err) {
+    console.error('customer-lookup error:', err);
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// Standalone billing portal (no order required)
+app.post('/billing-portal-standalone', async (req, res) => {
+  try {
+    const { customerId, returnUrl } = req.body || {};
+    if (!customerId) return res.status(400).json({ error: 'customerId required' });
+
+    const base = process.env.PUBLIC_BASE_URL || 'https://servi-preauth.onrender.com';
+    const session = await stripe.billingPortal.sessions.create({
+      customer: customerId,
+      return_url: returnUrl || `${base}/save`
+    });
+
+    return res.json({ url: session.url });
+  } catch (err) {
+    console.error('billing-portal-standalone error:', err);
+    return res.status(500).json({ error: err.message || 'Portal error' });
+  }
+});
+
+// Create standalone SetupIntent (no order)
+app.post('/create-standalone-setup', async (req, res) => {
+  try {
+    const si = await stripe.setupIntents.create({
+      automatic_payment_methods: { enabled: true },
+      usage: 'off_session',
+      metadata: { kind: 'standalone_account_creation' }
+    });
+
+    return res.json({ client_secret: si.client_secret });
+  } catch (err) {
+    console.error('create-standalone-setup error:', err);
+    return res.status(500).json({ error: err.message || 'Setup error' });
+  }
+});
 
 // 📡 Stripe Webhook handler ex
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;

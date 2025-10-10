@@ -542,6 +542,48 @@
       });
     }
 
+    // NEW: Handle consent gate for >5-day orders
+    if (mode === 'gate-consent') {
+      if (!consentChecked) {
+        // Show inline blocking message instead of alert
+        alert("Para reservas con 5 días o más de anticipación necesitas crear tu cuenta y guardar un método de pago.\n\nMarca la casilla de consentimiento para continuar.");
+        return;
+      }
+      
+      // Record consent → server promotes order.kind from 'setup_required' to 'setup'
+      await recordConsent(order.id);
+      
+      // Re-fetch order to get SetupIntent client_secret
+      cachedOrder = null;
+      const updated = await getOrder();
+      
+      if (updated.intentType !== 'setup' || !updated.client_secret) {
+        alert("No se pudo preparar el guardado de tarjeta. Intenta de nuevo.");
+        return;
+      }
+      
+      // Now mount Payment Element for setup (same as existing setup flow)
+      const elements = (window.elements = (window.stripe).elements({
+        clientSecret: updated.client_secret,
+        locale: 'es',
+        appearance: { theme: 'night' }
+      }));
+      
+      const paymentElement = (window.paymentElement = elements.create('payment'));
+      paymentElement.mount('#payment-element');
+      
+      // Hide card element, show payment element
+      document.getElementById('card-element').parentElement.style.display = 'none';
+      document.getElementById('payment-element').style.display = 'block';
+      
+      // Update button
+      submitBtn.textContent = 'Guardar método y crear cuenta';
+      submitBtn.dataset.mode = 'confirm-setup';
+      
+      spinner.style.display = "none";
+      submitBtn.disabled = false;
+      return;
+    }
 
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
