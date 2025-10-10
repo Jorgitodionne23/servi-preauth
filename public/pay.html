@@ -324,7 +324,31 @@
 
     // Fetch once, cache, and use everywhere
     let cachedOrder = null;
+    let setupClientSecret = null;
+
+    function mountCardElement() {
+      if (window.card) return window.card;
+
+      const elements = (window.elements = window.stripe.elements({ locale: 'es' }));
+      const card = (window.card = elements.create('card', {
+        style: {
+          base: {
+            fontFamily: '"Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+            fontSize: '16px',
+            color: '#ffffff',
+            '::placeholder': { color: '#9ca3af' }
+          },
+          invalid: { color: '#ef4444' }
+        },
+        hidePostalCode: true
+      }));
+
+      card.mount('#card-element');
+      return card;
+    }
+
     async function getOrder() {
+
       if (cachedOrder) return cachedOrder;
 
       const urlParams = new URLSearchParams(window.location.search);
@@ -390,51 +414,36 @@
 
       // ------------- CASE A: >5d gate (consent_required, no client_secret yet) -------------
       if (consentRequired && !clientSecret && !intentType) {
-        // Don't mount any payment UI yet; just set button mode
-        hide('#card-element');
         hide('#payment-element');
         hide('#express-pay-container');
 
-        submitBtn.textContent = 'Crear cuenta y continuar';
-        submitBtn.dataset.mode = 'gate-consent';
+        mountCardElement();
+
+        submitBtn.textContent = 'Reservar servicio';
+        submitBtn.dataset.mode = 'confirm-setup';
+        setupClientSecret = null;
         return;
       }
+
 
       // ------------- CASE B: Setup flow (save card via SetupIntent) -------------
       if (intentType === 'setup' && clientSecret) {
-        hide('#card-element');
+        hide('#payment-element');
         hide('#express-pay-container');
-        show('#payment-element');
 
-        const elements = (window.elements = (window.stripe).elements({
-          clientSecret: clientSecret,
-          locale: 'es',
-          appearance: { theme: 'night' }
-        }));
-        const paymentElement = (window.paymentElement = elements.create('payment'));
-        paymentElement.mount('#payment-element');
+        mountCardElement();
 
-        submitBtn.textContent = 'Guardar método y crear cuenta';
+        submitBtn.textContent = 'Reservar servicio';
         submitBtn.dataset.mode = 'confirm-setup';
+        setupClientSecret = clientSecret;
         return;
       }
 
+
       // ------------- CASE C: Normal payment (manual capture PI) -------------
       if (intentType === 'payment' && clientSecret) {
-        const elements = (window.elements = (window.stripe).elements({ locale: 'es' }));
-        const card = (window.card = elements.create('card', {
-          style: {
-            base: {
-              fontFamily: '"Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-              fontSize: '16px',
-              color: '#ffffff',
-              '::placeholder': { color: '#9ca3af' }
-            },
-            invalid: { color: '#ef4444' }
-          },
-          hidePostalCode: true
-        }));
-        card.mount('#card-element');
+        const card = mountCardElement();
+
 
         // Express wallets
         const paymentRequest = (window.paymentRequest = (window.stripe).paymentRequest({
@@ -528,8 +537,8 @@
       if (!termsChecked) {
         missingAlerts.push("Debes aceptar los Términos y Condiciones y el Aviso de Privacidad para continuar.");
       }
-      if (mode === 'gate-consent' && !consentChecked) {
-        missingAlerts.push("Para reservas con 5 días o más de anticipación necesitas crear tu cuenta y guardar un método de pago.\n\nMarca la casilla de consentimiento para continuar.");
+      if (mode === 'confirm-setup' && !consentChecked) {
+        missingAlerts.push("Debes autorizar guardar tu método de pago para reserva con más de 5 días de anticipación.");
       }
       if (missingAlerts.length) {
         alert(missingAlerts.join('\n\n'));
@@ -543,61 +552,35 @@
       spinner.style.display = "block";
 
       try {
-        // ========== CASE A: Consent gate (>5 days, no saved card) ==========
-        if (mode === 'gate-consent') {
-          // Record consent → server promotes order.kind from 'setup_required' to 'setup'
-          await recordConsent(order.id);
-          
-          // Re-fetch order to get SetupIntent client_secret
-          cachedOrder = null;
-          const updated = await getOrder();
-          
-          if (updated.intentType !== 'setup' || !updated.client_secret) {
-            alert("No se pudo preparar el guardado de tarjeta. Intenta de nuevo.");
-            return;
-          }
-          
-          // Mount Payment Element for setup
-          const elements = (window.elements = (window.stripe).elements({
-            clientSecret: updated.client_secret,
-            locale: 'es',
-            appearance: { theme: 'night' }
-          }));
-          
-          const paymentElement = (window.paymentElement = elements.create('payment'));
-          
-          // Hide card element, show payment element
-          document.getElementById('card-element').parentElement.style.display = 'none';
-          document.getElementById('payment-element').style.display = 'block';
-          paymentElement.mount('#payment-element');
-          
-          // Update button
-          submitBtn.textContent = 'Guardar método y crear cuenta';
-          submitBtn.dataset.mode = 'confirm-setup';
-          
-          spinner.style.display = "none";
-          submitBtn.disabled = false;
-          return;
-        }
-
         // ========== CASE B: Setup confirmation ==========
         if (mode === 'confirm-setup') {
           if (!consentChecked) {
             alert("Debes autorizar guardar tu método de pago para crear tu cuenta.");
             return;
           }
-          
+
           await recordConsent(order.id);
-          const { error } = await (window.stripe).confirmSetup({
-            elements: window.elements,
-            redirect: 'if_required'
+
+          if (!setupClientSecret) {
+            cachedOrder = null;
+            const refreshed = await getOrder();
+            if (refreshed.intentType !== 'setup' || !refreshed.client_secret) {
+              alert("No se pudo preparar el guardado de tarjeta. Intenta de nuevo.");
+              return;
+            }
+            setupClientSecret = refreshed.client_secret;
+          }
+
+          const cardholder = document.getElementById("cardholder-name").value || "";
+          const result = await window.stripe.confirmCardSetup(setupClientSecret, {
+            payment_method: { card: window.card, billing_details: { name: cardholder } }
           });
-          
-          if (error) {
-            alert("No se pudo guardar el método: " + error.message);
+
+          if (result.error) {
+            alert("No se pudo guardar el método: " + result.error.message);
             return;
           }
-          
+
           localStorage.setItem('orderId', String(order.id));
           window.location.href = `/success?orderId=${encodeURIComponent(order.id)}`;
           return;
@@ -612,7 +595,7 @@
             await applyConsentToCurrentPI(order.id);
           }
           
-          const result = await (window.stripe).confirmCardPayment(order.client_secret, {
+          const result = await window.stripe.confirmCardPayment(order.client_secret, {
             payment_method: { card: window.card, billing_details: { name: cardholder } }
           });
           
