@@ -131,6 +131,12 @@ const app = express();
 const stripe = new StripePackage(process.env.STRIPE_SECRET_KEY);
 const GOOGLE_SCRIPT_WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbweLYI8-4Z-kW_wahnkHw-Kgmc1GfjI9-YR6z9enOCO98oTXsd9DgTzN_Cm87Drcycb/exec'
 const ADMIN_API_TOKEN = process.env.ADMIN_API_TOKEN || '';
+const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET || '';
+
+if (!endpointSecret) {
+  console.error('Missing STRIPE_WEBHOOK_SECRET environment variable; webhook verification will fail.');
+  throw new Error('STRIPE_WEBHOOK_SECRET must be configured before starting the server');
+}
 
 function constantTimeEquals(a, b) {
   if (!a || !b) return false;
@@ -677,7 +683,6 @@ app.post('/create-standalone-setup', async (req, res) => {
 });
 
 // 📡 Stripe Webhook handler ex
-const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
 app.post('/tasks/preauth-due', async (req, res) => {
   try {
