@@ -967,17 +967,25 @@ app.post('/create-adjustment', async (req, res) => {
 
 // Capture an authorized manual-capture PaymentIntent (optionally partial).
 // Body: { orderId?: string, paymentIntentId?: string, amount?: number }  // amount in CENTS
-app.post('/capture-order', async (req, res) => {
+app.post('/capture-order', requireAdminAuth, async (req, res) => {
   try {
     const { orderId, paymentIntentId, amount } = req.body || {};
     let piId = paymentIntentId;
+    let orderRow = null;
 
     if (!piId && orderId) {
-      const r = await pool.query('SELECT payment_intent_id FROM orders WHERE id=$1', [orderId]);
+      const r = await pool.query('SELECT id, payment_intent_id, amount FROM orders WHERE id=$1', [orderId]);
       if (!r.rows[0] || !r.rows[0].payment_intent_id) return res.status(404).send({ error: 'order not found' });
-      piId = r.rows[0].payment_intent_id;
+      orderRow = r.rows[0];
+      piId = orderRow.payment_intent_id;
     }
     if (!piId) return res.status(400).send({ error: 'missing paymentIntentId or orderId' });
+
+    if (!orderRow) {
+      const r = await pool.query('SELECT id, amount FROM orders WHERE payment_intent_id=$1 LIMIT 1', [piId]);
+      orderRow = r.rows[0] || null;
+    }
+    if (!orderRow) return res.status(404).send({ error: 'order not found' });
 
     const current = await stripe.paymentIntents.retrieve(piId);
     if (current.capture_method !== 'manual') {
@@ -988,14 +996,27 @@ app.post('/capture-order', async (req, res) => {
     }
 
     const params = {};
-    if (Number.isInteger(amount) && amount > 0) {
+    if (Number.isInteger(amount)) {
+      if (amount <= 0) {
+        return res.status(400).send({ error: 'amount must be a positive integer (cents)' });
+      }
+      if (Number.isInteger(orderRow.amount) && amount > orderRow.amount) {
+        return res.status(400).send({ error: 'capture amount exceeds authorized amount' });
+      }
       // Stripe expects amount_to_capture in the smallest currency unit
       params.amount_to_capture = amount;
     }
 
+    if (!params.amount_to_capture && Number.isInteger(orderRow.amount)) {
+      params.amount_to_capture = orderRow.amount;
+    }
+
     const updated = await stripe.paymentIntents.capture(piId, params);
     // Webhook will mark as Captured and notify Sheets; we just echo back
-    return res.send({ ok: true, paymentIntentId: updated.id, status: updated.status, captured: params.amount_to_capture || 'full' });
+    const captured = (params.amount_to_capture !== undefined)
+      ? params.amount_to_capture
+      : (Number.isInteger(orderRow.amount) ? orderRow.amount : 'full');
+    return res.send({ ok: true, paymentIntentId: updated.id, status: updated.status, captured });
   } catch (e) {
     console.error('capture-order error:', e);
     return res.status(500).send({ error: e.message || 'capture failed' });
