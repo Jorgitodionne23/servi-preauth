@@ -8,7 +8,7 @@ import { pool, initDb } from './db.pg.mjs';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import fetch from 'node-fetch';
-import { randomUUID, randomBytes, createHash } from 'crypto';
+import { randomUUID, randomBytes, createHash, timingSafeEqual } from 'crypto';
 
 // --- helpers (add) ---
 const MS_PER_DAY = 86_400_000;
@@ -130,6 +130,38 @@ const __dirname = dirname(__filename);
 const app = express();
 const stripe = new StripePackage(process.env.STRIPE_SECRET_KEY);
 const GOOGLE_SCRIPT_WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbweLYI8-4Z-kW_wahnkHw-Kgmc1GfjI9-YR6z9enOCO98oTXsd9DgTzN_Cm87Drcycb/exec'
+const ADMIN_API_TOKEN = process.env.ADMIN_API_TOKEN || '';
+
+function constantTimeEquals(a, b) {
+  if (!a || !b) return false;
+  const aBuf = Buffer.from(String(a), 'utf8');
+  const bBuf = Buffer.from(String(b), 'utf8');
+  if (aBuf.length !== bBuf.length) return false;
+  return timingSafeEqual(aBuf, bBuf);
+}
+
+function requireAdminAuth(req, res, next) {
+  if (!ADMIN_API_TOKEN) {
+    console.error('ADMIN_API_TOKEN is not configured; rejecting admin route access');
+    return res.status(500).json({ error: 'admin_auth_not_configured' });
+  }
+
+  const authHeader = req.get('authorization') || '';
+  let token = '';
+  if (authHeader.startsWith('Bearer ')) {
+    token = authHeader.slice('Bearer '.length).trim();
+  }
+  if (!token) {
+    token = req.get('x-servi-admin-token') || '';
+  }
+
+  if (!constantTimeEquals(token, ADMIN_API_TOKEN)) {
+    console.warn('Rejected admin request due to invalid token');
+    return res.status(401).json({ error: 'unauthorized' });
+  }
+
+  return next();
+}
 
 // 📦 General middleware
 // Parse JSON for everything EXCEPT /webhook (Stripe needs raw body there)
@@ -150,7 +182,7 @@ app.get('/success.html', (req, res) => {
 app.use(express.static('public'));
 
 // 🎯 Create PaymentIntent (save card for later off-session charges)
-app.post('/create-payment-intent', async (req, res) => {
+app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
   const { amount, clientName, serviceDescription, serviceDate, serviceDateTime, clientEmail, clientPhone, consent } = req.body;
   try {
     // 1) Find or create Stripe Customer by email/phone (your existing logic)
@@ -967,42 +999,6 @@ app.post('/capture-order', async (req, res) => {
   } catch (e) {
     console.error('capture-order error:', e);
     return res.status(500).send({ error: e.message || 'capture failed' });
-  }
-});
-
-app.post('/void-order', async (req, res) => {
-  try {
-    const { orderId, paymentIntentId, reason } = req.body || {};
-    let intentId = paymentIntentId;
-
-    if (!intentId && orderId) {
-      const r = await pool.query('SELECT payment_intent_id FROM orders WHERE id=$1', [orderId]);
-      if (!r.rows[0] || !r.rows[0].payment_intent_id) {
-        return res.status(404).send({ error: 'Order not found or has no linked Intent' });
-      }
-      intentId = r.rows[0].payment_intent_id;
-    }
-    if (!intentId) {
-      return res.status(400).send({ error: 'Missing paymentIntentId or orderId' });
-    }
-    
-    // Check the ID prefix to determine the type
-    let updated;
-    if (intentId.startsWith('seti_')) {
-      updated = await stripe.setupIntents.cancel(intentId, {
-        cancellation_reason: reason || 'requested_by_customer'
-      });
-    } else {
-      updated = await stripe.paymentIntents.cancel(intentId, {
-        cancellation_reason: reason || 'requested_by_customer'
-      });
-    }
-
-    // Webhook will update Sheets on payment_intent.canceled or setup_intent.canceled
-    return res.send({ ok: true, intentId: updated.id, status: updated.status });
-  } catch (e) {
-    console.error('void-order error:', e);
-    return res.status(500).send({ error: e.message || 'Void failed' });
   }
 });
 
