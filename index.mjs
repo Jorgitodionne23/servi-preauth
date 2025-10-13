@@ -878,7 +878,7 @@ app.get('/book', (req, res) => {
 
 // Create an adjustment child order; off-session if we can, else 3DS confirm.
 // HONORS Sheets "Capture Type" via req.body.capture = 'automatic' | 'manual'
-app.post('/create-adjustment', async (req, res) => {
+app.post('/create-adjustment', requireAdminAuth, async (req, res) => {
   const { parentOrderId, amount, note, capture } = req.body || {};
   if (!parentOrderId || !amount) return res.status(400).send({ error: 'missing fields' });
 

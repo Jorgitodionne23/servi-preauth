@@ -2,10 +2,24 @@
 import pg from 'pg';
 const { Pool } = pg;
 
+const allowInsecure = String(process.env.ALLOW_INSECURE_DB_TLS || '').toLowerCase() === 'true';
+
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false } // ok for Neon/Supabase
+  ...(process.env.DATABASE_URL?.startsWith('postgres://') || process.env.DATABASE_URL?.startsWith('postgresql://')
+      ? { ssl: allowInsecure ? { rejectUnauthorized: false } : undefined }
+      : {})
 });
+
+if (!process.env.DATABASE_URL) {
+  throw new Error('DATABASE_URL must be set to connect to Postgres');
+}
+
+if (!allowInsecure) {
+  console.log('[db] TLS certificate verification enabled for Postgres connection');
+} else {
+  console.warn('[db] ALLOW_INSECURE_DB_TLS=true → accepting database TLS certificates without verification');
+}
 
 export async function initDb() {
   await pool.query(`
