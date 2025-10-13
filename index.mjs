@@ -63,8 +63,8 @@ async function ensureCustomerForOrder(stripe, orderRow) {
     if (orderRow.client_email) updates.email = orderRow.client_email;
     if (orderRow.client_phone) updates.phone = orderRow.client_phone;
     if (Object.keys(updates).length) {
-    await stripe.customers.update(orderRow.customer_id, updates);}
-    
+      await stripe.customers.update(orderRow.customer_id, updates);
+    }  
     return orderRow.customer_id;
   }
 
