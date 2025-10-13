@@ -1084,13 +1084,26 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
           [statusLabel, pmId, cust, orderId]
         );
 
+        const consentRow = await pool.query(`
+          SELECT order_id,
+                 version,
+                 text_hash,
+                 checked_at,
+                 ip,
+                 user_agent,
+                 locale,
+                 tz
+            FROM order_consents
+           WHERE order_id = $1
+        `, [orderId]);
+        const consentMeta = consentRow.rows[0] || {};
+
         if (cust) {
-          // pull the most recent contact details from this order
           const orderInfo = await pool.query(
             'SELECT client_name, client_phone FROM orders WHERE id = $1',
             [orderId]
           );
-          const customerName = orderInfo.rows[0]?.client_name || null;
+          const customerName  = orderInfo.rows[0]?.client_name  || null;
           const customerPhone = orderInfo.rows[0]?.client_phone || null;
 
           await pool.query(`
@@ -1099,17 +1112,51 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
               customer_name,
               customer_phone,
               latest_payment_method_id,
-              last_checked_at
+              latest_text_hash,
+              latest_version,
+              first_checked_at,
+              last_checked_at,
+              first_order_id,
+              last_order_id,
+              ip,
+              user_agent,
+              locale,
+              tz
             )
-            VALUES ($1,$2,$3,$4,NOW())
+            VALUES (
+              $1,$2,$3,$4,
+              $5,$6,$7,NOW(),
+              $8,$8,$9,$10,$11,$12
+            )
             ON CONFLICT (customer_id) DO UPDATE SET
               customer_name            = COALESCE($2, customer_consents.customer_name),
               customer_phone           = COALESCE($3, customer_consents.customer_phone),
               latest_payment_method_id = COALESCE($4, customer_consents.latest_payment_method_id),
-              last_checked_at          = NOW()
-          `, [cust, customerName, customerPhone, pmId || null]);
+              latest_text_hash         = COALESCE($5, customer_consents.latest_text_hash),
+              latest_version           = COALESCE($6, customer_consents.latest_version),
+              first_checked_at         = COALESCE(customer_consents.first_checked_at, $7),
+              last_checked_at          = NOW(),
+              first_order_id           = COALESCE(customer_consents.first_order_id, $8),
+              last_order_id            = $8,
+              ip                       = COALESCE($9, customer_consents.ip),
+              user_agent               = COALESCE($10, customer_consents.user_agent),
+              locale                   = COALESCE($11, customer_consents.locale),
+              tz                       = COALESCE($12, customer_consents.tz)
+          `, [
+            cust,
+            customerName,
+            customerPhone,
+            pmId || null,
+            consentMeta.text_hash || null,
+            consentMeta.version || null,
+            consentMeta.checked_at || null,
+            consentMeta.order_id || orderId,
+            consentMeta.ip || null,
+            consentMeta.user_agent || null,
+            consentMeta.locale || null,
+            consentMeta.tz || null
+          ]);
         }
-
 
         if (GOOGLE_SCRIPT_WEBHOOK_URL) {
           fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
