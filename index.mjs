@@ -40,7 +40,7 @@ function hoursUntilService(row) {
   return Infinity;
 }
 
-// ── NEW: generate a unique public_code for /o/:code ────────────────────────────
+// ── generate a unique public_code for /o/:code ────────────────────────────
 async function generateUniqueCode(len = 10) {
   for (let i = 0; i < 6; i++) {
     const code = randomBytes(8)
@@ -55,18 +55,29 @@ async function generateUniqueCode(len = 10) {
   throw new Error('Could not generate unique public code');
 }
 
-// ── NEW: ensure the order has a Stripe customer; return its id ─────────────────
+// ── ensure the order has a Stripe customer; return its id ─────────────────
 async function ensureCustomerForOrder(stripe, orderRow) {
-  if (orderRow.customer_id) return orderRow.customer_id;
+  if (orderRow.customer_id) {
+    const updates = {};
+    if (orderRow.client_name) updates.name = orderRow.client_name;
+    if (orderRow.client_email) updates.email = orderRow.client_email;
+    if (orderRow.client_phone) updates.phone = orderRow.client_phone;
+    if (Object.keys(updates).length) {
+    await stripe.customers.update(orderRow.customer_id, updates);
+  }
+    return orderRow.customer_id;
+  }
 
-  // Create a basic customer (you can add email/phone if you have them on the row)
   const customer = await stripe.customers.create({
     name: orderRow.client_name || undefined,
+    email: orderRow.client_email || undefined,
+    phone: orderRow.client_phone || undefined,
   });
 
   await pool.query('UPDATE orders SET customer_id=$1 WHERE id=$2', [customer.id, orderRow.id]);
   return customer.id;
 }
+
 
 // Pretty Spanish display for service date/time
 function displayEsMX(serviceDateTime, serviceDate, tz = 'America/Mexico_City') {
@@ -178,21 +189,31 @@ app.post('/create-payment-intent', async (req, res) => {
       saved = await hasSavedCard(existingCustomer.id, stripe);
     }
 
+    if (existingCustomer && (clientPhone || clientEmail || clientName)) {
+      const updates = {};
+      if (clientName && !existingCustomer.name) updates.name = clientName;
+      if (clientEmail && !existingCustomer.email) updates.email = clientEmail;
+      if (clientPhone && !existingCustomer.phone) updates.phone = clientPhone;
+      if (Object.keys(updates).length) {
+        await stripe.customers.update(existingCustomer.id, updates);
+      }
+    }
+
     // Create the order row (allow NULL customer_id for now)
     const orderId = randomUUID();
     const publicCode = await generateUniqueCode();
     await pool.query(
       `INSERT INTO orders
-      (id, amount, client_name, service_description, service_date, status, public_code, kind, customer_id)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,'primary',$8)
+      (id, amount, client_name, service_description, client_phone, client_email, service_date, status, public_code, kind, customer_id)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'primary',$10)
       ON CONFLICT (id) DO NOTHING`,
-      [orderId, amount, clientName || null, serviceDescription || null, serviceDate || null, 'pending', publicCode, existingCustomer?.id || null]
+      [orderId, amount, clientName || null, serviceDescription || null, clientPhone || null, clientEmail || null, serviceDate || null, 'pending', publicCode, existingCustomer?.id || null]
     );
 
     // also persist service_date/service_datetime (you already do)
     await pool.query(
-      'UPDATE orders SET service_date=$1, service_datetime=$2 WHERE id=$3',
-      [serviceDate || null, serviceDateTime || null, orderId]
+      'UPDATE orders SET service_date=$1, service_datetime=$2, client_phone=$3, client_email=$4 WHERE id=$5',
+      [serviceDate || null, serviceDateTime || null, clientPhone || null, clientEmail || null, orderId]
     );
     // --- NEW: determine if we already have consent (customer-level or order-level) ---
     let hasConsent = false;
@@ -317,9 +338,9 @@ app.get('/order/:orderId', async (req, res) => {
     const { orderId } = req.params;
 
     const { rows } = await pool.query(`
-      SELECT id, payment_intent_id, amount, client_name, service_description,
-             service_date, service_datetime, status, created_at, public_code,
-             kind, parent_id, customer_id
+      SELECT id, payment_intent_id, amount, client_name, client_phone, client_email,
+        service_description, service_date, service_datetime, status, created_at,
+        public_code, kind, parent_id, customer_id
       FROM orders
       WHERE id = $1
     `, [orderId]);

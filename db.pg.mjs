@@ -15,6 +15,8 @@ export async function initDb() {
       payment_intent_id TEXT UNIQUE,
       amount INTEGER,
       client_name TEXT,
+      client_phone TEXT,
+      client_email TEXT,
       service_description TEXT,
       service_date TEXT,              -- date-only (YYYY-MM-DD) for >7d rule
       status TEXT,
@@ -25,6 +27,9 @@ export async function initDb() {
       customer_id TEXT,
       saved_payment_method_id TEXT
     );
+
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS client_phone TEXT;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS client_email TEXT;
 
     -- NEW: store full timestamp (ISO with tz) for display/use in UI
     ALTER TABLE orders
