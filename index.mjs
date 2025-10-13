@@ -751,7 +751,7 @@ app.post('/orders/:id/consent', async (req, res) => {
   if (row.customer_id) {
     await pool.query(`
       INSERT INTO customer_consents (
-        customer_id, customer_name,
+        customer_id, customer_name, customer_phone,
         latest_payment_method_id, latest_text_hash, latest_version,
         first_checked_at, last_checked_at,
         first_order_id, last_order_id,
@@ -760,6 +760,7 @@ app.post('/orders/:id/consent', async (req, res) => {
       VALUES ($1,$2,$3,$4,$5, NOW(), NOW(), $6, $6, $7,$8,$9,$10)
       ON CONFLICT (customer_id) DO UPDATE SET
         customer_name            = COALESCE(EXCLUDED.customer_name, customer_consents.customer_name),
+        customer_phone           = COALESCE(EXCLUDED.customer_phone, customer_consents.customer_phone),
         latest_payment_method_id = COALESCE(EXCLUDED.latest_payment_method_id, customer_consents.latest_payment_method_id),
         latest_text_hash         = COALESCE(EXCLUDED.latest_text_hash, customer_consents.latest_text_hash),
         latest_version           = COALESCE(EXCLUDED.latest_version, customer_consents.latest_version),
@@ -774,6 +775,7 @@ app.post('/orders/:id/consent', async (req, res) => {
     `, [
       row.customer_id,
       row.client_name || null,
+      row.client_phone || null,
       row.saved_payment_method_id || null,
       serverHash,
       version || '1.0',
@@ -1083,14 +1085,31 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
         );
 
         if (cust) {
+          // pull the most recent contact details from this order
+          const orderInfo = await pool.query(
+            'SELECT client_name, client_phone FROM orders WHERE id = $1',
+            [orderId]
+          );
+          const customerName = orderInfo.rows[0]?.client_name || null;
+          const customerPhone = orderInfo.rows[0]?.client_phone || null;
+
           await pool.query(`
-            INSERT INTO customer_consents (customer_id, latest_payment_method_id, last_checked_at)
-            VALUES ($1,$2,NOW())
+            INSERT INTO customer_consents (
+              customer_id,
+              customer_name,
+              customer_phone,
+              latest_payment_method_id,
+              last_checked_at
+            )
+            VALUES ($1,$2,$3,$4,NOW())
             ON CONFLICT (customer_id) DO UPDATE SET
-              latest_payment_method_id = COALESCE($2, customer_consents.latest_payment_method_id),
-              last_checked_at = NOW()
-          `, [cust, pmId || null]);
+              customer_name            = COALESCE($2, customer_consents.customer_name),
+              customer_phone           = COALESCE($3, customer_consents.customer_phone),
+              latest_payment_method_id = COALESCE($4, customer_consents.latest_payment_method_id),
+              last_checked_at          = NOW()
+          `, [cust, customerName, customerPhone, pmId || null]);
         }
+
 
         if (GOOGLE_SCRIPT_WEBHOOK_URL) {
           fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
@@ -1234,12 +1253,19 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
       }
 
       await pool.query(`
-        INSERT INTO customer_consents (customer_id, customer_name, last_checked_at)
-        VALUES ($1,$2,NOW())
+        INSERT INTO customer_consents (
+          customer_id,
+          customer_name,
+          customer_phone,
+          last_checked_at
+        )
+        VALUES ($1,$2,$3,NOW())
         ON CONFLICT (customer_id) DO UPDATE SET
-          customer_name = COALESCE($2, customer_consents.customer_name),
+          customer_name  = COALESCE($2, customer_consents.customer_name),
+          customer_phone = COALESCE($3, customer_consents.customer_phone),
           last_checked_at = NOW()
-      `, [c.id, c.name || null]);
+      `, [c.id, c.name || null, c.phone || null]);
+
       break;
     }
 

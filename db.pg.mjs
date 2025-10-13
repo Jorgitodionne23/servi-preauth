@@ -59,6 +59,7 @@ export async function initDb() {
     CREATE TABLE IF NOT EXISTS customer_consents (
       customer_id              TEXT PRIMARY KEY,
       customer_name            TEXT,
+      customer_phone           TEXT,
       latest_payment_method_id TEXT,
       latest_text_hash         TEXT,
       latest_version           TEXT,
@@ -71,6 +72,10 @@ export async function initDb() {
       locale                   TEXT,
       tz                       TEXT
     );
+
+      ALTER TABLE customer_consents
+        ADD COLUMN IF NOT EXISTS customer_phone TEXT;
+
 
     CREATE INDEX IF NOT EXISTS idx_customer_consents_last_checked_at
       ON customer_consents (last_checked_at DESC);
