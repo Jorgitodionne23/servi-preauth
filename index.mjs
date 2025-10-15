@@ -880,51 +880,71 @@ app.get('/book', (req, res) => {
 // HONORS Sheets "Capture Type" via req.body.capture = 'automatic' | 'manual'
 app.post('/create-adjustment', requireAdminAuth, async (req, res) => {
   const { parentOrderId, amount, note, capture } = req.body || {};
-  if (!parentOrderId || !amount) return res.status(400).send({ error: 'missing fields' });
+  if (!parentOrderId || !amount) {
+    return res.status(400).send({ error: 'missing fields' });
+  }
 
-  const p = await pool.query('SELECT customer_id, saved_payment_method_id, payment_intent_id FROM orders WHERE id=$1', [parentOrderId]);
-  if (!p.rows[0]) return res.status(404).send({ error: 'parent not found' });
+  const parentResult = await pool.query(
+    'SELECT customer_id, saved_payment_method_id, payment_intent_id FROM orders WHERE id=$1',
+    [parentOrderId]
+  );
+  const parentOrder = parentResult.rows[0];
+  if (!parentOrder) {
+    return res.status(404).send({ error: 'parent not found' });
+  }
 
-  // Check if parent order has consent on file
-  const consent = await pool.query('SELECT 1 FROM order_consents WHERE order_id=$1', [parentOrderId]);
-  const hasConsent = !!consent.rows.length;
+  const consent = await pool.query(
+    'SELECT 1 FROM order_consents WHERE order_id=$1',
+    [parentOrderId]
+  );
+  const hasConsent = consent.rows.length > 0;
 
-  // We can try off-session ONLY if we have consent and a saved PM on the same customer
-  const canChargeOffSession = !!(hasConsent && p.rows[0].customer_id && p.rows[0].saved_payment_method_id);
+  const canChargeOffSession = Boolean(
+    hasConsent &&
+    parentOrder.customer_id &&
+    parentOrder.saved_payment_method_id
+  );
 
   const childId = randomUUID();
   const publicCode = await generateUniqueCode();
 
-  const captureMethod = (String(capture).toLowerCase() === 'manual') ? 'manual' : 'automatic';
+  const captureMethod =
+    String(capture).toLowerCase() === 'manual' ? 'manual' : 'automatic';
+
   const baseCreate = {
     amount,
     currency: 'mxn',
-    customer: p.rows[0].customer_id || undefined,
+    customer: parentOrder.customer_id || undefined,
     capture_method: captureMethod,
     description: note ? `SERVI ajuste: ${note}` : 'SERVI ajuste',
     metadata: {
       kind: 'adjustment',
       parent_order_id: parentOrderId,
-      initial_payment_intent: p.rows[0].payment_intent_id || ''
+      initial_payment_intent: parentOrder.payment_intent_id || ''
     }
   };
 
-  let pi = null, mode = 'needs_action';
+  let pi = null;
+  let mode = 'needs_action';
+
   try {
     if (canChargeOffSession) {
-      // Try to confirm off-session with saved card
       pi = await stripe.paymentIntents.create({
         ...baseCreate,
-        payment_method: p.rows[0].saved_payment_method_id,
+        payment_method: parentOrder.saved_payment_method_id,
         off_session: true,
         confirm: true
       });
-      // Interpret mode by capture_method
-      mode = (captureMethod === 'automatic')
-        ? (pi.status === 'succeeded' ? 'charged' : 'needs_action')
-        : (pi.status === 'requires_capture' ? 'authorized' : 'needs_action');
+
+      mode =
+        captureMethod === 'automatic'
+          ? pi.status === 'succeeded'
+            ? 'charged'
+            : 'needs_action'
+          : pi.status === 'requires_capture'
+            ? 'authorized'
+            : 'needs_action';
     } else {
-      // No card on file or no consent → create unconfirmed PI for client flow
       pi = await stripe.paymentIntents.create({
         ...baseCreate,
         payment_method_types: ['card']
@@ -933,16 +953,19 @@ app.post('/create-adjustment', requireAdminAuth, async (req, res) => {
     }
   } catch (err) {
     console.error('[create-adjustment] primary create error:', err?.message);
-    // Salvage PI from error if present; else create unconfirmed with chosen capture_method
     const errPI = err?.raw?.payment_intent || err?.payment_intent || null;
+
     if (errPI) {
-      pi = (typeof errPI === 'string') ? await stripe.paymentIntents.retrieve(errPI) : errPI;
+      pi = typeof errPI === 'string'
+        ? await stripe.paymentIntents.retrieve(errPI)
+        : errPI;
     } else {
       pi = await stripe.paymentIntents.create({
         ...baseCreate,
         payment_method_types: ['card']
       });
     }
+
     mode = 'needs_action';
   }
 
@@ -953,21 +976,41 @@ app.post('/create-adjustment', requireAdminAuth, async (req, res) => {
     pi_status: pi?.status
   });
 
-  await pool.query(`
-    INSERT INTO orders (id, payment_intent_id, amount, status, public_code, kind, parent_id, customer_id, saved_payment_method_id)
-    VALUES ($1, $2, $3, $4, $5, 'adjustment', $6, $7, $8)
-  `, [
-    childId,
-    pi?.id || null,
-    amount,
-    pi?.status || 'pending',
-    publicCode,
-    parentOrderId,
-    p.rows[0].customer_id || null,
-    p.rows[0].saved_payment_method_id || null
-  ]);
+  await pool.query(
+    `
+      INSERT INTO orders (
+        id,
+        payment_intent_id,
+        amount,
+        status,
+        public_code,
+        kind,
+        parent_id,
+        customer_id,
+        saved_payment_method_id
+      )
+      VALUES ($1, $2, $3, $4, $5, 'adjustment', $6, $7, $8)
+    `,
+    [
+      childId,
+      pi?.id || null,
+      amount,
+      pi?.status || 'pending',
+      publicCode,
+      parentOrderId,
+      parentOrder.customer_id || null,
+      parentOrder.saved_payment_method_id || null
+    ]
+  );
 
-  res.send({ childOrderId: childId, paymentIntentId: pi?.id || null, publicCode, mode, captureMethod });
+  res.send({
+    childOrderId: childId,
+    paymentIntentId: pi?.id || null,
+    publicCode,
+    mode,
+    captureMethod,
+    customerId: parentOrder.customer_id || null
+  });
 });
 
 // Capture an authorized manual-capture PaymentIntent (optionally partial).
