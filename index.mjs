@@ -880,36 +880,25 @@ app.get('/book', (req, res) => {
 // HONORS Sheets "Capture Type" via req.body.capture = 'automatic' | 'manual'
 app.post('/create-adjustment', requireAdminAuth, async (req, res) => {
   const { parentOrderId, amount, note, capture } = req.body || {};
-  if (!parentOrderId || !amount) {
-    return res.status(400).send({ error: 'missing fields' });
-  }
+  if (!parentOrderId || !amount) return res.status(400).send({ error: 'missing fields' });
 
   const parentResult = await pool.query(
     'SELECT customer_id, saved_payment_method_id, payment_intent_id FROM orders WHERE id=$1',
     [parentOrderId]
   );
   const parentOrder = parentResult.rows[0];
-  if (!parentOrder) {
-    return res.status(404).send({ error: 'parent not found' });
-  }
+  if (!parentOrder) return res.status(404).send({ error: 'parent not found' });
 
-  const consent = await pool.query(
-    'SELECT 1 FROM order_consents WHERE order_id=$1',
-    [parentOrderId]
-  );
+  const consent = await pool.query('SELECT 1 FROM order_consents WHERE order_id=$1', [parentOrderId]);
   const hasConsent = consent.rows.length > 0;
 
   const canChargeOffSession = Boolean(
-    hasConsent &&
-    parentOrder.customer_id &&
-    parentOrder.saved_payment_method_id
+    hasConsent && parentOrder.customer_id && parentOrder.saved_payment_method_id
   );
 
   const childId = randomUUID();
   const publicCode = await generateUniqueCode();
-
-  const captureMethod =
-    String(capture).toLowerCase() === 'manual' ? 'manual' : 'automatic';
+  const captureMethod = String(capture).toLowerCase() === 'manual' ? 'manual' : 'automatic';
 
   const baseCreate = {
     amount,
@@ -935,38 +924,27 @@ app.post('/create-adjustment', requireAdminAuth, async (req, res) => {
         off_session: true,
         confirm: true
       });
-
       mode =
         captureMethod === 'automatic'
-          ? pi.status === 'succeeded'
-            ? 'charged'
-            : 'needs_action'
-          : pi.status === 'requires_capture'
-            ? 'authorized'
-            : 'needs_action';
+          ? pi.status === 'succeeded' ? 'charged' : 'needs_action'
+          : pi.status === 'requires_capture' ? 'authorized' : 'needs_action';
     } else {
       pi = await stripe.paymentIntents.create({
         ...baseCreate,
         payment_method_types: ['card']
       });
-      mode = 'needs_action';
     }
   } catch (err) {
     console.error('[create-adjustment] primary create error:', err?.message);
     const errPI = err?.raw?.payment_intent || err?.payment_intent || null;
-
-    if (errPI) {
-      pi = typeof errPI === 'string'
-        ? await stripe.paymentIntents.retrieve(errPI)
-        : errPI;
-    } else {
-      pi = await stripe.paymentIntents.create({
-        ...baseCreate,
-        payment_method_types: ['card']
-      });
-    }
-
-    mode = 'needs_action';
+    pi = errPI
+      ? (typeof errPI === 'string'
+          ? await stripe.paymentIntents.retrieve(errPI)
+          : errPI)
+      : await stripe.paymentIntents.create({
+          ...baseCreate,
+          payment_method_types: ['card']
+        });
   }
 
   console.log('[create-adjustment]', {
