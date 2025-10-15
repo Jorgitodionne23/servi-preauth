@@ -189,7 +189,7 @@ app.use(express.static('public'));
 
 // 🎯 Create PaymentIntent (save card for later off-session charges)
 app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
-  const { amount, clientName, serviceDescription, serviceDate, serviceDateTime, clientEmail, clientPhone, consent } = req.body;
+  const { amount, clientName, serviceDescription, serviceDate, serviceDateTime, clientEmail, clientPhone, consent, serviceAddress } = req.body;
   try {
     // 1) Find or create Stripe Customer by email/phone (your existing logic)
     // 1) Only SEARCH for an existing customer now; don't create yet
@@ -242,16 +242,16 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
     const publicCode = await generateUniqueCode();
     await pool.query(
       `INSERT INTO orders
-      (id, amount, client_name, service_description, client_phone, client_email, service_date, status, public_code, kind, customer_id)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'primary',$10)
+      (id, amount, client_name, service_description, client_phone, client_email, service_date, service_address, status, public_code, kind, customer_id)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'primary',$11)
       ON CONFLICT (id) DO NOTHING`,
-      [orderId, amount, clientName || null, serviceDescription || null, clientPhone || null, clientEmail || null, serviceDate || null, 'pending', publicCode, existingCustomer?.id || null]
+      [orderId, amount, clientName || null, serviceDescription || null, clientPhone || null, clientEmail || null, serviceDate || null, serviceAddress || null, 'pending', publicCode, existingCustomer?.id || null]
     );
 
     // also persist service_date/service_datetime (you already do)
     await pool.query(
-      'UPDATE orders SET service_date=$1, service_datetime=$2, client_phone=$3, client_email=$4 WHERE id=$5',
-      [serviceDate || null, serviceDateTime || null, clientPhone || null, clientEmail || null, orderId]
+      'UPDATE orders SET service_date=$1, service_datetime=$2, client_phone=$3, client_email=$4, service_address=$5 WHERE id=$6',
+      [serviceDate || null, serviceDateTime || null, clientPhone || null, clientEmail || null, serviceAddress || null, orderId]
     );
     // --- NEW: determine if we already have consent (customer-level or order-level) ---
     let hasConsent = false;
@@ -377,7 +377,7 @@ app.get('/order/:orderId', async (req, res) => {
 
     const { rows } = await pool.query(`
       SELECT id, payment_intent_id, amount, client_name, client_phone, client_email,
-        service_description, service_date, service_datetime, status, created_at,
+        service_description, service_date, service_datetime, service_address, status, created_at,
         public_code, kind, parent_id, customer_id
       FROM orders
       WHERE id = $1

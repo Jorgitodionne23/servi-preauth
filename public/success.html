@@ -59,9 +59,9 @@
       border-radius:10px;
       text-align:left;
     }
-    .row { display:flex; justify-content:space-between; margin:6px 0; }
+    .row { display:flex; justify-content:space-between; align-items:flex-start; margin:6px 0; gap:12px; }
     .label { color:#9ca3af; }
-    .value { color:#fff; }
+    .value { color:#fff; text-align:right; word-break:break-word; }
 
     a.button {
       display: inline-block;
@@ -106,6 +106,10 @@
         <div class="label">Monto</div>
         <div class="value" id="amount">—</div>
       </div>
+      <div class="row">
+        <div class="label">Dirección</div>
+        <div class="value" id="address">—</div>
+      </div>
       <div class="row" id="reason-row" style="display:none">
         <div class="label">Motivo del ajuste</div>
         <div class="value" id="reason">—</div>
@@ -138,6 +142,7 @@
 
     const targetOrderId = document.getElementById('order-id');
     const amountEl = document.getElementById('amount');
+    const addressEl = document.getElementById('address');
     const statusEl = document.getElementById('status');
     const reasonRow = document.getElementById('reason-row');
     const reasonEl = document.getElementById('reason');
@@ -178,6 +183,7 @@
 
         // Show amount & status (always)
         amountEl.textContent = fmtAmount(order.amount || 0);
+        addressEl.textContent = order.service_address || '—';
         statusEl.textContent = order.status || '—';
 
         // 2) If it’s an adjustment, tweak copy and show reason

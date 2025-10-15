@@ -33,6 +33,7 @@ export async function initDb() {
       client_email TEXT,
       service_description TEXT,
       service_date TEXT,              -- date-only (YYYY-MM-DD) for >7d rule
+      service_address TEXT,
       status TEXT,
       created_at TIMESTAMPTZ DEFAULT NOW(),
       public_code TEXT UNIQUE,
@@ -48,6 +49,9 @@ export async function initDb() {
     -- NEW: store full timestamp (ISO with tz) for display/use in UI
     ALTER TABLE orders
       ADD COLUMN IF NOT EXISTS service_datetime TEXT;
+
+    ALTER TABLE orders
+      ADD COLUMN IF NOT EXISTS service_address TEXT;
 
     CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);
     CREATE INDEX IF NOT EXISTS idx_orders_parent ON orders(parent_id);
