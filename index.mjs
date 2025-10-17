@@ -5,6 +5,7 @@ import express from 'express';
 import StripePackage from 'stripe';
 import path from 'path';
 import { pool, initDb } from './db.pg.mjs';
+import { computePricing } from './pricing.mjs';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import fetch from 'node-fetch';
@@ -190,6 +191,10 @@ app.use(express.static('public'));
 // 🎯 Create PaymentIntent (save card for later off-session charges)
 app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
   const { amount, clientName, serviceDescription, serviceDate, serviceDateTime, clientEmail, clientPhone, consent, serviceAddress } = req.body;
+  const providerPricePesos = Number(amount);
+  if (!Number.isFinite(providerPricePesos) || providerPricePesos <= 0) {
+    return res.status(400).send({ error: 'invalid_provider_amount', message: 'amount must be a positive number (MXN pesos)' });
+  }
   try {
     // 1) Find or create Stripe Customer by email/phone (your existing logic)
     // 1) Only SEARCH for an existing customer now; don't create yet
@@ -220,6 +225,24 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
       } catch {}
       return Infinity;
     })();
+    const {
+      providerAmountCents,
+      bookingFeeAmountCents,
+      processingFeeAmountCents,
+      vatAmountCents,
+      totalAmountCents,
+      components: {
+        alphaValue,
+        urgencyMultiplier,
+        vatRate,
+        stripePercent,
+        stripeFixed: stripeFixedFeeCents,
+        stripeFeeVatRate
+      }
+    } = computePricing({
+      providerPricePesos,
+      leadTimeHours: hoursAhead
+    });
     // If long lead and NO consent, do not create a new customer yet
     // We can still check for saved card if an existing customer was found
     let saved = false;
@@ -241,11 +264,61 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
     const orderId = randomUUID();
     const publicCode = await generateUniqueCode();
     await pool.query(
-      `INSERT INTO orders
-      (id, amount, client_name, service_description, client_phone, client_email, service_date, service_address, status, public_code, kind, customer_id)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'primary',$11)
+      `INSERT INTO orders (
+        id,
+        amount,
+        provider_amount,
+        booking_fee_amount,
+        processing_fee_amount,
+        vat_amount,
+        pricing_total_amount,
+        client_name,
+        service_description,
+        client_phone,
+        client_email,
+        service_date,
+        service_address,
+        status,
+        public_code,
+        kind,
+        customer_id,
+        vat_rate,
+        stripe_percent_fee,
+        stripe_fixed_fee,
+        stripe_fee_tax_rate,
+        urgency_multiplier,
+        alpha_value
+      )
+      VALUES (
+        $1,$2,$3,$4,$5,$6,$7,
+        $8,$9,$10,$11,$12,$13,
+        'pending',$14,'primary',$15,
+        $16,$17,$18,$19,$20,$21
+      )
       ON CONFLICT (id) DO NOTHING`,
-      [orderId, amount, clientName || null, serviceDescription || null, clientPhone || null, clientEmail || null, serviceDate || null, serviceAddress || null, 'pending', publicCode, existingCustomer?.id || null]
+      [
+        orderId,
+        totalAmountCents,
+        providerAmountCents,
+        bookingFeeAmountCents,
+        processingFeeAmountCents,
+        vatAmountCents,
+        totalAmountCents,
+        clientName || null,
+        serviceDescription || null,
+        clientPhone || null,
+        clientEmail || null,
+        serviceDate || null,
+        serviceAddress || null,
+        publicCode,
+        existingCustomer?.id || null,
+        vatRate,
+        stripePercent,
+        stripeFixedFeeCents,
+        stripeFeeVatRate,
+        urgencyMultiplier,
+        alphaValue
+      ]
     );
 
     // also persist service_date/service_datetime (you already do)
@@ -274,19 +347,20 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
           error: 'account_required',
           message: 'Solo usuarios con cuenta pueden reservar con 5 días o mas de anticipación.',
           orderId,
-          publicCode
+          publicCode,
+          amount: totalAmountCents
         });
       }
 
       if (!saved) {
         // we have consent but no saved card: we'll create a Customer later when we start SetupIntent
         await pool.query('UPDATE orders SET kind=$1 WHERE id=$2', ['setup', orderId]);
-        return res.send({ orderId, publicCode, requiresSetup: true, hasSavedCard: false });
+        return res.send({ orderId, publicCode, requiresSetup: true, hasSavedCard: false, amount: totalAmountCents });
       }
 
       // already saved (because existingCustomer had PMs) → book flow, no PI yet
       await pool.query('UPDATE orders SET kind=$1 WHERE id=$2', ['book', orderId]);
-      return res.send({ orderId, publicCode, hasSavedCard: true });
+      return res.send({ orderId, publicCode, hasSavedCard: true, amount: totalAmountCents });
     }
 
     // Short-lead (≤5d)
@@ -299,7 +373,8 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
               orderId,
               publicCode,
               hasSavedCard: true,
-              paymentIntentId: null   // no PI yet
+              paymentIntentId: null,   // no PI yet
+              amount: totalAmountCents
             });
           } else {
             // Saved card found but no consent recorded → collect consent with Setup flow
@@ -308,7 +383,8 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
               orderId,
               publicCode,
               requiresSetup: true,    // Sheet should NOT set "Scheduled"
-              hasSavedCard: true
+              hasSavedCard: true,
+              amount: totalAmountCents
             });
           }
         }
@@ -324,7 +400,7 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
       await pool.query('UPDATE orders SET customer_id=$1 WHERE id=$2', [customer.id, orderId]);
 
       const paymentIntent = await stripe.paymentIntents.create({
-        amount,
+        amount: totalAmountCents,
         currency: 'mxn',
         capture_method: 'manual',
         payment_method_types: ['card'],
@@ -340,7 +416,8 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
         paymentIntentId: paymentIntent.id,
         orderId,
         publicCode,
-        hasSavedCard: saved
+        hasSavedCard: saved,
+        amount: totalAmountCents
       });
     }
 
@@ -376,7 +453,10 @@ app.get('/order/:orderId', async (req, res) => {
     const { orderId } = req.params;
 
     const { rows } = await pool.query(`
-      SELECT id, payment_intent_id, amount, client_name, client_phone, client_email,
+      SELECT id, payment_intent_id, amount, provider_amount, booking_fee_amount, processing_fee_amount,
+        vat_amount, pricing_total_amount, vat_rate, stripe_percent_fee, stripe_fixed_fee,
+        stripe_fee_tax_rate, urgency_multiplier, alpha_value,
+        client_name, client_phone, client_email,
         service_description, service_date, service_datetime, service_address, status, created_at,
         public_code, kind, parent_id, customer_id
       FROM orders
@@ -557,8 +637,22 @@ app.get('/order/:orderId', async (req, res) => {
     const days_ahead = Math.ceil(Math.max(0, hours_ahead) / 24);
 
     res.set('Cache-Control', 'no-store');
+    const pricing = {
+      provider_amount: row.provider_amount ?? null,
+      booking_fee_amount: row.booking_fee_amount ?? null,
+      processing_fee_amount: row.processing_fee_amount ?? null,
+      vat_amount: row.vat_amount ?? null,
+      total_amount: row.amount ?? null,
+      vat_rate: row.vat_rate ?? null,
+      stripe_percent_fee: row.stripe_percent_fee ?? null,
+      stripe_fixed_fee: row.stripe_fixed_fee ?? null,
+      stripe_fee_tax_rate: row.stripe_fee_tax_rate ?? null,
+      urgency_multiplier: row.urgency_multiplier ?? null,
+      alpha_value: row.alpha_value ?? null
+    };
     return res.json({
       ...row,
+      pricing,
       client_secret: pi?.client_secret || null,
       intentType,
       consent_required: consentRequired,

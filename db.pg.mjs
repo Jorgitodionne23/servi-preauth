@@ -28,6 +28,11 @@ export async function initDb() {
       id TEXT PRIMARY KEY,
       payment_intent_id TEXT UNIQUE,
       amount INTEGER,
+      provider_amount INTEGER,
+      booking_fee_amount INTEGER,
+      processing_fee_amount INTEGER,
+      vat_amount INTEGER,
+      pricing_total_amount INTEGER,
       client_name TEXT,
       client_phone TEXT,
       client_email TEXT,
@@ -40,7 +45,13 @@ export async function initDb() {
       kind TEXT DEFAULT 'primary',
       parent_id TEXT,
       customer_id TEXT,
-      saved_payment_method_id TEXT
+      saved_payment_method_id TEXT,
+      vat_rate REAL,
+      stripe_percent_fee REAL,
+      stripe_fixed_fee INTEGER,
+      stripe_fee_tax_rate REAL,
+      urgency_multiplier REAL,
+      alpha_value REAL
     );
 
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS client_phone TEXT;
@@ -52,6 +63,18 @@ export async function initDb() {
 
     ALTER TABLE orders
       ADD COLUMN IF NOT EXISTS service_address TEXT;
+
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS provider_amount INTEGER;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS booking_fee_amount INTEGER;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS processing_fee_amount INTEGER;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS vat_amount INTEGER;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS pricing_total_amount INTEGER;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS vat_rate REAL;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS stripe_percent_fee REAL;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS stripe_fixed_fee INTEGER;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS stripe_fee_tax_rate REAL;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS urgency_multiplier REAL;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS alpha_value REAL;
 
     CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);
     CREATE INDEX IF NOT EXISTS idx_orders_parent ON orders(parent_id);

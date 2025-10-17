@@ -85,6 +85,37 @@
     }
     #service-summary { margin: 0; line-height: 1.5; font-size: 15px; }
 
+    .summary-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      margin: 6px 0;
+      font-size: 14px;
+      color: #9ca3af;
+    }
+
+    .summary-row span:last-child {
+      color: #fff;
+      font-weight: 500;
+    }
+
+    .summary-row.total {
+      margin-top: 12px;
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .summary-row.total span:first-child {
+      color: #fff;
+    }
+
+    .summary-note {
+      margin-top: 6px;
+      font-size: 12px;
+      color: #9ca3af;
+    }
+
     .method-line {
       display: flex;
       justify-content: space-between;
@@ -175,6 +206,19 @@
       <div class="summary-box">
         <h3>Detalles de tu reserva</h3>
         <p id="service-summary">Cargando…</p>
+        <div class="summary-row" id="service-price-row" style="display:none;">
+          <span>Precio del servicio</span>
+          <span id="service-price">—</span>
+        </div>
+        <div class="summary-row" id="processing-fee-row" style="display:none;">
+          <span>Comisión por procesamiento</span>
+          <span id="processing-fee">—</span>
+        </div>
+        <div class="summary-row total" id="total-row" style="display:none;">
+          <span>Total a pagar</span>
+          <span id="summary-total">—</span>
+        </div>
+        <div class="summary-note" id="summary-note" style="display:none;">*IVA incluido</div>
       </div>
 
       <div class="method-line">
@@ -210,6 +254,12 @@
   <script type="module">
     // Minimal helpers
     const $ = (sel) => document.querySelector(sel);
+    const mxnFormatter = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' });
+    const formatMoneyFromCents = (value) => mxnFormatter.format((Number(value || 0)) / 100);
+    const toCents = (value) => {
+      const n = Number(value);
+      return Number.isFinite(n) ? Math.round(n) : 0;
+    };
     const params = new URLSearchParams(location.search);
     const orderId = params.get('orderId');
 
@@ -237,9 +287,44 @@
     // Prefer richer display if server provides it
     const fechaTexto = formatFecha(order);
     const servicio = (order.service_description || "servicio").trim();
-    const monto = Number(order.amount || 0) / 100;
-    const montoTexto = monto.toLocaleString("es-MX", { style: "currency", currency: "MXN" });
-    $('#service-summary').textContent = `Reserva de ${servicio} el ${fechaTexto}, por ${montoTexto}.`;
+    $('#service-summary').textContent = `Reserva de ${servicio} el ${fechaTexto}.`;
+
+    const serviceRow = document.getElementById('service-price-row');
+    const servicePriceEl = document.getElementById('service-price');
+    const processingRow = document.getElementById('processing-fee-row');
+    const processingEl = document.getElementById('processing-fee');
+    const totalRow = document.getElementById('total-row');
+    const totalEl = document.getElementById('summary-total');
+    const noteEl = document.getElementById('summary-note');
+
+    const providerCents = toCents(order.provider_amount ?? order.pricing?.provider_amount);
+    const processingCents = toCents(order.processing_fee_amount ?? order.pricing?.processing_fee_amount);
+    const totalCents = toCents(order.amount ?? order.pricing?.total_amount);
+    const vatCents = toCents(order.vat_amount ?? order.pricing?.vat_amount);
+    const totalFormatted = formatMoneyFromCents(totalCents);
+
+    if (providerCents > 0) {
+      servicePriceEl.textContent = formatMoneyFromCents(providerCents);
+      serviceRow.style.display = 'flex';
+    } else {
+      serviceRow.style.display = 'none';
+    }
+
+    if (processingCents > 0) {
+      processingEl.textContent = formatMoneyFromCents(processingCents);
+      processingRow.style.display = 'flex';
+    } else {
+      processingRow.style.display = 'none';
+    }
+
+    if (totalCents > 0) {
+      totalEl.textContent = totalFormatted;
+      totalRow.style.display = 'flex';
+      noteEl.style.display = vatCents > 0 ? 'block' : 'none';
+    } else {
+      totalRow.style.display = 'none';
+      noteEl.style.display = 'none';
+    }
 
     // Saved card mask (brand + last4 + expiry if available)
     const sc = order.saved_card || {};
@@ -290,7 +375,7 @@
 
     // Record consent (audit trail) — harmless if already recorded
     async function recordConsent() {
-      const text = `Autorizo el cargo por ${montoTexto} a mi tarjeta •••• ${sc.last4 || ''}`;
+      const text = `Autorizo el cargo por ${totalFormatted} a mi tarjeta •••• ${sc.last4 || ''}`;
       try {
         const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
         const bytes = new Uint8Array(buf);

@@ -62,6 +62,9 @@
     .row { display:flex; justify-content:space-between; align-items:flex-start; margin:6px 0; gap:12px; }
     .label { color:#9ca3af; font-size:14px; }
     .value { color:#fff; font-size:13px; text-align:right; word-break:break-word; }
+    .row.total { margin-top: 0; font-weight: 600; }
+    .row.total .value { font-size: 15px; }
+    .note { margin: 6px 0 10px; color: #9ca3af; font-size: 12px; }
 
     a.button {
       display: inline-block;
@@ -102,9 +105,18 @@
 
     <!-- Summary (amount, status, and adjustment reason when applicable) -->
     <div class="summary-box">
-      <div class="row">
-        <div class="label">Monto</div>
+      <div class="row total">
+        <div class="label">Total a pagar</div>
         <div class="value" id="amount">—</div>
+      </div>
+      <div class="note" id="vat-note" style="display:none;">*IVA incluido</div>
+      <div class="row" id="service-price-row" style="display:none;">
+        <div class="label">Precio del servicio</div>
+        <div class="value" id="service-price">—</div>
+      </div>
+      <div class="row" id="processing-row" style="display:none;">
+        <div class="label">Comisión por procesamiento</div>
+        <div class="value" id="processing-fee">—</div>
       </div>
       <div class="row">
         <div class="label">Dirección</div>
@@ -148,6 +160,11 @@
     const reasonEl = document.getElementById('reason');
     const titleEl = document.getElementById('title');
     const subtitleEl = document.getElementById('subtitle');
+    const servicePriceRow = document.getElementById('service-price-row');
+    const servicePriceEl = document.getElementById('service-price');
+    const processingRow = document.getElementById('processing-row');
+    const processingEl = document.getElementById('processing-fee');
+    const vatNoteEl = document.getElementById('vat-note');
 
     function fmtAmount(cents) {
       try { return (Number(cents||0)/100).toLocaleString('es-MX', { style:'currency', currency:'MXN' }); }
@@ -182,7 +199,24 @@
         targetOrderId.textContent = friendlyCode(order);
 
         // Show amount & status (always)
-        amountEl.textContent = fmtAmount(order.amount || 0);
+        const totalCents = Number(order.amount ?? order.pricing?.total_amount ?? 0);
+        amountEl.textContent = fmtAmount(totalCents);
+        const providerCents = Number(order.provider_amount ?? order.pricing?.provider_amount ?? 0);
+        if (providerCents > 0) {
+          servicePriceEl.textContent = fmtAmount(providerCents);
+          servicePriceRow.style.display = 'flex';
+        } else {
+          servicePriceRow.style.display = 'none';
+        }
+        const processingCents = Number(order.processing_fee_amount ?? order.pricing?.processing_fee_amount ?? 0);
+        if (processingCents > 0) {
+          processingEl.textContent = fmtAmount(processingCents);
+          processingRow.style.display = 'flex';
+        } else {
+          processingRow.style.display = 'none';
+        }
+        const vatCents = Number(order.vat_amount ?? order.pricing?.vat_amount ?? 0);
+        vatNoteEl.style.display = vatCents > 0 ? 'block' : 'none';
         addressEl.textContent = order.service_address || '—';
         statusEl.textContent = order.status || '—';
 

@@ -200,6 +200,37 @@
       letter-spacing: .2px;
       }
 
+    .summary-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      margin: 6px 0;
+      font-size: 14px;
+      color: #9ca3af;
+    }
+
+    .summary-row span:last-child {
+      color: #fff;
+      font-weight: 500;
+    }
+
+    .summary-row.total {
+      margin-top: 12px;
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .summary-row.total span:first-child {
+      color: #fff;
+    }
+
+    .summary-note {
+      margin-top: 6px;
+      font-size: 12px;
+      color: #9ca3af;
+    }
+
     #spinner {
     display: none;
     text-align: center;
@@ -239,6 +270,19 @@
       <div class="summary-box">
         <h3>Detalles de tu reserva</h3>
         <p id="service-summary">Cargando…</p>
+        <div class="summary-row" id="service-price-row" style="display:none;">
+          <span>Precio del servicio</span>
+          <span id="service-price">—</span>
+        </div>
+        <div class="summary-row" id="processing-fee-row" style="display:none;">
+          <span>Comisión por procesamiento</span>
+          <span id="processing-fee">—</span>
+        </div>
+        <div class="summary-row total" id="total-row" style="display:none;">
+          <span>Total a pagar</span>
+          <span id="summary-total">—</span>
+        </div>
+        <div class="summary-note" id="summary-note" style="display:none;">*IVA incluido</div>
       </div>
 
       <!-- Setup (save-card) UI mounts here when intentType === 'setup' -->
@@ -322,6 +366,16 @@
       window.stripe = Stripe(pk);
     })();
 
+    const mxnFormatter = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' });
+    const formatMoneyFromCents = (value) => {
+      const cents = Number(value || 0);
+      return mxnFormatter.format(cents / 100);
+    };
+    const toCents = (value) => {
+      const n = Number(value);
+      return Number.isFinite(n) ? Math.round(n) : 0;
+    };
+
     // Fetch once, cache, and use everywhere
     let cachedOrder = null;
     let setupClientSecret = null;
@@ -398,10 +452,43 @@
       // ✅ ALWAYS show service summary (even when consent_required)
       const servicio = (order.service_description || "servicio").trim();
       const fechaTexto = formatFechaEs(order.service_date, order.service_datetime);
-      const monto = (Number(order.amount || 0) / 100);
-      const montoTexto = monto.toLocaleString("es-MX", { style: "currency", currency: "MXN" });
       document.getElementById("service-summary").textContent =
-        `Reserva de ${servicio} el ${fechaTexto}, por ${montoTexto}.`;
+        `Reserva de ${servicio} el ${fechaTexto}.`;
+
+      const serviceRow = document.getElementById("service-price-row");
+      const servicePriceEl = document.getElementById("service-price");
+      const processingRow = document.getElementById("processing-fee-row");
+      const processingEl = document.getElementById("processing-fee");
+      const totalRow = document.getElementById("total-row");
+      const totalEl = document.getElementById("summary-total");
+      const noteEl = document.getElementById("summary-note");
+
+      const providerCents = toCents(order.provider_amount ?? order.pricing?.provider_amount);
+      const processingCents = toCents(order.processing_fee_amount ?? order.pricing?.processing_fee_amount);
+      const totalCents = toCents(order.amount ?? order.pricing?.total_amount);
+
+      if (providerCents > 0) {
+        servicePriceEl.textContent = formatMoneyFromCents(providerCents);
+        serviceRow.style.display = 'flex';
+      } else {
+        serviceRow.style.display = 'none';
+      }
+
+      if (processingCents > 0) {
+        processingEl.textContent = formatMoneyFromCents(processingCents);
+        processingRow.style.display = 'flex';
+      } else {
+        processingRow.style.display = 'none';
+      }
+
+      if (totalCents > 0) {
+        totalEl.textContent = formatMoneyFromCents(totalCents);
+        totalRow.style.display = 'flex';
+        noteEl.style.display = 'block';
+      } else {
+        totalRow.style.display = 'none';
+        noteEl.style.display = 'none';
+      }
 
       // Helpers
       const show = (sel) => (document.querySelector(sel).style.display = 'block');
@@ -449,7 +536,7 @@
         const paymentRequest = (window.paymentRequest = (window.stripe).paymentRequest({
           country: "MX",
           currency: "mxn",
-          total: { label: "Servicio SERVI", amount: order.amount },
+          total: { label: "Servicio SERVI", amount: totalCents },
           requestPayerName: true,
           requestPayerEmail: true,
         }));
