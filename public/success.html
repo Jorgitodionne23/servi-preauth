@@ -202,8 +202,10 @@
         const totalCents = Number(order.amount ?? order.pricing?.total_amount ?? 0);
         amountEl.textContent = fmtAmount(totalCents);
         const providerCents = Number(order.provider_amount ?? order.pricing?.provider_amount ?? 0);
-        if (providerCents > 0) {
-          servicePriceEl.textContent = fmtAmount(providerCents);
+        const bookingCents = Number(order.booking_fee_amount ?? order.pricing?.booking_fee_amount ?? 0);
+        const baseCents = providerCents + bookingCents;
+        if (baseCents > 0) {
+          servicePriceEl.textContent = fmtAmount(baseCents);
           servicePriceRow.style.display = 'flex';
         } else {
           servicePriceRow.style.display = 'none';

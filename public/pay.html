@@ -464,11 +464,13 @@
       const noteEl = document.getElementById("summary-note");
 
       const providerCents = toCents(order.provider_amount ?? order.pricing?.provider_amount);
+      const bookingCents = toCents(order.booking_fee_amount ?? order.pricing?.booking_fee_amount);
+      const baseServiceCents = providerCents + bookingCents;
       const processingCents = toCents(order.processing_fee_amount ?? order.pricing?.processing_fee_amount);
       const totalCents = toCents(order.amount ?? order.pricing?.total_amount);
 
-      if (providerCents > 0) {
-        servicePriceEl.textContent = formatMoneyFromCents(providerCents);
+      if (baseServiceCents > 0) {
+        servicePriceEl.textContent = formatMoneyFromCents(baseServiceCents);
         serviceRow.style.display = 'flex';
       } else {
         serviceRow.style.display = 'none';
