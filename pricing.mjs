@@ -52,8 +52,8 @@ export function computePricing({
   const alphaValue = alphaMin + (alphaNumerator / alphaDenominator);
 
   const rawBookingFee = (alphaValue * P + beta) * urgencyMultiplier;
-  const guardrailMax = Math.max(50, Math.min(399, 0.20 * P));
-  const clampedBookingFee = Math.min(guardrailMax, Math.max(50, rawBookingFee));
+  const guardrailMax = Math.max(40, Math.min(399, 0.20 * P));
+  const clampedBookingFee = Math.min(guardrailMax, Math.max(40, rawBookingFee));
   const bookingFeePesos = roundToNearestFive(clampedBookingFee);
   const bookingFeeCents = Math.round(bookingFeePesos * 100);
 
@@ -93,4 +93,3 @@ export function computePricing({
     }
   };
 }
-
