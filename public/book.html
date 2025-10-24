@@ -263,14 +263,161 @@
     const params = new URLSearchParams(location.search);
     const orderId = params.get('orderId');
 
+    let processingFeeRules = [];
+    let defaultProcessingFeeRuleId = null;
+    let vatRate = 0.16;
+    let stripeFeeVatRate = 0.16;
+    let baseProviderCents = 0;
+    let baseBookingCents = 0;
+
+    const summaryElements = {
+      box: null,
+      serviceRow: null,
+      servicePrice: null,
+      processingRow: null,
+      processingPrice: null,
+      totalRow: null,
+      totalPrice: null,
+      vatNote: null,
+    };
+
+    const pricingState = {
+      providerAmountCents: 0,
+      bookingFeeAmountCents: 0,
+      processingFeeAmountCents: 0,
+      vatAmountCents: 0,
+      totalAmountCents: 0,
+      serviceAmountCents: 0,
+      ruleId: null,
+      ruleLabel: '',
+    };
+
+    function normalizeCardSnapshot(card = {}) {
+      return {
+        brand: String(card.brand || '').toLowerCase(),
+        funding: String(card.funding || '').toLowerCase(),
+        country: String(card.country || '').toUpperCase(),
+      };
+    }
+
+    function matchProcessingFeeRuleClient(card = {}) {
+      if (!processingFeeRules.length) return null;
+      const snapshot = normalizeCardSnapshot(card);
+      for (const rule of processingFeeRules) {
+        const match = rule.match || {};
+        if (match.brand && String(match.brand).toLowerCase() !== snapshot.brand) continue;
+        if (match.funding && String(match.funding).toLowerCase() !== snapshot.funding) continue;
+        if (match.country) {
+          const target = String(match.country).toUpperCase();
+          if (target !== '*' && target !== snapshot.country) continue;
+        }
+        return rule;
+      }
+      return (
+        processingFeeRules.find((rule) => rule.id === defaultProcessingFeeRuleId) ||
+        processingFeeRules[0] ||
+        null
+      );
+    }
+
+    function computePricingPreviewClient(providerCents, bookingCents, rule) {
+      if (!rule) return null;
+      const baseCents = providerCents + bookingCents;
+      const basePesos = baseCents / 100;
+      const pEff = rule.percent * (1 + stripeFeeVatRate);
+      const fEff = rule.fixed * (1 + stripeFeeVatRate);
+      const denom = 1 - pEff * (1 + vatRate);
+      const safeDenom = denom <= 0 ? 1 : denom;
+      const processingPesos =
+        basePesos <= 0 ? 0 : (pEff * (1 + vatRate) * basePesos + fEff) / safeDenom;
+      const processingCents = Math.max(0, Math.round(processingPesos * 100));
+
+      const vatBaseCents = baseCents + processingCents;
+      const vatPesos = vatRate * (vatBaseCents / 100);
+      const vatCents = Math.max(0, Math.round(vatPesos * 100));
+
+      const totalCents = baseCents + processingCents + vatCents;
+      const serviceAmountCents = baseCents + vatCents;
+
+      return {
+        providerAmountCents: providerCents,
+        bookingFeeAmountCents: bookingCents,
+        processingFeeAmountCents: processingCents,
+        vatAmountCents: vatCents,
+        totalAmountCents: totalCents,
+        serviceAmountCents,
+        ruleId: rule.id,
+        ruleLabel: rule.label,
+      };
+    }
+
+    function updateSummaryFromBreakdown(breakdown) {
+      if (!breakdown) return;
+      pricingState.providerAmountCents = breakdown.providerAmountCents ?? pricingState.providerAmountCents;
+      pricingState.bookingFeeAmountCents = breakdown.bookingFeeAmountCents ?? pricingState.bookingFeeAmountCents;
+      pricingState.processingFeeAmountCents =
+        breakdown.processingFeeAmountCents ?? pricingState.processingFeeAmountCents;
+      pricingState.vatAmountCents = breakdown.vatAmountCents ?? pricingState.vatAmountCents;
+      pricingState.totalAmountCents = breakdown.totalAmountCents ?? pricingState.totalAmountCents;
+      pricingState.serviceAmountCents = breakdown.serviceAmountCents ?? pricingState.serviceAmountCents;
+      pricingState.ruleId = breakdown.ruleId || pricingState.ruleId;
+      pricingState.ruleLabel = breakdown.ruleLabel || pricingState.ruleLabel;
+
+      if (summaryElements.serviceRow && summaryElements.servicePrice) {
+        if (pricingState.serviceAmountCents > 0) {
+          summaryElements.servicePrice.textContent = formatMoneyFromCents(pricingState.serviceAmountCents);
+          summaryElements.serviceRow.style.display = 'flex';
+        } else {
+          summaryElements.serviceRow.style.display = 'none';
+        }
+      }
+
+      if (summaryElements.processingRow && summaryElements.processingPrice) {
+        if (pricingState.processingFeeAmountCents > 0) {
+          summaryElements.processingPrice.textContent = formatMoneyFromCents(
+            pricingState.processingFeeAmountCents
+          );
+          summaryElements.processingRow.style.display = 'flex';
+        } else {
+          summaryElements.processingRow.style.display = 'none';
+        }
+      }
+
+      if (summaryElements.totalRow && summaryElements.totalPrice) {
+        if (pricingState.totalAmountCents > 0) {
+          summaryElements.totalPrice.textContent = formatMoneyFromCents(pricingState.totalAmountCents);
+          summaryElements.totalRow.style.display = 'flex';
+        } else {
+          summaryElements.totalRow.style.display = 'none';
+        }
+      }
+
+      if (summaryElements.vatNote && summaryElements.box) {
+        summaryElements.vatNote.style.display =
+          pricingState.vatAmountCents > 0 ? 'block' : 'none';
+        if (summaryElements.vatNote.parentElement !== summaryElements.box) {
+          summaryElements.box.appendChild(summaryElements.vatNote);
+        }
+      }
+    }
+
     if (!orderId) {
       alert('Falta el parámetro orderId.');
       throw new Error('Missing orderId');
     }
 
     // Load Stripe publishable key
-    const { pk } = await fetch('/config/stripe').then(r => r.json());
+    const config = await fetch('/config/stripe').then(r => r.json());
+    const pk = config.pk;
     if (!pk) { alert('Stripe no está configurado.'); throw new Error('Missing Stripe key'); }
+    processingFeeRules = Array.isArray(config.processingFeeRules) ? config.processingFeeRules : [];
+    defaultProcessingFeeRuleId = config.defaultProcessingFeeRule || null;
+    if (Number.isFinite(Number(config.vatRate))) {
+      vatRate = Number(config.vatRate);
+    }
+    if (Number.isFinite(Number(config.stripeFeeVatRate))) {
+      stripeFeeVatRate = Number(config.stripeFeeVatRate);
+    }
     const stripe = Stripe(pk);
 
     // Get order (expects saved_card and (if needed) client_secret for 3DS)
@@ -289,50 +436,48 @@
     const servicio = (order.service_description || "servicio").trim();
     $('#service-summary').textContent = `Reserva de ${servicio} el ${fechaTexto}.`;
 
-    const summaryBox = document.querySelector('.summary-box');
-    const serviceRow = document.getElementById('service-price-row');
-    const servicePriceEl = document.getElementById('service-price');
-    const processingRow = document.getElementById('processing-fee-row');
-    const processingEl = document.getElementById('processing-fee');
-    const totalRow = document.getElementById('total-row');
-    const totalEl = document.getElementById('summary-total');
-    const noteEl = document.getElementById('summary-note');
+    summaryElements.box = document.querySelector('.summary-box');
+    summaryElements.serviceRow = document.getElementById('service-price-row');
+    summaryElements.servicePrice = document.getElementById('service-price');
+    summaryElements.processingRow = document.getElementById('processing-fee-row');
+    summaryElements.processingPrice = document.getElementById('processing-fee');
+    summaryElements.totalRow = document.getElementById('total-row');
+    summaryElements.totalPrice = document.getElementById('summary-total');
+    summaryElements.vatNote = document.getElementById('summary-note');
 
-    const providerCents = toCents(order.provider_amount ?? order.pricing?.provider_amount);
-    const bookingCents = toCents(order.booking_fee_amount ?? order.pricing?.booking_fee_amount);
-    const baseServiceCents = providerCents + bookingCents;
-    const processingCents = toCents(order.processing_fee_amount ?? order.pricing?.processing_fee_amount);
-    const totalCents = toCents(order.amount ?? order.pricing?.total_amount);
-    const vatCents = toCents(order.vat_amount ?? order.pricing?.vat_amount);
-    const totalFormatted = formatMoneyFromCents(totalCents);
+    baseProviderCents = toCents(order.provider_amount ?? order.pricing?.provider_amount);
+    baseBookingCents = toCents(order.booking_fee_amount ?? order.pricing?.booking_fee_amount);
+    const initialProcessingCents = toCents(
+      order.processing_fee_amount ?? order.pricing?.processing_fee_amount
+    );
+    const initialVatCents = toCents(order.vat_amount ?? order.pricing?.vat_amount);
+    const initialTotalCents = toCents(order.amount ?? order.pricing?.total_amount);
+    const serviceWithVatCents = baseProviderCents + baseBookingCents + initialVatCents;
 
-    const serviceWithVatCents = baseServiceCents + vatCents;
+    updateSummaryFromBreakdown({
+      providerAmountCents: baseProviderCents,
+      bookingFeeAmountCents: baseBookingCents,
+      processingFeeAmountCents: initialProcessingCents,
+      vatAmountCents: initialVatCents,
+      totalAmountCents: initialTotalCents,
+      serviceAmountCents: serviceWithVatCents,
+      ruleId: order.processing_fee_rule || null,
+      ruleLabel: '',
+    });
 
-    if (serviceWithVatCents > 0) {
-      servicePriceEl.textContent = formatMoneyFromCents(serviceWithVatCents);
-      serviceRow.style.display = 'flex';
-    } else {
-      serviceRow.style.display = 'none';
+    if (order.processing_fee_rule && processingFeeRules.length) {
+      const rule = processingFeeRules.find((r) => r.id === order.processing_fee_rule);
+      if (rule) pricingState.ruleLabel = rule.label;
     }
 
-    if (processingCents > 0) {
-      processingEl.textContent = formatMoneyFromCents(processingCents);
-      processingRow.style.display = 'flex';
-    } else {
-      processingRow.style.display = 'none';
-    }
-
-    if (totalCents > 0) {
-      totalEl.textContent = totalFormatted;
-      totalRow.style.display = 'flex';
-      noteEl.style.display = vatCents > 0 ? 'block' : 'none';
-    } else {
-      totalRow.style.display = 'none';
-      noteEl.style.display = 'none';
-    }
-
-    if (noteEl && summaryBox) {
-      summaryBox.appendChild(noteEl);
+    if (order.saved_card) {
+      const dynamicRule = matchProcessingFeeRuleClient(order.saved_card);
+      if (dynamicRule) {
+        const preview = computePricingPreviewClient(baseProviderCents, baseBookingCents, dynamicRule);
+        if (preview) {
+          updateSummaryFromBreakdown(preview);
+        }
+      }
     }
 
     // Saved card mask (brand + last4 + expiry if available)
@@ -384,7 +529,8 @@
 
     // Record consent (audit trail) — harmless if already recorded
     async function recordConsent() {
-      const text = `Autorizo el cargo por ${totalFormatted} a mi tarjeta •••• ${sc.last4 || ''}`;
+      const totalDisplay = formatMoneyFromCents(pricingState.totalAmountCents);
+      const text = `Autorizo el cargo por ${totalDisplay} a mi tarjeta •••• ${sc.last4 || ''}`;
       try {
         const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
         const bytes = new Uint8Array(buf);

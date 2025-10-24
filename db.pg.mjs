@@ -51,7 +51,8 @@ export async function initDb() {
       stripe_fixed_fee INTEGER,
       stripe_fee_tax_rate REAL,
       urgency_multiplier REAL,
-      alpha_value REAL
+      alpha_value REAL,
+      processing_fee_rule TEXT
     );
 
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS client_phone TEXT;
@@ -75,6 +76,7 @@ export async function initDb() {
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS stripe_fee_tax_rate REAL;
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS urgency_multiplier REAL;
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS alpha_value REAL;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS processing_fee_rule TEXT;
 
     CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);
     CREATE INDEX IF NOT EXISTS idx_orders_parent ON orders(parent_id);
