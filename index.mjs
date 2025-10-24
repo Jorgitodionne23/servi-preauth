@@ -41,6 +41,9 @@ function hoursUntilService(row) {
   return Infinity;
 }
 
+const BOOK_SUCCESS_STATUSES = new Set(['Scheduled', 'Confirmed', 'Captured']);
+const PAY_SUCCESS_STATUSES = new Set(['Scheduled', 'Confirmed', 'Captured']);
+
 // ── generate a unique public_code for /o/:code ────────────────────────────
 async function generateUniqueCode(len = 10) {
   for (let i = 0; i < 6; i++) {
@@ -429,7 +432,19 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
 });
 
 // 📄 Serve pay page
-app.get('/pay', (req, res) => {
+app.get('/pay', async (req, res) => {
+  try {
+    const orderId = String(req.query.orderId || '').trim();
+    if (orderId) {
+      const r = await pool.query('SELECT status FROM orders WHERE id = $1', [orderId]);
+      const status = r.rows[0]?.status || '';
+      if (PAY_SUCCESS_STATUSES.has(status)) {
+        return res.redirect(302, `/success?orderId=${encodeURIComponent(orderId)}`);
+      }
+    }
+  } catch (e) {
+    console.error('pay route guard error:', e?.message || e);
+  }
   res.sendFile(path.join(__dirname, 'public', 'pay.html'));
 });
 
@@ -676,11 +691,21 @@ app.get('/o/:code', async (req, res) => {
 
     // 1) Find the order by code
     const { rows } = await pool.query(
-      'SELECT id, kind, customer_id, saved_payment_method_id FROM orders WHERE public_code = $1',
+      `SELECT id,
+              kind,
+              customer_id,
+              saved_payment_method_id,
+              status
+         FROM orders
+        WHERE public_code = $1`,
       [code]
     );
     if (!rows[0]) return res.status(404).send('Not found');
     const row = rows[0];
+    const rowStatus = String(row.status || '').trim();
+    if (BOOK_SUCCESS_STATUSES.has(rowStatus) || PAY_SUCCESS_STATUSES.has(rowStatus)) {
+      return res.redirect(302, `/success?orderId=${encodeURIComponent(row.id)}`);
+    }
 
     // 2) Explicit routing by kind
     if (row.kind === 'adjustment')     return res.redirect(302, `/confirm?orderId=${encodeURIComponent(row.id)}`);
@@ -966,7 +991,19 @@ app.get('/orders/:id/consent', async (req, res) => {
 });
 
 
-app.get('/book', (req, res) => {
+app.get('/book', async (req, res) => {
+  try {
+    const orderId = String(req.query.orderId || '').trim();
+    if (orderId) {
+      const r = await pool.query('SELECT status FROM orders WHERE id = $1', [orderId]);
+      const status = r.rows[0]?.status || '';
+      if (BOOK_SUCCESS_STATUSES.has(status)) {
+        return res.redirect(302, `/success?orderId=${encodeURIComponent(orderId)}`);
+      }
+    }
+  } catch (e) {
+    console.error('book route guard error:', e?.message || e);
+  }
   res.sendFile(path.join(__dirname, 'public', 'book.html'));
 });
 
@@ -1491,7 +1528,16 @@ app.post('/confirm-with-saved', async (req, res) => {
     if (!orderId) return res.status(400).send({ error: 'orderId required' });
 
     const { rows } = await pool.query(
-      `SELECT id, payment_intent_id, customer_id, amount, kind, parent_id, service_date, service_datetime
+      `SELECT id,
+              payment_intent_id,
+              customer_id,
+              amount,
+              kind,
+              parent_id,
+              service_date,
+              service_datetime,
+              status,
+              saved_payment_method_id
          FROM orders
         WHERE id = $1`,
       [orderId]
@@ -1501,6 +1547,41 @@ app.post('/confirm-with-saved', async (req, res) => {
 
     const hoursAhead = hoursUntilService(row);
     if (hoursAhead > 12 && !force) {
+      let savedPmId = row.saved_payment_method_id || null;
+      if (!savedPmId && row.customer_id) {
+        const list = await stripe.paymentMethods.list({
+          customer: row.customer_id,
+          type: 'card',
+          limit: 1
+        });
+        savedPmId = list.data[0]?.id || null;
+      }
+
+      const statusLabel = 'Scheduled';
+      await pool.query(
+        `
+          UPDATE orders
+             SET status = $1,
+                 saved_payment_method_id = COALESCE($2, saved_payment_method_id)
+           WHERE id = $3
+             AND (status IS NULL OR status NOT IN ('Confirmed','Captured'))
+        `,
+        [statusLabel, savedPmId, row.id]
+      );
+
+      if (GOOGLE_SCRIPT_WEBHOOK_URL) {
+        fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'order.status',
+            orderId: row.id,
+            status: statusLabel,
+            customerId: row.customer_id || ''
+          })
+        }).catch(() => {});
+      }
+
       const serviceMs = row.service_datetime
         ? new Date(row.service_datetime).getTime()
         : new Date(String(row.service_date) + 'T08:00:00-05:00').getTime();
@@ -1509,7 +1590,8 @@ app.post('/confirm-with-saved', async (req, res) => {
       return res.status(409).json({
         error: 'preauth_window_closed',
         remaining_hours: Math.ceil(hoursAhead),
-        preauth_window_opens_at: new Date(opensAtMs).toISOString()
+        preauth_window_opens_at: new Date(opensAtMs).toISOString(),
+        status: statusLabel
       });
     }
 
