@@ -406,6 +406,7 @@
       totalPrice: null,
       vatNote: null,
     };
+    let cardPreviewSequence = 0;
 
     function normalizeCardSnapshot(card = {}) {
       return {
@@ -514,6 +515,24 @@
           summaryElements.box.appendChild(summaryElements.vatNote);
         }
       }
+
+      syncPaymentRequestTotal();
+    }
+
+    function syncPaymentRequestTotal() {
+      if (!window.paymentRequest || typeof window.paymentRequest.update !== 'function') {
+        return;
+      }
+      const amount = Number.isFinite(Number(pricingState.totalAmountCents))
+        ? Number(pricingState.totalAmountCents)
+        : 0;
+      try {
+        window.paymentRequest.update({
+          total: { label: 'Servicio SERVI', amount },
+        });
+      } catch (err) {
+        console.warn('No se pudo sincronizar el total con wallets:', err);
+      }
     }
 
     // Fetch once, cache, and use everywhere
@@ -548,18 +567,52 @@
           };
           latestCardSnapshot = snapshot;
           const rule = matchProcessingFeeRuleClient(snapshot);
-          if (!rule) return;
-          const preview = computePricingPreviewClient(baseProviderCents, baseBookingCents, rule);
-          if (preview) {
-            preview.ruleId = rule.id;
-            preview.ruleLabel = rule.label;
-            updateSummaryFromBreakdown(preview);
+          if (rule) {
+            const preview = computePricingPreviewClient(baseProviderCents, baseBookingCents, rule);
+            if (preview) {
+              preview.ruleId = rule.id;
+              preview.ruleLabel = rule.label;
+              updateSummaryFromBreakdown(preview);
+            }
+          }
+          if (event.complete) {
+            const runSeq = ++cardPreviewSequence;
+            refreshPricingForCompletedCard(runSeq).catch((err) => {
+              console.warn('No se pudo actualizar el total dinámico:', err);
+            });
+          } else {
+            cardPreviewSequence++;
           }
         });
         window.__cardConfigured = true;
       }
 
       return card;
+    }
+
+    async function refreshPricingForCompletedCard(runSeq) {
+      await stripeReady;
+      const order = await getOrder();
+      if (!order) return;
+
+      const cardholderInput = document.getElementById('cardholder-name');
+      const cardholderName = (cardholderInput?.value || '').trim();
+
+      const pmResult = await window.stripe.createPaymentMethod({
+        type: 'card',
+        card: window.card,
+        billing_details: cardholderName ? { name: cardholderName } : {},
+      });
+
+      if (runSeq !== cardPreviewSequence) return;
+
+      if (pmResult.error) {
+        throw new Error(pmResult.error.message || pmResult.error);
+      }
+
+      latestCardSnapshot = normalizeCardSnapshot(pmResult.paymentMethod?.card || {});
+
+      await applyPricingForPaymentMethod(order, pmResult.paymentMethod.id, { preview: true });
     }
 
     async function getOrder() {
@@ -806,17 +859,20 @@
       };
     }
 
-    async function applyPricingForPaymentMethod(order, paymentMethodId) {
+    async function applyPricingForPaymentMethod(order, paymentMethodId, options = {}) {
+      const { preview = false } = options;
       const resp = await fetch(`/orders/${encodeURIComponent(order.id)}/reprice`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ paymentMethodId }),
+        body: JSON.stringify({ paymentMethodId, preview }),
       });
       const payload = await resp.json().catch(() => ({}));
       if (!resp.ok) {
         throw new Error(payload.error || 'No se pudo recalcular las comisiones.');
       }
-      applyServerBreakdownToOrder(order, payload);
+      if (!preview) {
+        applyServerBreakdownToOrder(order, payload);
+      }
       updateSummaryFromBreakdown(breakdownFromServer(payload));
       return payload;
     }
