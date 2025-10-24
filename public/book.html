@@ -289,6 +289,7 @@
     const servicio = (order.service_description || "servicio").trim();
     $('#service-summary').textContent = `Reserva de ${servicio} el ${fechaTexto}.`;
 
+    const summaryBox = document.querySelector('.summary-box');
     const serviceRow = document.getElementById('service-price-row');
     const servicePriceEl = document.getElementById('service-price');
     const processingRow = document.getElementById('processing-fee-row');
@@ -305,8 +306,10 @@
     const vatCents = toCents(order.vat_amount ?? order.pricing?.vat_amount);
     const totalFormatted = formatMoneyFromCents(totalCents);
 
-    if (baseServiceCents > 0) {
-      servicePriceEl.textContent = formatMoneyFromCents(baseServiceCents);
+    const serviceWithVatCents = baseServiceCents + vatCents;
+
+    if (serviceWithVatCents > 0) {
+      servicePriceEl.textContent = formatMoneyFromCents(serviceWithVatCents);
       serviceRow.style.display = 'flex';
     } else {
       serviceRow.style.display = 'none';
@@ -326,6 +329,10 @@
     } else {
       totalRow.style.display = 'none';
       noteEl.style.display = 'none';
+    }
+
+    if (noteEl && summaryBox) {
+      summaryBox.appendChild(noteEl);
     }
 
     // Saved card mask (brand + last4 + expiry if available)

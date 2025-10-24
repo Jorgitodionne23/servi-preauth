@@ -165,6 +165,7 @@
     const processingRow = document.getElementById('processing-row');
     const processingEl = document.getElementById('processing-fee');
     const vatNoteEl = document.getElementById('vat-note');
+    const summaryBox = document.querySelector('.summary-box');
 
     function fmtAmount(cents) {
       try { return (Number(cents||0)/100).toLocaleString('es-MX', { style:'currency', currency:'MXN' }); }
@@ -204,8 +205,10 @@
         const providerCents = Number(order.provider_amount ?? order.pricing?.provider_amount ?? 0);
         const bookingCents = Number(order.booking_fee_amount ?? order.pricing?.booking_fee_amount ?? 0);
         const baseCents = providerCents + bookingCents;
-        if (baseCents > 0) {
-          servicePriceEl.textContent = fmtAmount(baseCents);
+        const vatCents = Number(order.vat_amount ?? order.pricing?.vat_amount ?? 0);
+        const serviceCents = baseCents + vatCents;
+        if (serviceCents > 0) {
+          servicePriceEl.textContent = fmtAmount(serviceCents);
           servicePriceRow.style.display = 'flex';
         } else {
           servicePriceRow.style.display = 'none';
@@ -217,8 +220,10 @@
         } else {
           processingRow.style.display = 'none';
         }
-        const vatCents = Number(order.vat_amount ?? order.pricing?.vat_amount ?? 0);
         vatNoteEl.style.display = vatCents > 0 ? 'block' : 'none';
+        if (summaryBox && vatNoteEl) {
+          summaryBox.appendChild(vatNoteEl);
+        }
         addressEl.textContent = order.service_address || '—';
         statusEl.textContent = order.status || '—';
 

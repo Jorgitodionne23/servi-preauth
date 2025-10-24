@@ -455,6 +455,7 @@
       document.getElementById("service-summary").textContent =
         `Reserva de ${servicio} el ${fechaTexto}.`;
 
+      const summaryBox = document.querySelector(".summary-box");
       const serviceRow = document.getElementById("service-price-row");
       const servicePriceEl = document.getElementById("service-price");
       const processingRow = document.getElementById("processing-fee-row");
@@ -468,9 +469,11 @@
       const baseServiceCents = providerCents + bookingCents;
       const processingCents = toCents(order.processing_fee_amount ?? order.pricing?.processing_fee_amount);
       const totalCents = toCents(order.amount ?? order.pricing?.total_amount);
+      const vatCents = toCents(order.vat_amount ?? order.pricing?.vat_amount);
+      const serviceWithVatCents = baseServiceCents + vatCents;
 
-      if (baseServiceCents > 0) {
-        servicePriceEl.textContent = formatMoneyFromCents(baseServiceCents);
+      if (serviceWithVatCents > 0) {
+        servicePriceEl.textContent = formatMoneyFromCents(serviceWithVatCents);
         serviceRow.style.display = 'flex';
       } else {
         serviceRow.style.display = 'none';
@@ -486,10 +489,14 @@
       if (totalCents > 0) {
         totalEl.textContent = formatMoneyFromCents(totalCents);
         totalRow.style.display = 'flex';
-        noteEl.style.display = 'block';
+        noteEl.style.display = vatCents > 0 ? 'block' : 'none';
       } else {
         totalRow.style.display = 'none';
         noteEl.style.display = 'none';
+      }
+
+      if (noteEl && summaryBox) {
+        summaryBox.appendChild(noteEl);
       }
 
       // Helpers
