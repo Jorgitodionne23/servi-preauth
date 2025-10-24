@@ -1,6 +1,6 @@
 // pricing.mjs — central pricing calculations for SERVI orders
 
-export const DEFAULTS = {
+const DEFAULTS = {
   alphaMax: 0.18,
   alphaMin: 0.08,
   alphaP0: 1200,
@@ -93,6 +93,3 @@ export function computePricing({
     }
   };
 }
-
-export const DEFAULT_VAT_RATE = DEFAULTS.vatRate;
-export const DEFAULT_STRIPE_FEE_VAT_RATE = DEFAULTS.stripeFeeVatRate;

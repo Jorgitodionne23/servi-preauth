@@ -5,17 +5,7 @@ import express from 'express';
 import StripePackage from 'stripe';
 import path from 'path';
 import { pool, initDb } from './db.pg.mjs';
-import {
-  computePricing,
-  DEFAULT_VAT_RATE,
-  DEFAULT_STRIPE_FEE_VAT_RATE,
-} from './pricing.mjs';
-import {
-  PROCESSING_FEE_RULES,
-  DEFAULT_PROCESSING_FEE_RULE_ID,
-  resolveProcessingFeeRule,
-  serializeProcessingFeeRules,
-} from './processing-fees.mjs';
+import { computePricing } from './pricing.mjs';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import fetch from 'node-fetch';
@@ -36,16 +26,6 @@ async function hasSavedCard(customerId, stripe) {
   return pm.data.length > 0;
 }
 
-async function getPrimaryCardPaymentMethod(customerId) {
-  if (!customerId) return null;
-  const list = await stripe.paymentMethods.list({
-    customer: customerId,
-    type: 'card',
-    limit: 1,
-  });
-  return list.data[0] || null;
-}
-
 function hoursUntilService(row) {
   // Prefer exact timestamp if you store it
   if (row.service_datetime) {
@@ -63,18 +43,6 @@ function hoursUntilService(row) {
 
 const BOOK_SUCCESS_STATUSES = new Set(['Scheduled', 'Confirmed', 'Captured']);
 const PAY_SUCCESS_STATUSES = new Set(['Scheduled', 'Confirmed', 'Captured']);
-
-function normalizeCardSnapshot(card = {}) {
-  return {
-    brand: String(card.brand || '').toLowerCase(),
-    funding: String(card.funding || '').toLowerCase(),
-    country: String(card.country || '').toUpperCase(),
-  };
-}
-
-function pickProcessingFeeRule(card = {}) {
-  return resolveProcessingFeeRule(normalizeCardSnapshot(card));
-}
 
 // ── generate a unique public_code for /o/:code ────────────────────────────
 async function generateUniqueCode(len = 10) {
@@ -174,91 +142,6 @@ if (!endpointSecret) {
   throw new Error('STRIPE_WEBHOOK_SECRET must be configured before starting the server');
 }
 
-function buildPricingResponse(orderRow, rule, pricing, clientSecret = null) {
-  const serviceWithVatCents =
-    pricing.providerAmountCents + pricing.bookingFeeAmountCents + pricing.vatAmountCents;
-  return {
-    orderId: orderRow.id,
-    rule: { id: rule.id, label: rule.label },
-    providerAmountCents: pricing.providerAmountCents,
-    bookingFeeAmountCents: pricing.bookingFeeAmountCents,
-    processingFeeAmountCents: pricing.processingFeeAmountCents,
-    vatAmountCents: pricing.vatAmountCents,
-    serviceAmountCents: serviceWithVatCents,
-    totalAmountCents: pricing.totalAmountCents,
-    stripePercent: rule.percent,
-    stripeFixed: rule.fixed,
-    clientSecret: clientSecret || null,
-  };
-}
-
-async function recomputeOrderPricing(orderRow, cardSnapshot = {}, options = {}) {
-  const { commit = false, updatePaymentIntent = false } = options;
-  const rule = pickProcessingFeeRule(cardSnapshot);
-
-  const providerAmountCents = Number(orderRow.provider_amount || 0);
-  const providerPricePesos = providerAmountCents / 100;
-  const leadHours = hoursUntilService(orderRow);
-
-  const pricing = computePricing({
-    providerPricePesos,
-    leadTimeHours: leadHours,
-    stripePercent: rule.percent,
-    stripeFixed: rule.fixed,
-  });
-
-  let updatedIntent = null;
-
-  if (commit) {
-    await pool.query(
-      `
-        UPDATE orders
-           SET booking_fee_amount     = $1,
-               processing_fee_amount = $2,
-               vat_amount            = $3,
-               amount                = $4,
-               pricing_total_amount  = $4,
-               stripe_percent_fee    = $5,
-               stripe_fixed_fee      = $6,
-               processing_fee_rule   = $7
-         WHERE id = $8
-      `,
-      [
-        pricing.bookingFeeAmountCents,
-        pricing.processingFeeAmountCents,
-        pricing.vatAmountCents,
-        pricing.totalAmountCents,
-        rule.percent,
-        Math.round(rule.fixed * 100),
-        rule.id,
-        orderRow.id,
-      ]
-    );
-
-    orderRow.booking_fee_amount = pricing.bookingFeeAmountCents;
-    orderRow.processing_fee_amount = pricing.processingFeeAmountCents;
-    orderRow.vat_amount = pricing.vatAmountCents;
-    orderRow.amount = pricing.totalAmountCents;
-    orderRow.pricing_total_amount = pricing.totalAmountCents;
-    orderRow.stripe_percent_fee = rule.percent;
-    orderRow.stripe_fixed_fee = Math.round(rule.fixed * 100);
-    orderRow.processing_fee_rule = rule.id;
-  }
-
-  if (
-    commit &&
-    updatePaymentIntent &&
-    orderRow.payment_intent_id &&
-    orderRow.payment_intent_id.startsWith('pi_')
-  ) {
-    updatedIntent = await stripe.paymentIntents.update(orderRow.payment_intent_id, {
-      amount: pricing.totalAmountCents,
-    });
-  }
-
-  return { pricing, rule, updatedClientSecret: updatedIntent?.client_secret || null };
-}
-
 function constantTimeEquals(a, b) {
   if (!a || !b) return false;
   const aBuf = Buffer.from(String(a), 'utf8');
@@ -345,7 +228,6 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
       } catch {}
       return Infinity;
     })();
-    const defaultRule = resolveProcessingFeeRule();
     const {
       providerAmountCents,
       bookingFeeAmountCents,
@@ -362,9 +244,7 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
       }
     } = computePricing({
       providerPricePesos,
-      leadTimeHours: hoursAhead,
-      stripePercent: defaultRule.percent,
-      stripeFixed: defaultRule.fixed,
+      leadTimeHours: hoursAhead
     });
     // If long lead and NO consent, do not create a new customer yet
     // We can still check for saved card if an existing customer was found
@@ -410,14 +290,13 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
         stripe_fixed_fee,
         stripe_fee_tax_rate,
         urgency_multiplier,
-        alpha_value,
-        processing_fee_rule
+        alpha_value
       )
       VALUES (
         $1,$2,$3,$4,$5,$6,$7,
         $8,$9,$10,$11,$12,$13,
         'pending',$14,'primary',$15,
-        $16,$17,$18,$19,$20,$21,$22
+        $16,$17,$18,$19,$20,$21
       )
       ON CONFLICT (id) DO NOTHING`,
       [
@@ -441,8 +320,7 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
         stripeFixedFeeCents,
         stripeFeeVatRate,
         urgencyMultiplier,
-        alphaValue,
-        defaultRule.id
+        alphaValue
       ]
     );
 
@@ -581,84 +459,7 @@ app.get('/save', (req, res) => {
 
 // Serve publishable key to the client (same origin, no CORS needed)
 app.get('/config/stripe', (_req, res) => {
-  res.send({
-    pk: process.env.STRIPE_PUBLISHABLE_KEY || '',
-    vatRate: DEFAULT_VAT_RATE,
-    stripeFeeVatRate: DEFAULT_STRIPE_FEE_VAT_RATE,
-    processingFeeRules: serializeProcessingFeeRules(),
-    defaultProcessingFeeRule: DEFAULT_PROCESSING_FEE_RULE_ID,
-  });
-});
-
-app.post('/orders/:orderId/reprice', async (req, res) => {
-  try {
-    const { orderId } = req.params;
-    const { preview = false, paymentMethodId, card: cardPayload = {} } = req.body || {};
-
-    const orderResult = await pool.query(
-      `
-        SELECT id,
-               provider_amount,
-               booking_fee_amount,
-               processing_fee_amount,
-               vat_amount,
-               amount,
-               pricing_total_amount,
-               payment_intent_id,
-               customer_id,
-               saved_payment_method_id,
-               service_date,
-               service_datetime
-          FROM orders
-         WHERE id = $1
-      `,
-      [orderId]
-    );
-    const orderRow = orderResult.rows[0];
-    if (!orderRow) {
-      return res.status(404).json({ error: 'order_not_found' });
-    }
-
-    let cardSnapshot = cardPayload;
-
-    if (paymentMethodId) {
-      try {
-        const pm = await stripe.paymentMethods.retrieve(paymentMethodId);
-        if (!pm || pm.type !== 'card') {
-          return res.status(400).json({ error: 'invalid_payment_method' });
-        }
-        cardSnapshot = {
-          brand: pm.card?.brand,
-          funding: pm.card?.funding,
-          country: pm.card?.country,
-        };
-      } catch (err) {
-        console.error('reprice retrieve payment method error:', err?.message || err);
-        return res.status(400).json({ error: 'payment_method_lookup_failed' });
-      }
-    }
-
-    if (!preview && !paymentMethodId && !orderRow.saved_payment_method_id) {
-      return res.status(400).json({ error: 'payment_method_required_for_commit' });
-    }
-
-    const { pricing, rule, updatedClientSecret } = await recomputeOrderPricing(
-      orderRow,
-      cardSnapshot,
-      {
-        commit: !preview,
-        updatePaymentIntent: !preview,
-      }
-    );
-
-    return res.json({
-      preview: !!preview,
-      ...buildPricingResponse(orderRow, rule, pricing, updatedClientSecret),
-    });
-  } catch (err) {
-    console.error('reprice order error:', err?.message || err);
-    res.status(500).json({ error: 'reprice_failed' });
-  }
+  res.send({ pk: process.env.STRIPE_PUBLISHABLE_KEY || '' });
 });
 
 
@@ -669,7 +470,7 @@ app.get('/order/:orderId', async (req, res) => {
     const { rows } = await pool.query(`
       SELECT id, payment_intent_id, amount, provider_amount, booking_fee_amount, processing_fee_amount,
         vat_amount, pricing_total_amount, vat_rate, stripe_percent_fee, stripe_fixed_fee,
-        stripe_fee_tax_rate, urgency_multiplier, alpha_value, processing_fee_rule,
+        stripe_fee_tax_rate, urgency_multiplier, alpha_value,
         client_name, client_phone, client_email,
         service_description, service_date, service_datetime, service_address, status, created_at,
         public_code, kind, parent_id, customer_id
@@ -828,17 +629,19 @@ app.get('/order/:orderId', async (req, res) => {
     // saved-card summary (unchanged)
     let saved_card = null;
     if (row.customer_id) {
-      const pm = await getPrimaryCardPaymentMethod(row.customer_id);
-      if (pm) {
+      const pmList = await stripe.paymentMethods.list({
+        customer: row.customer_id,
+        type: 'card',
+        limit: 1
+      });
+      if (pmList.data.length) {
+        const pm = pmList.data[0];
         saved_card = {
           id: pm.id,
           brand: pm.card?.brand || '',
           last4: pm.card?.last4 || '',
           exp_month: pm.card?.exp_month || null,
-          exp_year: pm.card?.exp_year || null,
-          country: pm.card?.country || '',
-          funding: pm.card?.funding || '',
-          wallet: pm.card?.wallet?.type || '',
+          exp_year: pm.card?.exp_year || null
         };
       }
     }
@@ -1742,34 +1545,18 @@ app.post('/confirm-with-saved', async (req, res) => {
     const row = rows[0];
     if (!row) return res.status(404).send({ error: 'order not found' });
 
-    const savedPaymentMethod = await getPrimaryCardPaymentMethod(row.customer_id);
-    if (!savedPaymentMethod) {
-      return res.status(409).send({ error: 'no_saved_card' });
-    }
-
-    if (!row.saved_payment_method_id) {
-      await pool.query('UPDATE orders SET saved_payment_method_id=$1 WHERE id=$2', [
-        savedPaymentMethod.id,
-        row.id,
-      ]);
-      row.saved_payment_method_id = savedPaymentMethod.id;
-    }
-
-    const existingPiId = row.payment_intent_id || null;
-    const existingIsSetup =
-      existingPiId && String(existingPiId).startsWith('seti_');
-    const { pricing: pricingSnapshot } = await recomputeOrderPricing(
-      row,
-      savedPaymentMethod.card || {},
-      {
-        commit: true,
-        updatePaymentIntent: !!existingPiId && !existingIsSetup,
-      }
-    );
-    row.amount = pricingSnapshot.totalAmountCents;
-
     const hoursAhead = hoursUntilService(row);
     if (hoursAhead > 12 && !force) {
+      let savedPmId = row.saved_payment_method_id || null;
+      if (!savedPmId && row.customer_id) {
+        const list = await stripe.paymentMethods.list({
+          customer: row.customer_id,
+          type: 'card',
+          limit: 1
+        });
+        savedPmId = list.data[0]?.id || null;
+      }
+
       const statusLabel = 'Scheduled';
       await pool.query(
         `
@@ -1779,7 +1566,7 @@ app.post('/confirm-with-saved', async (req, res) => {
            WHERE id = $3
              AND (status IS NULL OR status NOT IN ('Confirmed','Captured'))
         `,
-        [statusLabel, savedPaymentMethod.id, row.id]
+        [statusLabel, savedPmId, row.id]
       );
 
       if (GOOGLE_SCRIPT_WEBHOOK_URL) {
@@ -1833,8 +1620,13 @@ app.post('/confirm-with-saved', async (req, res) => {
       piId = pi.id;
     }
 
+    // Pick a saved card
+    const pmList = await stripe.paymentMethods.list({ customer: row.customer_id, type: 'card' });
+    const pm = pmList.data[0];
+    if (!pm) return res.status(409).send({ error: 'no_saved_card' });
+
     // Attach and confirm (off-session if possible)
-    await stripe.paymentIntents.update(piId, { payment_method: savedPaymentMethod.id });
+    await stripe.paymentIntents.update(piId, { payment_method: pm.id });
     try {
       const confirmed = await stripe.paymentIntents.confirm(piId, { off_session: true });
       if (confirmed.status === 'requires_action') {
