@@ -23,7 +23,6 @@ function roundToNearestFive(value) {
 
 export function computePricing({
   providerPricePesos,
-  leadTimeHours = Infinity,
   alphaMax = DEFAULTS.alphaMax,
   alphaMin = DEFAULTS.alphaMin,
   alphaP0 = DEFAULTS.alphaP0,
@@ -39,13 +38,7 @@ export function computePricing({
     throw new Error('Provider price must be a positive number');
   }
 
-  const hoursAhead = Number.isFinite(leadTimeHours) ? leadTimeHours : Infinity;
-  let urgencyMultiplier = 1;
-  if (hoursAhead < 12) {
-    urgencyMultiplier = 1.15;
-  } else if (hoursAhead <= 24 * 5) {
-    urgencyMultiplier = 1.05;
-  }
+  const urgencyMultiplier = 1;
 
   const alphaNumerator = alphaMax - alphaMin;
   const alphaDenominator = 1 + Math.pow(P / alphaP0, alphaGamma);

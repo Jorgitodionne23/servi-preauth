@@ -203,21 +203,13 @@
     <div class="container">
       <h2>Revisa y confirma tu reserva</h2>
 
-      <div class="summary-box">
-        <h3>Detalles de tu reserva</h3>
-        <p id="service-summary">Cargando…</p>
-        <div class="summary-row" id="service-price-row" style="display:none;">
-          <span>Precio del servicio</span>
-          <span id="service-price">—</span>
-        </div>
-        <div class="summary-row" id="processing-fee-row" style="display:none;">
-          <span>Comisión por procesamiento</span>
-          <span id="processing-fee">—</span>
-        </div>
-        <div class="summary-row total" id="total-row" style="display:none;">
-          <span>Total a pagar</span>
-          <span id="summary-total">—</span>
-        </div>
+    <div class="summary-box">
+      <h3>Detalles de tu reserva</h3>
+      <p id="service-summary">Cargando…</p>
+      <div class="summary-row total" id="total-row" style="display:none;">
+        <span>Total a pagar</span>
+        <span id="summary-total">—</span>
+      </div>
         <div class="summary-note" id="summary-note" style="display:none;">*IVA incluido</div>
       </div>
 
@@ -290,37 +282,13 @@
     $('#service-summary').textContent = `Reserva de ${servicio} el ${fechaTexto}.`;
 
     const summaryBox = document.querySelector('.summary-box');
-    const serviceRow = document.getElementById('service-price-row');
-    const servicePriceEl = document.getElementById('service-price');
-    const processingRow = document.getElementById('processing-fee-row');
-    const processingEl = document.getElementById('processing-fee');
     const totalRow = document.getElementById('total-row');
     const totalEl = document.getElementById('summary-total');
     const noteEl = document.getElementById('summary-note');
 
-    const providerCents = toCents(order.provider_amount ?? order.pricing?.provider_amount);
-    const bookingCents = toCents(order.booking_fee_amount ?? order.pricing?.booking_fee_amount);
-    const baseServiceCents = providerCents + bookingCents;
-    const processingCents = toCents(order.processing_fee_amount ?? order.pricing?.processing_fee_amount);
     const totalCents = toCents(order.amount ?? order.pricing?.total_amount);
     const vatCents = toCents(order.vat_amount ?? order.pricing?.vat_amount);
     const totalFormatted = formatMoneyFromCents(totalCents);
-
-    const serviceWithVatCents = baseServiceCents + vatCents;
-
-    if (serviceWithVatCents > 0) {
-      servicePriceEl.textContent = formatMoneyFromCents(serviceWithVatCents);
-      serviceRow.style.display = 'flex';
-    } else {
-      serviceRow.style.display = 'none';
-    }
-
-    if (processingCents > 0) {
-      processingEl.textContent = formatMoneyFromCents(processingCents);
-      processingRow.style.display = 'flex';
-    } else {
-      processingRow.style.display = 'none';
-    }
 
     if (totalCents > 0) {
       totalEl.textContent = totalFormatted;
@@ -370,16 +338,29 @@
       const cap = fecha.charAt(0).toUpperCase() + fecha.slice(1);
 
       // Show time only when we actually have a timestamp (service_datetime)
-      if (!dateTime) return cap;
+    if (!dateTime) return cap;
 
-      const hora = d.toLocaleTimeString("es-MX", {
-        hour: "numeric",
-        minute: "2-digit",
-        hour12: true
+    const hora = d.toLocaleTimeString("es-MX", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true
+    });
+
+    return `${cap}, a las ${hora}`;
+  }
+
+  async function syncProcessingFee(orderId, paymentIntentId) {
+    if (!orderId || !paymentIntentId) return;
+    try {
+      await fetch(`/orders/${encodeURIComponent(orderId)}/refresh-fees`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paymentIntentId })
       });
-
-      return `${cap}, a las ${hora}`;
+    } catch (err) {
+      console.warn('No se pudo actualizar la comisión real de Stripe:', err);
     }
+  }
 
 
     // Record consent (audit trail) — harmless if already recorded
@@ -408,46 +389,52 @@
 
       btnBook.disabled = true;
       btnManage.disabled = true;
-      $('#spinner').style.display = 'block';
+    $('#spinner').style.display = 'block';
 
-      await recordConsent();
+    await recordConsent();
 
-      const r = await fetch('/confirm-with-saved', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId })
-      });
+    const r = await fetch('/confirm-with-saved', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orderId })
+    });
 
-      // ✅ Success (off-session authorized/captured)
-      if (r.status === 200) {
-        location.href = `/success?orderId=${encodeURIComponent(orderId)}`;
-        return;
+    const payload = await r.json().catch(() => ({}));
+
+    // ✅ Success (off-session authorized/captured)
+    if (r.status === 200) {
+      if (payload?.paymentIntentId) {
+        await syncProcessingFee(orderId, payload.paymentIntentId);
       }
+      location.href = `/success?orderId=${encodeURIComponent(orderId)}`;
+      return;
+    }
 
-      if (r.status === 409) {
-        const out = await r.json().catch(() => ({}));
-        alert(out.message || 'Tu servicio quedó programado. Realizaremos la preautorización 12 horas antes de la fecha.');
-        location.href = `/success?orderId=${encodeURIComponent(orderId)}`;
-        return;
-      }
+    if (r.status === 409) {
+      alert(payload?.message || 'Tu servicio quedó programado. Realizaremos la preautorización 12 horas antes de la fecha.');
+      location.href = `/success?orderId=${encodeURIComponent(orderId)}`;
+      return;
+    }
 
-      // 3DS required → confirm in browser
-      const out = await r.json().catch(() => ({}));
-      if (r.status === 402 && out?.clientSecret) {
-        const result = await stripe.confirmCardPayment(out.clientSecret);
-        if (result.error) {
-          alert(result.error.message || 'Error de autenticación');
-          $('#spinner').style.display = 'none';
-          btnBook.disabled = false;
-          btnManage.disabled = false;
-        } else {
-          location.href = `/success?orderId=${encodeURIComponent(orderId)}`;
+    // 3DS required → confirm in browser
+    if (r.status === 402 && payload?.clientSecret) {
+      const result = await stripe.confirmCardPayment(payload.clientSecret);
+      if (result.error) {
+        alert(result.error.message || 'Error de autenticación');
+        $('#spinner').style.display = 'none';
+        btnBook.disabled = false;
+        btnManage.disabled = false;
+      } else {
+        if (result.paymentIntent?.id) {
+          await syncProcessingFee(orderId, result.paymentIntent.id);
         }
-        return;
+        location.href = `/success?orderId=${encodeURIComponent(orderId)}`;
       }
+      return;
+    }
 
-      // Other errors
-      alert(out?.error || 'No se pudo confirmar el pago.');
+    // Other errors
+    alert(payload?.error || 'No se pudo confirmar el pago.');
       $('#spinner').style.display = 'none';
       btnBook.disabled = false;
       btnManage.disabled = false;

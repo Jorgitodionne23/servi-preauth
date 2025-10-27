@@ -173,6 +173,44 @@ function requireAdminAuth(req, res, next) {
   return next();
 }
 
+function firstChargeFromPaymentIntent(pi) {
+  if (!pi) return null;
+  if (pi.latest_charge && typeof pi.latest_charge === 'object') {
+    return pi.latest_charge;
+  }
+  const list = pi.charges?.data;
+  return Array.isArray(list) && list.length ? list[0] : null;
+}
+
+function computeProcessingFeeCents({ totalCents, percent, fixedFeePesos, feeVatRate }) {
+  const amountPesos = totalCents / 100;
+  const feeBeforeVat = percent * amountPesos + fixedFeePesos;
+  const feeWithVat = feeBeforeVat * (1 + feeVatRate);
+  return Math.max(0, Math.round(feeWithVat * 100));
+}
+
+function rebalanceBookingAndVat({ totalCents, providerCents, processingCents, vatRate }) {
+  let bookingCents = Math.max(
+    0,
+    totalCents - providerCents - processingCents - Math.round(vatRate * (providerCents + processingCents))
+  );
+
+  for (let i = 0; i < 6; i++) {
+    const baseCents = providerCents + bookingCents;
+    const vatCents = Math.round(vatRate * (baseCents + processingCents));
+    const totalCheck = baseCents + processingCents + vatCents;
+    const diff = totalCents - totalCheck;
+    if (diff === 0) {
+      return { bookingCents, vatCents };
+    }
+    bookingCents = Math.max(0, bookingCents + diff);
+  }
+
+  const baseCents = providerCents + bookingCents;
+  const vatCents = Math.round(vatRate * (baseCents + processingCents));
+  return { bookingCents, vatCents };
+}
+
 // 📦 General middleware
 // Parse JSON for everything EXCEPT /webhook (Stripe needs raw body there)
 app.use((req, res, next) => {
@@ -682,6 +720,122 @@ app.get('/order/:orderId', async (req, res) => {
   } catch (err) {
     console.error('Error retrieving order:', err);
     res.status(500).send({ error: 'Internal server error' });
+  }
+});
+
+app.post('/orders/:orderId/refresh-fees', async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const { paymentIntentId } = req.body || {};
+    if (!paymentIntentId) {
+      return res.status(400).json({ error: 'payment_intent_required' });
+    }
+
+    const { rows } = await pool.query(
+      `SELECT id,
+              amount,
+              provider_amount,
+              booking_fee_amount,
+              processing_fee_amount,
+              vat_amount,
+              vat_rate,
+              stripe_percent_fee,
+              stripe_fixed_fee,
+              stripe_fee_tax_rate,
+              payment_intent_id
+         FROM orders
+        WHERE id = $1`,
+      [orderId]
+    );
+    const order = rows[0];
+    if (!order) {
+      return res.status(404).json({ error: 'order_not_found' });
+    }
+
+    if (order.payment_intent_id && order.payment_intent_id !== paymentIntentId) {
+      return res.status(409).json({ error: 'mismatched_payment_intent' });
+    }
+
+    const pi = await stripe.paymentIntents.retrieve(paymentIntentId, {
+      expand: ['latest_charge', 'charges.data.payment_method_details']
+    });
+
+    const charge = firstChargeFromPaymentIntent(pi);
+    const cardCountry = (charge?.payment_method_details?.card?.country || '').toUpperCase();
+    const currency = (charge?.currency || pi.currency || 'mxn').toLowerCase();
+
+    let percent = 0.036; // base domestic rate
+    if (cardCountry && cardCountry !== 'MX') {
+      percent += 0.005;
+    }
+    if (currency && currency !== 'mxn') {
+      percent += 0.02;
+    }
+
+    const feeVatRateRaw = Number(order.stripe_fee_tax_rate);
+    const feeVatRate = Number.isFinite(feeVatRateRaw) ? feeVatRateRaw : 0.16;
+    const fixedFeeRaw = Number(order.stripe_fixed_fee);
+    const fixedFeePesos = Number.isFinite(fixedFeeRaw) ? fixedFeeRaw / 100 : 3;
+
+    const totalCents = Number(order.amount ?? order.pricing_total_amount ?? 0);
+    const providerCents = Number(order.provider_amount ?? 0);
+    const vatRateRaw = Number(order.vat_rate);
+    const vatRate = Number.isFinite(vatRateRaw) ? vatRateRaw : 0.16;
+
+    if (!(totalCents > 0)) {
+      return res.status(400).json({ error: 'total_missing' });
+    }
+
+    const processingCents = computeProcessingFeeCents({
+      totalCents,
+      percent,
+      fixedFeePesos,
+      feeVatRate
+    });
+
+    const { bookingCents, vatCents } = rebalanceBookingAndVat({
+      totalCents,
+      providerCents,
+      processingCents,
+      vatRate
+    });
+
+    const baseCheck = providerCents + bookingCents;
+    const totalCheck = baseCheck + processingCents + vatCents;
+    if (totalCheck !== totalCents) {
+      console.warn('Fee refresh rounding mismatch', { orderId, totalCents, totalCheck });
+    }
+
+    await pool.query(
+      `UPDATE orders
+          SET processing_fee_amount = $1,
+              booking_fee_amount    = $2,
+              vat_amount            = $3,
+              stripe_percent_fee    = $4,
+              stripe_fixed_fee      = $5,
+              stripe_fee_tax_rate   = $6
+        WHERE id = $7`,
+      [
+        processingCents,
+        bookingCents,
+        vatCents,
+        percent,
+        Math.round(fixedFeePesos * 100),
+        feeVatRate,
+        orderId
+      ]
+    );
+
+    return res.json({
+      ok: true,
+      processing_fee_amount: processingCents,
+      booking_fee_amount: bookingCents,
+      vat_amount: vatCents,
+      stripe_percent_fee: percent
+    });
+  } catch (err) {
+    console.error('refresh-fees error:', err);
+    return res.status(500).json({ error: 'fee_refresh_failed' });
   }
 });
 

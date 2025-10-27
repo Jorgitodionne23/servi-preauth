@@ -270,14 +270,6 @@
       <div class="summary-box">
         <h3>Detalles de tu reserva</h3>
         <p id="service-summary">Cargando…</p>
-        <div class="summary-row" id="service-price-row" style="display:none;">
-          <span>Precio del servicio</span>
-          <span id="service-price">—</span>
-        </div>
-        <div class="summary-row" id="processing-fee-row" style="display:none;">
-          <span>Comisión por procesamiento</span>
-          <span id="processing-fee">—</span>
-        </div>
         <div class="summary-row total" id="total-row" style="display:none;">
           <span>Total a pagar</span>
           <span id="summary-total">—</span>
@@ -443,6 +435,19 @@
       return `${cap}, a las ${hora}`;
     }
 
+    async function syncProcessingFee(orderId, paymentIntentId) {
+      if (!orderId || !paymentIntentId) return;
+      try {
+        await fetch(`/orders/${encodeURIComponent(orderId)}/refresh-fees`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ paymentIntentId })
+        });
+      } catch (err) {
+        console.warn('No se pudo actualizar la comisión real de Stripe:', err);
+      }
+    }
+
     // Init: fill summary + mount appropriate payment UI
     (async () => {
       await stripeReady;
@@ -456,35 +461,12 @@
         `Reserva de ${servicio} el ${fechaTexto}.`;
 
       const summaryBox = document.querySelector(".summary-box");
-      const serviceRow = document.getElementById("service-price-row");
-      const servicePriceEl = document.getElementById("service-price");
-      const processingRow = document.getElementById("processing-fee-row");
-      const processingEl = document.getElementById("processing-fee");
       const totalRow = document.getElementById("total-row");
       const totalEl = document.getElementById("summary-total");
       const noteEl = document.getElementById("summary-note");
 
-      const providerCents = toCents(order.provider_amount ?? order.pricing?.provider_amount);
-      const bookingCents = toCents(order.booking_fee_amount ?? order.pricing?.booking_fee_amount);
-      const baseServiceCents = providerCents + bookingCents;
-      const processingCents = toCents(order.processing_fee_amount ?? order.pricing?.processing_fee_amount);
       const totalCents = toCents(order.amount ?? order.pricing?.total_amount);
       const vatCents = toCents(order.vat_amount ?? order.pricing?.vat_amount);
-      const serviceWithVatCents = baseServiceCents + vatCents;
-
-      if (serviceWithVatCents > 0) {
-        servicePriceEl.textContent = formatMoneyFromCents(serviceWithVatCents);
-        serviceRow.style.display = 'flex';
-      } else {
-        serviceRow.style.display = 'none';
-      }
-
-      if (processingCents > 0) {
-        processingEl.textContent = formatMoneyFromCents(processingCents);
-        processingRow.style.display = 'flex';
-      } else {
-        processingRow.style.display = 'none';
-      }
 
       if (totalCents > 0) {
         totalEl.textContent = formatMoneyFromCents(totalCents);
@@ -573,6 +555,10 @@
             ev.complete("success");
             const second = await (window.stripe).confirmCardPayment(clientSecret);
             if (second.error) { alert("Error al confirmar: " + second.error.message); return; }
+            const piId = second.paymentIntent?.id;
+            if (piId) {
+              await syncProcessingFee(order.id, piId);
+            }
             localStorage.setItem('orderId', String(order.id));
             window.location.href = `/success?orderId=${encodeURIComponent(order.id)}`;
           });
@@ -701,6 +687,9 @@
           }
           
           if (result.paymentIntent.status === "succeeded" || result.paymentIntent.status === "requires_capture") {
+            if (result.paymentIntent.id) {
+              await syncProcessingFee(order.id, result.paymentIntent.id);
+            }
             localStorage.setItem('orderId', String(order.id));
             window.location.href = `/success?orderId=${encodeURIComponent(order.id)}`;
             return;
