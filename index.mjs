@@ -211,6 +211,124 @@ function rebalanceBookingAndVat({ totalCents, providerCents, processingCents, va
   return { bookingCents, vatCents };
 }
 
+function makeError(code, message, status) {
+  const err = new Error(message || code);
+  err.code = code;
+  if (status) err.status = status;
+  return err;
+}
+
+async function refreshOrderFees(orderId, paymentIntentId) {
+  if (!orderId) throw makeError('order_required', 'order id required', 400);
+  if (!paymentIntentId) throw makeError('payment_intent_required', 'payment intent id required', 400);
+
+  const { rows } = await pool.query(
+    `SELECT id,
+            amount,
+            provider_amount,
+            booking_fee_amount,
+            processing_fee_amount,
+            vat_amount,
+            vat_rate,
+            stripe_percent_fee,
+            stripe_fixed_fee,
+            stripe_fee_tax_rate,
+            payment_intent_id
+       FROM orders
+      WHERE id = $1`,
+    [orderId]
+  );
+  const order = rows[0];
+  if (!order) {
+    throw makeError('order_not_found', 'order not found', 404);
+  }
+
+  if (order.payment_intent_id && order.payment_intent_id !== paymentIntentId) {
+    throw makeError('mismatched_payment_intent', 'payment intent does not match order', 409);
+  }
+
+  const pi = await stripe.paymentIntents.retrieve(paymentIntentId, {
+    expand: ['latest_charge', 'charges.data.payment_method_details']
+  });
+
+  const charge = firstChargeFromPaymentIntent(pi);
+  const cardCountry = (charge?.payment_method_details?.card?.country || '').toUpperCase();
+  const currency = (charge?.currency || pi.currency || 'mxn').toLowerCase();
+
+  let percent = 0.036; // base domestic rate
+  if (cardCountry && cardCountry !== 'MX') {
+    percent += 0.005;
+  }
+  if (currency && currency !== 'mxn') {
+    percent += 0.02;
+  }
+
+  const feeVatRateRaw = Number(order.stripe_fee_tax_rate);
+  const feeVatRate = Number.isFinite(feeVatRateRaw) ? feeVatRateRaw : 0.16;
+  const fixedFeeRaw = Number(order.stripe_fixed_fee);
+  const fixedFeePesos = Number.isFinite(fixedFeeRaw) ? fixedFeeRaw / 100 : 3;
+
+  const totalCents = Number(order.amount ?? order.pricing_total_amount ?? 0);
+  const providerCents = Number(order.provider_amount ?? 0);
+  const vatRateRaw = Number(order.vat_rate);
+  const vatRate = Number.isFinite(vatRateRaw) ? vatRateRaw : 0.16;
+
+  if (!(totalCents > 0)) {
+    throw makeError('total_missing', 'order total is missing', 400);
+  }
+
+  const processingCents = computeProcessingFeeCents({
+    totalCents,
+    percent,
+    fixedFeePesos,
+    feeVatRate
+  });
+
+  const { bookingCents, vatCents } = rebalanceBookingAndVat({
+    totalCents,
+    providerCents,
+    processingCents,
+    vatRate
+  });
+
+  const baseCheck = providerCents + bookingCents;
+  const totalCheck = baseCheck + processingCents + vatCents;
+  if (totalCheck !== totalCents) {
+    console.warn('Fee refresh rounding mismatch', { orderId, totalCents, totalCheck });
+  }
+
+  await pool.query(
+    `UPDATE orders
+        SET processing_fee_amount = $1,
+            booking_fee_amount    = $2,
+            vat_amount            = $3,
+            stripe_percent_fee    = $4,
+            stripe_fixed_fee      = $5,
+            stripe_fee_tax_rate   = $6
+      WHERE id = $7`,
+    [
+      processingCents,
+      bookingCents,
+      vatCents,
+      percent,
+      Math.round(fixedFeePesos * 100),
+      feeVatRate,
+      orderId
+    ]
+  );
+
+  return {
+    processing_fee_amount: processingCents,
+    booking_fee_amount: bookingCents,
+    vat_amount: vatCents,
+    stripe_percent_fee: percent,
+    stripe_fixed_fee: Math.round(fixedFeePesos * 100),
+    stripe_fee_tax_rate: feeVatRate,
+    card_country: cardCountry || null,
+    currency
+  };
+}
+
 // 📦 General middleware
 // Parse JSON for everything EXCEPT /webhook (Stripe needs raw body there)
 app.use((req, res, next) => {
@@ -727,115 +845,22 @@ app.post('/orders/:orderId/refresh-fees', async (req, res) => {
   try {
     const { orderId } = req.params;
     const { paymentIntentId } = req.body || {};
-    if (!paymentIntentId) {
-      return res.status(400).json({ error: 'payment_intent_required' });
-    }
-
-    const { rows } = await pool.query(
-      `SELECT id,
-              amount,
-              provider_amount,
-              booking_fee_amount,
-              processing_fee_amount,
-              vat_amount,
-              vat_rate,
-              stripe_percent_fee,
-              stripe_fixed_fee,
-              stripe_fee_tax_rate,
-              payment_intent_id
-         FROM orders
-        WHERE id = $1`,
-      [orderId]
-    );
-    const order = rows[0];
-    if (!order) {
-      return res.status(404).json({ error: 'order_not_found' });
-    }
-
-    if (order.payment_intent_id && order.payment_intent_id !== paymentIntentId) {
-      return res.status(409).json({ error: 'mismatched_payment_intent' });
-    }
-
-    const pi = await stripe.paymentIntents.retrieve(paymentIntentId, {
-      expand: ['latest_charge', 'charges.data.payment_method_details']
-    });
-
-    const charge = firstChargeFromPaymentIntent(pi);
-    const cardCountry = (charge?.payment_method_details?.card?.country || '').toUpperCase();
-    const currency = (charge?.currency || pi.currency || 'mxn').toLowerCase();
-
-    let percent = 0.036; // base domestic rate
-    if (cardCountry && cardCountry !== 'MX') {
-      percent += 0.005;
-    }
-    if (currency && currency !== 'mxn') {
-      percent += 0.02;
-    }
-
-    const feeVatRateRaw = Number(order.stripe_fee_tax_rate);
-    const feeVatRate = Number.isFinite(feeVatRateRaw) ? feeVatRateRaw : 0.16;
-    const fixedFeeRaw = Number(order.stripe_fixed_fee);
-    const fixedFeePesos = Number.isFinite(fixedFeeRaw) ? fixedFeeRaw / 100 : 3;
-
-    const totalCents = Number(order.amount ?? order.pricing_total_amount ?? 0);
-    const providerCents = Number(order.provider_amount ?? 0);
-    const vatRateRaw = Number(order.vat_rate);
-    const vatRate = Number.isFinite(vatRateRaw) ? vatRateRaw : 0.16;
-
-    if (!(totalCents > 0)) {
-      return res.status(400).json({ error: 'total_missing' });
-    }
-
-    const processingCents = computeProcessingFeeCents({
-      totalCents,
-      percent,
-      fixedFeePesos,
-      feeVatRate
-    });
-
-    const { bookingCents, vatCents } = rebalanceBookingAndVat({
-      totalCents,
-      providerCents,
-      processingCents,
-      vatRate
-    });
-
-    const baseCheck = providerCents + bookingCents;
-    const totalCheck = baseCheck + processingCents + vatCents;
-    if (totalCheck !== totalCents) {
-      console.warn('Fee refresh rounding mismatch', { orderId, totalCents, totalCheck });
-    }
-
-    await pool.query(
-      `UPDATE orders
-          SET processing_fee_amount = $1,
-              booking_fee_amount    = $2,
-              vat_amount            = $3,
-              stripe_percent_fee    = $4,
-              stripe_fixed_fee      = $5,
-              stripe_fee_tax_rate   = $6
-        WHERE id = $7`,
-      [
-        processingCents,
-        bookingCents,
-        vatCents,
-        percent,
-        Math.round(fixedFeePesos * 100),
-        feeVatRate,
-        orderId
-      ]
-    );
-
-    return res.json({
-      ok: true,
-      processing_fee_amount: processingCents,
-      booking_fee_amount: bookingCents,
-      vat_amount: vatCents,
-      stripe_percent_fee: percent
-    });
+    const result = await refreshOrderFees(orderId, paymentIntentId);
+    return res.json({ ok: true, ...result });
   } catch (err) {
-    console.error('refresh-fees error:', err);
-    return res.status(500).json({ error: 'fee_refresh_failed' });
+    const status =
+      err.status ||
+      (err.code === 'order_not_found'
+        ? 404
+        : err.code === 'mismatched_payment_intent'
+          ? 409
+          : err.code === 'payment_intent_required' || err.code === 'order_required' || err.code === 'total_missing'
+            ? 400
+            : 500);
+    if (status >= 500) {
+      console.error('refresh-fees error:', err);
+    }
+    return res.status(status).json({ error: err.code || 'fee_refresh_failed', message: err.message });
   }
 });
 
@@ -1008,6 +1033,11 @@ app.post('/tasks/preauth-due', async (req, res) => {
           'UPDATE orders SET payment_intent_id=$1 WHERE id=$2',
           [pi.id, row.id]
         );
+        try {
+          await refreshOrderFees(row.id, pi.id);
+        } catch (feeErr) {
+          console.warn('[preauth-due] fee refresh failed', feeErr?.message || feeErr);
+        }
 
         results.push({ orderId: row.id, pi: pi.id, status: pi.status });
       } catch (e) {
@@ -1791,6 +1821,11 @@ app.post('/confirm-with-saved', async (req, res) => {
           clientSecret: confirmed.client_secret,
           paymentIntentId: confirmed.id
         });
+      }
+      try {
+        await refreshOrderFees(row.id, confirmed.id);
+      } catch (feeErr) {
+        console.warn('confirm-with-saved fee refresh failed', feeErr?.message || feeErr);
       }
       return res.send({ ok: true, status: confirmed.status, paymentIntentId: confirmed.id });
     } catch (e) {
