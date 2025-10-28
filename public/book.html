@@ -349,13 +349,16 @@
     return `${cap}, a las ${hora}`;
   }
 
-  async function syncProcessingFee(orderId, paymentIntentId) {
-    if (!orderId || !paymentIntentId) return;
+  async function syncProcessingFee(orderId, paymentIntentId, paymentMethodId) {
+    if (!orderId || (!paymentIntentId && !paymentMethodId)) return;
     try {
+      const payload = {};
+      if (paymentIntentId) payload.paymentIntentId = paymentIntentId;
+      if (paymentMethodId) payload.paymentMethodId = paymentMethodId;
       await fetch(`/orders/${encodeURIComponent(orderId)}/refresh-fees`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ paymentIntentId })
+        body: JSON.stringify(payload)
       });
     } catch (err) {
       console.warn('No se pudo actualizar la comisión real de Stripe:', err);
@@ -403,14 +406,17 @@
 
     // ✅ Success (off-session authorized/captured)
     if (r.status === 200) {
-      if (payload?.paymentIntentId) {
-        await syncProcessingFee(orderId, payload.paymentIntentId);
+      if (payload?.paymentIntentId || payload?.paymentMethodId) {
+        await syncProcessingFee(orderId, payload?.paymentIntentId || null, payload?.paymentMethodId || null);
       }
       location.href = `/success?orderId=${encodeURIComponent(orderId)}`;
       return;
     }
 
     if (r.status === 409) {
+      if (payload?.paymentMethodId || payload?.paymentIntentId) {
+        await syncProcessingFee(orderId, payload?.paymentIntentId || null, payload?.paymentMethodId || null);
+      }
       alert(payload?.message || 'Tu servicio quedó programado. Realizaremos la preautorización 12 horas antes de la fecha.');
       location.href = `/success?orderId=${encodeURIComponent(orderId)}`;
       return;
@@ -425,8 +431,10 @@
         btnBook.disabled = false;
         btnManage.disabled = false;
       } else {
-        if (result.paymentIntent?.id) {
-          await syncProcessingFee(orderId, result.paymentIntent.id);
+        const piId = result.paymentIntent?.id || null;
+        const pmId = payload?.paymentMethodId || null;
+        if (piId || pmId) {
+          await syncProcessingFee(orderId, piId, pmId);
         }
         location.href = `/success?orderId=${encodeURIComponent(orderId)}`;
       }

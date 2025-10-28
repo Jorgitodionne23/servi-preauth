@@ -435,13 +435,16 @@
       return `${cap}, a las ${hora}`;
     }
 
-    async function syncProcessingFee(orderId, paymentIntentId) {
-      if (!orderId || !paymentIntentId) return;
+    async function syncProcessingFee(orderId, paymentIntentId, paymentMethodId) {
+      if (!orderId || (!paymentIntentId && !paymentMethodId)) return;
       try {
+        const payload = {};
+        if (paymentIntentId) payload.paymentIntentId = paymentIntentId;
+        if (paymentMethodId) payload.paymentMethodId = paymentMethodId;
         await fetch(`/orders/${encodeURIComponent(orderId)}/refresh-fees`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ paymentIntentId })
+          body: JSON.stringify(payload)
         });
       } catch (err) {
         console.warn('No se pudo actualizar la comisión real de Stripe:', err);
@@ -557,7 +560,7 @@
             if (second.error) { alert("Error al confirmar: " + second.error.message); return; }
             const piId = second.paymentIntent?.id;
             if (piId) {
-              await syncProcessingFee(order.id, piId);
+              await syncProcessingFee(order.id, piId, null);
             }
             localStorage.setItem('orderId', String(order.id));
             window.location.href = `/success?orderId=${encodeURIComponent(order.id)}`;
@@ -663,6 +666,9 @@
             return;
           }
 
+          if (result.setupIntent?.payment_method) {
+            await syncProcessingFee(order.id, null, result.setupIntent.payment_method);
+          }
           localStorage.setItem('orderId', String(order.id));
           window.location.href = `/success?orderId=${encodeURIComponent(order.id)}`;
           return;
@@ -688,7 +694,7 @@
           
           if (result.paymentIntent.status === "succeeded" || result.paymentIntent.status === "requires_capture") {
             if (result.paymentIntent.id) {
-              await syncProcessingFee(order.id, result.paymentIntent.id);
+              await syncProcessingFee(order.id, result.paymentIntent.id, null);
             }
             localStorage.setItem('orderId', String(order.id));
             window.location.href = `/success?orderId=${encodeURIComponent(order.id)}`;

@@ -218,9 +218,11 @@ function makeError(code, message, status) {
   return err;
 }
 
-async function refreshOrderFees(orderId, paymentIntentId) {
+async function refreshOrderFees(orderId, { paymentIntentId, paymentMethodId } = {}) {
   if (!orderId) throw makeError('order_required', 'order id required', 400);
-  if (!paymentIntentId) throw makeError('payment_intent_required', 'payment intent id required', 400);
+  if (!paymentIntentId && !paymentMethodId) {
+    throw makeError('payment_source_required', 'payment intent or payment method required', 400);
+  }
 
   const { rows } = await pool.query(
     `SELECT id,
@@ -243,17 +245,33 @@ async function refreshOrderFees(orderId, paymentIntentId) {
     throw makeError('order_not_found', 'order not found', 404);
   }
 
-  if (order.payment_intent_id && order.payment_intent_id !== paymentIntentId) {
+  if (paymentIntentId && order.payment_intent_id && order.payment_intent_id !== paymentIntentId) {
     throw makeError('mismatched_payment_intent', 'payment intent does not match order', 409);
   }
 
-  const pi = await stripe.paymentIntents.retrieve(paymentIntentId, {
-    expand: ['latest_charge', 'charges.data.payment_method_details']
-  });
+  let cardCountry = null;
+  let currency = 'mxn';
+  let pmId = paymentMethodId || null;
 
-  const charge = firstChargeFromPaymentIntent(pi);
-  const cardCountry = (charge?.payment_method_details?.card?.country || '').toUpperCase();
-  const currency = (charge?.currency || pi.currency || 'mxn').toLowerCase();
+  if (paymentIntentId) {
+    const pi = await stripe.paymentIntents.retrieve(paymentIntentId, {
+      expand: ['latest_charge', 'charges.data.payment_method_details']
+    });
+
+    const charge = firstChargeFromPaymentIntent(pi);
+    cardCountry = (charge?.payment_method_details?.card?.country || '').toUpperCase();
+    currency = (charge?.currency || pi.currency || currency).toLowerCase();
+    pmId = pmId || charge?.payment_method || pi.payment_method || null;
+  }
+
+  if (!cardCountry && pmId) {
+    try {
+      const pm = await stripe.paymentMethods.retrieve(pmId);
+      cardCountry = (pm?.card?.country || '').toUpperCase() || cardCountry;
+    } catch (err) {
+      console.warn('refreshOrderFees: could not retrieve payment method', pmId, err?.message || err);
+    }
+  }
 
   let percent = 0.036; // base domestic rate
   if (cardCountry && cardCountry !== 'MX') {
@@ -261,6 +279,19 @@ async function refreshOrderFees(orderId, paymentIntentId) {
   }
   if (currency && currency !== 'mxn') {
     percent += 0.02;
+  }
+
+  const isInternational = !!cardCountry && cardCountry !== 'MX';
+  const isConversion = currency && currency !== 'mxn';
+  let feeType = 'domestic';
+  if (isInternational && isConversion) {
+    feeType = 'international_conversion';
+  } else if (isInternational) {
+    feeType = 'international';
+  } else if (isConversion) {
+    feeType = 'conversion';
+  } else if (!cardCountry) {
+    feeType = 'domestic';
   }
 
   const feeVatRateRaw = Number(order.stripe_fee_tax_rate);
@@ -304,8 +335,9 @@ async function refreshOrderFees(orderId, paymentIntentId) {
             vat_amount            = $3,
             stripe_percent_fee    = $4,
             stripe_fixed_fee      = $5,
-            stripe_fee_tax_rate   = $6
-      WHERE id = $7`,
+            stripe_fee_tax_rate   = $6,
+            processing_fee_type   = $7
+      WHERE id = $8`,
     [
       processingCents,
       bookingCents,
@@ -313,6 +345,7 @@ async function refreshOrderFees(orderId, paymentIntentId) {
       percent,
       Math.round(fixedFeePesos * 100),
       feeVatRate,
+      feeType,
       orderId
     ]
   );
@@ -324,6 +357,8 @@ async function refreshOrderFees(orderId, paymentIntentId) {
     stripe_percent_fee: percent,
     stripe_fixed_fee: Math.round(fixedFeePesos * 100),
     stripe_fee_tax_rate: feeVatRate,
+    payment_method_id: pmId || null,
+    processing_fee_type: feeType,
     card_country: cardCountry || null,
     currency
   };
@@ -445,6 +480,7 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
         stripe_percent_fee,
         stripe_fixed_fee,
         stripe_fee_tax_rate,
+        processing_fee_type,
         urgency_multiplier,
         alpha_value
       )
@@ -452,7 +488,7 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
         $1,$2,$3,$4,$5,$6,$7,
         $8,$9,$10,$11,$12,$13,
         'pending',$14,'primary',$15,
-        $16,$17,$18,$19,$20,$21
+        $16,$17,$18,$19,$20,$21,$22
       )
       ON CONFLICT (id) DO NOTHING`,
       [
@@ -475,6 +511,7 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
         stripePercent,
         stripeFixedFeeCents,
         stripeFeeVatRate,
+        'standard',
         urgencyMultiplier,
         alphaValue
       ]
@@ -626,7 +663,7 @@ app.get('/order/:orderId', async (req, res) => {
     const { rows } = await pool.query(`
       SELECT id, payment_intent_id, amount, provider_amount, booking_fee_amount, processing_fee_amount,
         vat_amount, pricing_total_amount, vat_rate, stripe_percent_fee, stripe_fixed_fee,
-        stripe_fee_tax_rate, urgency_multiplier, alpha_value,
+        stripe_fee_tax_rate, processing_fee_type, urgency_multiplier, alpha_value,
         client_name, client_phone, client_email,
         service_description, service_date, service_datetime, service_address, status, created_at,
         public_code, kind, parent_id, customer_id
@@ -818,6 +855,7 @@ app.get('/order/:orderId', async (req, res) => {
       stripe_percent_fee: row.stripe_percent_fee ?? null,
       stripe_fixed_fee: row.stripe_fixed_fee ?? null,
       stripe_fee_tax_rate: row.stripe_fee_tax_rate ?? null,
+      processing_fee_type: row.processing_fee_type ?? null,
       urgency_multiplier: row.urgency_multiplier ?? null,
       alpha_value: row.alpha_value ?? null
     };
@@ -845,7 +883,8 @@ app.post('/orders/:orderId/refresh-fees', async (req, res) => {
   try {
     const { orderId } = req.params;
     const { paymentIntentId } = req.body || {};
-    const result = await refreshOrderFees(orderId, paymentIntentId);
+    const { paymentIntentId, paymentMethodId } = req.body || {};
+    const result = await refreshOrderFees(orderId, { paymentIntentId, paymentMethodId });
     return res.json({ ok: true, ...result });
   } catch (err) {
     const status =
@@ -854,7 +893,7 @@ app.post('/orders/:orderId/refresh-fees', async (req, res) => {
         ? 404
         : err.code === 'mismatched_payment_intent'
           ? 409
-          : err.code === 'payment_intent_required' || err.code === 'order_required' || err.code === 'total_missing'
+          : err.code === 'payment_intent_required' || err.code === 'payment_source_required' || err.code === 'order_required' || err.code === 'total_missing'
             ? 400
             : 500);
     if (status >= 500) {
@@ -1034,7 +1073,7 @@ app.post('/tasks/preauth-due', async (req, res) => {
           [pi.id, row.id]
         );
         try {
-          await refreshOrderFees(row.id, pi.id);
+          await refreshOrderFees(row.id, { paymentIntentId: pi.id });
         } catch (feeErr) {
           console.warn('[preauth-due] fee refresh failed', feeErr?.message || feeErr);
         }
@@ -1442,6 +1481,14 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
           [statusLabel, pmId, cust, orderId]
         );
 
+        if (pmId) {
+          try {
+            await refreshOrderFees(orderId, { paymentMethodId: pmId });
+          } catch (feeErr) {
+            console.warn('setup_intent fee refresh failed', feeErr?.message || feeErr);
+          }
+        }
+
         const consentRow = await pool.query(`
           SELECT order_id,
                  version,
@@ -1729,9 +1776,9 @@ app.post('/confirm-with-saved', async (req, res) => {
     const row = rows[0];
     if (!row) return res.status(404).send({ error: 'order not found' });
 
+    let savedPmId = row.saved_payment_method_id || null;
     const hoursAhead = hoursUntilService(row);
     if (hoursAhead > 12 && !force) {
-      let savedPmId = row.saved_payment_method_id || null;
       if (!savedPmId && row.customer_id) {
         const list = await stripe.paymentMethods.list({
           customer: row.customer_id,
@@ -1752,6 +1799,14 @@ app.post('/confirm-with-saved', async (req, res) => {
         `,
         [statusLabel, savedPmId, row.id]
       );
+
+      if (savedPmId) {
+        try {
+          await refreshOrderFees(row.id, { paymentMethodId: savedPmId });
+        } catch (feeErr) {
+          console.warn('confirm-with-saved (scheduled) fee refresh failed', feeErr?.message || feeErr);
+        }
+      }
 
       if (GOOGLE_SCRIPT_WEBHOOK_URL) {
         fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
@@ -1775,7 +1830,8 @@ app.post('/confirm-with-saved', async (req, res) => {
         error: 'preauth_window_closed',
         remaining_hours: Math.ceil(hoursAhead),
         preauth_window_opens_at: new Date(opensAtMs).toISOString(),
-        status: statusLabel
+        status: statusLabel,
+        paymentMethodId: savedPmId || null
       });
     }
 
@@ -1819,15 +1875,16 @@ app.post('/confirm-with-saved', async (req, res) => {
           ok: false,
           reason: 'requires_action',
           clientSecret: confirmed.client_secret,
-          paymentIntentId: confirmed.id
+          paymentIntentId: confirmed.id,
+          paymentMethodId: pm.id
         });
       }
       try {
-        await refreshOrderFees(row.id, confirmed.id);
+        await refreshOrderFees(row.id, { paymentIntentId: confirmed.id });
       } catch (feeErr) {
         console.warn('confirm-with-saved fee refresh failed', feeErr?.message || feeErr);
       }
-      return res.send({ ok: true, status: confirmed.status, paymentIntentId: confirmed.id });
+      return res.send({ ok: true, status: confirmed.status, paymentIntentId: confirmed.id, paymentMethodId: pm.id });
     } catch (e) {
       const pi = e?.raw?.payment_intent || e?.payment_intent;
       if (e?.code === 'authentication_required' && pi?.client_secret) {
@@ -1835,7 +1892,8 @@ app.post('/confirm-with-saved', async (req, res) => {
           ok: false,
           reason: 'requires_action',
           clientSecret: pi.client_secret,
-          paymentIntentId: pi.id
+          paymentIntentId: pi.id,
+          paymentMethodId: pm.id
         });
       }
       throw e;

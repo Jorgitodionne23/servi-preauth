@@ -50,6 +50,7 @@ export async function initDb() {
       stripe_percent_fee REAL,
       stripe_fixed_fee INTEGER,
       stripe_fee_tax_rate REAL,
+      processing_fee_type TEXT,
       urgency_multiplier REAL,
       alpha_value REAL
     );
@@ -73,8 +74,24 @@ export async function initDb() {
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS stripe_percent_fee REAL;
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS stripe_fixed_fee INTEGER;
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS stripe_fee_tax_rate REAL;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS processing_fee_type TEXT;
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS urgency_multiplier REAL;
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS alpha_value REAL;
+
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'orders'
+          AND column_name = 'processing_fee_rule'
+      ) THEN
+        ALTER TABLE orders
+          RENAME COLUMN processing_fee_rule TO processing_fee_type;
+      END IF;
+    EXCEPTION WHEN duplicate_column THEN
+      NULL;
+    END $$;
 
     CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);
     CREATE INDEX IF NOT EXISTS idx_orders_parent ON orders(parent_id);
