@@ -64,7 +64,7 @@ export function computePricing({
   const processingFeeCents = Math.ceil(processingFeePesosRaw * 100);
 
   const vatBaseCents = bookingFeeCents + processingFeeCents;
-  const vatCents = Math.round(vatRate * vatBaseCents);
+  const vatCents = Math.ceil(vatRate * vatBaseCents);
 
   const totalCents = providerCents + bookingFeeCents + processingFeeCents + vatCents;
 
