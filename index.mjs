@@ -882,7 +882,6 @@ app.get('/order/:orderId', async (req, res) => {
 app.post('/orders/:orderId/refresh-fees', async (req, res) => {
   try {
     const { orderId } = req.params;
-    const { paymentIntentId } = req.body || {};
     const { paymentIntentId, paymentMethodId } = req.body || {};
     const result = await refreshOrderFees(orderId, { paymentIntentId, paymentMethodId });
     return res.json({ ok: true, ...result });
