@@ -221,8 +221,8 @@
           processingRow.style.display = 'none';
         }
         vatNoteEl.style.display = vatCents > 0 ? 'block' : 'none';
-        if (summaryBox && vatNoteEl) {
-          summaryBox.appendChild(vatNoteEl);
+        if (summaryBox && vatNoteEl && servicePriceRow) {
+          summaryBox.insertBefore(vatNoteEl, servicePriceRow);
         }
         addressEl.textContent = order.service_address || '—';
         statusEl.textContent = order.status || '—';
