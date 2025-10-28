@@ -17,8 +17,8 @@ function toNumber(value, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
-function roundToNearestFive(value) {
-  return Math.round(value / 5) * 5;
+function roundUpToNearestFive(value) {
+  return Math.ceil(value / 5) * 5;
 }
 
 export function computePricing({
@@ -38,21 +38,18 @@ export function computePricing({
     throw new Error('Provider price must be a positive number');
   }
 
-  const urgencyMultiplier = 1;
-
   const alphaNumerator = alphaMax - alphaMin;
   const alphaDenominator = 1 + Math.pow(P / alphaP0, alphaGamma);
   const alphaValue = alphaMin + (alphaNumerator / alphaDenominator);
 
-  const rawBookingFee = (alphaValue * P + beta) * urgencyMultiplier;
+  const rawBookingFee = alphaValue * P + beta;
   const guardrailMax = Math.max(40, Math.min(399, 0.20 * P));
   const clampedBookingFee = Math.min(guardrailMax, Math.max(40, rawBookingFee));
-  const bookingFeePesos = roundToNearestFive(clampedBookingFee);
+  const bookingFeePesos = roundUpToNearestFive(clampedBookingFee);
   const bookingFeeCents = Math.round(bookingFeePesos * 100);
 
   const providerCents = Math.round(P * 100);
-  const baseCents = providerCents + bookingFeeCents;
-  const basePesos = baseCents / 100;
+  const bookingFeePesosValue = bookingFeeCents / 100;
 
   const pEff = stripePercent * (1 + stripeFeeVatRate);
   const fEff = stripeFixed * (1 + stripeFeeVatRate);
@@ -61,14 +58,15 @@ export function computePricing({
     throw new Error('Invalid Stripe fee configuration; denominator must be positive');
   }
 
-  const processingFeePesos = (pEff * (1 + vatRate) * basePesos + fEff) / grossUpDenominator;
-  const processingFeeCents = Math.round(processingFeePesos * 100);
+  const processingFeeNumerator =
+    pEff * P + pEff * (1 + vatRate) * bookingFeePesosValue + fEff;
+  const processingFeePesosRaw = processingFeeNumerator / grossUpDenominator;
+  const processingFeeCents = Math.ceil(processingFeePesosRaw * 100);
 
-  const vatBaseCents = baseCents + processingFeeCents;
-  const vatPesos = vatRate * (vatBaseCents / 100);
-  const vatCents = Math.round(vatPesos * 100);
+  const vatBaseCents = bookingFeeCents + processingFeeCents;
+  const vatCents = Math.round(vatRate * vatBaseCents);
 
-  const totalCents = baseCents + processingFeeCents + vatCents;
+  const totalCents = providerCents + bookingFeeCents + processingFeeCents + vatCents;
 
   return {
     providerAmountCents: providerCents,
@@ -78,10 +76,9 @@ export function computePricing({
     totalAmountCents: totalCents,
     components: {
       alphaValue,
-      urgencyMultiplier,
       vatRate,
       stripePercent,
-      stripeFixed: Math.round(stripeFixed * 100),
+      stripeFixed,
       stripeFeeVatRate
     }
   };
