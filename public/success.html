@@ -228,11 +228,16 @@
         if (isAdjustment) {
           titleEl.textContent = '¡Ajuste confirmado!';
           subtitleEl.textContent = 'Gracias, hemos recibido tu pago adicional.';
+          const reasonFromOrder = String(order.adjustment_reason || '').trim();
+          if (reasonFromOrder) {
+            reasonEl.textContent = reasonFromOrder;
+            reasonRow.style.display = 'flex';
+          }
 
           // Try to read reason from the PI description
           try {
             const cfg = await fetch('/config/stripe').then(r => r.json()).catch(() => ({}));
-            if (cfg && cfg.pk && order.client_secret) {
+            if (!reasonFromOrder && cfg && cfg.pk && order.client_secret) {
               const stripe = Stripe(cfg.pk);
               const { paymentIntent } = await stripe.retrievePaymentIntent(order.client_secret);
               const reason = extractReason(paymentIntent?.description);

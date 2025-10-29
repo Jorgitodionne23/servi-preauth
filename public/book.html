@@ -203,15 +203,19 @@
     <div class="container">
       <h2>Revisa y confirma tu reserva</h2>
 
-    <div class="summary-box">
-      <h3>Detalles de tu reserva</h3>
-      <p id="service-summary">Cargando…</p>
-      <div class="summary-row total" id="total-row" style="display:none;">
-        <span>Total a pagar</span>
-        <span id="summary-total">—</span>
-      </div>
-        <div class="summary-note" id="summary-note" style="display:none;">*IVA incluido</div>
-      </div>
+  <div class="summary-box">
+    <h3>Detalles de tu reserva</h3>
+    <p id="service-summary">Cargando…</p>
+    <div class="summary-row total" id="total-row" style="display:none;">
+      <span>Total a pagar</span>
+      <span id="summary-total">—</span>
+    </div>
+    <div class="summary-row" id="adjustment-reason-row" style="display:none;">
+      <span>Motivo del ajuste</span>
+      <span id="adjustment-reason">—</span>
+    </div>
+    <div class="summary-note" id="summary-note" style="display:none;">*IVA incluido</div>
+  </div>
 
       <div class="method-line">
         <span>Método de pago</span>
@@ -277,9 +281,46 @@
     }
 
     // Prefer richer display if server provides it
+    const isAdjustment = String(order.kind || '').toLowerCase() === 'adjustment';
+    const reasonText = String(order.adjustment_reason || '').trim();
+
+    if (isAdjustment) {
+      const heading = document.querySelector('.container h2');
+      const summaryTitle = document.querySelector('.summary-box h3');
+      if (heading) heading.textContent = 'Confirmar ajuste';
+      if (summaryTitle) summaryTitle.textContent = 'Detalles del ajuste';
+    }
+
     const fechaTexto = formatFecha(order);
     const servicio = (order.service_description || "servicio").trim();
-    $('#service-summary').textContent = `Reserva de ${servicio} el ${fechaTexto}.`;
+    const summaryEl = $('#service-summary');
+    const summaryCopy = (() => {
+      if (!isAdjustment) {
+        return `Reserva de ${servicio} el ${fechaTexto}.`;
+      }
+      const parts = [];
+      if (servicio) parts.push(`Ajuste para ${servicio}`);
+      if (fechaTexto && fechaTexto !== '—') parts.push(`Servicio: ${fechaTexto}`);
+      if (reasonText) parts.push(`Motivo: ${reasonText}`);
+      return parts.length ? `${parts.join('. ')}.` : 'Ajuste pendiente de confirmación.';
+    })();
+    summaryEl.textContent = summaryCopy;
+
+    const reasonRow = document.getElementById('adjustment-reason-row');
+    const reasonValue = document.getElementById('adjustment-reason');
+    if (isAdjustment && reasonRow) {
+      reasonRow.style.display = 'flex';
+      if (reasonValue) reasonValue.textContent = reasonText || 'SERVI adjustment';
+    } else if (reasonRow) {
+      reasonRow.style.display = 'none';
+    }
+
+    if (isAdjustment) {
+      const noteCopy = document.querySelector('.note');
+      if (noteCopy) {
+        noteCopy.textContent = 'Se usará tu método guardado para este ajuste. Puedes cambiarlo desde el portal.';
+      }
+    }
 
     const summaryBox = document.querySelector('.summary-box');
     const totalRow = document.getElementById('total-row');
@@ -315,7 +356,7 @@
     if (order.kind === 'book' && order.preauth_window_open === false) {
       const btn = document.querySelector('#btn-book');
       btn.disabled = false; // keep clickable
-      btn.textContent = 'Confirmar reserva';
+      btn.textContent = isAdjustment ? 'Confirmar ajuste' : 'Confirmar reserva';
     }
 
 
@@ -368,7 +409,8 @@
 
     // Record consent (audit trail) — harmless if already recorded
     async function recordConsent() {
-      const text = `Autorizo el cargo por ${totalFormatted} a mi tarjeta •••• ${sc.last4 || ''}`;
+      const reasonPhrase = isAdjustment ? 'este ajuste' : 'mi reserva';
+      const text = `Autorizo el cargo por ${totalFormatted} correspondiente a ${reasonPhrase} a mi tarjeta •••• ${sc.last4 || ''}`;
       try {
         const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
         const bytes = new Uint8Array(buf);
@@ -386,8 +428,12 @@
     }
 
     // Button: Reservar (off-session with saved card; 3DS fallback)
-    $('#btn-book').onclick = async () => {
-      const btnBook = $('#btn-book');
+    const btnBook = $('#btn-book');
+    if (isAdjustment) {
+      btnBook.textContent = 'Confirmar ajuste';
+    }
+
+    btnBook.onclick = async () => {
       const btnManage = $('#btn-manage');
 
       btnBook.disabled = true;
@@ -417,7 +463,10 @@
       if (payload?.paymentMethodId || payload?.paymentIntentId) {
         await syncProcessingFee(orderId, payload?.paymentIntentId || null, payload?.paymentMethodId || null);
       }
-      alert(payload?.message || 'Tu servicio quedó programado. Realizaremos la preautorización 12 horas antes de la fecha.');
+      const scheduledMsg = isAdjustment
+        ? 'Tu ajuste quedó programado. Realizaremos la preautorización 12 horas antes de la fecha.'
+        : 'Tu servicio quedó programado. Realizaremos la preautorización 12 horas antes de la fecha.';
+      alert(payload?.message || scheduledMsg);
       location.href = `/success?orderId=${encodeURIComponent(orderId)}`;
       return;
     }

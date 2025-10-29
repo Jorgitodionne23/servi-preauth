@@ -77,6 +77,8 @@ export async function initDb() {
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS processing_fee_type TEXT;
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS urgency_multiplier REAL;
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS alpha_value REAL;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS capture_method TEXT;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS adjustment_reason TEXT;
 
     DO $$
     BEGIN

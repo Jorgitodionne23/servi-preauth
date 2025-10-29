@@ -1167,35 +1167,35 @@ function generateAdjustment() {
   sh.getRange(row, COL.SHORT_CODE).setValue(out.publicCode || '');
   sh.getRange(row, COL.PAYMENT_INTENT_ID).setValue(out.paymentIntentId || '');
 
-  let status = 'Pending';
-  if (out.mode === 'charged') {
-    status = 'Captured';
-  } else if (out.mode === 'authorized') {
-    status = 'Confirmed';
+  const totalCents = Number(out.totalAmountCents || 0);
+  const totalMXN = totalCents > 0 ? totalCents / 100 : amountMXN;
+  if (totalCents > 0) {
+    const amtCell = sh.getRange(row, COL.AMOUNT);
+    amtCell.setValue(totalMXN);
+    amtCell.setNumberFormat('$#,##0.00');
   }
-  sh.getRange(row, COL.STATUS).setValue(status);
+
+  const flow = String(out.flow || out.mode || '').toLowerCase();
+  const linkLabel = flow === 'book' ? 'Link (cliente)' : 'Link (invitado)';
+  sh.getRange(row, COL.REQ3DS).setValue(linkLabel);
+  sh.getRange(row, COL.STATUS).setValue('Pending');
   sh.getRange(row, COL.CLIENT_ID).setValue(out.customerId || '');
 
-  const needsAction = out.mode === 'needs_action';
-  sh.getRange(row, COL.REQ3DS).setValue(
-    needsAction ? 'Required' : 'Not required'
-  );
-
-  if (needsAction) {
-    const msg = [
-      'Necesitamos confirmar un ajuste en tu servicio.',
-      'Monto: ' +
-        amountMXN.toLocaleString('es-MX', {
-          style: 'currency',
-          currency: 'MXN',
-        }),
-      'Confírmalo aquí:',
-      shortLink,
-    ].join('\n');
-    sh.getRange(row, COL.MESSAGE).setValue(msg);
-  } else {
-    sh.getRange(row, COL.MESSAGE).clearContent();
-  }
+  const effectiveReason = String(out.adjustmentReason || reason || '').trim();
+  const formattedTotal = totalMXN.toLocaleString('es-MX', {
+    style: 'currency',
+    currency: 'MXN',
+  });
+  const messageLines = [
+    'Necesitamos confirmar un ajuste en tu servicio.',
+    'Monto total: ' + formattedTotal,
+    effectiveReason ? 'Motivo: ' + effectiveReason : '',
+    flow === 'book'
+      ? 'Confírmalo con tu método guardado aquí:'
+      : 'Confírmalo aquí:',
+    shortLink,
+  ].filter(Boolean);
+  sh.getRange(row, COL.MESSAGE).setValue(messageLines.join('\n'));
 }
 
 function captureCompletedService() {

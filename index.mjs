@@ -641,10 +641,6 @@ app.get('/pay', async (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'pay.html'));
 });
 
-app.get('/confirm', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'confirm.html'));
-});
-
 app.get('/save', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'save.html'));
 });
@@ -666,7 +662,7 @@ app.get('/order/:orderId', async (req, res) => {
         stripe_fee_tax_rate, processing_fee_type, urgency_multiplier, alpha_value,
         client_name, client_phone, client_email,
         service_description, service_date, service_datetime, service_address, status, created_at,
-        public_code, kind, parent_id, customer_id
+        public_code, kind, parent_id, customer_id, saved_payment_method_id, capture_method, adjustment_reason
       FROM orders
       WHERE id = $1
     `, [orderId]);
@@ -793,12 +789,19 @@ app.get('/order/:orderId', async (req, res) => {
           pi = null;
           intentType = null;
         } else {
+          const capturePref = String(row.capture_method || '').toLowerCase();
+          const captureMethod = capturePref === 'automatic' ? 'automatic' : 'manual';
+          const adjustmentDescription = String(row.kind || '').toLowerCase() === 'adjustment'
+            ? `SERVI ajuste: ${row.adjustment_reason || 'SERVI adjustment'}`
+            : null;
+
           const created = await stripe.paymentIntents.create({
             amount: row.amount,
             currency: 'mxn',
             payment_method_types: ['card'],
-            capture_method: 'manual',
+            capture_method: captureMethod,
             customer: row.customer_id || undefined,
+            ...(adjustmentDescription ? { description: adjustmentDescription } : {}),
             metadata: { kind: row.kind || 'primary', parent_order_id: row.parent_id || '' }
           });
           await pool.query('UPDATE orders SET payment_intent_id=$1 WHERE id=$2', [created.id, row.id]);
@@ -925,7 +928,32 @@ app.get('/o/:code', async (req, res) => {
     }
 
     // 2) Explicit routing by kind
-    if (row.kind === 'adjustment')     return res.redirect(302, `/confirm?orderId=${encodeURIComponent(row.id)}`);
+    if (row.kind === 'adjustment') {
+      let hasSaved = Boolean(row.saved_payment_method_id);
+      let firstPmId = row.saved_payment_method_id || null;
+
+      if (!hasSaved && row.customer_id) {
+        const pmList = await stripe.paymentMethods.list({
+          customer: row.customer_id,
+          type: 'card',
+          limit: 1
+        });
+        hasSaved = pmList.data.length > 0;
+        firstPmId = hasSaved ? pmList.data[0].id : null;
+      }
+
+      if (hasSaved && firstPmId && firstPmId !== row.saved_payment_method_id) {
+        await pool.query(
+          `UPDATE orders
+             SET saved_payment_method_id = $1
+           WHERE id = $2`,
+          [firstPmId, row.id]
+        );
+      }
+
+      const target = hasSaved ? '/book' : '/pay';
+      return res.redirect(302, `${target}?orderId=${encodeURIComponent(row.id)}`);
+    }
     if (row.kind === 'setup_required') return res.redirect(302, `/pay?orderId=${encodeURIComponent(row.id)}`);
     if (row.kind === 'setup')          return res.redirect(302, `/pay?orderId=${encodeURIComponent(row.id)}`);
     if (row.kind === 'book')           return res.redirect(302, `/book?orderId=${encodeURIComponent(row.id)}`);
@@ -1064,7 +1092,7 @@ app.post('/tasks/preauth-due', async (req, res) => {
           payment_method: row.saved_payment_method_id,
           confirm: true,              // off-session auth
           off_session: true,
-          metadata: { kind: 'primary', parent_order_id: row.parent_id || '' }
+          metadata: { kind: row.kind || 'primary', parent_order_id: row.parent_id || '' }
         });
 
         await pool.query(
@@ -1229,119 +1257,172 @@ app.get('/book', async (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'book.html'));
 });
 
-// Create an adjustment child order; off-session if we can, else 3DS confirm.
+// Create an adjustment child order; saved clients now confirm via book.html and guests via pay.html.
 // HONORS Sheets "Capture Type" via req.body.capture = 'automatic' | 'manual'
 app.post('/create-adjustment', requireAdminAuth, async (req, res) => {
-  const { parentOrderId, amount, note, capture } = req.body || {};
-  if (!parentOrderId || !amount) return res.status(400).send({ error: 'missing fields' });
-
-  const parentResult = await pool.query(
-    'SELECT customer_id, saved_payment_method_id, payment_intent_id FROM orders WHERE id=$1',
-    [parentOrderId]
-  );
-  const parentOrder = parentResult.rows[0];
-  if (!parentOrder) return res.status(404).send({ error: 'parent not found' });
-
-  const consent = await pool.query('SELECT 1 FROM order_consents WHERE order_id=$1', [parentOrderId]);
-  const hasConsent = consent.rows.length > 0;
-
-  const canChargeOffSession = Boolean(
-    hasConsent && parentOrder.customer_id && parentOrder.saved_payment_method_id
-  );
-
-  const childId = randomUUID();
-  const publicCode = await generateUniqueCode();
-  const captureMethod = String(capture).toLowerCase() === 'manual' ? 'manual' : 'automatic';
-
-  const baseCreate = {
-    amount,
-    currency: 'mxn',
-    customer: parentOrder.customer_id || undefined,
-    capture_method: captureMethod,
-    description: note ? `SERVI ajuste: ${note}` : 'SERVI ajuste',
-    metadata: {
-      kind: 'adjustment',
-      parent_order_id: parentOrderId,
-      initial_payment_intent: parentOrder.payment_intent_id || ''
-    }
-  };
-
-  let pi = null;
-  let mode = 'needs_action';
-
   try {
-    if (canChargeOffSession) {
-      pi = await stripe.paymentIntents.create({
-        ...baseCreate,
-        payment_method: parentOrder.saved_payment_method_id,
-        off_session: true,
-        confirm: true
-      });
-      mode =
-        captureMethod === 'automatic'
-          ? pi.status === 'succeeded' ? 'charged' : 'needs_action'
-          : pi.status === 'requires_capture' ? 'authorized' : 'needs_action';
-    } else {
-      pi = await stripe.paymentIntents.create({
-        ...baseCreate,
-        payment_method_types: ['card']
-      });
+    const { parentOrderId, amount, note, capture } = req.body || {};
+    if (!parentOrderId) return res.status(400).send({ error: 'missing_parent', message: 'parentOrderId required' });
+
+    const baseAmountCents = Number(amount);
+    if (!Number.isInteger(baseAmountCents) || baseAmountCents <= 0) {
+      return res.status(400).send({ error: 'invalid_amount', message: 'amount must be a positive integer (cents)' });
     }
-  } catch (err) {
-    console.error('[create-adjustment] primary create error:', err?.message);
-    const errPI = err?.raw?.payment_intent || err?.payment_intent || null;
-    pi = errPI
-      ? (typeof errPI === 'string'
-          ? await stripe.paymentIntents.retrieve(errPI)
-          : errPI)
-      : await stripe.paymentIntents.create({
-          ...baseCreate,
-          payment_method_types: ['card']
-        });
-  }
 
-  console.log('[create-adjustment]', {
-    captureMethod,
-    canChargeOffSession,
-    pi: pi?.id,
-    pi_status: pi?.status
-  });
+    const parentResult = await pool.query(
+      `SELECT customer_id,
+              saved_payment_method_id,
+              payment_intent_id,
+              client_name,
+              client_phone,
+              client_email,
+              service_description,
+              service_date,
+              service_datetime,
+              service_address
+         FROM orders
+        WHERE id = $1`,
+      [parentOrderId]
+    );
+    const parentOrder = parentResult.rows[0];
+    if (!parentOrder) return res.status(404).send({ error: 'parent_not_found', message: 'Parent order not found' });
 
-  await pool.query(
-    `
-      INSERT INTO orders (
-        id,
-        payment_intent_id,
-        amount,
-        status,
-        public_code,
-        kind,
-        parent_id,
-        customer_id,
-        saved_payment_method_id
-      )
-      VALUES ($1, $2, $3, $4, $5, 'adjustment', $6, $7, $8)
-    `,
-    [
-      childId,
-      pi?.id || null,
-      amount,
-      pi?.status || 'pending',
-      publicCode,
+    const consent = await pool.query('SELECT 1 FROM order_consents WHERE order_id=$1', [parentOrderId]);
+    const hasConsent = consent.rows.length > 0;
+    const hasSavedCard = Boolean(parentOrder.saved_payment_method_id);
+    const canRouteToBook = Boolean(hasConsent && parentOrder.customer_id && hasSavedCard);
+
+    const captureMethod = String(capture).toLowerCase() === 'manual' ? 'manual' : 'automatic';
+    const providerPricePesos = baseAmountCents / 100;
+
+    let pricing;
+    try {
+      pricing = computePricing({ providerPricePesos });
+    } catch (err) {
+      return res.status(400).send({ error: 'pricing_failed', message: err?.message || 'Unable to compute pricing for adjustment' });
+    }
+
+    const {
+      providerAmountCents,
+      bookingFeeAmountCents,
+      processingFeeAmountCents,
+      vatAmountCents,
+      totalAmountCents,
+      components: {
+        alphaValue,
+        vatRate,
+        stripePercent,
+        stripeFixed,
+        stripeFeeVatRate
+      }
+    } = pricing;
+
+    const stripeFixedFeeCents = Math.round(Number(stripeFixed || 0) * 100);
+    const reason = (note ? String(note) : '').trim() || 'SERVI adjustment';
+    const childId = randomUUID();
+    const publicCode = await generateUniqueCode();
+    const flow = canRouteToBook ? 'book' : 'pay';
+
+    await pool.query(
+      `
+        INSERT INTO orders (
+          id,
+          payment_intent_id,
+          amount,
+          provider_amount,
+          booking_fee_amount,
+          processing_fee_amount,
+          vat_amount,
+          pricing_total_amount,
+          client_name,
+          client_phone,
+          client_email,
+          service_description,
+          service_date,
+          service_datetime,
+          service_address,
+          status,
+          public_code,
+          kind,
+          parent_id,
+          customer_id,
+          saved_payment_method_id,
+          adjustment_reason,
+          capture_method,
+          vat_rate,
+          stripe_percent_fee,
+          stripe_fixed_fee,
+          stripe_fee_tax_rate,
+          processing_fee_type,
+          alpha_value
+        )
+        VALUES (
+          $1,$2,$3,$4,$5,$6,$7,$8,
+          $9,$10,$11,$12,$13,$14,$15,
+          $16,$17,'adjustment',$18,$19,$20,
+          $21,$22,$23,$24,$25,$26,$27,$28
+        )
+      `,
+      [
+        childId,
+        null,
+        totalAmountCents,
+        providerAmountCents,
+        bookingFeeAmountCents,
+        processingFeeAmountCents,
+        vatAmountCents,
+        totalAmountCents,
+        parentOrder.client_name || null,
+        parentOrder.client_phone || null,
+        parentOrder.client_email || null,
+        parentOrder.service_description || null,
+        parentOrder.service_date || null,
+        parentOrder.service_datetime || null,
+        parentOrder.service_address || null,
+        'Pending',
+        publicCode,
+        parentOrderId,
+        parentOrder.customer_id || null,
+        parentOrder.saved_payment_method_id || null,
+        reason,
+        captureMethod,
+        vatRate,
+        stripePercent,
+        stripeFixedFeeCents,
+        stripeFeeVatRate,
+        'standard',
+        alphaValue ?? null
+      ]
+    );
+
+    console.log('[create-adjustment]', {
       parentOrderId,
-      parentOrder.customer_id || null,
-      parentOrder.saved_payment_method_id || null
-    ]
-  );
+      childId,
+      flow,
+      captureMethod,
+      totalAmountCents
+    });
 
-  res.send({
-    childOrderId: childId,
-    paymentIntentId: pi?.id || null,
-    publicCode,
-    mode,
-    captureMethod,
-    customerId: parentOrder.customer_id || null
-  });
+    return res.send({
+      childOrderId: childId,
+      publicCode,
+      mode: flow,
+      flow,
+      captureMethod,
+      customerId: parentOrder.customer_id || null,
+      savedPaymentMethodId: parentOrder.saved_payment_method_id || null,
+      totalAmountCents,
+      totalAmountMXN: totalAmountCents / 100,
+      providerAmountCents,
+      bookingFeeAmountCents,
+      processingFeeAmountCents,
+      vatAmountCents,
+      adjustmentReason: reason
+    });
+  } catch (err) {
+    console.error('[create-adjustment] error:', err);
+    return res.status(500).send({ error: 'internal_error' });
+  }
 });
 
 // Capture an authorized manual-capture PaymentIntent (optionally partial).
@@ -1767,7 +1848,9 @@ app.post('/confirm-with-saved', async (req, res) => {
               service_date,
               service_datetime,
               status,
-              saved_payment_method_id
+              saved_payment_method_id,
+              capture_method,
+              adjustment_reason
          FROM orders
         WHERE id = $1`,
       [orderId]
@@ -1776,6 +1859,11 @@ app.post('/confirm-with-saved', async (req, res) => {
     if (!row) return res.status(404).send({ error: 'order not found' });
 
     let savedPmId = row.saved_payment_method_id || null;
+    const capturePref = String(row.capture_method || '').toLowerCase();
+    const captureMethod = capturePref === 'automatic' ? 'automatic' : 'manual';
+    const adjustmentDescription = String(row.kind || '').toLowerCase() === 'adjustment'
+      ? `SERVI ajuste: ${row.adjustment_reason || 'SERVI adjustment'}`
+      : null;
     const hoursAhead = hoursUntilService(row);
     if (hoursAhead > 12 && !force) {
       if (!savedPmId && row.customer_id) {
@@ -1848,10 +1936,11 @@ app.post('/confirm-with-saved', async (req, res) => {
         amount: row.amount,
         currency: 'mxn',
         payment_method_types: ['card'],
-        capture_method: 'manual',
+        capture_method: captureMethod,
         customer: row.customer_id || undefined,
+        ...(adjustmentDescription ? { description: adjustmentDescription } : {}),
         metadata: {
-          kind: 'primary',
+          kind: row.kind || 'primary',
           parent_order_id: row.parent_id || ''
         }
       });
@@ -1865,7 +1954,10 @@ app.post('/confirm-with-saved', async (req, res) => {
     if (!pm) return res.status(409).send({ error: 'no_saved_card' });
 
     // Attach and confirm (off-session if possible)
-    await stripe.paymentIntents.update(piId, { payment_method: pm.id });
+    await stripe.paymentIntents.update(piId, {
+      payment_method: pm.id,
+      ...(adjustmentDescription ? { description: adjustmentDescription } : {})
+    });
     try {
       const confirmed = await stripe.paymentIntents.confirm(piId, { off_session: true });
       if (confirmed.status === 'requires_action') {
@@ -1962,7 +2054,7 @@ app.get('/success', async (req, res) => {
     if (!orderId) return res.redirect(302, '/');
 
     const { rows } = await pool.query(
-      'SELECT id, payment_intent_id, kind, service_date, service_datetime, customer_id FROM orders WHERE id = $1',
+      'SELECT id, payment_intent_id, kind, service_date, service_datetime, customer_id, saved_payment_method_id FROM orders WHERE id = $1',
       [orderId]
     );
     const row = rows[0];
@@ -2014,7 +2106,12 @@ app.get('/success', async (req, res) => {
     }
 
     // Otherwise bounce back to the appropriate page
-    const redirectTarget = (String(row.kind || '').toLowerCase() === 'adjustment') ? '/confirm' : '/pay';
+    const kindLower = String(row.kind || '').toLowerCase();
+    if (kindLower === 'adjustment') {
+      const target = row.saved_payment_method_id ? '/book' : '/pay';
+      return res.redirect(302, `${target}?orderId=${encodeURIComponent(orderId)}`);
+    }
+    const redirectTarget = kindLower === 'book' ? '/book' : '/pay';
     return res.redirect(302, `${redirectTarget}?orderId=${encodeURIComponent(orderId)}`);
   } catch (e) {
     console.error('success gate error:', e);

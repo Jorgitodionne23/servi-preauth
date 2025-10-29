@@ -274,6 +274,10 @@
           <span>Total a pagar</span>
           <span id="summary-total">—</span>
         </div>
+        <div class="summary-row" id="adjustment-reason-row" style="display:none;">
+          <span>Motivo del ajuste</span>
+          <span id="adjustment-reason">—</span>
+        </div>
         <div class="summary-note" id="summary-note" style="display:none;">*IVA incluido</div>
       </div>
 
@@ -457,16 +461,42 @@
       const order = await getOrder();
       if (!order) return;
 
+      const isAdjustment = String(order.kind || '').toLowerCase() === 'adjustment';
+      const reasonText = String(order.adjustment_reason || '').trim();
+      const headerEl = document.querySelector('.container h2');
+      const summaryTitleEl = document.querySelector('.summary-box h3');
+      const summaryEl = document.getElementById("service-summary");
+      const reasonRow = document.getElementById("adjustment-reason-row");
+      const reasonValueEl = document.getElementById("adjustment-reason");
+
+      if (isAdjustment && headerEl) headerEl.textContent = 'Confirmar ajuste';
+      if (isAdjustment && summaryTitleEl) summaryTitleEl.textContent = 'Detalles del ajuste';
+
       // ✅ ALWAYS show service summary (even when consent_required)
       const servicio = (order.service_description || "servicio").trim();
       const fechaTexto = formatFechaEs(order.service_date, order.service_datetime);
-      document.getElementById("service-summary").textContent =
-        `Reserva de ${servicio} el ${fechaTexto}.`;
+      if (isAdjustment) {
+        const parts = [];
+        if (servicio) parts.push(`Ajuste para ${servicio}`);
+        if (fechaTexto && fechaTexto !== '—') parts.push(`Servicio: ${fechaTexto}`);
+        if (reasonText) parts.push(`Motivo: ${reasonText}`);
+        summaryEl.textContent = parts.length ? `${parts.join('. ')}.` : 'Ajuste pendiente de confirmación.';
+        if (reasonRow) {
+          reasonRow.style.display = 'flex';
+          if (reasonValueEl) {
+            reasonValueEl.textContent = reasonText || 'SERVI adjustment';
+          }
+        }
+      } else {
+        summaryEl.textContent = `Reserva de ${servicio} el ${fechaTexto}.`;
+        if (reasonRow) reasonRow.style.display = 'none';
+      }
 
       const summaryBox = document.querySelector(".summary-box");
       const totalRow = document.getElementById("total-row");
       const totalEl = document.getElementById("summary-total");
       const noteEl = document.getElementById("summary-note");
+      const actionLabel = isAdjustment ? 'Confirmar ajuste' : 'Reservar servicio';
 
       const totalCents = toCents(order.amount ?? order.pricing?.total_amount);
       const vatCents = toCents(order.vat_amount ?? order.pricing?.vat_amount);
@@ -500,7 +530,7 @@
 
         mountCardElement();
 
-        submitBtn.textContent = 'Reservar servicio';
+        submitBtn.textContent = actionLabel;
         submitBtn.dataset.mode = 'confirm-setup';
         setupClientSecret = null;
         return;
@@ -514,7 +544,7 @@
 
         mountCardElement();
 
-        submitBtn.textContent = 'Reservar servicio';
+        submitBtn.textContent = actionLabel;
         submitBtn.dataset.mode = 'confirm-setup';
         setupClientSecret = clientSecret;
         return;
@@ -567,7 +597,7 @@
           });
         }
 
-        submitBtn.textContent = 'Reservar servicio';
+        submitBtn.textContent = actionLabel;
         submitBtn.dataset.mode = 'confirm-payment';
         return;
       }
