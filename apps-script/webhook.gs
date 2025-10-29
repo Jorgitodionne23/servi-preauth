@@ -128,14 +128,25 @@ function doPost(e) {
     const receiptCol = cols.RECEIPT;
     const startRow = 2;
     const lastRow = sheet.getLastRow();
-
+    const orderIdFromPayload = String(data.orderId || '').trim();
     let updatedRow = null;
     for (let row = startRow; row <= lastRow; row++) {
       const cell = String(
         sheet.getRange(row, paymentIdCol).getDisplayValue()
       ).trim();
-      if (!cell) continue;
-      if (cell === paymentIntentId || cell.includes(paymentIntentId)) {
+      const orderIdCell = orderIdFromPayload
+        ? String(sheet.getRange(row, cols.ORDER_ID).getDisplayValue() || '').trim()
+        : '';
+
+      const matchesPi =
+        cell && (cell === paymentIntentId || cell.includes(paymentIntentId));
+      const matchesOrderId =
+        !matchesPi && orderIdFromPayload && orderIdCell === orderIdFromPayload;
+
+      if (matchesPi || matchesOrderId) {
+        if (paymentIntentId && cell !== paymentIntentId) {
+          sheet.getRange(row, paymentIdCol).setValue(paymentIntentId);
+        }
         writeStatusSafelyWebhook_(sheet, row, statusCol, status);
 
         const sLower = status.toLowerCase();
@@ -326,7 +337,7 @@ function buildReceiptMessage(sheet, row) {
   const service = String(
     sheet.getRange(row, cols.SERVICE_DESC).getDisplayValue() || ''
   ).trim();
-  const amountNum = Number(sheet.getRange(row, cols.AMOUNT).getValue() || 0);
+  const totalNum = Number(sheet.getRange(row, cols.TOTAL_PAID).getValue() || 0);
   const serviceCell = sheet.getRange(row, cols.SERVICE_DT);
   const serviceVal = serviceCell.getValue();
   const serviceDisp = String(serviceCell.getDisplayValue() || '').trim();
@@ -355,8 +366,8 @@ function buildReceiptMessage(sheet, row) {
     orderCode = orderIdRaw.replace(/-/g, '').slice(-8).toUpperCase();
   }
 
-  const amountText = amountNum
-    ? amountNum.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })
+  const totalText = Number.isFinite(totalNum) && totalNum > 0
+    ? totalNum.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })
     : '_____';
 
   function parseServiceDate(displayValue) {
@@ -409,7 +420,7 @@ function buildReceiptMessage(sheet, row) {
     'Detalles de tu SERVI:',
     whenLine,
     address || '_____',
-    `${amountText}.`,
+    `${totalText}.`,
   ];
 
   return lines.join('\n');

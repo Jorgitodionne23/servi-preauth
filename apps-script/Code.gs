@@ -16,12 +16,17 @@ const ORDER_HEADER_ALIASES = {
     'Service Date and Time (Día, mes, año, hora)',
   ],
   ADDRESS: ['Address Info', 'Address'],
-  LINK_MSG: ['Payment Message with Link integrated', 'Payment Message'],
+  LINK_MSG: [
+    'Payment Message with Link integrated',
+    'Payment Message',
+    'Payment Link',
+  ],
   STATUS: ['Status'],
   CLIENT_TYPE: ['Client Type'],
+  TOTAL_PAID: ['Total Paid', 'Total (MXN)', 'Total'],
   RECEIPT: ['Receipt Message'],
   CLIENT_ID: ['Client ID'],
-  HOURS: ['Hours to service', 'Hours To Service'],
+  HOURS: ['Hours to service', 'Hours To Service', 'Hours till Service'],
   ORDER_ID: ['Parent Order ID', 'Order ID'],
   PI_ID: ['Payment Intent ID'],
   SHORT_CODE: ['Short Order ID', 'Short Code'],
@@ -36,6 +41,7 @@ const ADJ_HEADER_ALIASES = {
   MESSAGE: [
     'Adj. Payment Message with Link integrated',
     'Adj. Payment Message',
+    'Adjustment Payment Link',
   ],
   STATUS: ['Status'],
   RECEIPT: ['Receipt Message'],
@@ -150,6 +156,18 @@ function clearColumnCache_(cacheKey, sheetOpt) {
   delete HEADER_CACHE[headerCacheKey_(cacheKey, sheet)];
 }
 
+function columnLetterFromIndex_(index) {
+  let col = '';
+  let n = Number(index || 0);
+  if (!Number.isFinite(n) || n <= 0) return '';
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    col = String.fromCharCode(65 + rem) + col;
+    n = Math.floor((n - 1) / 26);
+  }
+  return col;
+}
+
 function ordersColumnMap_(sheetOpt) {
   return getColumnMap_(
     'orders',
@@ -216,7 +234,7 @@ function onOpen() {
       .createMenu('SERVI Tools')
       .addItem('Generate Payment Link for Selected Row', 'generatePaymentLink')
       .addItem('Generate Adjustment for Selected Row', 'generateAdjustment')
-      .addItem('Capture Selected Adjustment', 'captureSelectedAdjustment')
+      .addItem('Capture Completed Service', 'captureCompletedService')
       .addItem(
         'Initiate Payment Intent for Scheduled Order',
         'InitiatePaymentIntentForScheduledOrder'
@@ -240,6 +258,12 @@ function onOpen() {
       wrapCols.forEach(function (colIdx) {
         ordersSheet.getRange(1, colIdx, maxRows, 1).setWrap(true);
       });
+      ordersSheet
+        .getRange(1, cols.AMOUNT, maxRows, 1)
+        .setNumberFormat('$#,##0.00');
+      ordersSheet
+        .getRange(1, cols.TOTAL_PAID, maxRows, 1)
+        .setNumberFormat('$#,##0.00');
     }
 
     const adjustmentsSheet = ss.getSheetByName(SHEET_NAMES.ADJUSTMENTS);
@@ -392,10 +416,56 @@ function ensureOrdersHoursColumn_() {
   try {
     const col = ORD_COL.HOURS;
     const header = sh.getRange(1, col).getDisplayValue();
-    if (normalizeHeader_(header) !== normalizeHeader_('Hours to service')) {
-      sh.getRange(1, col).setValue('Hours to service');
+    if (normalizeHeader_(header) !== normalizeHeader_('Hours till Service')) {
+      sh.getRange(1, col).setValue('Hours till Service');
       clearColumnCache_('orders', sh);
     }
+
+    const hoursColIndex = ORD_COL.HOURS;
+    const statusColIndex = ORD_COL.STATUS;
+    const hoursColLetter = columnLetterFromIndex_(hoursColIndex);
+    const statusColLetter = columnLetterFromIndex_(statusColIndex);
+    const startRow = 2;
+    const totalRows = Math.max(sh.getMaxRows() - startRow + 1, 1);
+    const hoursRange = sh.getRange(startRow, hoursColIndex, totalRows, 1);
+
+    const existingRules = sh.getConditionalFormatRules();
+    const filteredRules = existingRules.filter(function (rule) {
+      const ranges = rule.getRanges() || [];
+      return !ranges.some(function (rng) {
+        const first = rng.getColumn();
+        const last = rng.getLastColumn();
+        return first <= hoursColIndex && last >= hoursColIndex;
+      });
+    });
+
+    const yellowRule = SpreadsheetApp.newConditionalFormatRule()
+      .whenFormulaSatisfied(
+        `=AND($${statusColLetter}${startRow}="Scheduled",$${hoursColLetter}${startRow}>12)`
+      )
+      .setBackground('#FFE598')
+      .setRanges([hoursRange])
+      .build();
+
+    const greenRule = SpreadsheetApp.newConditionalFormatRule()
+      .whenFormulaSatisfied(
+        `=AND($${statusColLetter}${startRow}="Confirmed",$${hoursColLetter}${startRow}<=12,$${hoursColLetter}${startRow}>2)`
+      )
+      .setBackground('#b7e1cd')
+      .setRanges([hoursRange])
+      .build();
+
+    const redRule = SpreadsheetApp.newConditionalFormatRule()
+      .whenFormulaSatisfied(
+        `=AND($${hoursColLetter}${startRow}<=2,$${statusColLetter}${startRow}<>"Captured")`
+      )
+      .setBackground('#F4cbcc')
+      .setRanges([hoursRange])
+      .build();
+
+    sh.setConditionalFormatRules(
+      filteredRules.concat([redRule, greenRule, yellowRule])
+    );
   } catch (err) {
     Logger.log('ensureOrdersHoursColumn_: ' + err.message);
   }
@@ -410,7 +480,7 @@ function ensureAdjustmentsSheet() {
     'Reason',
     'Amount (MXN)',
     'Capture Type',
-    'Adj. Payment Message with Link integrated',
+    'Adjustment Payment Link',
     'Status',
     'Receipt Message',
     'Consent for off-session charge',
@@ -762,6 +832,7 @@ function generatePaymentLink() {
   const receiptCol = ORD_COL.RECEIPT;
   const orderIdCol = ORD_COL.ORDER_ID;
   const paymentIntentCol = ORD_COL.PI_ID;
+  const totalPaidCol = ORD_COL.TOTAL_PAID;
   const shortCodeCol = ORD_COL.SHORT_CODE;
   const clientIdCol = ORD_COL.CLIENT_ID;
   const clientTypeCol = ORD_COL.CLIENT_TYPE;
@@ -928,6 +999,13 @@ function generatePaymentLink() {
             .getRange(editedRow, shortCodeCol)
             .setValue(String(dataErr.publicCode));
 
+          const totalCents403 = Number(dataErr.amount ?? 0);
+          if (Number.isFinite(totalCents403) && totalCents403 >= 0) {
+            sheet
+              .getRange(editedRow, totalPaidCol)
+              .setValue(totalCents403 / 100);
+          }
+
           const existingDate = sheet
             .getRange(editedRow, dateCreatedCol)
             .getDisplayValue();
@@ -969,6 +1047,10 @@ function generatePaymentLink() {
       .getRange(editedRow, statusCol)
       .setValue(data.requiresSetup ? 'Setup required' : 'Pending');
     sheet.getRange(editedRow, shortCodeCol).setValue(String(data.publicCode));
+    const totalCents = Number(data.amount ?? 0);
+    if (Number.isFinite(totalCents) && totalCents >= 0) {
+      sheet.getRange(editedRow, totalPaidCol).setValue(totalCents / 100);
+    }
 
     updateIdentityColumns_(sheet, editedRow, String(data.orderId));
 
@@ -1116,36 +1198,95 @@ function generateAdjustment() {
   }
 }
 
-function captureSelectedAdjustment() {
-  const sh = SpreadsheetApp.getActive().getSheetByName(SHEET_NAMES.ADJUSTMENTS);
-  if (!sh) return;
-  const row = sh.getActiveRange().getRow();
-  if (row < 2) return;
-
-  const COL = adjustmentsColumnMap_(sh);
-  const orderId = String(
-    sh.getRange(row, COL.ADJUSTMENT_ORDER_ID).getDisplayValue() || ''
-  ).trim();
-  if (!orderId) {
-    SpreadsheetApp.getUi().alert('No Adjustment Order ID in column J.');
+function captureCompletedService() {
+  const sh = SpreadsheetApp.getActiveSheet();
+  const ui = SpreadsheetApp.getUi();
+  if (!sh) {
+    ui.alert('No hay una hoja activa.');
     return;
   }
 
-  const resp = UrlFetchApp.fetch(SERVI_BASE + '/capture-order', {
-    method: 'post',
-    contentType: 'application/json',
-    payload: JSON.stringify({ orderId }),
-    headers: adminHeaders_(),
-    muteHttpExceptions: true,
-  });
+  const sheetName = sh.getName();
+  const isOrders = sheetName === SHEET_NAMES.ORDERS;
+  const isAdjustments = sheetName === SHEET_NAMES.ADJUSTMENTS;
+  if (!isOrders && !isAdjustments) {
+    ui.alert(
+      'Usa esta herramienta en las hojas "SERVI Orders" o "SERVI Adjustments".'
+    );
+    return;
+  }
+
+  const active = sh.getActiveRange();
+  if (!active) {
+    ui.alert(
+      'Selecciona una fila de datos (fila 2 o abajo) y vuelve a intentar.'
+    );
+    return;
+  }
+  const row = active.getRow();
+  if (row < 2) {
+    ui.alert('Selecciona una fila de datos (fila 2 o abajo).');
+    return;
+  }
+
+  let orderId = '';
+  let status = '';
+
+  if (isOrders) {
+    const COL = ordersColumnMap_(sh);
+    orderId = String(
+      sh.getRange(row, COL.ORDER_ID).getDisplayValue() || ''
+    ).trim();
+    status = String(
+      sh.getRange(row, COL.STATUS).getDisplayValue() || ''
+    ).trim();
+
+    if (!orderId) {
+      ui.alert('No Order ID en la fila seleccionada.');
+      return;
+    }
+    if (/^captured$/i.test(status)) {
+      ui.alert('Este servicio ya fue capturado.');
+      return;
+    }
+  } else {
+    const COL = adjustmentsColumnMap_(sh);
+    orderId = String(
+      sh.getRange(row, COL.ADJUSTMENT_ORDER_ID).getDisplayValue() || ''
+    ).trim();
+    status = String(
+      sh.getRange(row, COL.STATUS).getDisplayValue() || ''
+    ).trim();
+
+    if (!orderId) {
+      ui.alert('No Adjustment Order ID en la fila seleccionada.');
+      return;
+    }
+    if (/^captured$/i.test(status)) {
+      ui.alert('Este ajuste ya fue capturado.');
+      return;
+    }
+  }
+
+  let resp;
+  try {
+    resp = UrlFetchApp.fetch(SERVI_BASE + '/capture-order', {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify({ orderId }),
+      headers: adminHeaders_(),
+      muteHttpExceptions: true,
+    });
+  } catch (err) {
+    ui.alert('No se pudo enviar la solicitud de captura. Intenta de nuevo.');
+    return;
+  }
 
   const code = resp.getResponseCode();
   if (code >= 200 && code < 300) {
-    SpreadsheetApp.getUi().alert(
-      'Capture requested. Status will change to Captured via webhook.'
-    );
+    ui.alert('Solicitud enviada. El estado cambiará a Captured vía webhook.');
   } else {
-    SpreadsheetApp.getUi().alert('Capture failed: ' + resp.getContentText());
+    ui.alert('Capture failed: ' + resp.getContentText());
   }
 }
 
@@ -1162,6 +1303,14 @@ function updateIdentityColumns_(sheet, row, orderId) {
     );
     if (r.getResponseCode() >= 200 && r.getResponseCode() < 300) {
       const d = JSON.parse(r.getContentText() || '{}');
+      const totalCentsSnapshot = Number(
+        (d.pricing_total_amount ?? d.amount) || 0
+      );
+      if (Number.isFinite(totalCentsSnapshot) && totalCentsSnapshot >= 0) {
+        sheet
+          .getRange(row, ORD_COL.TOTAL_PAID)
+          .setValue(totalCentsSnapshot / 100);
+      }
       if (d.customer_id)
         sheet.getRange(row, ORD_COL.CLIENT_ID).setValue(String(d.customer_id));
     }
@@ -1282,6 +1431,12 @@ function resyncSelectedRow() {
       return;
     }
     data = JSON.parse(resp.getContentText());
+    const totalCentsResync = Number(
+      (data.pricing_total_amount ?? data.amount) || 0
+    );
+    if (Number.isFinite(totalCentsResync) && totalCentsResync >= 0) {
+      sh.getRange(row, COL.TOTAL_PAID).setValue(totalCentsResync / 100);
+    }
 
     const hoursCell = sh.getRange(row, ORD_COL.HOURS);
     const hasFormula = !!hoursCell.getFormula();
