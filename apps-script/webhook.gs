@@ -84,6 +84,29 @@ function doPost(e) {
         );
       }
 
+      if (!updated) {
+        try {
+          const workbook = SpreadsheetApp.openById(SPREADSHEET_ID);
+          const adjSheet = workbook.getSheetByName(ADJ_SHEET_NAME);
+          if (adjSheet) {
+            const handled = updateAdjustmentStatus_(
+              adjSheet,
+              String(data.paymentIntentId || '').trim() || null,
+              status,
+              orderId,
+              Number(data.amount || 0)
+            );
+            if (handled) {
+              return ContentService.createTextOutput(
+                JSON.stringify({ status: 'ok_adjustment_status', orderId })
+              ).setMimeType(ContentService.MimeType.JSON);
+            }
+          }
+        } catch (adjErr) {
+          Logger.log('order.status adjustment update error: %s', adjErr);
+        }
+      }
+
       return ContentService.createTextOutput(
         JSON.stringify({
           status: updated ? 'ok_order_status' : 'not_found_by_order',
@@ -236,7 +259,9 @@ function doPost(e) {
         const handled = updateAdjustmentStatus_(
           adjSheet,
           paymentIntentId,
-          status
+          status,
+          orderIdFromPayload,
+          Number(data.amount || 0)
         );
         if (handled) {
           return ContentService.createTextOutput(
@@ -437,7 +462,12 @@ function buildAdjustmentReceipt_(sheet, row) {
   const reason = String(
     sheet.getRange(row, cols.REASON).getDisplayValue() || ''
   ).trim();
-  const amtVal = Number(sheet.getRange(row, cols.AMOUNT).getValue() || 0);
+  const totalVal = Number(
+    sheet.getRange(row, cols.TOTAL_CHARGED || cols.AMOUNT).getValue() || 0
+  );
+  const amtVal =
+    totalVal ||
+    Number(sheet.getRange(row, cols.AMOUNT).getValue() || 0);
   const childId = String(
     sheet.getRange(row, cols.ADJUSTMENT_ORDER_ID).getDisplayValue() || ''
   ).trim();
@@ -591,7 +621,7 @@ function upsertClientFromOrdersRow_(ordersSheet, row, orderId, customerId) {
   return true;
 }
 
-function updateAdjustmentStatus_(sheet, paymentIntentId, status) {
+function updateAdjustmentStatus_(sheet, paymentIntentId, status, orderIdOpt, amountCentsOpt) {
   const COL = adjustmentsColumnMap_(sheet);
   const last = sheet.getLastRow();
 
@@ -599,8 +629,44 @@ function updateAdjustmentStatus_(sheet, paymentIntentId, status) {
     const pi = String(
       sheet.getRange(r, COL.PAYMENT_INTENT_ID).getDisplayValue() || ''
     ).trim();
-    if (!pi) continue;
-    if (pi === paymentIntentId || pi.includes(paymentIntentId)) {
+    const orderIdCell = String(
+      sheet.getRange(r, COL.ADJUSTMENT_ORDER_ID).getDisplayValue() || ''
+    ).trim();
+
+    const matchesPi =
+      paymentIntentId && pi && (pi === paymentIntentId || pi.includes(paymentIntentId));
+    const matchesOrder =
+      orderIdOpt && orderIdCell && orderIdCell === orderIdOpt;
+
+    if (!matchesPi && !matchesOrder) continue;
+
+    if (paymentIntentId && (!pi || pi !== paymentIntentId)) {
+      sheet.getRange(r, COL.PAYMENT_INTENT_ID).setValue(paymentIntentId);
+    }
+
+    if (Number.isFinite(amountCentsOpt)) {
+      const totalCell = sheet.getRange(r, COL.TOTAL_CHARGED);
+      totalCell.setValue(amountCentsOpt / 100);
+      totalCell.setNumberFormat('$#,##0.00');
+    }
+
+    writeStatusSafelyWebhook_(sheet, r, COL.STATUS, status);
+
+    if (/^(confirmed|captured)$/i.test(status)) {
+      const txt = buildAdjustmentReceipt_(sheet, r);
+      sheet.getRange(r, COL.RECEIPT).setValue(txt);
+      sheet.getRange(r, COL.MESSAGE).clearContent();
+    } else if (/^canceled$/i.test(status)) {
+      sheet.getRange(r, COL.RECEIPT).setValue('Autorización cancelada.');
+      sheet.getRange(r, COL.MESSAGE).clearContent();
+    } else if (/^failed$/i.test(status)) {
+      sheet.getRange(r, COL.RECEIPT).setValue('Pago fallido.');
+      sheet.getRange(r, COL.MESSAGE).clearContent();
+    }
+    return true;
+  }
+  return false;
+}
       writeStatusSafelyWebhook_(sheet, r, COL.STATUS, status);
 
       if (/^(confirmed|captured)$/i.test(status)) {

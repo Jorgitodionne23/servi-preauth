@@ -802,7 +802,11 @@ app.get('/order/:orderId', async (req, res) => {
             capture_method: captureMethod,
             customer: row.customer_id || undefined,
             ...(adjustmentDescription ? { description: adjustmentDescription } : {}),
-            metadata: { kind: row.kind || 'primary', parent_order_id: row.parent_id || '' }
+            metadata: {
+              order_id: row.id,
+              kind: row.kind || 'primary',
+              parent_order_id: row.parent_id || ''
+            }
           });
           await pool.query('UPDATE orders SET payment_intent_id=$1 WHERE id=$2', [created.id, row.id]);
           pi = created;
@@ -814,11 +818,21 @@ app.get('/order/:orderId', async (req, res) => {
     } else {
       // Retrieve existing Intent
       const id = row.payment_intent_id;
-      const isSetup = id.startsWith('seti_');
-      pi = isSetup
-        ? await stripe.setupIntents.retrieve(id)
-        : await stripe.paymentIntents.retrieve(id);
-      intentType = isSetup ? 'setup' : 'payment';
+      if (id) {
+        const isSetup = id.startsWith('seti_');
+        try {
+          pi = isSetup
+            ? await stripe.setupIntents.retrieve(id)
+            : await stripe.paymentIntents.retrieve(id);
+        } catch (retrieveErr) {
+          console.warn('retrieve intent failed', id, retrieveErr?.message || retrieveErr);
+          pi = null;
+        }
+        intentType = isSetup ? 'setup' : 'payment';
+      } else {
+        pi = null;
+        intentType = null;
+      }
     }
 
 
@@ -1940,6 +1954,7 @@ app.post('/confirm-with-saved', async (req, res) => {
         customer: row.customer_id || undefined,
         ...(adjustmentDescription ? { description: adjustmentDescription } : {}),
         metadata: {
+          order_id: row.id,
           kind: row.kind || 'primary',
           parent_order_id: row.parent_id || ''
         }
@@ -1956,7 +1971,12 @@ app.post('/confirm-with-saved', async (req, res) => {
     // Attach and confirm (off-session if possible)
     await stripe.paymentIntents.update(piId, {
       payment_method: pm.id,
-      ...(adjustmentDescription ? { description: adjustmentDescription } : {})
+      ...(adjustmentDescription ? { description: adjustmentDescription } : {}),
+      metadata: {
+        order_id: row.id,
+        kind: row.kind || 'primary',
+        parent_order_id: row.parent_id || ''
+      }
     });
     try {
       const confirmed = await stripe.paymentIntents.confirm(piId, { off_session: true });
@@ -1974,6 +1994,31 @@ app.post('/confirm-with-saved', async (req, res) => {
         await refreshOrderFees(row.id, { paymentIntentId: confirmed.id });
       } catch (feeErr) {
         console.warn('confirm-with-saved fee refresh failed', feeErr?.message || feeErr);
+      }
+      const statusLabel =
+        confirmed.status === 'requires_capture'
+          ? 'Confirmed'
+          : confirmed.status === 'succeeded'
+            ? 'Captured'
+            : confirmed.status;
+      try {
+        await pool.query('UPDATE orders SET status=$1 WHERE id=$2', [statusLabel, row.id]);
+      } catch (statusErr) {
+        console.warn('confirm-with-saved status update failed', statusErr?.message || statusErr);
+      }
+      if (GOOGLE_SCRIPT_WEBHOOK_URL) {
+        fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'order.status',
+            orderId: row.id,
+            status: statusLabel,
+            customerId: row.customer_id || '',
+            paymentIntentId: confirmed.id,
+            amount: confirmed.amount || null
+          })
+        }).catch(() => {});
       }
       return res.send({ ok: true, status: confirmed.status, paymentIntentId: confirmed.id, paymentMethodId: pm.id });
     } catch (e) {

@@ -45,6 +45,7 @@ const ADJ_HEADER_ALIASES = {
   ],
   STATUS: ['Status'],
   RECEIPT: ['Receipt Message'],
+  TOTAL_CHARGED: ['Total Charged'],
   CONSENT: ['Consent for off-session charge', 'Consent'],
   REQ3DS: ['3DS'],
   ADJUSTMENT_ORDER_ID: ['Adjustment Order ID'],
@@ -483,6 +484,7 @@ function ensureAdjustmentsSheet() {
     'Adjustment Payment Link',
     'Status',
     'Receipt Message',
+    'Total Charged',
     'Consent for off-session charge',
     '3DS',
     'Adjustment Order ID',
@@ -512,6 +514,7 @@ function ensureAdjustmentsSheet() {
   const cols = adjustmentsColumnMap_(sh);
   const rows = Math.max(sh.getMaxRows(), 1);
   sh.getRange(1, cols.AMOUNT, rows, 1).setNumberFormat('$#,##0.00');
+  sh.getRange(1, cols.TOTAL_CHARGED, rows, 1).setNumberFormat('$#,##0.00');
   [cols.MESSAGE, cols.RECEIPT].forEach(function (colIdx) {
     sh.getRange(1, colIdx, rows, 1).setWrap(true);
   });
@@ -1148,13 +1151,37 @@ function generateAdjustment() {
     capture,
   };
 
-  const resp = UrlFetchApp.fetch(SERVI_BASE + '/create-adjustment', {
-    method: 'post',
-    contentType: 'application/json',
-    payload: JSON.stringify(payload),
-    headers: adminHeaders_(),
-    muteHttpExceptions: true,
-  });
+  warmupServer_(SERVI_BASE);
+  waitForServerReady_(SERVI_BASE);
+
+  let resp;
+  try {
+    resp = fetchWithRetry_(
+      SERVI_BASE + '/create-adjustment?ts=' + Date.now(),
+      {
+        method: 'post',
+        contentType: 'application/json',
+        payload: JSON.stringify(payload),
+        headers: adminHeaders_(),
+        muteHttpExceptions: true,
+      },
+      6
+    );
+  } catch (errFirst) {
+    warmupServer_(SERVI_BASE);
+    waitForServerReady_(SERVI_BASE);
+    resp = fetchWithRetry_(
+      SERVI_BASE + '/create-adjustment?ts=' + Date.now(),
+      {
+        method: 'post',
+        contentType: 'application/json',
+        payload: JSON.stringify(payload),
+        headers: adminHeaders_(),
+        muteHttpExceptions: true,
+      },
+      2
+    );
+  }
 
   if (resp.getResponseCode() < 200 || resp.getResponseCode() >= 300) {
     throw new Error(resp.getContentText());
@@ -1169,10 +1196,12 @@ function generateAdjustment() {
 
   const totalCents = Number(out.totalAmountCents || 0);
   const totalMXN = totalCents > 0 ? totalCents / 100 : amountMXN;
+  const totalCell = sh.getRange(row, COL.TOTAL_CHARGED);
   if (totalCents > 0) {
-    const amtCell = sh.getRange(row, COL.AMOUNT);
-    amtCell.setValue(totalMXN);
-    amtCell.setNumberFormat('$#,##0.00');
+    totalCell.setValue(totalMXN);
+    totalCell.setNumberFormat('$#,##0.00');
+  } else {
+    totalCell.clearContent();
   }
 
   const flow = String(out.flow || out.mode || '').toLowerCase();
