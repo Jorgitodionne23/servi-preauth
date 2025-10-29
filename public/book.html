@@ -256,6 +256,28 @@
       const n = Number(value);
       return Number.isFinite(n) ? Math.round(n) : 0;
     };
+    const PREVIEW_KEY = 'serviSuccessPreview';
+
+    function storeSuccessPreview(snapshot) {
+      try {
+        sessionStorage.setItem(PREVIEW_KEY, JSON.stringify(snapshot));
+      } catch (_) {}
+    }
+
+    function buildPreviewFromOrder(order, { totalCents, vatCents, reasonText }) {
+      return {
+        orderId: order.id || null,
+        publicCode: order.public_code || null,
+        totalCents: Number(totalCents || 0),
+        providerCents: toCents(order.provider_amount ?? order.pricing?.provider_amount),
+        bookingCents: toCents(order.booking_fee_amount ?? order.pricing?.booking_fee_amount),
+        processingCents: toCents(order.processing_fee_amount ?? order.pricing?.processing_fee_amount),
+        vatCents: Number.isFinite(vatCents) ? vatCents : toCents(order.vat_amount ?? order.pricing?.vat_amount),
+        kind: order.kind || '',
+        reason: reasonText || String(order.adjustment_reason || ''),
+        serviceAddress: order.service_address || ''
+      };
+    }
     const params = new URLSearchParams(location.search);
     const orderId = params.get('orderId');
 
@@ -343,6 +365,11 @@
     if (noteEl && summaryBox) {
       summaryBox.appendChild(noteEl);
     }
+
+    try {
+      const previewSnapshot = buildPreviewFromOrder(order, { totalCents, vatCents, reasonText });
+      storeSuccessPreview(previewSnapshot);
+    } catch (_) {}
 
     // Saved card mask (brand + last4 + expiry if available)
     const sc = order.saved_card || {};

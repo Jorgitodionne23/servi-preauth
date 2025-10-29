@@ -158,7 +158,9 @@ function doPost(e) {
         sheet.getRange(row, paymentIdCol).getDisplayValue()
       ).trim();
       const orderIdCell = orderIdFromPayload
-        ? String(sheet.getRange(row, cols.ORDER_ID).getDisplayValue() || '').trim()
+        ? String(
+            sheet.getRange(row, cols.ORDER_ID).getDisplayValue() || ''
+          ).trim()
         : '';
 
       const matchesPi =
@@ -391,9 +393,10 @@ function buildReceiptMessage(sheet, row) {
     orderCode = orderIdRaw.replace(/-/g, '').slice(-8).toUpperCase();
   }
 
-  const totalText = Number.isFinite(totalNum) && totalNum > 0
-    ? totalNum.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })
-    : '_____';
+  const totalText =
+    Number.isFinite(totalNum) && totalNum > 0
+      ? totalNum.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })
+      : '_____';
 
   function parseServiceDate(displayValue) {
     if (!displayValue) return null;
@@ -466,8 +469,7 @@ function buildAdjustmentReceipt_(sheet, row) {
     sheet.getRange(row, cols.TOTAL_CHARGED || cols.AMOUNT).getValue() || 0
   );
   const amtVal =
-    totalVal ||
-    Number(sheet.getRange(row, cols.AMOUNT).getValue() || 0);
+    totalVal || Number(sheet.getRange(row, cols.AMOUNT).getValue() || 0);
   const childId = String(
     sheet.getRange(row, cols.ADJUSTMENT_ORDER_ID).getDisplayValue() || ''
   ).trim();
@@ -621,7 +623,13 @@ function upsertClientFromOrdersRow_(ordersSheet, row, orderId, customerId) {
   return true;
 }
 
-function updateAdjustmentStatus_(sheet, paymentIntentId, status, orderIdOpt, amountCentsOpt) {
+function updateAdjustmentStatus_(
+  sheet,
+  paymentIntentId,
+  status,
+  orderIdOpt,
+  amountCentsOpt
+) {
   const COL = adjustmentsColumnMap_(sheet);
   const last = sheet.getLastRow();
 
@@ -634,7 +642,9 @@ function updateAdjustmentStatus_(sheet, paymentIntentId, status, orderIdOpt, amo
     ).trim();
 
     const matchesPi =
-      paymentIntentId && pi && (pi === paymentIntentId || pi.includes(paymentIntentId));
+      paymentIntentId &&
+      pi &&
+      (pi === paymentIntentId || pi.includes(paymentIntentId));
     const matchesOrder =
       orderIdOpt && orderIdCell && orderIdCell === orderIdOpt;
 
@@ -664,23 +674,6 @@ function updateAdjustmentStatus_(sheet, paymentIntentId, status, orderIdOpt, amo
       sheet.getRange(r, COL.MESSAGE).clearContent();
     }
     return true;
-  }
-  return false;
-}
-      writeStatusSafelyWebhook_(sheet, r, COL.STATUS, status);
-
-      if (/^(confirmed|captured)$/i.test(status)) {
-        const txt = buildAdjustmentReceipt_(sheet, r);
-        sheet.getRange(r, COL.RECEIPT).setValue(txt);
-      } else if (/^canceled$/i.test(status)) {
-        sheet.getRange(r, COL.RECEIPT).setValue('Autorización cancelada.');
-        sheet.getRange(r, COL.MESSAGE).clearContent();
-      } else if (/^failed$/i.test(status)) {
-        sheet.getRange(r, COL.RECEIPT).setValue('Pago fallido.');
-        sheet.getRange(r, COL.MESSAGE).clearContent();
-      }
-      return true;
-    }
   }
   return false;
 }

@@ -163,19 +163,135 @@
     const vatNoteEl = document.getElementById('vat-note');
     const summaryBox = document.querySelector('.summary-box');
 
+    const PREVIEW_KEY = 'serviSuccessPreview';
+
     function fmtAmount(cents) {
-      try { return (Number(cents||0)/100).toLocaleString('es-MX', { style:'currency', currency:'MXN' }); }
+      try { return (Number(cents || 0) / 100).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' }); }
       catch { return '—'; }
     }
+
     function friendlyCode(order) {
       return (order.public_code
         ? String(order.public_code)
-        : String(order.id).replace(/-/g,'').slice(-8)
+        : String(order.id).replace(/-/g, '').slice(-8)
       ).toUpperCase();
     }
+
     function extractReason(desc) {
-      const m = (desc||'').match(/SERVI ajuste:\s*(.*)$/i);
+      const m = (desc || '').match(/SERVI ajuste:\s*(.*)$/i);
       return m && m[1] ? m[1] : null;
+    }
+
+    function toNumber(value) {
+      const n = Number(value);
+      return Number.isFinite(n) ? n : 0;
+    }
+
+    function buildPreviewFromOrder(order) {
+      return {
+        orderId: order.id || null,
+        publicCode: order.public_code || null,
+        totalCents: toNumber(order.amount ?? order.pricing?.total_amount),
+        providerCents: toNumber(order.provider_amount ?? order.pricing?.provider_amount),
+        bookingCents: toNumber(order.booking_fee_amount ?? order.pricing?.booking_fee_amount),
+        processingCents: toNumber(order.processing_fee_amount ?? order.pricing?.processing_fee_amount),
+        vatCents: toNumber(order.vat_amount ?? order.pricing?.vat_amount),
+        kind: String(order.kind || ''),
+        reason: String(order.adjustment_reason || ''),
+        serviceAddress: order.service_address || ''
+      };
+    }
+
+    function storePreview(snapshot) {
+      try {
+        sessionStorage.setItem(PREVIEW_KEY, JSON.stringify(snapshot));
+      } catch (_) {}
+    }
+
+    function getPreview(orderId) {
+      try {
+        const raw = sessionStorage.getItem(PREVIEW_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.orderId && parsed.orderId === orderId) return parsed;
+      } catch (_) {}
+      return null;
+    }
+
+    function renderOrder(order, { totalsOverride = null, reasonOverride = null, skipStripeReason = false } = {}) {
+      try {
+        targetOrderId.textContent = friendlyCode(order);
+      } catch (_) {
+        targetOrderId.textContent = 'no disponible';
+      }
+
+      const totals = totalsOverride || {};
+      const totalCents = toNumber(order.amount ?? totals.totalCents ?? order.pricing?.total_amount);
+      const providerCents = toNumber(order.provider_amount ?? totals.providerCents ?? order.pricing?.provider_amount);
+      const bookingCents = toNumber(order.booking_fee_amount ?? totals.bookingCents ?? order.pricing?.booking_fee_amount);
+      const processingCents = toNumber(order.processing_fee_amount ?? totals.processingCents ?? order.pricing?.processing_fee_amount);
+      const vatCents = toNumber(order.vat_amount ?? totals.vatCents ?? order.pricing?.vat_amount);
+      const serviceCents = providerCents + bookingCents + vatCents;
+
+      amountEl.textContent = fmtAmount(totalCents);
+      if (serviceCents > 0) {
+        servicePriceEl.textContent = fmtAmount(serviceCents);
+        servicePriceRow.style.display = 'flex';
+      } else {
+        servicePriceRow.style.display = 'none';
+      }
+
+      if (processingCents > 0) {
+        processingEl.textContent = fmtAmount(processingCents);
+        processingRow.style.display = 'flex';
+      } else {
+        processingRow.style.display = 'none';
+      }
+
+      vatNoteEl.style.display = vatCents > 0 ? 'block' : 'none';
+      if (summaryBox && vatNoteEl && servicePriceRow) {
+        summaryBox.insertBefore(vatNoteEl, servicePriceRow);
+      }
+
+      addressEl.textContent = order.service_address || totals.serviceAddress || '—';
+      statusEl.textContent = order.status || '—';
+
+      const isAdjustment = String(order.kind || totals.kind || '').toLowerCase() === 'adjustment';
+      if (isAdjustment) {
+        titleEl.textContent = '¡Ajuste confirmado!';
+        subtitleEl.textContent = 'Gracias, hemos recibido tu pago adicional.';
+      } else {
+        titleEl.textContent = '¡Tu servicio ha sido reservado!';
+        subtitleEl.textContent = 'Te mandaremos un mensaje recordatorio antes de tu servicio.';
+      }
+
+      const fallbackReason = reasonOverride || totals.reason || '';
+      let displayReason = String(order.adjustment_reason || '').trim() || fallbackReason;
+      if (isAdjustment && displayReason) {
+        reasonEl.textContent = displayReason;
+        reasonRow.style.display = 'flex';
+      } else {
+        reasonRow.style.display = 'none';
+      }
+
+      // If adjustment and no reason yet, try Stripe metadata unless skipped
+      if (isAdjustment && !displayReason && !skipStripeReason && order.client_secret) {
+        fetch('/config/stripe')
+          .then(r => r.json())
+          .then(cfg => {
+            if (!cfg || !cfg.pk) return null;
+            const stripe = Stripe(cfg.pk);
+            return stripe.retrievePaymentIntent(order.client_secret);
+          })
+          .then(result => {
+            const reason = extractReason(result?.paymentIntent?.description);
+            if (reason) {
+              reasonEl.textContent = reason;
+              reasonRow.style.display = 'flex';
+            }
+          })
+          .catch(() => {});
+      }
     }
 
     (async () => {
@@ -184,77 +300,42 @@
         alert('Link inválido o incompleto. Por favor contacta a soporte.');
         return;
       }
+
       localStorage.setItem('orderId', String(orderId));
+      const previewSnapshot = getPreview(orderId);
 
       try {
-        // 1) Read order from your server (also gives us client_secret)
         const res = await fetch(`/order/${encodeURIComponent(orderId)}`);
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const order = await res.json();
 
-        // friendly code
-        targetOrderId.textContent = friendlyCode(order);
-
-        // Show amount & status (always)
-        const totalCents = Number(order.amount ?? order.pricing?.total_amount ?? 0);
-        amountEl.textContent = fmtAmount(totalCents);
-        const providerCents = Number(order.provider_amount ?? order.pricing?.provider_amount ?? 0);
-        const bookingCents = Number(order.booking_fee_amount ?? order.pricing?.booking_fee_amount ?? 0);
-        const baseCents = providerCents + bookingCents;
-        const vatCents = Number(order.vat_amount ?? order.pricing?.vat_amount ?? 0);
-        const serviceCents = baseCents + vatCents;
-        if (serviceCents > 0) {
-          servicePriceEl.textContent = fmtAmount(serviceCents);
-          servicePriceRow.style.display = 'flex';
-        } else {
-          servicePriceRow.style.display = 'none';
-        }
-        const processingCents = Number(order.processing_fee_amount ?? order.pricing?.processing_fee_amount ?? 0);
-        if (processingCents > 0) {
-          processingEl.textContent = fmtAmount(processingCents);
-          processingRow.style.display = 'flex';
-        } else {
-          processingRow.style.display = 'none';
-        }
-        vatNoteEl.style.display = vatCents > 0 ? 'block' : 'none';
-        if (summaryBox && vatNoteEl && servicePriceRow) {
-          summaryBox.insertBefore(vatNoteEl, servicePriceRow);
-        }
-        addressEl.textContent = order.service_address || '—';
-        statusEl.textContent = order.status || '—';
-
-        // 2) If it’s an adjustment, tweak copy and show reason
-        const isAdjustment = (order.kind || '').toLowerCase() === 'adjustment';
-        if (isAdjustment) {
-          titleEl.textContent = '¡Ajuste confirmado!';
-          subtitleEl.textContent = 'Gracias, hemos recibido tu pago adicional.';
-          const reasonFromOrder = String(order.adjustment_reason || '').trim();
-          if (reasonFromOrder) {
-            reasonEl.textContent = reasonFromOrder;
-            reasonRow.style.display = 'flex';
-          }
-
-          // Try to read reason from the PI description
-          try {
-            const cfg = await fetch('/config/stripe').then(r => r.json()).catch(() => ({}));
-            if (!reasonFromOrder && cfg && cfg.pk && order.client_secret) {
-              const stripe = Stripe(cfg.pk);
-              const { paymentIntent } = await stripe.retrievePaymentIntent(order.client_secret);
-              const reason = extractReason(paymentIntent?.description);
-              if (reason) {
-                reasonEl.textContent = reason;
-                reasonRow.style.display = 'flex';
-              }
-            }
-          } catch (_) {
-            /* non-fatal – still show rest of info */
-          }
-        }
+        storePreview(buildPreviewFromOrder(order));
+        renderOrder(order, { reasonOverride: previewSnapshot?.reason });
       } catch (err) {
-        targetOrderId.textContent = 'no disponible';
-        amountEl.textContent = '—';
-        statusEl.textContent = '—';
-        // Leave the page usable; user still has WhatsApp CTA for support
+        if (previewSnapshot) {
+          const pseudoOrder = {
+            id: previewSnapshot.orderId,
+            public_code: previewSnapshot.publicCode,
+            amount: previewSnapshot.totalCents,
+            provider_amount: previewSnapshot.providerCents,
+            booking_fee_amount: previewSnapshot.bookingCents,
+            processing_fee_amount: previewSnapshot.processingCents,
+            vat_amount: previewSnapshot.vatCents,
+            kind: previewSnapshot.kind,
+            adjustment_reason: previewSnapshot.reason,
+            service_address: previewSnapshot.serviceAddress,
+            status: 'Confirmed'
+          };
+          renderOrder(pseudoOrder, {
+            totalsOverride: previewSnapshot,
+            reasonOverride: previewSnapshot.reason,
+            skipStripeReason: true
+          });
+        } else {
+          targetOrderId.textContent = 'no disponible';
+          amountEl.textContent = '—';
+          statusEl.textContent = '—';
+        }
       }
     })();
   </script>

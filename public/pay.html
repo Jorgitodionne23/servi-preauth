@@ -274,11 +274,11 @@
           <span>Total a pagar</span>
           <span id="summary-total">—</span>
         </div>
+        <div class="summary-note" id="summary-note" style="display:none;">*IVA incluido</div>
         <div class="summary-row" id="adjustment-reason-row" style="display:none;">
           <span>Motivo del ajuste</span>
           <span id="adjustment-reason">—</span>
         </div>
-        <div class="summary-note" id="summary-note" style="display:none;">*IVA incluido</div>
       </div>
 
       <!-- Setup (save-card) UI mounts here when intentType === 'setup' -->
@@ -371,6 +371,29 @@
       const n = Number(value);
       return Number.isFinite(n) ? Math.round(n) : 0;
     };
+
+    const PREVIEW_KEY = 'serviSuccessPreview';
+
+    function storeSuccessPreview(snapshot) {
+      try {
+        sessionStorage.setItem(PREVIEW_KEY, JSON.stringify(snapshot));
+      } catch (_) {}
+    }
+
+    function buildPreviewFromOrder(order, { totalCents, vatCents, reasonText }) {
+      return {
+        orderId: order.id || null,
+        publicCode: order.public_code || null,
+        totalCents: Number(totalCents || 0),
+        providerCents: toCents(order.provider_amount ?? order.pricing?.provider_amount),
+        bookingCents: toCents(order.booking_fee_amount ?? order.pricing?.booking_fee_amount),
+        processingCents: toCents(order.processing_fee_amount ?? order.pricing?.processing_fee_amount),
+        vatCents: Number.isFinite(vatCents) ? vatCents : toCents(order.vat_amount ?? order.pricing?.vat_amount),
+        kind: order.kind || '',
+        reason: reasonText || String(order.adjustment_reason || ''),
+        serviceAddress: order.service_address || ''
+      };
+    }
 
     // Fetch once, cache, and use everywhere
     let cachedOrder = null;
@@ -479,7 +502,6 @@
         const parts = [];
         if (servicio) parts.push(`Ajuste para ${servicio}`);
         if (fechaTexto && fechaTexto !== '—') parts.push(`Servicio: ${fechaTexto}`);
-        if (reasonText) parts.push(`Motivo: ${reasonText}`);
         summaryEl.textContent = parts.length ? `${parts.join('. ')}.` : 'Ajuste pendiente de confirmación.';
         if (reasonRow) {
           reasonRow.style.display = 'flex';
@@ -513,6 +535,11 @@
       if (noteEl && summaryBox) {
         summaryBox.appendChild(noteEl);
       }
+
+      try {
+        const previewSnapshot = buildPreviewFromOrder(order, { totalCents, vatCents, reasonText });
+        storeSuccessPreview(previewSnapshot);
+      } catch (_) {}
 
       // Helpers
       const show = (sel) => (document.querySelector(sel).style.display = 'block');

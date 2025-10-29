@@ -839,20 +839,24 @@ app.get('/order/:orderId', async (req, res) => {
     // saved-card summary (unchanged)
     let saved_card = null;
     if (row.customer_id) {
-      const pmList = await stripe.paymentMethods.list({
-        customer: row.customer_id,
-        type: 'card',
-        limit: 1
-      });
-      if (pmList.data.length) {
-        const pm = pmList.data[0];
-        saved_card = {
-          id: pm.id,
-          brand: pm.card?.brand || '',
-          last4: pm.card?.last4 || '',
-          exp_month: pm.card?.exp_month || null,
-          exp_year: pm.card?.exp_year || null
-        };
+      try {
+        const pmList = await stripe.paymentMethods.list({
+          customer: row.customer_id,
+          type: 'card',
+          limit: 1
+        });
+        if (pmList.data.length) {
+          const pm = pmList.data[0];
+          saved_card = {
+            id: pm.id,
+            brand: pm.card?.brand || '',
+            last4: pm.card?.last4 || '',
+            exp_month: pm.card?.exp_month || null,
+            exp_year: pm.card?.exp_year || null
+          };
+        }
+      } catch (pmErr) {
+        console.warn('saved-card lookup failed', pmErr?.message || pmErr);
       }
     }
 
