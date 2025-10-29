@@ -656,8 +656,10 @@ function updateAdjustmentStatus_(
 
     if (Number.isFinite(amountCentsOpt)) {
       const totalCell = sheet.getRange(r, COL.TOTAL_CHARGED);
-      totalCell.setValue(amountCentsOpt / 100);
-      totalCell.setNumberFormat('$#,##0.00');
+      if (!totalCell.getValue()) {
+        totalCell.setValue(amountCentsOpt / 100);
+        totalCell.setNumberFormat('$#,##0.00');
+      }
     }
 
     writeStatusSafelyWebhook_(sheet, r, COL.STATUS, status);
@@ -665,13 +667,10 @@ function updateAdjustmentStatus_(
     if (/^(confirmed|captured)$/i.test(status)) {
       const txt = buildAdjustmentReceipt_(sheet, r);
       sheet.getRange(r, COL.RECEIPT).setValue(txt);
-      sheet.getRange(r, COL.MESSAGE).clearContent();
     } else if (/^canceled$/i.test(status)) {
       sheet.getRange(r, COL.RECEIPT).setValue('Autorización cancelada.');
-      sheet.getRange(r, COL.MESSAGE).clearContent();
     } else if (/^failed$/i.test(status)) {
       sheet.getRange(r, COL.RECEIPT).setValue('Pago fallido.');
-      sheet.getRange(r, COL.MESSAGE).clearContent();
     }
     return true;
   }

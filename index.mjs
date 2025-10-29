@@ -1149,12 +1149,40 @@ app.post('/orders/:id/consent', async (req, res) => {
 
   // Pull order info
   const or = await pool.query(`
-    SELECT id, customer_id, saved_payment_method_id, client_name
-    FROM orders
-    WHERE id = $1
+    SELECT id,
+           customer_id,
+           saved_payment_method_id,
+           client_name,
+           client_email,
+           client_phone,
+           payment_intent_id
+      FROM orders
+     WHERE id = $1
   `, [id]);
   const row = or.rows[0];
   if (!row) return res.status(404).send({ error: 'order not found' });
+
+  let customerId = row.customer_id || null;
+  if (!customerId) {
+    customerId = await ensureCustomerForOrder(stripe, row);
+    row.customer_id = customerId;
+  } else {
+    try {
+      await ensureCustomerForOrder(stripe, row);
+    } catch (errEnsure) {
+      console.warn('ensureCustomerForOrder update failed', errEnsure?.message || errEnsure);
+    }
+  }
+
+  if (customerId && row.payment_intent_id) {
+    try {
+      await stripe.paymentIntents.update(row.payment_intent_id, {
+        customer: customerId
+      });
+    } catch (errPi) {
+      console.warn('PI update for consent failed', errPi?.message || errPi);
+    }
+  }
 
   // 1) Per-order audit (kept as is)
   await pool.query(`
