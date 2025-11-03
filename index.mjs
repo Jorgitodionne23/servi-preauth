@@ -1351,45 +1351,129 @@ app.post('/orders/:id/consent', async (req, res) => {
 app.get('/orders/:id/consent', async (req, res) => {
   const { id } = req.params;
 
-  // Find order's customer_id
-  const o = await pool.query('SELECT customer_id FROM orders WHERE id=$1', [id]);
-  const cId = o.rows[0]?.customer_id;
-  if (!cId) {
-    // Fallback: check only this order’s legacy row
-    const r0 = await pool.query('SELECT version, text_hash FROM order_consents WHERE order_id=$1', [id]);
-    if (!r0.rows[0]) return res.send({ ok:false });
-    return res.send({ ok:true, version: r0.rows[0].version || '1.0', hash: r0.rows[0].text_hash });
-  }
+  const orderResult = await pool.query(
+    'SELECT customer_id, saved_payment_method_id FROM orders WHERE id=$1',
+    [id]
+  );
+  const orderRow = orderResult.rows[0] || null;
+  const customerId = orderRow?.customer_id || null;
+  const orderSavedPmId = orderRow?.saved_payment_method_id || null;
 
-  // Prefer canonical customer-level registry
-  const r = await pool.query(`
-    SELECT latest_version AS version,
-           latest_text_hash AS hash,
-           first_order_id,
-           first_checked_at,
-           last_checked_at,
-           latest_payment_method_id
-    FROM customer_consents
-    WHERE customer_id=$1
-  `, [cId]);
+  let hasMethod = Boolean(orderSavedPmId);
+  let paymentMethodId = orderSavedPmId || null;
+  let version = null;
+  let hash = null;
+  let firstOrderId = null;
+  let firstCheckedAt = null;
+  let lastCheckedAt = null;
 
-  if (r.rows[0]) {
-    const hasMethod = Boolean(r.rows[0].latest_payment_method_id);
+  if (customerId) {
+    const consentRows = await pool.query(
+      `
+        SELECT latest_version AS version,
+               latest_text_hash AS hash,
+               first_order_id,
+               first_checked_at,
+               last_checked_at,
+               latest_payment_method_id
+          FROM customer_consents
+         WHERE customer_id = $1
+      `,
+      [customerId]
+    );
+
+    const consentMeta = consentRows.rows[0] || null;
+    if (consentMeta) {
+      version = consentMeta.version || version;
+      hash = consentMeta.hash || hash;
+      firstOrderId = consentMeta.first_order_id || firstOrderId;
+      firstCheckedAt = consentMeta.first_checked_at || firstCheckedAt;
+      lastCheckedAt = consentMeta.last_checked_at || lastCheckedAt;
+      if (consentMeta.latest_payment_method_id) {
+        paymentMethodId = consentMeta.latest_payment_method_id;
+        hasMethod = true;
+      }
+    }
+
+    if (!hasMethod) {
+      const savedFromOrders = await pool.query(
+        `
+          SELECT saved_payment_method_id
+            FROM orders
+           WHERE customer_id = $1
+             AND saved_payment_method_id IS NOT NULL
+           ORDER BY created_at DESC
+           LIMIT 1
+        `,
+        [customerId]
+      );
+      if (savedFromOrders.rows[0]?.saved_payment_method_id) {
+        paymentMethodId = savedFromOrders.rows[0].saved_payment_method_id;
+        hasMethod = true;
+      }
+    }
+
+    if (!hasMethod) {
+      try {
+        const pmList = await stripe.paymentMethods.list({
+          customer: customerId,
+          type: 'card',
+          limit: 1
+        });
+        if (pmList.data.length) {
+          paymentMethodId = pmList.data[0].id;
+          hasMethod = true;
+        }
+      } catch (pmErr) {
+        console.warn(
+          'consent lookup card check failed',
+          customerId,
+          pmErr?.message || pmErr
+        );
+      }
+    }
+
+    if (!version || !hash) {
+      const legacyMeta = await pool.query(
+        'SELECT version, text_hash FROM order_consents WHERE order_id=$1',
+        [id]
+      );
+      if (legacyMeta.rows[0]) {
+        version = version || legacyMeta.rows[0].version || null;
+        hash = hash || legacyMeta.rows[0].text_hash || null;
+      }
+    }
+
     return res.send({
       ok: hasMethod,
-      version: r.rows[0].version || '1.0',
-      hash: r.rows[0].hash || null,
-      first_order_id: r.rows[0].first_order_id || null,
-      first_checked_at: r.rows[0].first_checked_at || null,
-      last_checked_at: r.rows[0].last_checked_at || null,
-      payment_method_id: r.rows[0].latest_payment_method_id || null
+      version: version || '1.0',
+      hash: hash || null,
+      first_order_id: firstOrderId || null,
+      first_checked_at: firstCheckedAt || null,
+      last_checked_at: lastCheckedAt || null,
+      payment_method_id: hasMethod ? paymentMethodId : null
     });
   }
 
-  // Legacy fallback
-  const r2 = await pool.query('SELECT version, text_hash FROM order_consents WHERE order_id=$1', [id]);
-  if (!r2.rows[0]) return res.send({ ok:false });
-  return res.send({ ok:true, version: r2.rows[0].version || '1.0', hash: r2.rows[0].text_hash });
+  const legacyFallback = await pool.query(
+    'SELECT version, text_hash FROM order_consents WHERE order_id=$1',
+    [id]
+  );
+  if (!legacyFallback.rows[0]) {
+    return res.send({
+      ok: hasMethod,
+      version: '1.0',
+      hash: null,
+      payment_method_id: hasMethod ? paymentMethodId : null
+    });
+  }
+
+  return res.send({
+    ok: hasMethod,
+    version: legacyFallback.rows[0].version || '1.0',
+    hash: legacyFallback.rows[0].text_hash || null,
+    payment_method_id: hasMethod ? paymentMethodId : null
+  });
 });
 
 
