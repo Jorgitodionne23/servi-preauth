@@ -782,11 +782,12 @@ function findRowByOrderId_(sheet, columnIndex, targetId, allowPartial) {
 function handleCustomerConsentWebhook_(payload) {
   const consentFlag = Boolean(payload && payload.consent);
   const customerId = String(payload && payload.customerId ? payload.customerId : '').trim();
+  const orderIdRaw = String(payload && payload.orderId ? payload.orderId : '').trim();
   const parentOrderId = String(
-    (payload && (payload.parentOrderId || payload.orderId)) || ''
+    payload && payload.parentOrderId ? payload.parentOrderId : orderIdRaw
   ).trim();
   const sourceOrderId = String(
-    (payload && (payload.sourceOrderId || payload.adjustmentOrderId)) || ''
+    (payload && (payload.sourceOrderId || payload.adjustmentOrderId)) || orderIdRaw
   ).trim();
   const paymentIntentId = String(
     (payload && payload.paymentIntentId) || ''
@@ -796,29 +797,41 @@ function handleCustomerConsentWebhook_(payload) {
   const ordersSheet = ss ? ss.getSheetByName(SHEET_NAME) : null;
   const adjSheet = ss ? ss.getSheetByName(ADJ_SHEET_NAME) : null;
 
+  const orderIdsToUpdate = [];
+  if (parentOrderId) {
+    orderIdsToUpdate.push(parentOrderId);
+  } else if (sourceOrderId) {
+    orderIdsToUpdate.push(sourceOrderId);
+  }
+
   let parentRow = 0;
   let finalConsent = consentFlag;
+  let anyOrderRowUpdated = false;
 
-  if (ordersSheet && parentOrderId) {
+  if (ordersSheet && orderIdsToUpdate.length) {
     const orderCols = ordersColumnMap_(ordersSheet);
-    parentRow = findRowByOrderId_(ordersSheet, orderCols.ORDER_ID, parentOrderId);
-    if (parentRow) {
+    orderIdsToUpdate.forEach(function (orderIdCandidate, idx) {
+      if (!orderIdCandidate) return;
+      const rowIdx = findRowByOrderId_(ordersSheet, orderCols.ORDER_ID, orderIdCandidate);
+      if (!rowIdx) return;
+      if (idx === 0) parentRow = rowIdx;
       const applied = writeIdentityColumnsInOrders_(
         ordersSheet,
-        parentRow,
-        parentOrderId,
+        rowIdx,
+        orderIdCandidate,
         customerId,
         consentFlag
       );
       finalConsent = typeof applied === 'boolean' ? applied : consentFlag;
       updateClientRegistryForConsent_(
         ordersSheet,
-        parentRow,
-        parentOrderId,
+        rowIdx,
+        orderIdCandidate,
         finalConsent,
         customerId
       );
-    }
+      anyOrderRowUpdated = true;
+    });
   }
 
   let adjustmentRow = 0;
@@ -848,7 +861,7 @@ function handleCustomerConsentWebhook_(payload) {
     }
   }
 
-  if (!parentRow && !finalConsent && customerId) {
+  if (!anyOrderRowUpdated && !finalConsent && customerId) {
     removeClientByCustomerId_(customerId);
   }
 

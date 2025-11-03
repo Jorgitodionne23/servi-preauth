@@ -712,7 +712,7 @@ app.get('/order/:orderId', async (req, res) => {
     }
 
     if (!row.payment_intent_id) {
-      const kind = String(row.kind || '').toLowerCase();
+      let kind = String(row.kind || '').toLowerCase();
 
       if (kind === 'setup_required') {
         // OPTIONAL: if this customer already has global consent, skip re-consent for this order
@@ -800,10 +800,67 @@ app.get('/order/:orderId', async (req, res) => {
 
 
       } else if (kind === 'book') {
-        // Saved-card booking: never create a PI here.
-        // The /confirm-with-saved route decides when to create/confirm (≤12h).
-        pi = null;
-        intentType = null;
+        let hasSavedCardForBook = Boolean(row.saved_payment_method_id);
+        if (!hasSavedCardForBook && row.customer_id) {
+          hasSavedCardForBook = await hasSavedCard(row.customer_id, stripe);
+        }
+
+        if (hasSavedCardForBook) {
+          // Saved-card booking: never create a PI here.
+          // The /confirm-with-saved route decides when to create/confirm (≤12h).
+          pi = null;
+          intentType = null;
+        } else {
+          const hoursAhead = hoursUntilService(row);
+          if (hoursAhead > 12) {
+            consentRequired = true;
+            await pool.query(
+              `UPDATE orders
+                  SET kind = 'setup_required',
+                      payment_intent_id = NULL
+                WHERE id = $1`,
+              [row.id]
+            );
+            row.kind = 'setup_required';
+            row.payment_intent_id = null;
+            kind = 'setup_required';
+            pi = null;
+            intentType = null;
+          } else {
+            const capturePref = String(row.capture_method || '').toLowerCase();
+            const captureMethod = capturePref === 'automatic' ? 'automatic' : 'manual';
+            const adjustmentDescription = String(row.adjustment_reason || '').trim()
+              ? `SERVI ajuste: ${row.adjustment_reason || 'SERVI adjustment'}`
+              : null;
+
+            const created = await stripe.paymentIntents.create({
+              amount: row.amount,
+              currency: 'mxn',
+              payment_method_types: ['card'],
+              capture_method: captureMethod,
+              customer: row.customer_id || undefined,
+              ...(adjustmentDescription ? { description: adjustmentDescription } : {}),
+              metadata: {
+                order_id: row.id,
+                kind: 'primary',
+                parent_order_id: row.parent_id || ''
+              }
+            });
+
+            await pool.query(
+              `UPDATE orders
+                  SET payment_intent_id = $1,
+                      kind = 'primary'
+                WHERE id = $2`,
+              [created.id, row.id]
+            );
+            row.kind = 'primary';
+            row.payment_intent_id = created.id;
+            kind = 'primary';
+            pi = created;
+            intentType = 'payment';
+          }
+        }
 
       } else {
         // Default (legacy primary/adjustments) — but DON'T create a PI early for saved + >12h
