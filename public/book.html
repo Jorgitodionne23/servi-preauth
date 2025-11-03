@@ -323,7 +323,6 @@
       const parts = [];
       if (servicio) parts.push(`Ajuste para ${servicio}`);
       if (fechaTexto && fechaTexto !== '—') parts.push(`Servicio: ${fechaTexto}`);
-      if (reasonText) parts.push(`Motivo: ${reasonText}`);
       return parts.length ? `${parts.join('. ')}.` : 'Ajuste pendiente de confirmación.';
     })();
     summaryEl.textContent = summaryCopy;

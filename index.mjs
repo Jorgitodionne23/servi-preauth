@@ -173,6 +173,37 @@ function requireAdminAuth(req, res, next) {
   return next();
 }
 
+function postToGoogleWebhook(payload) {
+  if (!GOOGLE_SCRIPT_WEBHOOK_URL) return;
+  fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  }).catch(() => {});
+}
+
+function notifyConsentChange({
+  customerId,
+  parentOrderId,
+  sourceOrderId,
+  consent,
+  paymentMethodId,
+  paymentIntentId
+}) {
+  if (!customerId) return;
+  const payload = {
+    type: 'customer.consent',
+    customerId,
+    consent: Boolean(consent),
+    orderId: parentOrderId || sourceOrderId || ''
+  };
+  if (parentOrderId) payload.parentOrderId = parentOrderId;
+  if (sourceOrderId) payload.sourceOrderId = sourceOrderId;
+  if (paymentMethodId) payload.paymentMethodId = paymentMethodId;
+  if (paymentIntentId) payload.paymentIntentId = paymentIntentId;
+  postToGoogleWebhook(payload);
+}
+
 function firstChargeFromPaymentIntent(pi) {
   if (!pi) return null;
   if (pi.latest_charge && typeof pi.latest_charge === 'object') {
@@ -1150,6 +1181,7 @@ app.post('/orders/:id/consent', async (req, res) => {
   // Pull order info
   const or = await pool.query(`
     SELECT id,
+           parent_id,
            customer_id,
            saved_payment_method_id,
            client_name,
@@ -1161,6 +1193,7 @@ app.post('/orders/:id/consent', async (req, res) => {
   `, [id]);
   const row = or.rows[0];
   if (!row) return res.status(404).send({ error: 'order not found' });
+  const parentOrderId = row.parent_id || row.id;
 
   let customerId = row.customer_id || null;
   if (!customerId) {
@@ -1209,7 +1242,7 @@ app.post('/orders/:id/consent', async (req, res) => {
         first_order_id, last_order_id,
         ip, user_agent, locale, tz
       )
-      VALUES ($1,$2,$3,$4,$5, NOW(), NOW(), $6, $6, $7,$8,$9,$10)
+      VALUES ($1,$2,$3,$4,$5,$6, NOW(), NOW(), $7, $8, $9,$10,$11,$12)
       ON CONFLICT (customer_id) DO UPDATE SET
         customer_name            = COALESCE(EXCLUDED.customer_name, customer_consents.customer_name),
         customer_phone           = COALESCE(EXCLUDED.customer_phone, customer_consents.customer_phone),
@@ -1231,10 +1264,23 @@ app.post('/orders/:id/consent', async (req, res) => {
       row.saved_payment_method_id || null,
       serverHash,
       version || '1.0',
-      id, // parent/first order id (set on first insert, preserved on conflict)
-      ip, ua, locale || null, tz || null
+      parentOrderId, // first_order_id
+      row.id, // last_order_id
+      ip,
+      ua,
+      locale || null,
+      tz || null
     ]);
   }
+
+  notifyConsentChange({
+    customerId: row.customer_id,
+    parentOrderId,
+    sourceOrderId: row.id,
+    consent: true,
+    paymentMethodId: row.saved_payment_method_id || null,
+    paymentIntentId: row.payment_intent_id || null
+  });
 
 
   // Promote order if it was gated
@@ -1264,19 +1310,22 @@ app.get('/orders/:id/consent', async (req, res) => {
            latest_text_hash AS hash,
            first_order_id,
            first_checked_at,
-           last_checked_at
+           last_checked_at,
+           latest_payment_method_id
     FROM customer_consents
     WHERE customer_id=$1
   `, [cId]);
 
   if (r.rows[0]) {
+    const hasMethod = Boolean(r.rows[0].latest_payment_method_id);
     return res.send({
-      ok: true,
+      ok: hasMethod,
       version: r.rows[0].version || '1.0',
       hash: r.rows[0].hash || null,
       first_order_id: r.rows[0].first_order_id || null,
       first_checked_at: r.rows[0].first_checked_at || null,
-      last_checked_at: r.rows[0].last_checked_at || null
+      last_checked_at: r.rows[0].last_checked_at || null,
+      payment_method_id: r.rows[0].latest_payment_method_id || null
     });
   }
 
@@ -1631,11 +1680,13 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
         if (cust) {
           const orderInfo = await pool.query(
-            'SELECT client_name, client_phone FROM orders WHERE id = $1',
+            'SELECT client_name, client_phone, parent_id, payment_intent_id FROM orders WHERE id = $1',
             [orderId]
           );
           const customerName  = orderInfo.rows[0]?.client_name  || null;
           const customerPhone = orderInfo.rows[0]?.client_phone || null;
+          const parentForCustomer = orderInfo.rows[0]?.parent_id || orderId;
+          const paymentIntentId = orderInfo.rows[0]?.payment_intent_id || null;
 
           await pool.query(`
             INSERT INTO customer_consents (
@@ -1681,12 +1732,21 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
             consentMeta.text_hash || null,
             consentMeta.version || null,
             consentMeta.checked_at || null,
-            consentMeta.order_id || orderId,
+            consentMeta.order_id || parentForCustomer,
             consentMeta.ip || null,
             consentMeta.user_agent || null,
             consentMeta.locale || null,
             consentMeta.tz || null
           ]);
+
+          notifyConsentChange({
+            customerId: cust,
+            parentOrderId: parentForCustomer,
+            sourceOrderId: orderId,
+            consent: true,
+            paymentMethodId: pmId || null,
+            paymentIntentId
+          });
         }
 
         if (GOOGLE_SCRIPT_WEBHOOK_URL) {
@@ -1697,7 +1757,8 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
               type: 'order.status',
               orderId,
               status: statusLabel,
-              customerId: cust || ''
+              customerId: cust || '',
+              parentOrderId: parentForCustomer || orderId
             })
           }).catch(()=>{});
         }
@@ -1791,7 +1852,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
       }
 
       if (obj.capture_method === 'manual' && obj.status === 'requires_capture') {
-        const r = await pool.query('SELECT id, customer_id FROM orders WHERE payment_intent_id = $1 LIMIT 1', [obj.id]);
+        const r = await pool.query('SELECT id, customer_id, parent_id FROM orders WHERE payment_intent_id = $1 LIMIT 1', [obj.id]);
         const row = r.rows[0] || {};
 
         await pool.query('UPDATE orders SET status = $1 WHERE payment_intent_id = $2', ['Confirmed', obj.id]);
@@ -1806,7 +1867,8 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
               paymentIntentId: obj.id,
               status: 'Confirmed',
               orderId: row.id || '',
-              customerId: row.customer_id || ''
+              customerId: row.customer_id || '',
+              parentOrderId: row.parent_id || ''
             })
           }).catch(() => {});
         }
@@ -1868,6 +1930,102 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
             latest_payment_method_id = $2,
             last_checked_at = NOW()
         `, [customerId, pm.id]);
+        let parentOrderId = null;
+        let lastOrderId = null;
+        try {
+          const { rows } = await pool.query(
+            'SELECT first_order_id, last_order_id FROM customer_consents WHERE customer_id = $1',
+            [customerId]
+          );
+          if (rows[0]) {
+            parentOrderId = rows[0].first_order_id || null;
+            lastOrderId = rows[0].last_order_id || null;
+          }
+          if (!parentOrderId || !lastOrderId) {
+            const latestOrder = await pool.query(
+              `SELECT id, parent_id FROM orders WHERE customer_id = $1 ORDER BY created_at DESC LIMIT 1`,
+              [customerId]
+            );
+            const orderRow = latestOrder.rows[0];
+            if (orderRow) {
+              if (!lastOrderId) lastOrderId = orderRow.id;
+              if (!parentOrderId) parentOrderId = orderRow.parent_id || orderRow.id;
+            }
+          }
+        } catch (err) {
+          console.warn('payment_method.attached lookup failed', err?.message || err);
+        }
+        if (parentOrderId || lastOrderId) {
+          notifyConsentChange({
+            customerId,
+            parentOrderId,
+            sourceOrderId: lastOrderId || parentOrderId,
+            consent: true,
+            paymentMethodId: pm.id
+          });
+        }
+      }
+      break;
+    }
+    case 'payment_method.detached': {
+      const pm = event.data.object;
+      const customerId =
+        pm.customer ||
+        event.data.previous_attributes?.customer ||
+        null;
+      if (customerId) {
+        try {
+          await pool.query(
+            `
+              UPDATE customer_consents
+                 SET latest_payment_method_id = NULL,
+                     last_checked_at = NOW()
+               WHERE customer_id = $1
+            `,
+            [customerId]
+          );
+          await pool.query(
+            'UPDATE orders SET saved_payment_method_id = NULL WHERE customer_id = $1',
+            [customerId]
+          );
+        } catch (err) {
+          console.warn('payment_method.detached cleanup failed', err?.message || err);
+        }
+
+        let parentOrderId = null;
+        let lastOrderId = null;
+        try {
+          const { rows } = await pool.query(
+            'SELECT first_order_id, last_order_id FROM customer_consents WHERE customer_id = $1',
+            [customerId]
+          );
+          if (rows[0]) {
+            parentOrderId = rows[0].first_order_id || null;
+            lastOrderId = rows[0].last_order_id || null;
+          }
+          if (!parentOrderId || !lastOrderId) {
+            const latestOrder = await pool.query(
+              `SELECT id, parent_id FROM orders WHERE customer_id = $1 ORDER BY created_at DESC LIMIT 1`,
+              [customerId]
+            );
+            const orderRow = latestOrder.rows[0];
+            if (orderRow) {
+              if (!lastOrderId) lastOrderId = orderRow.id;
+              if (!parentOrderId)
+                parentOrderId = orderRow.parent_id || orderRow.id;
+            }
+          }
+        } catch (err) {
+          console.warn('payment_method.detached lookup failed', err?.message || err);
+        }
+
+        notifyConsentChange({
+          customerId,
+          parentOrderId,
+          sourceOrderId: lastOrderId || parentOrderId,
+          consent: false,
+          paymentMethodId: pm.id || null
+        });
       }
       break;
     }
@@ -1949,7 +2107,8 @@ app.post('/confirm-with-saved', async (req, res) => {
             type: 'order.status',
             orderId: row.id,
             status: statusLabel,
-            customerId: row.customer_id || ''
+            customerId: row.customer_id || '',
+            parentOrderId: row.parent_id || ''
           })
         }).catch(() => {});
       }
@@ -2048,7 +2207,8 @@ app.post('/confirm-with-saved', async (req, res) => {
             status: statusLabel,
             customerId: row.customer_id || '',
             paymentIntentId: confirmed.id,
-            amount: confirmed.amount || null
+            amount: confirmed.amount || null,
+            parentOrderId: row.parent_id || ''
           })
         }).catch(() => {});
       }
@@ -2131,7 +2291,7 @@ app.get('/success', async (req, res) => {
     if (!orderId) return res.redirect(302, '/');
 
     const { rows } = await pool.query(
-      'SELECT id, payment_intent_id, kind, service_date, service_datetime, customer_id, saved_payment_method_id FROM orders WHERE id = $1',
+      'SELECT id, parent_id, payment_intent_id, kind, service_date, service_datetime, customer_id, saved_payment_method_id FROM orders WHERE id = $1',
       [orderId]
     );
     const row = rows[0];
@@ -2155,7 +2315,8 @@ app.get('/success', async (req, res) => {
               type: 'order.status',
               orderId: row.id,
               status: 'Scheduled',
-              customerId: row.customer_id || ''
+              customerId: row.customer_id || '',
+              parentOrderId: row.parent_id || row.id
             })
           }).catch(()=>{});
         }
