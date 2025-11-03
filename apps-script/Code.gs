@@ -852,8 +852,9 @@ function generatePaymentLink() {
   const rawPhone = sheet.getRange(editedRow, phoneCol).getDisplayValue();
   const clientPhone = normalizePhoneToE164(rawPhone);
   const existingClient = lookupSavedClientByPhone_(clientPhone);
+  const clientTypeCell = sheet.getRange(editedRow, clientTypeCol);
   if (existingClient) {
-    sheet.getRange(editedRow, clientTypeCol).setValue('SERVI Client');
+    clientTypeCell.setValue('SERVI Client');
     if (existingClient.customerId) {
       const currentClientId = String(
         sheet.getRange(editedRow, clientIdCol).getDisplayValue() || ''
@@ -864,6 +865,8 @@ function generatePaymentLink() {
           .setValue(existingClient.customerId);
       }
     }
+  } else {
+    clientTypeCell.setValue('Guest');
   }
 
   const TZ = 'America/Mexico_City';
@@ -1354,10 +1357,9 @@ function updateIdentityColumns_(sheet, row, orderId) {
     if (r2.getResponseCode() === 200) {
       const c = JSON.parse(r2.getContentText() || '{}');
       const cell = sheet.getRange(row, ORD_COL.CLIENT_TYPE);
-      const current = String(cell.getDisplayValue() || '').trim();
       if (c && c.ok) {
         cell.setValue('SERVI Client');
-      } else if (!current) {
+      } else {
         cell.setValue('Guest');
       }
     }

@@ -2026,64 +2026,79 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
     }
     case 'payment_method.detached': {
       const pm = event.data.object;
-      const customerId =
+      let customerId =
         pm.customer ||
         event.data.previous_attributes?.customer ||
         null;
-      if (customerId) {
+      if (!customerId) {
         try {
-          await pool.query(
-            `
-              UPDATE customer_consents
-                 SET latest_payment_method_id = NULL,
-                     last_checked_at = NOW()
-               WHERE customer_id = $1
-            `,
-            [customerId]
+          const lookup = await pool.query(
+            'SELECT customer_id FROM customer_consents WHERE latest_payment_method_id = $1 LIMIT 1',
+            [pm.id]
           );
-          await pool.query(
-            'UPDATE orders SET saved_payment_method_id = NULL WHERE customer_id = $1',
-            [customerId]
-          );
+          customerId = lookup.rows[0]?.customer_id || null;
         } catch (err) {
-          console.warn('payment_method.detached cleanup failed', err?.message || err);
+          console.warn('payment_method.detached customer lookup failed', err?.message || err);
         }
-
-        let parentOrderId = null;
-        let lastOrderId = null;
-        try {
-          const { rows } = await pool.query(
-            'SELECT first_order_id, last_order_id FROM customer_consents WHERE customer_id = $1',
-            [customerId]
-          );
-          if (rows[0]) {
-            parentOrderId = rows[0].first_order_id || null;
-            lastOrderId = rows[0].last_order_id || null;
-          }
-          if (!parentOrderId || !lastOrderId) {
-            const latestOrder = await pool.query(
-              `SELECT id, parent_id FROM orders WHERE customer_id = $1 ORDER BY created_at DESC LIMIT 1`,
-              [customerId]
-            );
-            const orderRow = latestOrder.rows[0];
-            if (orderRow) {
-              if (!lastOrderId) lastOrderId = orderRow.id;
-              if (!parentOrderId)
-                parentOrderId = orderRow.parent_id || orderRow.id;
-            }
-          }
-        } catch (err) {
-          console.warn('payment_method.detached lookup failed', err?.message || err);
-        }
-
-        notifyConsentChange({
-          customerId,
-          parentOrderId,
-          sourceOrderId: lastOrderId || parentOrderId,
-          consent: false,
-          paymentMethodId: pm.id || null
-        });
       }
+      if (!customerId) {
+        console.warn('payment_method.detached missing customer for payment method', pm.id);
+        break;
+      }
+
+      try {
+        await pool.query(
+          `
+            UPDATE customer_consents
+               SET latest_payment_method_id = NULL,
+                   last_checked_at = NOW()
+             WHERE customer_id = $1
+          `,
+          [customerId]
+        );
+        await pool.query(
+          'UPDATE orders SET saved_payment_method_id = NULL WHERE customer_id = $1',
+          [customerId]
+        );
+      } catch (err) {
+        console.warn('payment_method.detached cleanup failed', err?.message || err);
+      }
+
+      let parentOrderId = null;
+      let lastOrderId = null;
+      try {
+        const { rows } = await pool.query(
+          'SELECT first_order_id, last_order_id FROM customer_consents WHERE customer_id = $1',
+          [customerId]
+        );
+        if (rows[0]) {
+          parentOrderId = rows[0].first_order_id || null;
+          lastOrderId = rows[0].last_order_id || null;
+        }
+        if (!parentOrderId || !lastOrderId) {
+          const latestOrder = await pool.query(
+            `SELECT id, parent_id FROM orders WHERE customer_id = $1 ORDER BY created_at DESC LIMIT 1`,
+            [customerId]
+          );
+          const orderRow = latestOrder.rows[0];
+          if (orderRow) {
+            if (!lastOrderId) lastOrderId = orderRow.id;
+            if (!parentOrderId)
+              parentOrderId = orderRow.parent_id || orderRow.id;
+          }
+        }
+      } catch (err) {
+        console.warn('payment_method.detached lookup failed', err?.message || err);
+      }
+
+      notifyConsentChange({
+        customerId,
+        parentOrderId,
+        sourceOrderId: lastOrderId || parentOrderId,
+        consent: false,
+        paymentMethodId: pm.id || null
+      });
+
       break;
     }
     default:

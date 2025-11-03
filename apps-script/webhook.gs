@@ -42,6 +42,8 @@ function doPost(e) {
       }
 
       const customerIdPayload = String(data.customerId || '').trim();
+      const paymentIntentPayload = String(data.paymentIntentId || '').trim();
+      const amountPayload = Number(data.amount || 0);
       const sheet =
         SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_NAME);
       if (!sheet) {
@@ -93,33 +95,30 @@ function doPost(e) {
         );
       }
 
-      if (!updated) {
-        try {
-          const workbook = SpreadsheetApp.openById(SPREADSHEET_ID);
-          const adjSheet = workbook.getSheetByName(ADJ_SHEET_NAME);
-          if (adjSheet) {
-            const handled = updateAdjustmentStatus_(
-              adjSheet,
-              String(data.paymentIntentId || '').trim() || null,
-              status,
-              orderId,
-              Number(data.amount || 0),
-              customerIdPayload
-            );
-            if (handled) {
-              return ContentService.createTextOutput(
-                JSON.stringify({ status: 'ok_adjustment_status', orderId })
-              ).setMimeType(ContentService.MimeType.JSON);
-            }
-          }
-        } catch (adjErr) {
-          Logger.log('order.status adjustment update error: %s', adjErr);
+      let adjustmentHandled = false;
+      try {
+        const adjSheet = sheet.getParent().getSheetByName(ADJ_SHEET_NAME);
+        if (adjSheet) {
+          adjustmentHandled = updateAdjustmentStatus_(
+            adjSheet,
+            paymentIntentPayload || null,
+            status,
+            orderId,
+            amountPayload,
+            customerIdPayload
+          );
         }
+      } catch (adjErr) {
+        Logger.log('order.status adjustment update error: %s', adjErr);
       }
 
       return ContentService.createTextOutput(
         JSON.stringify({
-          status: updated ? 'ok_order_status' : 'not_found_by_order',
+          status: updated
+            ? 'ok_order_status'
+            : adjustmentHandled
+            ? 'ok_adjustment_status'
+            : 'not_found_by_order',
           orderId,
         })
       ).setMimeType(ContentService.MimeType.JSON);
@@ -798,9 +797,12 @@ function handleCustomerConsentWebhook_(payload) {
   const adjSheet = ss ? ss.getSheetByName(ADJ_SHEET_NAME) : null;
 
   const orderIdsToUpdate = [];
-  if (parentOrderId) {
-    orderIdsToUpdate.push(parentOrderId);
-  } else if (sourceOrderId) {
+  if (parentOrderId) orderIdsToUpdate.push(parentOrderId);
+  if (
+    sourceOrderId &&
+    sourceOrderId !== parentOrderId &&
+    orderIdsToUpdate.indexOf(sourceOrderId) === -1
+  ) {
     orderIdsToUpdate.push(sourceOrderId);
   }
 
