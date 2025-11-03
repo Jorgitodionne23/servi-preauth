@@ -1359,13 +1359,13 @@ app.get('/orders/:id/consent', async (req, res) => {
   const customerId = orderRow?.customer_id || null;
   const orderSavedPmId = orderRow?.saved_payment_method_id || null;
 
-  let hasMethod = Boolean(orderSavedPmId);
   let paymentMethodId = orderSavedPmId || null;
   let version = null;
   let hash = null;
   let firstOrderId = null;
   let firstCheckedAt = null;
   let lastCheckedAt = null;
+  let stripeHasMethod = Boolean(orderSavedPmId);
 
   if (customerId) {
     const consentRows = await pool.query(
@@ -1390,47 +1390,61 @@ app.get('/orders/:id/consent', async (req, res) => {
       firstCheckedAt = consentMeta.first_checked_at || firstCheckedAt;
       lastCheckedAt = consentMeta.last_checked_at || lastCheckedAt;
       if (consentMeta.latest_payment_method_id) {
-        paymentMethodId = consentMeta.latest_payment_method_id;
-        hasMethod = true;
+        paymentMethodId = paymentMethodId || consentMeta.latest_payment_method_id;
+        stripeHasMethod = true;
       }
     }
 
-    if (!hasMethod) {
-      const savedFromOrders = await pool.query(
-        `
-          SELECT saved_payment_method_id
-            FROM orders
-           WHERE customer_id = $1
-             AND saved_payment_method_id IS NOT NULL
-           ORDER BY created_at DESC
-           LIMIT 1
-        `,
-        [customerId]
-      );
-      if (savedFromOrders.rows[0]?.saved_payment_method_id) {
-        paymentMethodId = savedFromOrders.rows[0].saved_payment_method_id;
-        hasMethod = true;
-      }
-    }
+    try {
+      const pmList = await stripe.paymentMethods.list({
+        customer: customerId,
+        type: 'card',
+        limit: 1
+      });
+      const livePm = pmList.data[0] || null;
+      stripeHasMethod = Boolean(livePm);
+      paymentMethodId = livePm?.id || null;
 
-    if (!hasMethod) {
-      try {
-        const pmList = await stripe.paymentMethods.list({
-          customer: customerId,
-          type: 'card',
-          limit: 1
-        });
-        if (pmList.data.length) {
-          paymentMethodId = pmList.data[0].id;
-          hasMethod = true;
+      if (!stripeHasMethod && (consentMeta?.latest_payment_method_id || orderSavedPmId)) {
+        try {
+          await pool.query(
+            `
+              UPDATE customer_consents
+                 SET latest_payment_method_id = NULL,
+                     last_checked_at = NOW()
+               WHERE customer_id = $1
+            `,
+            [customerId]
+          );
+        } catch (clearConsentErr) {
+          console.warn(
+            'consent lookup: failed to clear customer_consents latest_payment_method_id',
+            customerId,
+            clearConsentErr?.message || clearConsentErr
+          );
         }
-      } catch (pmErr) {
-        console.warn(
-          'consent lookup card check failed',
-          customerId,
-          pmErr?.message || pmErr
-        );
+        if (orderSavedPmId) {
+          try {
+            await pool.query(
+              'UPDATE orders SET saved_payment_method_id = NULL WHERE customer_id = $1',
+              [customerId]
+            );
+          } catch (clearOrderErr) {
+            console.warn(
+              'consent lookup: failed to clear orders.saved_payment_method_id',
+              customerId,
+              clearOrderErr?.message || clearOrderErr
+            );
+          }
+        }
       }
+    } catch (pmErr) {
+      console.warn(
+        'consent lookup card check failed',
+        customerId,
+        pmErr?.message || pmErr
+      );
+      stripeHasMethod = Boolean(paymentMethodId);
     }
 
     if (!version || !hash) {
@@ -1445,13 +1459,13 @@ app.get('/orders/:id/consent', async (req, res) => {
     }
 
     return res.send({
-      ok: hasMethod,
+      ok: stripeHasMethod,
       version: version || '1.0',
       hash: hash || null,
       first_order_id: firstOrderId || null,
       first_checked_at: firstCheckedAt || null,
       last_checked_at: lastCheckedAt || null,
-      payment_method_id: hasMethod ? paymentMethodId : null
+      payment_method_id: stripeHasMethod ? paymentMethodId : null
     });
   }
 
@@ -1461,18 +1475,18 @@ app.get('/orders/:id/consent', async (req, res) => {
   );
   if (!legacyFallback.rows[0]) {
     return res.send({
-      ok: hasMethod,
+      ok: stripeHasMethod,
       version: '1.0',
       hash: null,
-      payment_method_id: hasMethod ? paymentMethodId : null
+      payment_method_id: stripeHasMethod ? paymentMethodId : null
     });
   }
 
   return res.send({
-    ok: hasMethod,
+    ok: stripeHasMethod,
     version: legacyFallback.rows[0].version || '1.0',
     hash: legacyFallback.rows[0].text_hash || null,
-    payment_method_id: hasMethod ? paymentMethodId : null
+    payment_method_id: stripeHasMethod ? paymentMethodId : null
   });
 });
 
