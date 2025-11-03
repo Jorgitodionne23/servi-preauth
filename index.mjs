@@ -137,6 +137,15 @@ const GOOGLE_SCRIPT_WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbweLY
 const ADMIN_API_TOKEN = process.env.ADMIN_API_TOKEN || '';
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET || '';
 
+function postToSheets(payload) {
+  if (!GOOGLE_SCRIPT_WEBHOOK_URL) return;
+  fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  }).catch(() => {});
+}
+
 if (!endpointSecret) {
   console.error('Missing STRIPE_WEBHOOK_SECRET environment variable; webhook verification will fail.');
   throw new Error('STRIPE_WEBHOOK_SECRET must be configured before starting the server');
@@ -1151,6 +1160,7 @@ app.post('/orders/:id/consent', async (req, res) => {
   const or = await pool.query(`
     SELECT id,
            customer_id,
+           parent_id,
            saved_payment_method_id,
            client_name,
            client_email,
@@ -1239,6 +1249,20 @@ app.post('/orders/:id/consent', async (req, res) => {
 
   // Promote order if it was gated
   await pool.query("UPDATE orders SET kind='setup' WHERE id=$1 AND kind='setup_required'", [id]);
+
+  const ordersForSheets = [
+    { orderId: row.id, parentOrderId: row.parent_id || null }
+  ];
+
+  postToSheets({
+    type: 'order.consent',
+    consent: true,
+    customerId,
+    customerName: row.client_name || '',
+    customerPhone: row.client_phone || '',
+    customerEmail: row.client_email || '',
+    orders: ordersForSheets
+  });
 
   res.send({ ok: true, hash: serverHash, version: version || '1.0' });
 });
@@ -1868,6 +1892,82 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
             latest_payment_method_id = $2,
             last_checked_at = NOW()
         `, [customerId, pm.id]);
+
+        const updated = await pool.query(`
+          UPDATE orders
+             SET saved_payment_method_id = $1
+           WHERE customer_id = $2
+             AND (saved_payment_method_id IS NULL OR saved_payment_method_id = '')
+             AND (status IS NULL OR status NOT IN ('Canceled','Failed'))
+          RETURNING id, parent_id
+        `, [pm.id, customerId]);
+
+        const latestOrder = await pool.query(`
+          SELECT id, parent_id, client_name, client_phone, client_email
+            FROM orders
+           WHERE customer_id = $1
+           ORDER BY created_at DESC
+           LIMIT 1
+        `, [customerId]);
+
+        const ordersPayload = updated.rows.length
+          ? updated.rows.map(r => ({ orderId: r.id, parentOrderId: r.parent_id || null }))
+          : latestOrder.rows.map(r => ({ orderId: r.id, parentOrderId: r.parent_id || null }));
+
+        if (ordersPayload.length) {
+          const info = latestOrder.rows[0] || {};
+          postToSheets({
+            type: 'order.consent',
+            consent: true,
+            customerId,
+            customerName: info.client_name || '',
+            customerPhone: info.client_phone || '',
+            customerEmail: info.client_email || '',
+            paymentMethodId: pm.id,
+            orders: ordersPayload
+          });
+        }
+      }
+      break;
+    }
+    case 'payment_method.detached': {
+      const pm = event.data.object;
+      const customerId = pm.customer;
+      if (customerId) {
+        const cleared = await pool.query(`
+          UPDATE orders
+             SET saved_payment_method_id = NULL
+           WHERE customer_id = $1
+             AND saved_payment_method_id = $2
+          RETURNING id, parent_id
+        `, [customerId, pm.id]);
+
+        let remaining = [];
+        try {
+          const resList = await stripe.paymentMethods.list({ customer: customerId, type: 'card', limit: 1 });
+          remaining = resList.data || [];
+        } catch (errList) {
+          console.warn('payment_method.detached list failed', errList?.message || errList);
+        }
+
+        if (!remaining.length) {
+          await pool.query(`
+            UPDATE customer_consents
+               SET latest_payment_method_id = NULL,
+                   last_checked_at = NOW()
+             WHERE customer_id = $1
+          `, [customerId]);
+
+          const ordersPayload = cleared.rows.map(r => ({ orderId: r.id, parentOrderId: r.parent_id || null }));
+
+          postToSheets({
+            type: 'order.consent',
+            consent: false,
+            customerId,
+            paymentMethodId: pm.id,
+            orders: ordersPayload
+          });
+        }
       }
       break;
     }

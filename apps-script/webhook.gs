@@ -126,6 +126,17 @@ function doPost(e) {
       ).setMimeType(ContentService.MimeType.JSON);
     }
 
+    if (data && data.type === 'order.consent') {
+      try {
+        handleOrderConsentWebhook_(data);
+      } catch (errConsent) {
+        Logger.log('order.consent handler error: %s', errConsent);
+      }
+      return ContentService.createTextOutput(
+        JSON.stringify({ status: 'ok_order_consent' })
+      ).setMimeType(ContentService.MimeType.JSON);
+    }
+
     const paymentIntentId = String(data.paymentIntentId || '').trim();
     const status = String(data.status || '').trim();
     if (!paymentIntentId || !status) {
@@ -490,6 +501,133 @@ function buildAdjustmentReceipt_(sheet, row) {
   ]
     .filter(Boolean)
     .join('\n');
+}
+
+function handleOrderConsentWebhook_(payload) {
+  const consent = !!payload.consent;
+  const customerId = String(payload.customerId || '').trim();
+  const ordersRaw = Array.isArray(payload.orders) ? payload.orders : [];
+
+  const orderIdSet = new Set();
+  const parentIdSet = new Set();
+  ordersRaw.forEach((entry) => {
+    const orderId = String(entry?.orderId || '').trim();
+    const parentOrderId = String(entry?.parentOrderId || '').trim();
+    if (orderId) orderIdSet.add(orderId);
+    if (parentOrderId) parentIdSet.add(parentOrderId);
+  });
+
+  const workbook = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const ordersSheet = workbook.getSheetByName(SHEET_NAMES.ORDERS);
+  const adjustmentsSheet = workbook.getSheetByName(SHEET_NAMES.ADJUSTMENTS);
+
+  const orderIds = Array.from(orderIdSet);
+  const parentIds = Array.from(parentIdSet);
+  const allOrderIdsForClients = Array.from(new Set([...orderIds, ...parentIds]));
+
+  if (ordersSheet) {
+    updateOrdersClientType_(ordersSheet, orderIds, consent, customerId);
+    updateOrdersClientType_(ordersSheet, parentIds, consent, customerId);
+
+    if (consent && customerId && allOrderIdsForClients.length) {
+      ensureServiClientFromOrders_(ordersSheet, allOrderIdsForClients, customerId);
+    }
+  }
+
+  if (adjustmentsSheet) {
+    updateAdjustmentsConsentBulk_(
+      adjustmentsSheet,
+      orderIds,
+      parentIds,
+      consent,
+      customerId
+    );
+  }
+
+  if (!consent && customerId) {
+    removeClientRowById_(customerId);
+  }
+}
+
+function updateOrdersClientType_(sheet, orderIds, consent, customerId) {
+  if (!sheet || !orderIds.length) return;
+  const cols = ordersColumnMap_(sheet);
+  const last = sheet.getLastRow();
+  const targets = new Set(orderIds.map((id) => String(id || '').trim()).filter(Boolean));
+  if (!targets.size) return;
+
+  for (let r = 2; r <= last; r++) {
+    const val = String(sheet.getRange(r, cols.ORDER_ID).getDisplayValue() || '').trim();
+    if (!val || !targets.has(val)) continue;
+    sheet
+      .getRange(r, cols.CLIENT_TYPE)
+      .setValue(consent ? 'SERVI Client' : 'Guest');
+    if (customerId) {
+      sheet.getRange(r, cols.CLIENT_ID).setValue(customerId);
+    }
+    targets.delete(val);
+    if (!targets.size) break;
+  }
+}
+
+function updateAdjustmentsConsentBulk_(sheet, adjustmentOrderIds, parentOrderIds, consent, customerId) {
+  if (!sheet) return;
+  const COL = adjustmentsColumnMap_(sheet);
+  const last = sheet.getLastRow();
+  const adjSet = new Set((adjustmentOrderIds || []).map((id) => String(id || '').trim()).filter(Boolean));
+  const parentSet = new Set((parentOrderIds || []).map((id) => String(id || '').trim()).filter(Boolean));
+
+  if (!adjSet.size && !parentSet.size) return;
+
+  for (let r = 2; r <= last; r++) {
+    const adjId = String(
+      sheet.getRange(r, COL.ADJUSTMENT_ORDER_ID).getDisplayValue() || ''
+    ).trim();
+    const parentId = String(
+      sheet.getRange(r, COL.PARENT_ORDER_ID).getDisplayValue() || ''
+    ).trim();
+
+    const matches = (adjId && adjSet.has(adjId)) || (parentId && parentSet.has(parentId));
+    if (!matches) continue;
+
+    sheet.getRange(r, COL.CONSENT).setValue(consent ? 'Yes' : 'Missing');
+    if (customerId) {
+      sheet.getRange(r, COL.CLIENT_ID).setValue(customerId);
+    }
+  }
+}
+
+function ensureServiClientFromOrders_(ordersSheet, orderIds, customerId) {
+  if (!ordersSheet || !orderIds.length) return;
+  const cols = ordersColumnMap_(ordersSheet);
+  const last = ordersSheet.getLastRow();
+  const targets = new Set(orderIds.map((id) => String(id || '').trim()).filter(Boolean));
+  if (!targets.size) return;
+
+  for (let r = 2; r <= last; r++) {
+    const val = String(ordersSheet.getRange(r, cols.ORDER_ID).getDisplayValue() || '').trim();
+    if (!val || !targets.has(val)) continue;
+    upsertClientFromOrdersRow_(ordersSheet, r, val, customerId);
+    targets.delete(val);
+    if (!targets.size) break;
+  }
+}
+
+function removeClientRowById_(customerId) {
+  if (!customerId) return;
+  const sh = ensureClientsSheet_();
+  if (!sh) return;
+  const cols = clientsColumnMap_(sh);
+  const last = sh.getLastRow();
+  if (last < 2) return;
+  const colIdx = cols.STRIPE_CUSTOMER_ID;
+  const values = sh.getRange(2, colIdx, last - 1, 1).getDisplayValues();
+  for (let i = 0; i < values.length; i++) {
+    if (String(values[i][0] || '').trim() === customerId) {
+      sh.deleteRow(i + 2);
+      break;
+    }
+  }
 }
 
 function writeIdentityColumnsInOrders_(sheet, row, orderId, customerId) {
