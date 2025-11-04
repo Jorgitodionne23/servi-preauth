@@ -2070,6 +2070,84 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
     case 'customer.updated': {
       const c = event.data.object; // Stripe Customer
+      let hasCard = false;
+      let primaryPaymentMethodId = null;
+      try {
+        const pmList = await stripe.paymentMethods.list({
+          customer: c.id,
+          type: 'card',
+          limit: 1
+        });
+        if (pmList.data.length) {
+          hasCard = true;
+          primaryPaymentMethodId = pmList.data[0].id;
+        }
+      } catch (pmErr) {
+        console.warn('customer.updated list failed', pmErr?.message || pmErr);
+      }
+
+      if (!hasCard) {
+        try {
+          await pool.query('DELETE FROM customer_consents WHERE customer_id = $1', [c.id]);
+        } catch (deleteErr) {
+          console.warn('customer.updated consent delete failed', deleteErr?.message || deleteErr);
+        }
+        try {
+          await pool.query(
+            'UPDATE orders SET saved_payment_method_id = NULL WHERE customer_id = $1',
+            [c.id]
+          );
+        } catch (clearErr) {
+          console.warn('customer.updated orders cleanup failed', clearErr?.message || clearErr);
+        }
+        let parentOrderId = '';
+        let lastOrderId = '';
+        try {
+          const recentOrder = await pool.query(
+            `SELECT id, parent_id
+               FROM orders
+              WHERE customer_id = $1
+              ORDER BY created_at DESC
+              LIMIT 1`,
+            [c.id]
+          );
+          if (recentOrder.rows[0]) {
+            lastOrderId = recentOrder.rows[0].id || '';
+            parentOrderId =
+              recentOrder.rows[0].parent_id || recentOrder.rows[0].id || '';
+          }
+        } catch (orderLookupErr) {
+          console.warn('customer.updated recent order lookup failed', orderLookupErr?.message || orderLookupErr);
+        }
+        notifyConsentChange({
+          customerId: c.id,
+          parentOrderId,
+          sourceOrderId: lastOrderId || parentOrderId,
+          consent: false,
+          paymentMethodId: null
+        });
+        break;
+      }
+
+      await pool.query(
+        `
+          INSERT INTO customer_consents (
+            customer_id,
+            customer_name,
+            customer_phone,
+            latest_payment_method_id,
+            last_checked_at
+          )
+          VALUES ($1,$2,$3,$4,NOW())
+          ON CONFLICT (customer_id) DO UPDATE SET
+            customer_name            = COALESCE($2, customer_consents.customer_name),
+            customer_phone           = COALESCE($3, customer_consents.customer_phone),
+            latest_payment_method_id = COALESCE($4, customer_consents.latest_payment_method_id),
+            last_checked_at          = NOW()
+        `,
+        [c.id, c.name || null, c.phone || null, primaryPaymentMethodId]
+      );
+
       if (GOOGLE_SCRIPT_WEBHOOK_URL) {
         await fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
           method: 'POST',
@@ -2083,20 +2161,6 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
           })
         }).catch(()=>{});
       }
-
-      await pool.query(`
-        INSERT INTO customer_consents (
-          customer_id,
-          customer_name,
-          customer_phone,
-          last_checked_at
-        )
-        VALUES ($1,$2,$3,NOW())
-        ON CONFLICT (customer_id) DO UPDATE SET
-          customer_name  = COALESCE($2, customer_consents.customer_name),
-          customer_phone = COALESCE($3, customer_consents.customer_phone),
-          last_checked_at = NOW()
-      `, [c.id, c.name || null, c.phone || null]);
 
       break;
     }
