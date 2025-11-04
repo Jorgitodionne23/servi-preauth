@@ -1352,12 +1352,13 @@ app.get('/orders/:id/consent', async (req, res) => {
   const { id } = req.params;
 
   const orderResult = await pool.query(
-    'SELECT customer_id, saved_payment_method_id FROM orders WHERE id=$1',
+    'SELECT customer_id, saved_payment_method_id, parent_id FROM orders WHERE id=$1',
     [id]
   );
   const orderRow = orderResult.rows[0] || null;
   const customerId = orderRow?.customer_id || null;
   const orderSavedPmId = orderRow?.saved_payment_method_id || null;
+  const parentOrderId = orderRow?.parent_id || id;
 
   let paymentMethodId = orderSavedPmId || null;
   let version = null;
@@ -1366,6 +1367,7 @@ app.get('/orders/:id/consent', async (req, res) => {
   let firstCheckedAt = null;
   let lastCheckedAt = null;
   let stripeHasMethod = Boolean(orderSavedPmId);
+  let consentRowDeleted = false;
 
   if (customerId) {
     const consentRows = await pool.query(
@@ -1405,20 +1407,16 @@ app.get('/orders/:id/consent', async (req, res) => {
       stripeHasMethod = Boolean(livePm);
       paymentMethodId = livePm?.id || null;
 
-      if (!stripeHasMethod && (consentMeta?.latest_payment_method_id || orderSavedPmId)) {
+      if (!stripeHasMethod) {
         try {
-          await pool.query(
-            `
-              UPDATE customer_consents
-                 SET latest_payment_method_id = NULL,
-                     last_checked_at = NOW()
-               WHERE customer_id = $1
-            `,
+          const deleteResult = await pool.query(
+            'DELETE FROM customer_consents WHERE customer_id = $1',
             [customerId]
           );
+          consentRowDeleted = consentRowDeleted || deleteResult.rowCount > 0;
         } catch (clearConsentErr) {
           console.warn(
-            'consent lookup: failed to clear customer_consents latest_payment_method_id',
+            'consent lookup: failed to delete customer_consents row',
             customerId,
             clearConsentErr?.message || clearConsentErr
           );
@@ -1455,6 +1453,45 @@ app.get('/orders/:id/consent', async (req, res) => {
       if (legacyMeta.rows[0]) {
         version = version || legacyMeta.rows[0].version || null;
         hash = hash || legacyMeta.rows[0].text_hash || null;
+      }
+    }
+
+    if (!stripeHasMethod) {
+      if (!consentRowDeleted) {
+        try {
+          const deleteAgain = await pool.query(
+            'DELETE FROM customer_consents WHERE customer_id = $1',
+            [customerId]
+          );
+          consentRowDeleted = deleteAgain.rowCount > 0 || consentRowDeleted;
+        } catch (deleteErr) {
+          console.warn(
+            'consent lookup: failed to delete customer_consents row (post-check)',
+            customerId,
+            deleteErr?.message || deleteErr
+          );
+        }
+      }
+      try {
+        await pool.query(
+          'UPDATE orders SET saved_payment_method_id = NULL WHERE customer_id = $1',
+          [customerId]
+        );
+      } catch (clearErr) {
+        console.warn(
+          'consent lookup: second-order saved_payment_method_id clear failed',
+          customerId,
+          clearErr?.message || clearErr
+        );
+      }
+      if (customerId) {
+        notifyConsentChange({
+          customerId,
+          parentOrderId,
+          sourceOrderId: id,
+          consent: false,
+          paymentMethodId: null
+        });
       }
     }
 
@@ -2144,20 +2181,44 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
         break;
       }
 
+      let hasRemainingCard = false;
+      let remainingCardId = null;
       try {
-        await pool.query(
-          `
-            UPDATE customer_consents
-               SET latest_payment_method_id = NULL,
-                   last_checked_at = NOW()
-             WHERE customer_id = $1
-          `,
-          [customerId]
-        );
-        await pool.query(
-          'UPDATE orders SET saved_payment_method_id = NULL WHERE customer_id = $1',
-          [customerId]
-        );
+        const pmList = await stripe.paymentMethods.list({
+          customer: customerId,
+          type: 'card',
+          limit: 1
+        });
+        if (pmList.data.length) {
+          hasRemainingCard = true;
+          remainingCardId = pmList.data[0].id;
+        }
+      } catch (listErr) {
+        console.warn('payment_method.detached list failed', listErr?.message || listErr);
+      }
+
+      try {
+        if (hasRemainingCard) {
+          await pool.query(
+            `
+              UPDATE customer_consents
+                 SET latest_payment_method_id = $2,
+                     last_checked_at = NOW()
+               WHERE customer_id = $1
+            `,
+            [customerId, remainingCardId]
+          );
+          await pool.query(
+            'UPDATE orders SET saved_payment_method_id = NULL WHERE customer_id = $1 AND saved_payment_method_id = $2',
+            [customerId, pm.id]
+          );
+        } else {
+          await pool.query('DELETE FROM customer_consents WHERE customer_id = $1', [customerId]);
+          await pool.query(
+            'UPDATE orders SET saved_payment_method_id = NULL WHERE customer_id = $1',
+            [customerId]
+          );
+        }
       } catch (err) {
         console.warn('payment_method.detached cleanup failed', err?.message || err);
       }
@@ -2193,8 +2254,8 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
         customerId,
         parentOrderId,
         sourceOrderId: lastOrderId || parentOrderId,
-        consent: false,
-        paymentMethodId: pm.id || null
+        consent: hasRemainingCard,
+        paymentMethodId: hasRemainingCard ? remainingCardId : null
       });
 
       break;
