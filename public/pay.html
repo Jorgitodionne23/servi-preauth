@@ -80,6 +80,11 @@
         padding: 12px;
         border-radius: 6px;
         border: 1px solid #444;
+        display: flex;
+        align-items: center;
+        font-size: 16px;
+        font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        line-height: 24px;
       }
 
       button {
@@ -162,6 +167,12 @@
       width: 100%;
       font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       }
+
+    .input-text::placeholder {
+      color: #9ca3af;
+      font-size: 16px;
+      font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
 
     .input-icon {
       position: absolute;
@@ -408,8 +419,13 @@
           base: {
             fontFamily: '"Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
             fontSize: '16px',
+            lineHeight: '24px',
             color: '#ffffff',
-            '::placeholder': { color: '#9ca3af' }
+            '::placeholder': {
+              color: '#9ca3af',
+              fontSize: '16px',
+              fontFamily: '"Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
+            }
           },
           invalid: { color: '#ef4444' }
         },
