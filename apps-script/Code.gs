@@ -2,7 +2,6 @@
 const SHEET_NAMES = {
   ORDERS: 'SERVI Orders',
   ADJUSTMENTS: 'SERVI Adjustments',
-  CLIENTS: 'SERVI Clients',
 };
 
 const ORDER_HEADER_ALIASES = {
@@ -54,22 +53,10 @@ const ADJ_HEADER_ALIASES = {
   CLIENT_ID: ['Client ID'],
 };
 
-const CLIENT_HEADER_ALIASES = {
-  DATE_CREATED: ['Date created', 'Date Created'],
-  CLIENT_NAME: ['Client Name'],
-  WHATSAPP: ['WhatsApp (E.164)', 'WhatsApp Number', 'WhatsApp Associated'],
-  EMAIL: ['Email'],
-  STRIPE_CUSTOMER_ID: ['Stripe Customer ID'],
-  FIRST_ORDER_ID: ['First Order ID'],
-  SHORT_ORDER_ID: ['Short Order ID', 'Short Code'],
-  NOTES: ['Notes'],
-};
-
 const HEADER_CACHE = Object.create(null);
 const CACHE_KEY_TO_SHEET = {
   orders: SHEET_NAMES.ORDERS,
   adjustments: SHEET_NAMES.ADJUSTMENTS,
-  clients: SHEET_NAMES.CLIENTS,
 };
 
 function normalizeHeader_(value) {
@@ -185,14 +172,6 @@ function adjustmentsColumnMap_(sheetOpt) {
     sheetOpt
   );
 }
-function clientsColumnMap_(sheetOpt) {
-  return getColumnMap_(
-    'clients',
-    SHEET_NAMES.CLIENTS,
-    CLIENT_HEADER_ALIASES,
-    sheetOpt
-  );
-}
 
 function createColumnProxy_(cacheKey, sheetName, aliasMap) {
   return new Proxy(
@@ -222,11 +201,6 @@ const ADJ_COL = createColumnProxy_(
   'adjustments',
   SHEET_NAMES.ADJUSTMENTS,
   ADJ_HEADER_ALIASES
-);
-const CLIENT_COL = createColumnProxy_(
-  'clients',
-  SHEET_NAMES.CLIENTS,
-  CLIENT_HEADER_ALIASES
 );
 
 function onOpen() {
@@ -280,30 +254,6 @@ function onOpen() {
   } catch (e) {
     Logger.log('UI not available in this context: ' + e.message);
   }
-
-  ensureClientsSheet_();
-}
-
-function ensureClientsSheet_() {
-  const ss = getSpreadsheet_();
-  let sh = ss.getSheetByName(SHEET_NAMES.CLIENTS);
-  if (sh) return;
-
-  sh = ss.insertSheet(SHEET_NAMES.CLIENTS);
-  const headers = [
-    'Date created',
-    'Client Name',
-    'WhatsApp (E.164)',
-    'Email',
-    'Stripe Customer ID',
-    'First Order ID',
-    'Short Order ID',
-    'Notes',
-  ];
-  sh.getRange(1, 1, 1, headers.length).setValues([headers]);
-  sh.setFrozenRows(1);
-  sh.getRange('A2:A').setNumberFormat('yyyy-mm-dd hh:mm:ss');
-  clearColumnCache_('clients', sh);
 }
 
 function run_autoPreauthOnce() {
@@ -851,23 +801,8 @@ function generatePaymentLink() {
   ).trim();
   const rawPhone = sheet.getRange(editedRow, phoneCol).getDisplayValue();
   const clientPhone = normalizePhoneToE164(rawPhone);
-  const existingClient = lookupSavedClientByPhone_(clientPhone);
   const clientTypeCell = sheet.getRange(editedRow, clientTypeCol);
-  if (existingClient) {
-    clientTypeCell.setValue('SERVI Client');
-    if (existingClient.customerId) {
-      const currentClientId = String(
-        sheet.getRange(editedRow, clientIdCol).getDisplayValue() || ''
-      ).trim();
-      if (!currentClientId) {
-        sheet
-          .getRange(editedRow, clientIdCol)
-          .setValue(existingClient.customerId);
-      }
-    }
-  } else {
-    clientTypeCell.setValue('Guest');
-  }
+  clientTypeCell.setValue('Guest');
 
   const TZ = 'America/Mexico_City';
 
@@ -1382,41 +1317,6 @@ function normalizePhoneToE164(raw, defaultCountry) {
     return '+' + digits;
   }
   return '+' + digits;
-}
-
-function lookupSavedClientByPhone_(normalizedPhone) {
-  const phone = String(normalizedPhone || '').trim();
-  if (!phone) return null;
-  const sheet = getSheet_(SHEET_NAMES.CLIENTS);
-  if (!sheet) return null;
-  const cols = clientsColumnMap_(sheet);
-  const last = sheet.getLastRow();
-  if (last < 2) return null;
-
-  const phones = sheet
-    .getRange(2, cols.WHATSAPP, last - 1, 1)
-    .getDisplayValues();
-  const digits = phone.replace(/\D+/g, '');
-
-  for (let i = 0; i < phones.length; i++) {
-    const stored = String(phones[i][0] || '').trim();
-    if (!stored) continue;
-    const storedDigits = stored.replace(/\D+/g, '');
-    if (!storedDigits || storedDigits !== digits) continue;
-
-    const row = i + 2;
-    const customerId = String(
-      sheet.getRange(row, cols.STRIPE_CUSTOMER_ID).getDisplayValue() || ''
-    ).trim();
-    if (!customerId) continue;
-
-    return {
-      row,
-      customerId,
-      phone: stored,
-    };
-  }
-  return null;
 }
 
 function resyncSelectedRow() {

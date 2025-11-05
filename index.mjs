@@ -812,7 +812,9 @@ app.get('/order/:orderId', async (req, res) => {
           intentType = null;
         } else {
           const hoursAhead = hoursUntilService(row);
-          if (hoursAhead > 12) {
+          const LONG_LEAD_HOURS = 5 * 24;
+
+          if (hoursAhead > LONG_LEAD_HOURS) {
             consentRequired = true;
             await pool.query(
               `UPDATE orders
@@ -1062,7 +1064,12 @@ app.get('/o/:code', async (req, res) => {
     }
     if (row.kind === 'setup_required') return res.redirect(302, `/pay?orderId=${encodeURIComponent(row.id)}`);
     if (row.kind === 'setup')          return res.redirect(302, `/pay?orderId=${encodeURIComponent(row.id)}`);
-    if (row.kind === 'book')           return res.redirect(302, `/book?orderId=${encodeURIComponent(row.id)}`);
+    if (row.kind === 'book') {
+      if (!row.saved_payment_method_id) {
+        return res.redirect(302, `/pay?orderId=${encodeURIComponent(row.id)}`);
+      }
+      return res.redirect(302, `/book?orderId=${encodeURIComponent(row.id)}`);
+    }
 
     // 3) Legacy 'primary' → check Stripe for saved PMs
     let hasSaved = false;
@@ -2372,6 +2379,20 @@ app.post('/confirm-with-saved', async (req, res) => {
           limit: 1
         });
         savedPmId = list.data[0]?.id || null;
+      }
+
+      if (!savedPmId) {
+        await pool.query(
+          `UPDATE orders
+              SET saved_payment_method_id = NULL
+            WHERE id = $1`,
+          [row.id]
+        );
+
+        return res.status(409).json({
+          error: 'no_saved_card',
+          redirect: `/pay?orderId=${encodeURIComponent(row.id)}`
+        });
       }
 
       const statusLabel = 'Scheduled';

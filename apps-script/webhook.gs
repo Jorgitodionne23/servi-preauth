@@ -80,17 +80,10 @@ function doPost(e) {
       }
 
       if (foundRow) {
-        const consentApplied = writeIdentityColumnsInOrders_(
+        writeIdentityColumnsInOrders_(
           sheet,
           foundRow,
           orderId,
-          customerIdPayload
-        );
-        updateClientRegistryForConsent_(
-          sheet,
-          foundRow,
-          orderId,
-          consentApplied,
           customerIdPayload
         );
       }
@@ -125,13 +118,8 @@ function doPost(e) {
     }
 
     if (data && data.type === 'customer.updated') {
-      try {
-        upsertClientFromCustomerUpdate_(data);
-      } catch (errU) {
-        Logger.log('customer.updated handler error: %s', errU);
-      }
       return ContentService.createTextOutput(
-        JSON.stringify({ status: 'ok_customer_updated' })
+        JSON.stringify({ status: 'ignored_customer_update' })
       ).setMimeType(ContentService.MimeType.JSON);
     }
 
@@ -193,17 +181,10 @@ function doPost(e) {
         const orderIdFromSheet = String(
           sheet.getRange(row, cols.ORDER_ID).getDisplayValue() || ''
         ).trim();
-        const consentApplied = writeIdentityColumnsInOrders_(
+        writeIdentityColumnsInOrders_(
           sheet,
           row,
           orderIdFromSheet,
-          customerIdPayload
-        );
-        updateClientRegistryForConsent_(
-          sheet,
-          row,
-          orderIdFromSheet,
-          consentApplied,
           customerIdPayload
         );
 
@@ -479,168 +460,6 @@ function writeIdentityColumnsInOrders_(sheet, row, orderId, customerId, consentO
   return consentOk;
 }
 
-function ensureClientsSheet_() {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  let sh = ss.getSheetByName(SHEET_NAMES.CLIENTS);
-  if (sh) return sh;
-
-  sh = ss.insertSheet(SHEET_NAMES.CLIENTS);
-  const headers = [
-    'Date created',
-    'Client Name',
-    'WhatsApp (E.164)',
-    'Email',
-    'Stripe Customer ID',
-    'First Order ID',
-    'Short Order ID',
-    'Notes',
-  ];
-  sh.getRange(1, 1, 1, headers.length).setValues([headers]);
-  sh.setFrozenRows(1);
-  sh.getRange('A2:A').setNumberFormat('yyyy-mm-dd hh:mm:ss');
-  clearColumnCache_('clients', sh);
-  return sh;
-}
-
-function upsertClientFromOrdersRow_(ordersSheet, row, orderId, customerId) {
-  const clients = ensureClientsSheet_();
-  const orderCols = ordersColumnMap_(ordersSheet);
-  const clientCols = clientsColumnMap_(clients);
-
-  const name = String(
-    ordersSheet.getRange(row, orderCols.CLIENT_NAME).getDisplayValue() || ''
-  ).trim();
-  const phone = String(
-    ordersSheet.getRange(row, orderCols.PHONE).getDisplayValue() || ''
-  ).trim();
-  const normalizedPhone = normalizePhoneToE164_(phone);
-  const short = String(
-    ordersSheet.getRange(row, orderCols.SHORT_CODE).getDisplayValue() || ''
-  ).trim();
-
-  if (!customerId) return false;
-
-  const last = clients.getLastRow();
-  let foundRow = 0;
-
-  if (last >= 2) {
-    const phones = clients
-      .getRange(2, clientCols.WHATSAPP, last - 1, 1)
-      .getDisplayValues();
-    const custs = clients
-      .getRange(2, clientCols.STRIPE_CUSTOMER_ID, last - 1, 1)
-      .getDisplayValues();
-
-    for (let i = 0; i < custs.length; i++) {
-      const cid = String(custs[i][0] || '').trim();
-      if (cid && cid === customerId) {
-        foundRow = i + 2;
-        break;
-      }
-    }
-    if (!foundRow && normalizedPhone) {
-      for (let i = 0; i < phones.length; i++) {
-        const ph = String(phones[i][0] || '').trim();
-        if (ph && ph === normalizedPhone) {
-          foundRow = i + 2;
-          break;
-        }
-      }
-    }
-  }
-
-  if (!foundRow) {
-    foundRow = last + 1;
-    const ts = Utilities.formatDate(
-      new Date(),
-      'America/Mexico_City',
-      'yyyy-MM-dd HH:mm:ss'
-    );
-    clients
-      .getRange(foundRow, clientCols.DATE_CREATED)
-      .setValue(ts)
-      .setNumberFormat('yyyy-mm-dd hh:mm:ss');
-    if (orderId)
-      clients.getRange(foundRow, clientCols.FIRST_ORDER_ID).setValue(orderId);
-  }
-
-  clients.getRange(foundRow, clientCols.CLIENT_NAME).setValue(name || '');
-  clients
-    .getRange(foundRow, clientCols.WHATSAPP)
-    .setValue(normalizedPhone || '');
-  if (clientCols.EMAIL) {
-    clients.getRange(foundRow, clientCols.EMAIL).setValue('');
-  }
-  clients
-    .getRange(foundRow, clientCols.STRIPE_CUSTOMER_ID)
-    .setValue(customerId || '');
-
-  const existingFirst = String(
-    clients.getRange(foundRow, clientCols.FIRST_ORDER_ID).getDisplayValue() ||
-      ''
-  ).trim();
-  if (!existingFirst && orderId) {
-    clients.getRange(foundRow, clientCols.FIRST_ORDER_ID).setValue(orderId);
-  }
-
-  clients.getRange(foundRow, clientCols.SHORT_ORDER_ID).setValue(short || '');
-
-  return true;
-}
-
-function removeClientByCustomerId_(customerId) {
-  const id = String(customerId || '').trim();
-  if (!id) return false;
-  const clients = getSheet_(SHEET_NAMES.CLIENTS);
-  if (!clients) return false;
-  const cols = clientsColumnMap_(clients);
-  const last = clients.getLastRow();
-  if (last < 2) return false;
-  const ids = clients
-    .getRange(2, cols.STRIPE_CUSTOMER_ID, last - 1, 1)
-    .getDisplayValues();
-  for (let i = 0; i < ids.length; i++) {
-    if (String(ids[i][0] || '').trim() === id) {
-      clients.deleteRow(i + 2);
-      return true;
-    }
-  }
-  return false;
-}
-
-function updateClientRegistryForConsent_(
-  ordersSheet,
-  row,
-  orderId,
-  consentOk,
-  customerIdOpt
-) {
-  if (typeof consentOk !== 'boolean') return false;
-  const cols = ordersColumnMap_(ordersSheet);
-  const idCell = ordersSheet.getRange(row, cols.CLIENT_ID);
-  const existingId = String(idCell.getDisplayValue() || '').trim();
-  const resolvedCustomerId = String(
-    customerIdOpt || existingId || ''
-  ).trim();
-
-  if (customerIdOpt && customerIdOpt !== existingId) {
-    idCell.setValue(customerIdOpt);
-  }
-
-  if (!resolvedCustomerId) return false;
-
-  if (consentOk) {
-    return upsertClientFromOrdersRow_(
-      ordersSheet,
-      row,
-      orderId,
-      resolvedCustomerId
-    );
-  }
-
-  return removeClientByCustomerId_(resolvedCustomerId);
-}
-
 function updateAdjustmentStatus_(
   sheet,
   paymentIntentId,
@@ -753,15 +572,6 @@ function refreshConsentForOrder_(
       : typeof consentOverrideOpt === 'boolean'
       ? consentOverrideOpt
       : null;
-  if (typeof consentValue === 'boolean') {
-    updateClientRegistryForConsent_(
-      ordersSheet,
-      row,
-      orderKey,
-      consentValue,
-      customerIdOpt
-    );
-  }
   return consentValue;
 }
 
@@ -825,13 +635,6 @@ function handleCustomerConsentWebhook_(payload) {
         consentFlag
       );
       finalConsent = typeof applied === 'boolean' ? applied : consentFlag;
-      updateClientRegistryForConsent_(
-        ordersSheet,
-        rowIdx,
-        orderIdCandidate,
-        finalConsent,
-        customerId
-      );
       anyOrderRowUpdated = true;
     });
   }
@@ -863,10 +666,6 @@ function handleCustomerConsentWebhook_(payload) {
     }
   }
 
-  if (!anyOrderRowUpdated && !finalConsent && customerId) {
-    removeClientByCustomerId_(customerId);
-  }
-
   return {
     consent: finalConsent,
     customerId,
@@ -876,63 +675,4 @@ function handleCustomerConsentWebhook_(payload) {
     parentRow: parentRow || null,
     adjustmentRow: adjustmentRow || null,
   };
-}
-
-function upsertClientFromCustomerUpdate_(payload) {
-  const sh = ensureClientsSheet_();
-  if (!sh) return false;
-
-  const cols = clientsColumnMap_(sh);
-
-  const id = String(payload.id || '').trim();
-  if (!id) return false;
-
-  const name = String(payload.name || '').trim();
-  const phone = normalizePhoneToE164_(String(payload.phone || '').trim());
-  const email = String(payload.email || '').trim();
-
-  const last = sh.getLastRow();
-  let rowToUpdate = 0;
-
-  if (last >= 2) {
-    const cids = sh
-      .getRange(2, cols.STRIPE_CUSTOMER_ID, last - 1, 1)
-      .getDisplayValues();
-    for (let i = 0; i < cids.length; i++) {
-      if (String(cids[i][0] || '').trim() === id) {
-        rowToUpdate = i + 2;
-        break;
-      }
-    }
-  }
-
-  if (!rowToUpdate) {
-    rowToUpdate = last + 1;
-    const ts = Utilities.formatDate(
-      new Date(),
-      'America/Mexico_City',
-      'yyyy-MM-dd HH:mm:ss'
-    );
-    sh.getRange(rowToUpdate, cols.DATE_CREATED)
-      .setValue(ts)
-      .setNumberFormat('yyyy-mm-dd hh:mm:ss');
-    sh.getRange(rowToUpdate, cols.STRIPE_CUSTOMER_ID).setValue(id);
-  }
-
-  if (name) sh.getRange(rowToUpdate, cols.CLIENT_NAME).setValue(name);
-  if (phone) sh.getRange(rowToUpdate, cols.WHATSAPP).setValue(phone);
-  if (email && cols.EMAIL) sh.getRange(rowToUpdate, cols.EMAIL).setValue(email);
-
-  return true;
-}
-
-function normalizePhoneToE164_(raw, defaultCountry) {
-  defaultCountry = defaultCountry || '+52';
-  if (!raw) return '';
-  const src = String(raw).trim();
-  const digits = src.replace(/\D+/g, '');
-  if (src.startsWith('+')) return '+' + digits;
-  if (digits.length === 10) return defaultCountry + digits;
-  if (digits.length === 11 && digits[0] === '1') return '+' + digits;
-  return '+' + digits;
 }

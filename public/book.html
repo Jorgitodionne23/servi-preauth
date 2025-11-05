@@ -300,6 +300,7 @@
     if (!order?.saved_card) {
       // Extra guard: if server returns 409 later, we still redirect from the click handler.
       location.href = `/pay?orderId=${encodeURIComponent(orderId)}`;
+      return;
     }
 
     // Prefer richer display if server provides it
@@ -486,6 +487,12 @@
     }
 
     if (r.status === 409) {
+      if (payload?.error === 'no_saved_card') {
+        alert(payload?.message || 'Necesitamos que actualices tu método de pago para continuar.');
+        const fallback = `/pay?orderId=${encodeURIComponent(orderId)}`;
+        location.href = payload?.redirect || fallback;
+        return;
+      }
       if (payload?.paymentMethodId || payload?.paymentIntentId) {
         await syncProcessingFee(orderId, payload?.paymentIntentId || null, payload?.paymentMethodId || null);
       }
