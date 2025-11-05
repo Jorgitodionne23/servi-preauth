@@ -72,7 +72,6 @@
         display: flex;
         flex-direction: column;
         padding-top: 5px;
-        margin-right: 30px;
       }
 
       #card-element {
@@ -81,6 +80,16 @@
         border-radius: 6px;
         border: 1px solid #444;
         min-height: 48px;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+      }
+
+      #card-element:hover {
+        border-color: #666;
+      }
+
+      #card-element:focus-within {
+        border-color: #888;
+        box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.1);
       }
 
       button {
@@ -149,40 +158,36 @@
         max-width: 100%;
         object-fit: contain;
       }
-      .icon-input {
-      position: relative;
-      }
 
     .input-text {
       background-color: #222;
       border: 1px solid #444;
       border-radius: 6px;
-      padding: 12px 12px 12px 43px;
-      color: #9ca3af;
+      padding: 12px;  /* ← CHANGED from "12px 12px 12px 43px" */
+      color: #fff;  /* ← CHANGED from #9ca3af to match card element */
       font-size: 16px;
       width: 100%;
       font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       line-height: 24px;
       height: 48px;
-      }
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .input-text:hover {
+      border-color: #666;
+    }
+
+    .input-text:focus {
+      outline: none;
+      border-color: #888;
+      box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.1);
+    }
 
     .input-text::placeholder {
       color: #9ca3af;
       font-size: 16px;
       font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     }
-
-    .input-icon {
-      position: absolute;
-      top: 50%;
-      left: 14px;
-      bottom: 9px;
-      transform: translateY(-50%);
-      color: #9ca3af;
-      font-size: 14.1px;
-      opacity: 0.17;
-      pointer-events: none;
-      }
 
     .summary-box {
       background-color: #1a1a1a;
@@ -301,7 +306,7 @@
         <div class="form-row">
           <div id="card-element"></div>
         </div>
-        <div class="form-row icon-input">
+        <div class="form-row">
             <input 
                 type="text" 
                 id="cardholder-name" 
