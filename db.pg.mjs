@@ -23,8 +23,8 @@ if (!allowInsecure) {
 
 export async function initDb() {
   await pool.query(`
-    -- Main orders table
-    CREATE TABLE IF NOT EXISTS orders (
+    -- Main bookings table
+    CREATE TABLE IF NOT EXISTS all_bookings (
       id TEXT PRIMARY KEY,
       payment_intent_id TEXT UNIQUE,
       amount INTEGER,
@@ -55,53 +55,57 @@ export async function initDb() {
       alpha_value REAL
     );
 
-    ALTER TABLE orders ADD COLUMN IF NOT EXISTS client_phone TEXT;
-    ALTER TABLE orders ADD COLUMN IF NOT EXISTS client_email TEXT;
+    ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS client_phone TEXT;
+    ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS client_email TEXT;
 
     -- NEW: store full timestamp (ISO with tz) for display/use in UI
-    ALTER TABLE orders
+    ALTER TABLE all_bookings
       ADD COLUMN IF NOT EXISTS service_datetime TEXT;
 
-    ALTER TABLE orders
+    ALTER TABLE all_bookings
       ADD COLUMN IF NOT EXISTS service_address TEXT;
 
-    ALTER TABLE orders ADD COLUMN IF NOT EXISTS provider_amount INTEGER;
-    ALTER TABLE orders ADD COLUMN IF NOT EXISTS booking_fee_amount INTEGER;
-    ALTER TABLE orders ADD COLUMN IF NOT EXISTS processing_fee_amount INTEGER;
-    ALTER TABLE orders ADD COLUMN IF NOT EXISTS vat_amount INTEGER;
-    ALTER TABLE orders ADD COLUMN IF NOT EXISTS pricing_total_amount INTEGER;
-    ALTER TABLE orders ADD COLUMN IF NOT EXISTS vat_rate REAL;
-    ALTER TABLE orders ADD COLUMN IF NOT EXISTS stripe_percent_fee REAL;
-    ALTER TABLE orders ADD COLUMN IF NOT EXISTS stripe_fixed_fee INTEGER;
-    ALTER TABLE orders ADD COLUMN IF NOT EXISTS stripe_fee_tax_rate REAL;
-    ALTER TABLE orders ADD COLUMN IF NOT EXISTS processing_fee_type TEXT;
-    ALTER TABLE orders ADD COLUMN IF NOT EXISTS urgency_multiplier REAL;
-    ALTER TABLE orders ADD COLUMN IF NOT EXISTS alpha_value REAL;
-    ALTER TABLE orders ADD COLUMN IF NOT EXISTS capture_method TEXT;
-    ALTER TABLE orders ADD COLUMN IF NOT EXISTS adjustment_reason TEXT;
+    ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS provider_amount INTEGER;
+    ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS booking_fee_amount INTEGER;
+    ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS processing_fee_amount INTEGER;
+    ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS vat_amount INTEGER;
+    ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS pricing_total_amount INTEGER;
+    ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS vat_rate REAL;
+    ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS stripe_percent_fee REAL;
+    ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS stripe_fixed_fee INTEGER;
+    ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS stripe_fee_tax_rate REAL;
+    ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS processing_fee_type TEXT;
+    ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS urgency_multiplier REAL;
+    ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS alpha_value REAL;
+    ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS capture_method TEXT;
+    ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS adjustment_reason TEXT;
 
     DO $$
     BEGIN
       IF EXISTS (
         SELECT 1
         FROM information_schema.columns
-        WHERE table_name = 'orders'
+        WHERE table_name = 'all_bookings'
           AND column_name = 'processing_fee_rule'
       ) THEN
-        ALTER TABLE orders
+        ALTER TABLE all_bookings
           RENAME COLUMN processing_fee_rule TO processing_fee_type;
       END IF;
     EXCEPTION WHEN duplicate_column THEN
       NULL;
     END $$;
 
-    CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);
-    CREATE INDEX IF NOT EXISTS idx_orders_parent ON orders(parent_id);
-    -- (optional but handy for queries by date)
-    CREATE INDEX IF NOT EXISTS idx_orders_service_date ON orders(service_date);
+    ALTER INDEX IF EXISTS idx_orders_created_at RENAME TO idx_all_bookings_created_at;
+    ALTER INDEX IF EXISTS idx_orders_parent RENAME TO idx_all_bookings_parent;
+    ALTER INDEX IF EXISTS idx_orders_service_date RENAME TO idx_all_bookings_service_date;
 
-    -- Consent audit (per-order)
-    CREATE TABLE IF NOT EXISTS order_consents (
+    CREATE INDEX IF NOT EXISTS idx_all_bookings_created_at ON all_bookings(created_at);
+    CREATE INDEX IF NOT EXISTS idx_all_bookings_parent ON all_bookings(parent_id);
+    -- (optional but handy for queries by date)
+    CREATE INDEX IF NOT EXISTS idx_all_bookings_service_date ON all_bookings(service_date);
+
+    -- Consent audit (per-booking)
+    CREATE TABLE IF NOT EXISTS consented_offsession_bookings (
       order_id TEXT PRIMARY KEY,
       customer_id TEXT,
       payment_method_id TEXT,
@@ -116,7 +120,7 @@ export async function initDb() {
     );
 
     -- 1-row-per-customer consent registry
-    CREATE TABLE IF NOT EXISTS customer_consents (
+    CREATE TABLE IF NOT EXISTS saved_servi_users (
       customer_id              TEXT PRIMARY KEY,
       customer_name            TEXT,
       customer_phone           TEXT,
@@ -133,14 +137,17 @@ export async function initDb() {
       tz                       TEXT
     );
 
-      ALTER TABLE customer_consents
+      ALTER TABLE saved_servi_users
         ADD COLUMN IF NOT EXISTS customer_phone TEXT;
 
 
-    CREATE INDEX IF NOT EXISTS idx_customer_consents_last_checked_at
-      ON customer_consents (last_checked_at DESC);
+    ALTER INDEX IF EXISTS idx_customer_consents_last_checked_at RENAME TO idx_saved_servi_users_last_checked_at;
+    ALTER INDEX IF EXISTS idx_customer_consents_latest_pm RENAME TO idx_saved_servi_users_latest_pm;
 
-    CREATE INDEX IF NOT EXISTS idx_customer_consents_latest_pm
-      ON customer_consents (latest_payment_method_id);
+    CREATE INDEX IF NOT EXISTS idx_saved_servi_users_last_checked_at
+      ON saved_servi_users (last_checked_at DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_saved_servi_users_latest_pm
+      ON saved_servi_users (latest_payment_method_id);
   `);
 }

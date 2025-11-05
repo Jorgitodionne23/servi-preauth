@@ -53,7 +53,7 @@ async function generateUniqueCode(len = 10) {
       .replace(/[^A-Z0-9]/g, '')
       .slice(0, len);
 
-    const { rows } = await pool.query('SELECT 1 FROM orders WHERE public_code = $1', [code]);
+  const { rows } = await pool.query('SELECT 1 FROM all_bookings WHERE public_code = $1', [code]);
     if (rows.length === 0) return code;
   }
   throw new Error('Could not generate unique public code');
@@ -78,7 +78,7 @@ async function ensureCustomerForOrder(stripe, orderRow) {
     phone: orderRow.client_phone || undefined,
   });
 
-  await pool.query('UPDATE orders SET customer_id=$1 WHERE id=$2', [customer.id, orderRow.id]);
+  await pool.query('UPDATE all_bookings SET customer_id=$1 WHERE id=$2', [customer.id, orderRow.id]);
   return customer.id;
 }
 
@@ -267,7 +267,7 @@ async function refreshOrderFees(orderId, { paymentIntentId, paymentMethodId } = 
             stripe_fixed_fee,
             stripe_fee_tax_rate,
             payment_intent_id
-       FROM orders
+       FROM all_bookings
       WHERE id = $1`,
     [orderId]
   );
@@ -360,7 +360,7 @@ async function refreshOrderFees(orderId, { paymentIntentId, paymentMethodId } = 
   }
 
   await pool.query(
-    `UPDATE orders
+    `UPDATE all_bookings
         SET processing_fee_amount = $1,
             booking_fee_amount    = $2,
             vat_amount            = $3,
@@ -489,7 +489,7 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
     const orderId = randomUUID();
     const publicCode = await generateUniqueCode();
     await pool.query(
-      `INSERT INTO orders (
+      `INSERT INTO all_bookings (
         id,
         amount,
         provider_amount,
@@ -550,17 +550,17 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
 
     // also persist service_date/service_datetime (you already do)
     await pool.query(
-      'UPDATE orders SET service_date=$1, service_datetime=$2, client_phone=$3, client_email=$4, service_address=$5 WHERE id=$6',
+      'UPDATE all_bookings SET service_date=$1, service_datetime=$2, client_phone=$3, client_email=$4, service_address=$5 WHERE id=$6',
       [serviceDate || null, serviceDateTime || null, clientPhone || null, clientEmail || null, serviceAddress || null, orderId]
     );
     // --- NEW: determine if we already have consent (customer-level or order-level) ---
     let hasConsent = false;
     if (existingCustomer?.id) {
-      const cc = await pool.query('SELECT 1 FROM customer_consents WHERE customer_id = $1', [existingCustomer.id]);
+      const cc = await pool.query('SELECT 1 FROM saved_servi_users WHERE customer_id = $1', [existingCustomer.id]);
       hasConsent = !!cc.rows.length;
     }
     if (!hasConsent) {
-      const oc = await pool.query('SELECT 1 FROM order_consents WHERE order_id = $1', [orderId]);
+      const oc = await pool.query('SELECT 1 FROM consented_offsession_bookings WHERE order_id = $1', [orderId]);
       hasConsent = !!oc.rows.length;
     }
 
@@ -568,7 +568,7 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
     if (longLead) {
       if (!saved && !consent) {
         // no saved card and no consent → gate; DON'T create a Stripe customer yet
-        await pool.query('UPDATE orders SET status=$1, kind=$2 WHERE id=$3', ['Blocked', 'setup_required', orderId]);
+        await pool.query('UPDATE all_bookings SET status=$1, kind=$2 WHERE id=$3', ['Blocked', 'setup_required', orderId]);
 
         return res.status(403).send({
           error: 'account_required',
@@ -581,12 +581,12 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
 
       if (!saved) {
         // we have consent but no saved card: we'll create a Customer later when we start SetupIntent
-        await pool.query('UPDATE orders SET kind=$1 WHERE id=$2', ['setup', orderId]);
+        await pool.query('UPDATE all_bookings SET kind=$1 WHERE id=$2', ['setup', orderId]);
         return res.send({ orderId, publicCode, requiresSetup: true, hasSavedCard: false, amount: totalAmountCents });
       }
 
       // already saved (because existingCustomer had PMs) → book flow, no PI yet
-      await pool.query('UPDATE orders SET kind=$1 WHERE id=$2', ['book', orderId]);
+      await pool.query('UPDATE all_bookings SET kind=$1 WHERE id=$2', ['book', orderId]);
       return res.send({ orderId, publicCode, hasSavedCard: true, amount: totalAmountCents });
     }
 
@@ -595,7 +595,7 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
       // If the customer ALREADY has a saved card and we're still >12h out,
         if (saved && hoursAhead > 12) {
           if (hasConsent) {
-            await pool.query('UPDATE orders SET kind=$1 WHERE id=$2', ['book', orderId]);
+            await pool.query('UPDATE all_bookings SET kind=$1 WHERE id=$2', ['book', orderId]);
             return res.send({
               orderId,
               publicCode,
@@ -605,7 +605,7 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
             });
           } else {
             // Saved card found but no consent recorded → collect consent with Setup flow
-            await pool.query('UPDATE orders SET kind=$1 WHERE id=$2', ['setup', orderId]);
+            await pool.query('UPDATE all_bookings SET kind=$1 WHERE id=$2', ['setup', orderId]);
             return res.send({
               orderId,
               publicCode,
@@ -624,7 +624,7 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
         phone: clientPhone || undefined,
       });
 
-      await pool.query('UPDATE orders SET customer_id=$1 WHERE id=$2', [customer.id, orderId]);
+      await pool.query('UPDATE all_bookings SET customer_id=$1 WHERE id=$2', [customer.id, orderId]);
 
       const paymentIntent = await stripe.paymentIntents.create({
         amount: totalAmountCents,
@@ -636,7 +636,7 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
         metadata: { order_id: orderId, kind: 'primary' }
       });
 
-      await pool.query('UPDATE orders SET payment_intent_id=$1 WHERE id=$2', [paymentIntent.id, orderId]);
+      await pool.query('UPDATE all_bookings SET payment_intent_id=$1 WHERE id=$2', [paymentIntent.id, orderId]);
 
       return res.send({
         clientSecret: paymentIntent.client_secret,
@@ -660,7 +660,7 @@ app.get('/pay', async (req, res) => {
   try {
     const orderId = String(req.query.orderId || '').trim();
     if (orderId) {
-      const r = await pool.query('SELECT status FROM orders WHERE id = $1', [orderId]);
+      const r = await pool.query('SELECT status FROM all_bookings WHERE id = $1', [orderId]);
       const status = r.rows[0]?.status || '';
       if (PAY_SUCCESS_STATUSES.has(status)) {
         return res.redirect(302, `/success?orderId=${encodeURIComponent(orderId)}`);
@@ -694,7 +694,7 @@ app.get('/order/:orderId', async (req, res) => {
         client_name, client_phone, client_email,
         service_description, service_date, service_datetime, service_address, status, created_at,
         public_code, kind, parent_id, customer_id, saved_payment_method_id, capture_method, adjustment_reason
-      FROM orders
+      FROM all_bookings
       WHERE id = $1
     `, [orderId]);
 
@@ -707,7 +707,7 @@ app.get('/order/:orderId', async (req, res) => {
 
     // helper: check if we already recorded consent for this order
     async function hasConsent(orderId) {
-      const c = await pool.query('SELECT 1 FROM order_consents WHERE order_id=$1', [orderId]);
+      const c = await pool.query('SELECT 1 FROM consented_offsession_bookings WHERE order_id=$1', [orderId]);
       return !!c.rows.length;
     }
 
@@ -717,65 +717,65 @@ app.get('/order/:orderId', async (req, res) => {
       if (kind === 'setup_required') {
         // OPTIONAL: if this customer already has global consent, skip re-consent for this order
         if (row.customer_id) {
-          const cc = await pool.query('SELECT 1 FROM customer_consents WHERE customer_id = $1', [row.customer_id]);
+          const cc = await pool.query('SELECT 1 FROM saved_servi_users WHERE customer_id = $1', [row.customer_id]);
           if (cc.rows.length) {
             // If they already have a saved card, move straight to 'book'; otherwise create a SetupIntent
             const alreadySaved = await hasSavedCard(row.customer_id, stripe);
             if (alreadySaved) {
-              await pool.query('UPDATE orders SET kind=$1 WHERE id=$2', ['book', row.id]);
+              await pool.query('UPDATE all_bookings SET kind=$1 WHERE id=$2', ['book', row.id]);
               pi = null;           // book flow has no client_secret
               intentType = null;
             } else {
               const customerId = await ensureCustomerForOrder(stripe, row);
-              await pool.query('UPDATE orders SET kind=$1 WHERE id=$2', ['setup', row.id]);
+              await pool.query('UPDATE all_bookings SET kind=$1 WHERE id=$2', ['setup', row.id]);
               const si = await stripe.setupIntents.create({
                 customer: customerId,
                 automatic_payment_methods: { enabled: true },
                 usage: 'off_session',
                 metadata: { kind: 'setup', order_id: row.id }
               });
-              await pool.query('UPDATE orders SET payment_intent_id=$1 WHERE id=$2', [si.id, row.id]);
+              await pool.query('UPDATE all_bookings SET payment_intent_id=$1 WHERE id=$2', [si.id, row.id]);
               pi = si;
               intentType = 'setup';
             }
           } else {
             // No global consent → fall back to per-order consent requirement
-            const c = await pool.query('SELECT 1 FROM order_consents WHERE order_id=$1', [row.id]);
+            const c = await pool.query('SELECT 1 FROM consented_offsession_bookings WHERE order_id=$1', [row.id]);
             if (!c.rows.length) {
               consentRequired = true;
               pi = null;
               intentType = null; // no client_secret returned
             } else {
               const customerId = await ensureCustomerForOrder(stripe, row);
-              await pool.query('UPDATE orders SET kind=$1 WHERE id=$2', ['setup', row.id]);
+              await pool.query('UPDATE all_bookings SET kind=$1 WHERE id=$2', ['setup', row.id]);
               const si = await stripe.setupIntents.create({
                 customer: customerId,
                 automatic_payment_methods: { enabled: true },
                 usage: 'off_session',
                 metadata: { kind: 'setup', order_id: row.id }
               });
-              await pool.query('UPDATE orders SET payment_intent_id=$1 WHERE id=$2', [si.id, row.id]);
+              await pool.query('UPDATE all_bookings SET payment_intent_id=$1 WHERE id=$2', [si.id, row.id]);
               pi = si;
               intentType = 'setup';
             }
           }
         } else {
           // No customer yet → original per-order logic
-          const c = await pool.query('SELECT 1 FROM order_consents WHERE order_id=$1', [row.id]);
+          const c = await pool.query('SELECT 1 FROM consented_offsession_bookings WHERE order_id=$1', [row.id]);
           if (!c.rows.length) {
             consentRequired = true;
             pi = null;
             intentType = null; // no client_secret returned
           } else {
             const customerId = await ensureCustomerForOrder(stripe, row);
-            await pool.query('UPDATE orders SET kind=$1 WHERE id=$2', ['setup', row.id]);
+            await pool.query('UPDATE all_bookings SET kind=$1 WHERE id=$2', ['setup', row.id]);
             const si = await stripe.setupIntents.create({
               customer: customerId,
               automatic_payment_methods: { enabled: true },
               usage: 'off_session',
               metadata: { kind: 'setup', order_id: row.id }
             });
-            await pool.query('UPDATE orders SET payment_intent_id=$1 WHERE id=$2', [si.id, row.id]);
+            await pool.query('UPDATE all_bookings SET payment_intent_id=$1 WHERE id=$2', [si.id, row.id]);
             pi = si;
             intentType = 'setup';
           }
@@ -794,7 +794,7 @@ app.get('/order/:orderId', async (req, res) => {
           metadata: { kind: 'setup', order_id: row.id }
         });
 
-        await pool.query('UPDATE orders SET payment_intent_id=$1 WHERE id=$2', [si.id, row.id]);
+        await pool.query('UPDATE all_bookings SET payment_intent_id=$1 WHERE id=$2', [si.id, row.id]);
         pi = si;
         intentType = 'setup';
 
@@ -817,7 +817,7 @@ app.get('/order/:orderId', async (req, res) => {
           if (hoursAhead > LONG_LEAD_HOURS) {
             consentRequired = true;
             await pool.query(
-              `UPDATE orders
+              `UPDATE all_bookings
                   SET kind = 'setup_required',
                       payment_intent_id = NULL
                 WHERE id = $1`,
@@ -850,7 +850,7 @@ app.get('/order/:orderId', async (req, res) => {
             });
 
             await pool.query(
-              `UPDATE orders
+              `UPDATE all_bookings
                   SET payment_intent_id = $1,
                       kind = 'primary'
                 WHERE id = $2`,
@@ -875,7 +875,7 @@ app.get('/order/:orderId', async (req, res) => {
 
         if (alreadySaved && hours_ahead > 12) {
           // Convert legacy "primary" into "book" lazily, with no PI on read
-          await pool.query('UPDATE orders SET kind=$1 WHERE id=$2', ['book', row.id]);
+          await pool.query('UPDATE all_bookings SET kind=$1 WHERE id=$2', ['book', row.id]);
           pi = null;
           intentType = null;
         } else {
@@ -898,7 +898,7 @@ app.get('/order/:orderId', async (req, res) => {
               parent_order_id: row.parent_id || ''
             }
           });
-          await pool.query('UPDATE orders SET payment_intent_id=$1 WHERE id=$2', [created.id, row.id]);
+          await pool.query('UPDATE all_bookings SET payment_intent_id=$1 WHERE id=$2', [created.id, row.id]);
           pi = created;
           intentType = 'payment';
         }
@@ -1024,7 +1024,7 @@ app.get('/o/:code', async (req, res) => {
               customer_id,
               saved_payment_method_id,
               status
-         FROM orders
+         FROM all_bookings
         WHERE public_code = $1`,
       [code]
     );
@@ -1052,7 +1052,7 @@ app.get('/o/:code', async (req, res) => {
 
       if (hasSaved && firstPmId && firstPmId !== row.saved_payment_method_id) {
         await pool.query(
-          `UPDATE orders
+          `UPDATE all_bookings
              SET saved_payment_method_id = $1
            WHERE id = $2`,
           [firstPmId, row.id]
@@ -1087,7 +1087,7 @@ app.get('/o/:code', async (req, res) => {
     // 4) 🩹 Self-heal: persist what we learned so next time it routes directly
     if (hasSaved) {
       await pool.query(
-        `UPDATE orders
+        `UPDATE all_bookings
            SET kind='book',
                saved_payment_method_id = COALESCE($1, saved_payment_method_id)
          WHERE id=$2`,
@@ -1177,7 +1177,7 @@ app.post('/tasks/preauth-due', async (req, res) => {
             service_datetime,
             (service_date::timestamp AT TIME ZONE 'America/Mexico_City') + INTERVAL '0 hours'
           ) AS svc_at
-        FROM orders
+        FROM all_bookings
         WHERE kind = 'book'
           AND customer_id IS NOT NULL
           AND saved_payment_method_id IS NOT NULL
@@ -1209,7 +1209,7 @@ app.post('/tasks/preauth-due', async (req, res) => {
         });
 
         await pool.query(
-          'UPDATE orders SET payment_intent_id=$1 WHERE id=$2',
+          'UPDATE all_bookings SET payment_intent_id=$1 WHERE id=$2',
           [pi.id, row.id]
         );
         try {
@@ -1252,7 +1252,7 @@ app.post('/orders/:id/consent', async (req, res) => {
            client_email,
            client_phone,
            payment_intent_id
-      FROM orders
+      FROM all_bookings
      WHERE id = $1
   `, [id]);
   const row = or.rows[0];
@@ -1283,7 +1283,7 @@ app.post('/orders/:id/consent', async (req, res) => {
 
   // 1) Per-order audit (kept as is)
   await pool.query(`
-    INSERT INTO order_consents (order_id, customer_id, payment_method_id, version, consent_text, text_hash, checked_at, ip, user_agent, locale, tz)
+    INSERT INTO consented_offsession_bookings (order_id, customer_id, payment_method_id, version, consent_text, text_hash, checked_at, ip, user_agent, locale, tz)
     VALUES ($1,$2,$3,$4,$5,$6,NOW(),$7,$8,$9,$10)
     ON CONFLICT (order_id) DO UPDATE SET
       version = EXCLUDED.version,
@@ -1299,7 +1299,7 @@ app.post('/orders/:id/consent', async (req, res) => {
   // 2) One-row-per-customer registry (NEW) — only if we already have a customer_id
   if (row.customer_id) {
     await pool.query(`
-      INSERT INTO customer_consents (
+      INSERT INTO saved_servi_users (
         customer_id, customer_name, customer_phone,
         latest_payment_method_id, latest_text_hash, latest_version,
         first_checked_at, last_checked_at,
@@ -1308,13 +1308,13 @@ app.post('/orders/:id/consent', async (req, res) => {
       )
       VALUES ($1,$2,$3,$4,$5,$6, NOW(), NOW(), $7, $8, $9,$10,$11,$12)
       ON CONFLICT (customer_id) DO UPDATE SET
-        customer_name            = COALESCE(EXCLUDED.customer_name, customer_consents.customer_name),
-        customer_phone           = COALESCE(EXCLUDED.customer_phone, customer_consents.customer_phone),
-        latest_payment_method_id = COALESCE(EXCLUDED.latest_payment_method_id, customer_consents.latest_payment_method_id),
-        latest_text_hash         = COALESCE(EXCLUDED.latest_text_hash, customer_consents.latest_text_hash),
-        latest_version           = COALESCE(EXCLUDED.latest_version, customer_consents.latest_version),
-        first_checked_at         = COALESCE(customer_consents.first_checked_at, EXCLUDED.first_checked_at),
-        first_order_id           = COALESCE(customer_consents.first_order_id,   EXCLUDED.first_order_id),
+        customer_name            = COALESCE(EXCLUDED.customer_name, saved_servi_users.customer_name),
+        customer_phone           = COALESCE(EXCLUDED.customer_phone, saved_servi_users.customer_phone),
+        latest_payment_method_id = COALESCE(EXCLUDED.latest_payment_method_id, saved_servi_users.latest_payment_method_id),
+        latest_text_hash         = COALESCE(EXCLUDED.latest_text_hash, saved_servi_users.latest_text_hash),
+        latest_version           = COALESCE(EXCLUDED.latest_version, saved_servi_users.latest_version),
+        first_checked_at         = COALESCE(saved_servi_users.first_checked_at, EXCLUDED.first_checked_at),
+        first_order_id           = COALESCE(saved_servi_users.first_order_id,   EXCLUDED.first_order_id),
         last_checked_at          = EXCLUDED.last_checked_at,
         last_order_id            = EXCLUDED.last_order_id,
         ip                       = EXCLUDED.ip,
@@ -1348,7 +1348,7 @@ app.post('/orders/:id/consent', async (req, res) => {
 
 
   // Promote order if it was gated
-  await pool.query("UPDATE orders SET kind='setup' WHERE id=$1 AND kind='setup_required'", [id]);
+  await pool.query("UPDATE all_bookings SET kind='setup' WHERE id=$1 AND kind='setup_required'", [id]);
 
   res.send({ ok: true, hash: serverHash, version: version || '1.0' });
 });
@@ -1359,7 +1359,7 @@ app.get('/orders/:id/consent', async (req, res) => {
   const { id } = req.params;
 
   const orderResult = await pool.query(
-    'SELECT customer_id, saved_payment_method_id, parent_id FROM orders WHERE id=$1',
+    'SELECT customer_id, saved_payment_method_id, parent_id FROM all_bookings WHERE id=$1',
     [id]
   );
   const orderRow = orderResult.rows[0] || null;
@@ -1385,7 +1385,7 @@ app.get('/orders/:id/consent', async (req, res) => {
                first_checked_at,
                last_checked_at,
                latest_payment_method_id
-          FROM customer_consents
+          FROM saved_servi_users
          WHERE customer_id = $1
       `,
       [customerId]
@@ -1417,13 +1417,13 @@ app.get('/orders/:id/consent', async (req, res) => {
       if (!stripeHasMethod) {
         try {
           const deleteResult = await pool.query(
-            'DELETE FROM customer_consents WHERE customer_id = $1',
+            'DELETE FROM saved_servi_users WHERE customer_id = $1',
             [customerId]
           );
           consentRowDeleted = consentRowDeleted || deleteResult.rowCount > 0;
         } catch (clearConsentErr) {
           console.warn(
-            'consent lookup: failed to delete customer_consents row',
+            'consent lookup: failed to delete saved_servi_users row',
             customerId,
             clearConsentErr?.message || clearConsentErr
           );
@@ -1431,12 +1431,12 @@ app.get('/orders/:id/consent', async (req, res) => {
         if (orderSavedPmId) {
           try {
             await pool.query(
-              'UPDATE orders SET saved_payment_method_id = NULL WHERE customer_id = $1',
+              'UPDATE all_bookings SET saved_payment_method_id = NULL WHERE customer_id = $1',
               [customerId]
             );
           } catch (clearOrderErr) {
             console.warn(
-              'consent lookup: failed to clear orders.saved_payment_method_id',
+              'consent lookup: failed to clear all_bookings.saved_payment_method_id',
               customerId,
               clearOrderErr?.message || clearOrderErr
             );
@@ -1454,7 +1454,7 @@ app.get('/orders/:id/consent', async (req, res) => {
 
     if (!version || !hash) {
       const legacyMeta = await pool.query(
-        'SELECT version, text_hash FROM order_consents WHERE order_id=$1',
+        'SELECT version, text_hash FROM consented_offsession_bookings WHERE order_id=$1',
         [id]
       );
       if (legacyMeta.rows[0]) {
@@ -1467,13 +1467,13 @@ app.get('/orders/:id/consent', async (req, res) => {
       if (!consentRowDeleted) {
         try {
           const deleteAgain = await pool.query(
-            'DELETE FROM customer_consents WHERE customer_id = $1',
+            'DELETE FROM saved_servi_users WHERE customer_id = $1',
             [customerId]
           );
           consentRowDeleted = deleteAgain.rowCount > 0 || consentRowDeleted;
         } catch (deleteErr) {
           console.warn(
-            'consent lookup: failed to delete customer_consents row (post-check)',
+            'consent lookup: failed to delete saved_servi_users row (post-check)',
             customerId,
             deleteErr?.message || deleteErr
           );
@@ -1481,7 +1481,7 @@ app.get('/orders/:id/consent', async (req, res) => {
       }
       try {
         await pool.query(
-          'UPDATE orders SET saved_payment_method_id = NULL WHERE customer_id = $1',
+          'UPDATE all_bookings SET saved_payment_method_id = NULL WHERE customer_id = $1',
           [customerId]
         );
       } catch (clearErr) {
@@ -1514,7 +1514,7 @@ app.get('/orders/:id/consent', async (req, res) => {
   }
 
   const legacyFallback = await pool.query(
-    'SELECT version, text_hash FROM order_consents WHERE order_id=$1',
+    'SELECT version, text_hash FROM consented_offsession_bookings WHERE order_id=$1',
     [id]
   );
   if (!legacyFallback.rows[0]) {
@@ -1539,7 +1539,7 @@ app.get('/book', async (req, res) => {
   try {
     const orderId = String(req.query.orderId || '').trim();
     if (orderId) {
-      const r = await pool.query('SELECT status FROM orders WHERE id = $1', [orderId]);
+      const r = await pool.query('SELECT status FROM all_bookings WHERE id = $1', [orderId]);
       const status = r.rows[0]?.status || '';
       if (BOOK_SUCCESS_STATUSES.has(status)) {
         return res.redirect(302, `/success?orderId=${encodeURIComponent(orderId)}`);
@@ -1574,14 +1574,14 @@ app.post('/create-adjustment', requireAdminAuth, async (req, res) => {
               service_date,
               service_datetime,
               service_address
-         FROM orders
+         FROM all_bookings
         WHERE id = $1`,
       [parentOrderId]
     );
     const parentOrder = parentResult.rows[0];
     if (!parentOrder) return res.status(404).send({ error: 'parent_not_found', message: 'Parent order not found' });
 
-    const consent = await pool.query('SELECT 1 FROM order_consents WHERE order_id=$1', [parentOrderId]);
+    const consent = await pool.query('SELECT 1 FROM consented_offsession_bookings WHERE order_id=$1', [parentOrderId]);
     const hasConsent = consent.rows.length > 0;
     const hasSavedCard = Boolean(parentOrder.saved_payment_method_id);
     const canRouteToBook = Boolean(hasConsent && parentOrder.customer_id && hasSavedCard);
@@ -1619,7 +1619,7 @@ app.post('/create-adjustment', requireAdminAuth, async (req, res) => {
 
     await pool.query(
       `
-        INSERT INTO orders (
+        INSERT INTO all_bookings (
           id,
           payment_intent_id,
           amount,
@@ -1728,7 +1728,7 @@ app.post('/capture-order', requireAdminAuth, async (req, res) => {
     let orderRow = null;
 
     if (!piId && orderId) {
-      const r = await pool.query('SELECT id, payment_intent_id, amount FROM orders WHERE id=$1', [orderId]);
+      const r = await pool.query('SELECT id, payment_intent_id, amount FROM all_bookings WHERE id=$1', [orderId]);
       if (!r.rows[0] || !r.rows[0].payment_intent_id) return res.status(404).send({ error: 'order not found' });
       orderRow = r.rows[0];
       piId = orderRow.payment_intent_id;
@@ -1736,7 +1736,7 @@ app.post('/capture-order', requireAdminAuth, async (req, res) => {
     if (!piId) return res.status(400).send({ error: 'missing paymentIntentId or orderId' });
 
     if (!orderRow) {
-      const r = await pool.query('SELECT id, amount FROM orders WHERE payment_intent_id=$1 LIMIT 1', [piId]);
+      const r = await pool.query('SELECT id, amount FROM all_bookings WHERE payment_intent_id=$1 LIMIT 1', [piId]);
       orderRow = r.rows[0] || null;
     }
     if (!orderRow) return res.status(404).send({ error: 'order not found' });
@@ -1800,10 +1800,10 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
     case 'payment_intent.succeeded': {
       console.log('💰 Captured (payment_intent.succeeded):', paymentIntentId);
 
-      const r = await pool.query('SELECT id, customer_id FROM orders WHERE payment_intent_id = $1 LIMIT 1', [paymentIntentId]);
+      const r = await pool.query('SELECT id, customer_id FROM all_bookings WHERE payment_intent_id = $1 LIMIT 1', [paymentIntentId]);
       const row = r.rows[0] || {};
 
-      await pool.query('UPDATE orders SET status = $1 WHERE payment_intent_id = $2', ['Captured', paymentIntentId]);
+      await pool.query('UPDATE all_bookings SET status = $1 WHERE payment_intent_id = $2', ['Captured', paymentIntentId]);
 
       fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
         method: 'POST',
@@ -1831,7 +1831,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
       if (!orderId && cust) {
         try {
           const r = await pool.query(
-            `SELECT id FROM orders
+            `SELECT id FROM all_bookings
             WHERE customer_id = $1
               AND kind IN ('setup_required','setup','book')
             ORDER BY created_at DESC
@@ -1846,7 +1846,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
         const statusLabel = 'Scheduled';
 
         await pool.query(
-          `UPDATE orders
+          `UPDATE all_bookings
               SET status                  = $1,
                   saved_payment_method_id = COALESCE($2, saved_payment_method_id),
                   customer_id             = COALESCE($3, customer_id),
@@ -1872,14 +1872,14 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
                  user_agent,
                  locale,
                  tz
-            FROM order_consents
+            FROM consented_offsession_bookings
            WHERE order_id = $1
         `, [orderId]);
         const consentMeta = consentRow.rows[0] || {};
 
         if (cust) {
           const orderInfo = await pool.query(
-            'SELECT client_name, client_phone, parent_id, payment_intent_id FROM orders WHERE id = $1',
+            'SELECT client_name, client_phone, parent_id, payment_intent_id FROM all_bookings WHERE id = $1',
             [orderId]
           );
           const customerName  = orderInfo.rows[0]?.client_name  || null;
@@ -1888,7 +1888,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
           const paymentIntentId = orderInfo.rows[0]?.payment_intent_id || null;
 
           await pool.query(`
-            INSERT INTO customer_consents (
+            INSERT INTO saved_servi_users (
               customer_id,
               customer_name,
               customer_phone,
@@ -1910,19 +1910,19 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
               $8,$8,$9,$10,$11,$12
             )
             ON CONFLICT (customer_id) DO UPDATE SET
-              customer_name            = COALESCE($2, customer_consents.customer_name),
-              customer_phone           = COALESCE($3, customer_consents.customer_phone),
-              latest_payment_method_id = COALESCE($4, customer_consents.latest_payment_method_id),
-              latest_text_hash         = COALESCE($5, customer_consents.latest_text_hash),
-              latest_version           = COALESCE($6, customer_consents.latest_version),
-              first_checked_at         = COALESCE(customer_consents.first_checked_at, $7),
+              customer_name            = COALESCE($2, saved_servi_users.customer_name),
+              customer_phone           = COALESCE($3, saved_servi_users.customer_phone),
+              latest_payment_method_id = COALESCE($4, saved_servi_users.latest_payment_method_id),
+              latest_text_hash         = COALESCE($5, saved_servi_users.latest_text_hash),
+              latest_version           = COALESCE($6, saved_servi_users.latest_version),
+              first_checked_at         = COALESCE(saved_servi_users.first_checked_at, $7),
               last_checked_at          = NOW(),
-              first_order_id           = COALESCE(customer_consents.first_order_id, $8),
+              first_order_id           = COALESCE(saved_servi_users.first_order_id, $8),
               last_order_id            = $8,
-              ip                       = COALESCE($9, customer_consents.ip),
-              user_agent               = COALESCE($10, customer_consents.user_agent),
-              locale                   = COALESCE($11, customer_consents.locale),
-              tz                       = COALESCE($12, customer_consents.tz)
+              ip                       = COALESCE($9, saved_servi_users.ip),
+              user_agent               = COALESCE($10, saved_servi_users.user_agent),
+              locale                   = COALESCE($11, saved_servi_users.locale),
+              tz                       = COALESCE($12, saved_servi_users.tz)
           `, [
             cust,
             customerName,
@@ -1986,7 +1986,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
     case 'charge.failed': {
       console.log('❌ Failed (charge.failed):', paymentIntentId);
-      await pool.query('UPDATE orders SET status = $1 WHERE payment_intent_id = $2',
+      await pool.query('UPDATE all_bookings SET status = $1 WHERE payment_intent_id = $2',
                       ['Failed', paymentIntentId]);
       fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
         method:'POST', headers:{'Content-Type':'application/json'},
@@ -1998,7 +1998,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
     // === PI-level failure (keep distinct label so it never looks like 'expired') ===
     case 'payment_intent.payment_failed': {
       console.log('⛔ Declined (payment_intent.payment_failed):', paymentIntentId);
-      await pool.query('UPDATE orders SET status = $1 WHERE payment_intent_id = $2',
+      await pool.query('UPDATE all_bookings SET status = $1 WHERE payment_intent_id = $2',
                       ['Declined', paymentIntentId]); // <-- not "Failed"
       fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
         method:'POST', headers:{'Content-Type':'application/json'},
@@ -2010,7 +2010,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
     // === legacy/processor-side authorization expiry signal ===
     case 'charge.expired': {
       console.log('🕒 Canceled (expired) via charge.expired:', paymentIntentId);
-      await pool.query('UPDATE orders SET status = $1 WHERE payment_intent_id = $2',
+      await pool.query('UPDATE all_bookings SET status = $1 WHERE payment_intent_id = $2',
                       ['Canceled (expired)', paymentIntentId]);
       fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
         method:'POST', headers:{'Content-Type':'application/json'},
@@ -2027,7 +2027,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
       console.log(`🚫 ${label}:`, paymentIntentId);
 
-      await pool.query('UPDATE orders SET status = $1 WHERE payment_intent_id = $2',
+      await pool.query('UPDATE all_bookings SET status = $1 WHERE payment_intent_id = $2',
                       [label, paymentIntentId]);
 
       fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
@@ -2045,16 +2045,16 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
       if (pmId || cust) {
         await pool.query(
-          'UPDATE orders SET saved_payment_method_id = COALESCE($1, saved_payment_method_id), customer_id = COALESCE($2, customer_id) WHERE payment_intent_id = $3',
+          'UPDATE all_bookings SET saved_payment_method_id = COALESCE($1, saved_payment_method_id), customer_id = COALESCE($2, customer_id) WHERE payment_intent_id = $3',
           [pmId, cust, obj.id]
         );
       }
 
       if (obj.capture_method === 'manual' && obj.status === 'requires_capture') {
-        const r = await pool.query('SELECT id, customer_id, parent_id FROM orders WHERE payment_intent_id = $1 LIMIT 1', [obj.id]);
+        const r = await pool.query('SELECT id, customer_id, parent_id FROM all_bookings WHERE payment_intent_id = $1 LIMIT 1', [obj.id]);
         const row = r.rows[0] || {};
 
-        await pool.query('UPDATE orders SET status = $1 WHERE payment_intent_id = $2', ['Confirmed', obj.id]);
+        await pool.query('UPDATE all_bookings SET status = $1 WHERE payment_intent_id = $2', ['Confirmed', obj.id]);
 
         console.log('[PI capturable] order:', row.id, 'pi:', obj.id, 'status → Confirmed'); // <— add
 
@@ -2095,24 +2095,24 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
       if (!hasCard) {
         try {
-          await pool.query('DELETE FROM customer_consents WHERE customer_id = $1', [c.id]);
+          await pool.query('DELETE FROM saved_servi_users WHERE customer_id = $1', [c.id]);
         } catch (deleteErr) {
           console.warn('customer.updated consent delete failed', deleteErr?.message || deleteErr);
         }
         try {
           await pool.query(
-            'UPDATE orders SET saved_payment_method_id = NULL WHERE customer_id = $1',
+            'UPDATE all_bookings SET saved_payment_method_id = NULL WHERE customer_id = $1',
             [c.id]
           );
         } catch (clearErr) {
-          console.warn('customer.updated orders cleanup failed', clearErr?.message || clearErr);
+          console.warn('customer.updated all_bookings cleanup failed', clearErr?.message || clearErr);
         }
         let parentOrderId = '';
         let lastOrderId = '';
         try {
           const recentOrder = await pool.query(
             `SELECT id, parent_id
-               FROM orders
+               FROM all_bookings
               WHERE customer_id = $1
               ORDER BY created_at DESC
               LIMIT 1`,
@@ -2138,7 +2138,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
       await pool.query(
         `
-          INSERT INTO customer_consents (
+          INSERT INTO saved_servi_users (
             customer_id,
             customer_name,
             customer_phone,
@@ -2147,9 +2147,9 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
           )
           VALUES ($1,$2,$3,$4,NOW())
           ON CONFLICT (customer_id) DO UPDATE SET
-            customer_name            = COALESCE($2, customer_consents.customer_name),
-            customer_phone           = COALESCE($3, customer_consents.customer_phone),
-            latest_payment_method_id = COALESCE($4, customer_consents.latest_payment_method_id),
+            customer_name            = COALESCE($2, saved_servi_users.customer_name),
+            customer_phone           = COALESCE($3, saved_servi_users.customer_phone),
+            latest_payment_method_id = COALESCE($4, saved_servi_users.latest_payment_method_id),
             last_checked_at          = NOW()
         `,
         [c.id, c.name || null, c.phone || null, primaryPaymentMethodId]
@@ -2187,7 +2187,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
       const customerId = pm.customer;
       if (customerId) {
         await pool.query(`
-          INSERT INTO customer_consents (customer_id, latest_payment_method_id, last_checked_at)
+          INSERT INTO saved_servi_users (customer_id, latest_payment_method_id, last_checked_at)
           VALUES ($1,$2,NOW())
           ON CONFLICT (customer_id) DO UPDATE SET
             latest_payment_method_id = $2,
@@ -2197,7 +2197,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
         let lastOrderId = null;
         try {
           const { rows } = await pool.query(
-            'SELECT first_order_id, last_order_id FROM customer_consents WHERE customer_id = $1',
+            'SELECT first_order_id, last_order_id FROM saved_servi_users WHERE customer_id = $1',
             [customerId]
           );
           if (rows[0]) {
@@ -2206,7 +2206,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
           }
           if (!parentOrderId || !lastOrderId) {
             const latestOrder = await pool.query(
-              `SELECT id, parent_id FROM orders WHERE customer_id = $1 ORDER BY created_at DESC LIMIT 1`,
+              `SELECT id, parent_id FROM all_bookings WHERE customer_id = $1 ORDER BY created_at DESC LIMIT 1`,
               [customerId]
             );
             const orderRow = latestOrder.rows[0];
@@ -2239,7 +2239,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
       if (!customerId) {
         try {
           const lookup = await pool.query(
-            'SELECT customer_id FROM customer_consents WHERE latest_payment_method_id = $1 LIMIT 1',
+            'SELECT customer_id FROM saved_servi_users WHERE latest_payment_method_id = $1 LIMIT 1',
             [pm.id]
           );
           customerId = lookup.rows[0]?.customer_id || null;
@@ -2272,7 +2272,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
         if (hasRemainingCard) {
           await pool.query(
             `
-              UPDATE customer_consents
+              UPDATE saved_servi_users
                  SET latest_payment_method_id = $2,
                      last_checked_at = NOW()
                WHERE customer_id = $1
@@ -2280,13 +2280,13 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
             [customerId, remainingCardId]
           );
           await pool.query(
-            'UPDATE orders SET saved_payment_method_id = NULL WHERE customer_id = $1 AND saved_payment_method_id = $2',
+            'UPDATE all_bookings SET saved_payment_method_id = NULL WHERE customer_id = $1 AND saved_payment_method_id = $2',
             [customerId, pm.id]
           );
         } else {
-          await pool.query('DELETE FROM customer_consents WHERE customer_id = $1', [customerId]);
+          await pool.query('DELETE FROM saved_servi_users WHERE customer_id = $1', [customerId]);
           await pool.query(
-            'UPDATE orders SET saved_payment_method_id = NULL WHERE customer_id = $1',
+            'UPDATE all_bookings SET saved_payment_method_id = NULL WHERE customer_id = $1',
             [customerId]
           );
         }
@@ -2298,7 +2298,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
       let lastOrderId = null;
       try {
         const { rows } = await pool.query(
-          'SELECT first_order_id, last_order_id FROM customer_consents WHERE customer_id = $1',
+          'SELECT first_order_id, last_order_id FROM saved_servi_users WHERE customer_id = $1',
           [customerId]
         );
         if (rows[0]) {
@@ -2307,7 +2307,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
         }
         if (!parentOrderId || !lastOrderId) {
           const latestOrder = await pool.query(
-            `SELECT id, parent_id FROM orders WHERE customer_id = $1 ORDER BY created_at DESC LIMIT 1`,
+            `SELECT id, parent_id FROM all_bookings WHERE customer_id = $1 ORDER BY created_at DESC LIMIT 1`,
             [customerId]
           );
           const orderRow = latestOrder.rows[0];
@@ -2357,7 +2357,7 @@ app.post('/confirm-with-saved', async (req, res) => {
               saved_payment_method_id,
               capture_method,
               adjustment_reason
-         FROM orders
+         FROM all_bookings
         WHERE id = $1`,
       [orderId]
     );
@@ -2383,7 +2383,7 @@ app.post('/confirm-with-saved', async (req, res) => {
 
       if (!savedPmId) {
         await pool.query(
-          `UPDATE orders
+          `UPDATE all_bookings
               SET saved_payment_method_id = NULL
             WHERE id = $1`,
           [row.id]
@@ -2398,7 +2398,7 @@ app.post('/confirm-with-saved', async (req, res) => {
       const statusLabel = 'Scheduled';
       await pool.query(
         `
-          UPDATE orders
+          UPDATE all_bookings
              SET status = $1,
                  saved_payment_method_id = COALESCE($2, saved_payment_method_id)
            WHERE id = $3
@@ -2466,7 +2466,7 @@ app.post('/confirm-with-saved', async (req, res) => {
           parent_order_id: row.parent_id || ''
         }
       });
-      await pool.query('UPDATE orders SET payment_intent_id=$1 WHERE id=$2', [pi.id, row.id]);
+      await pool.query('UPDATE all_bookings SET payment_intent_id=$1 WHERE id=$2', [pi.id, row.id]);
       piId = pi.id;
     }
 
@@ -2509,7 +2509,7 @@ app.post('/confirm-with-saved', async (req, res) => {
             ? 'Captured'
             : confirmed.status;
       try {
-        await pool.query('UPDATE orders SET status=$1 WHERE id=$2', [statusLabel, row.id]);
+        await pool.query('UPDATE all_bookings SET status=$1 WHERE id=$2', [statusLabel, row.id]);
       } catch (statusErr) {
         console.warn('confirm-with-saved status update failed', statusErr?.message || statusErr);
       }
@@ -2552,7 +2552,7 @@ app.post('/confirm-with-saved', async (req, res) => {
 app.post('/orders/:id/apply-consent-to-current-pi', async (req, res) => {
   try {
     const { id } = req.params;
-    const r = await pool.query('SELECT payment_intent_id FROM orders WHERE id=$1', [id]);
+    const r = await pool.query('SELECT payment_intent_id FROM all_bookings WHERE id=$1', [id]);
     const row = r.rows[0];
     if (!row || !row.payment_intent_id) {
       return res.status(400).json({ error: 'no_pi' });
@@ -2576,7 +2576,7 @@ app.post('/billing-portal', async (req, res) => {
     if (!orderId) return res.status(400).json({ error: 'orderId required' });
 
     // Find the linked customer for this order
-    const { rows } = await pool.query('SELECT customer_id FROM orders WHERE id=$1', [orderId]);
+    const { rows } = await pool.query('SELECT customer_id FROM all_bookings WHERE id=$1', [orderId]);
     const row = rows[0];
     if (!row) return res.status(404).json({ error: 'order not found' });
     if (!row.customer_id) {
@@ -2607,7 +2607,7 @@ app.get('/success', async (req, res) => {
     if (!orderId) return res.redirect(302, '/');
 
     const { rows } = await pool.query(
-      'SELECT id, parent_id, payment_intent_id, kind, service_date, service_datetime, customer_id, saved_payment_method_id FROM orders WHERE id = $1',
+      'SELECT id, parent_id, payment_intent_id, kind, service_date, service_datetime, customer_id, saved_payment_method_id FROM all_bookings WHERE id = $1',
       [orderId]
     );
     const row = rows[0];
@@ -2619,7 +2619,7 @@ app.get('/success', async (req, res) => {
       if (!row.payment_intent_id || h > 12) {
         // Mark as Scheduled server-side (idempotent)…
         await pool.query(
-          "UPDATE orders SET status = 'Scheduled' WHERE id = $1 AND (status IS NULL OR status NOT IN ('Confirmed','Captured'))",
+          "UPDATE all_bookings SET status = 'Scheduled' WHERE id = $1 AND (status IS NULL OR status NOT IN ('Confirmed','Captured'))",
           [row.id]
         );
         // …and notify the Sheet
