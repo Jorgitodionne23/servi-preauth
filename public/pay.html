@@ -74,22 +74,52 @@
         padding-top: 5px;
       }
 
-      #card-element {
-        background-color: #222;
-        padding: 12px;
-        border-radius: 6px;
-        border: 1px solid #444;
-        min-height: 48px;
-        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+      .form-label {
+        font-size: 13px;
+        font-weight: 500;
+        color: #d1d5db;
+        margin-bottom: 6px;
       }
 
-      #card-element:hover {
+      .card-fieldset {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .card-row {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      .card-row .card-control {
+        min-width: 140px;
+      }
+
+      .card-control {
+        flex: 1;
+        background-color: #222;
+        border: 1px solid #444;
+        border-radius: 6px;
+        padding: 12px;
+        min-height: 48px;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        display: flex;
+        align-items: center;
+      }
+
+      .card-control:hover {
         border-color: #666;
       }
 
-      #card-element:focus-within {
+      .card-control.is-focused {
         border-color: #888;
         box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.1);
+      }
+
+      .card-control.has-error {
+        border-color: #ef4444;
       }
 
       button {
@@ -196,6 +226,58 @@
       color: #9ca3af;
       font-size: 16px;
       font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+
+    .select-wrapper {
+      position: relative;
+    }
+
+    .select-wrapper::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      right: 16px;
+      width: 0;
+      height: 0;
+      border-left: 6px solid transparent;
+      border-right: 6px solid transparent;
+      border-top: 6px solid #b0b0b0;
+      transform: translateY(-50%);
+      pointer-events: none;
+    }
+
+    .select-flag {
+      position: absolute;
+      top: 50%;
+      left: 16px;
+      transform: translateY(-50%);
+      font-size: 18px;
+      pointer-events: none;
+    }
+
+    .input-select {
+      appearance: none;
+      background-color: #222;
+      border: 1px solid #444;
+      border-radius: 6px;
+      color: #fff;
+      font-size: 16px;
+      height: 48px;
+      line-height: 24px;
+      padding: 12px 40px 12px 52px;
+      width: 100%;
+      font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .input-select:hover {
+      border-color: #666;
+    }
+
+    .input-select:focus {
+      outline: none;
+      border-color: #888;
+      box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.1);
     }
 
     .summary-box {
@@ -313,17 +395,53 @@
 
       <form id="payment-form">
         <div class="form-row">
-          <div id="card-element"></div>
+          <label for="customer-email" class="form-label">Correo electrónico</label>
+          <input
+            type="email"
+            id="customer-email"
+            name="customer-email"
+            placeholder="cliente@ejemplo.com"
+            class="input-text"
+            autocomplete="email"
+            required
+          />
         </div>
+
         <div class="form-row">
-            <input 
-                type="text" 
-                id="cardholder-name" 
-                name="cardholder-name" 
-                placeholder="Nombre del titular"
-                class="input-text"
-                required
-            />
+          <label for="card-number-element" class="form-label">Información de la tarjeta</label>
+          <div class="card-fieldset">
+            <div class="card-control" id="card-number-element"></div>
+            <div class="card-row">
+              <div class="card-control" id="card-expiry-element"></div>
+              <div class="card-control" id="card-cvc-element"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <label for="card-currency" class="form-label">Moneda de la tarjeta</label>
+          <div class="select-wrapper">
+            <span class="select-flag" id="currency-flag">🇲🇽</span>
+            <select id="card-currency" name="card-currency" class="input-select">
+              <option value="mxn" data-flag="🇲🇽">Peso mexicano (MXN)</option>
+              <option value="usd" data-flag="🇺🇸">Dólar estadounidense (USD)</option>
+              <option value="cad" data-flag="🇨🇦">Dólar canadiense (CAD)</option>
+              <option value="eur" data-flag="🇪🇺">Euro (EUR)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <label for="cardholder-name" class="form-label">Nombre del titular</label>
+          <input 
+              type="text" 
+              id="cardholder-name" 
+              name="cardholder-name" 
+              placeholder="Nombre del titular"
+              class="input-text"
+              autocomplete="cc-name"
+              required
+          />
         </div>
 
         <div class="form-row checkbox-centered">
@@ -345,7 +463,7 @@
               <strong> Guardar como método de pago.</strong>
               <a href="#" id="consent-more">Ver detalles</a>
               <span id="consent-details" class="consent-details" style="display:none"><br>
-                Autorizo a SERVI a guardar de forma segura en Stripe, esta tarjeta para cargos adicionales relacionados con mi servicio (horas extra, piezas adicionales o correcciones). No se efectuará ningún cobro sin confirmación previa por mensaje.
+                Autorizo a SERVI a guardar de forma segura en Stripe, esta tarjeta para cargos futuros relacionados con mi servicio.
               </span>
             </label>
           </div>
@@ -418,27 +536,65 @@
     let setupClientSecret = null;
 
     function mountCardElement() {
-      if (window.card) return window.card;
+      if (window.cardNumber && window.cardExpiry && window.cardCvc) {
+        return window.cardNumber;
+      }
 
-      const elements = (window.elements = window.stripe.elements({ locale: 'es' }));
-      const card = (window.card = elements.create('card', {
-        style: {
-          base: {
-            fontFamily: '"Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-            fontSize: '16px',
-            color: '#ffffff',
-            '::placeholder': {
-              color: '#9ca3af',
-              fontSize: '16px'
-            }
-          },
-          invalid: { color: '#ef4444' }
+      const elements = window.elements || window.stripe.elements({ locale: 'es' });
+      window.elements = elements;
+
+      const sharedStyle = {
+        base: {
+          fontFamily: '"Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+          fontSize: '16px',
+          color: '#ffffff',
+          '::placeholder': {
+            color: '#9ca3af',
+            fontSize: '16px'
+          }
         },
-        hidePostalCode: true
-      }));
+        invalid: { color: '#ef4444' }
+      };
 
-      card.mount('#card-element');
-      return card;
+      const cardNumber = elements.create('cardNumber', {
+        style: sharedStyle,
+        showIcon: true,
+        iconStyle: 'solid',
+        placeholder: '1234 1234 1234 1234'
+      });
+      const cardExpiry = elements.create('cardExpiry', {
+        style: sharedStyle,
+        placeholder: 'MM / AA'
+      });
+      const cardCvc = elements.create('cardCvc', {
+        style: sharedStyle,
+        placeholder: 'CVC'
+      });
+
+      const bindState = (element, selector) => {
+        const node = document.querySelector(selector);
+        if (!node) return;
+        element.on('focus', () => node.classList.add('is-focused'));
+        element.on('blur', () => node.classList.remove('is-focused'));
+        element.on('change', (event) => {
+          node.classList.toggle('has-error', !!event.error);
+        });
+      };
+
+      cardNumber.mount('#card-number-element');
+      cardExpiry.mount('#card-expiry-element');
+      cardCvc.mount('#card-cvc-element');
+
+      bindState(cardNumber, '#card-number-element');
+      bindState(cardExpiry, '#card-expiry-element');
+      bindState(cardCvc, '#card-cvc-element');
+
+      window.cardNumber = cardNumber;
+      window.cardExpiry = cardExpiry;
+      window.cardCvc = cardCvc;
+      window.card = cardNumber;
+
+      return cardNumber;
     }
 
     async function getOrder() {
@@ -483,10 +639,10 @@
       return `${cap}, a las ${hora}`;
     }
 
-    async function syncProcessingFee(orderId, paymentIntentId, paymentMethodId) {
+    async function syncProcessingFee(orderId, paymentIntentId, paymentMethodId, extras = {}) {
       if (!orderId || (!paymentIntentId && !paymentMethodId)) return;
       try {
-        const payload = {};
+        const payload = extras && typeof extras === 'object' ? { ...extras } : {};
         if (paymentIntentId) payload.paymentIntentId = paymentIntentId;
         if (paymentMethodId) payload.paymentMethodId = paymentMethodId;
         await fetch(`/orders/${encodeURIComponent(orderId)}/refresh-fees`, {
@@ -499,11 +655,54 @@
       }
     }
 
+    const form = document.getElementById("payment-form");
+    const submitBtn = document.getElementById("submit");
+    const spinner = document.getElementById("spinner");
+    const emailInput = document.getElementById("customer-email");
+    const cardholderInput = document.getElementById("cardholder-name");
+    const currencySelect = document.getElementById("card-currency");
+    const currencyFlag = document.getElementById("currency-flag");
+    const CARD_CURRENCY_STORAGE_KEY = 'serviCardCurrency';
+
+    const updateCurrencyFlag = (value) => {
+      if (!currencyFlag || !currencySelect) return;
+      const option = currencySelect.querySelector(`option[value="${value}"]`);
+      const flag = option?.dataset?.flag || '💳';
+      currencyFlag.textContent = flag;
+    };
+
+    if (currencySelect) {
+      let preset = null;
+      try {
+        preset = localStorage.getItem(CARD_CURRENCY_STORAGE_KEY);
+      } catch (_) {}
+
+      if (preset && currencySelect.querySelector(`option[value="${preset}"]`)) {
+        currencySelect.value = preset;
+      }
+
+      updateCurrencyFlag(currencySelect.value);
+      currencySelect.addEventListener('change', () => {
+        const value = currencySelect.value;
+        updateCurrencyFlag(value);
+        try {
+          localStorage.setItem(CARD_CURRENCY_STORAGE_KEY, value);
+        } catch (_) {}
+      });
+    }
+
     // Init: fill summary + mount appropriate payment UI
     (async () => {
       await stripeReady;
       const order = await getOrder();
       if (!order) return;
+
+      if (emailInput && order.client_email) {
+        emailInput.value = order.client_email;
+      }
+      if (cardholderInput && order.client_name) {
+        cardholderInput.value = order.client_name;
+      }
 
       const isAdjustment = String(order.kind || '').toLowerCase() === 'adjustment';
       const reasonText = String(order.adjustment_reason || '').trim();
@@ -605,9 +804,10 @@
 
 
         // Express wallets
+        const requestCurrency = currencySelect?.value || 'mxn';
         const paymentRequest = (window.paymentRequest = (window.stripe).paymentRequest({
           country: "MX",
-          currency: "mxn",
+          currency: requestCurrency,
           total: { label: "Servicio SERVI", amount: totalCents },
           requestPayerName: true,
           requestPayerEmail: true,
@@ -622,8 +822,11 @@
           prButton.mount("#express-pay-button");
           paymentRequest.on("paymentmethod", async (ev) => {
             const consentBox = document.getElementById("consent-checkbox");
+            const selectedCurrency = currencySelect?.value || 'mxn';
+            const rawEmail = emailInput?.value ?? ev.paymentMethod?.billing_details?.email ?? '';
+            const emailValue = typeof rawEmail === 'string' ? rawEmail.trim() : '';
             if (consentBox && consentBox.checked) {
-              await recordConsent(order.id);
+              await recordConsent(order.id, { cardCurrency: selectedCurrency, billingEmail: emailValue });
               await applyConsentToCurrentPI(order.id);
             }
 
@@ -638,7 +841,7 @@
             if (second.error) { alert("Error al confirmar: " + second.error.message); return; }
             const piId = second.paymentIntent?.id;
             if (piId) {
-              await syncProcessingFee(order.id, piId, null);
+              await syncProcessingFee(order.id, piId, null, { cardCurrency: selectedCurrency, billingEmail: emailValue });
             }
             localStorage.setItem('orderId', String(order.id));
             window.location.href = `/success?orderId=${encodeURIComponent(order.id)}`;
@@ -653,11 +856,6 @@
       // Fallback
       alert('No se pudo inicializar el flujo de pago. Contacta a soporte.');
     })();
-     
-    const form = document.getElementById("payment-form");
-    const submitBtn = document.getElementById("submit");
-    const spinner = document.getElementById("spinner");
-
     // Toggle consent details UI
     document.getElementById('consent-more').addEventListener('click', (e)=>{
       e.preventDefault();
@@ -670,21 +868,27 @@
     }
 
     // Record consent on the server
-    async function recordConsent(orderId){
+    async function recordConsent(orderId, extras = {}){
       const CONSENT_VERSION = '1.0';
       const text = 'Autorizo a SERVI a guardar esta tarjeta y realizar cargos adicionales relacionados con mi servicio, previa confirmación por WhatsApp. Si mi banco exige verificación, se me pedirá confirmarlo (3-D Secure). Puedo solicitar la eliminación de mi método de pago en cualquier momento.';
       const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
       const bytes = new Uint8Array(buf);
       const hash  = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+      const payload = {
+        version: CONSENT_VERSION,
+        text,
+        hash,
+        locale: navigator.language || 'es-MX',
+        tz: Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Mexico_City'
+      };
+      if (extras && typeof extras === 'object') {
+        if (extras.cardCurrency) payload.cardCurrency = extras.cardCurrency;
+        if (extras.billingEmail) payload.billingEmail = extras.billingEmail;
+      }
       await fetch(`/orders/${orderId}/consent`, {
         method:'POST',
         headers:{ 'Content-Type':'application/json' },
-        body: JSON.stringify({
-          version: CONSENT_VERSION,   
-          text, hash,
-          locale: navigator.language || 'es-MX',      
-          tz: Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Mexico_City'
-        })
+        body: JSON.stringify(payload)
       });
     }
 
@@ -694,6 +898,9 @@
 
       const termsChecked = document.getElementById("terms-checkbox").checked;
       const consentChecked = document.getElementById("consent-checkbox").checked;
+      const cardholder = (cardholderInput?.value || "").trim();
+      const email = (emailInput?.value || "").trim();
+      const selectedCurrency = currencySelect?.value || 'mxn';
 
       const mode = submitBtn.dataset.mode || '';
       const missingAlerts = [];
@@ -722,7 +929,7 @@
             return;
           }
 
-          await recordConsent(order.id);
+          await recordConsent(order.id, { cardCurrency: selectedCurrency, billingEmail: email });
 
           if (!setupClientSecret) {
             cachedOrder = null;
@@ -734,9 +941,12 @@
             setupClientSecret = refreshed.client_secret;
           }
 
-          const cardholder = document.getElementById("cardholder-name").value || "";
+          const billingDetails = {};
+          if (cardholder) billingDetails.name = cardholder;
+          if (email) billingDetails.email = email;
+
           const result = await window.stripe.confirmCardSetup(setupClientSecret, {
-            payment_method: { card: window.card, billing_details: { name: cardholder } }
+            payment_method: { card: window.card, billing_details: billingDetails }
           });
 
           if (result.error) {
@@ -745,7 +955,7 @@
           }
 
           if (result.setupIntent?.payment_method) {
-            await syncProcessingFee(order.id, null, result.setupIntent.payment_method);
+            await syncProcessingFee(order.id, null, result.setupIntent.payment_method, { cardCurrency: selectedCurrency, billingEmail: email });
           }
           localStorage.setItem('orderId', String(order.id));
           window.location.href = `/success?orderId=${encodeURIComponent(order.id)}`;
@@ -754,15 +964,19 @@
 
         // ========== CASE C: Normal payment confirmation ==========
         if (mode === 'confirm-payment') {
-          const cardholder = document.getElementById("cardholder-name").value || "";
-          
           if (consentChecked) {
-            await recordConsent(order.id);
+            await recordConsent(order.id, { cardCurrency: selectedCurrency, billingEmail: email });
             await applyConsentToCurrentPI(order.id);
           }
           
           const result = await window.stripe.confirmCardPayment(order.client_secret, {
-            payment_method: { card: window.card, billing_details: { name: cardholder } }
+            payment_method: {
+              card: window.card,
+              billing_details: {
+                ...(cardholder ? { name: cardholder } : {}),
+                ...(email ? { email } : {})
+              }
+            }
           });
           
           if (result.error) {
@@ -772,7 +986,7 @@
           
           if (result.paymentIntent.status === "succeeded" || result.paymentIntent.status === "requires_capture") {
             if (result.paymentIntent.id) {
-              await syncProcessingFee(order.id, result.paymentIntent.id, null);
+              await syncProcessingFee(order.id, result.paymentIntent.id, null, { cardCurrency: selectedCurrency, billingEmail: email });
             }
             localStorage.setItem('orderId', String(order.id));
             window.location.href = `/success?orderId=${encodeURIComponent(order.id)}`;
