@@ -94,6 +94,7 @@
       }
 
       .card-row .card-control {
+        flex: 1 1 0%;
         min-width: 140px;
       }
 
@@ -107,6 +108,14 @@
         transition: border-color 0.2s ease, box-shadow 0.2s ease;
         display: flex;
         align-items: center;
+        cursor: text;
+      }
+
+      .card-control > .__PrivateStripeElement,
+      .card-control > .StripeElement,
+      .card-control iframe {
+        flex: 1 !important;
+        width: 100% !important;
       }
 
       .card-control:hover {
@@ -548,6 +557,9 @@
           fontFamily: '"Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
           fontSize: '16px',
           color: '#ffffff',
+          backgroundColor: '#222222',
+          iconColor: '#9ca3af',
+          caretColor: '#ffffff',
           '::placeholder': {
             color: '#9ca3af',
             fontSize: '16px'
@@ -560,15 +572,15 @@
         style: sharedStyle,
         showIcon: true,
         iconStyle: 'solid',
-        placeholder: '1234 1234 1234 1234'
+        placeholder: 'Número de tarjeta'
       });
       const cardExpiry = elements.create('cardExpiry', {
         style: sharedStyle,
-        placeholder: 'MM / AA'
+        placeholder: 'MM/AA'
       });
       const cardCvc = elements.create('cardCvc', {
         style: sharedStyle,
-        placeholder: 'CVC'
+        placeholder: 'CVV'
       });
 
       const bindState = (element, selector) => {

@@ -82,6 +82,55 @@ async function ensureCustomerForOrder(stripe, orderRow) {
   return customer.id;
 }
 
+function normalizeEmail(value) {
+  const email = String(value || '').trim();
+  if (!email) return null;
+  const pattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
+  if (!pattern.test(email)) return null;
+  return email.toLowerCase();
+}
+
+async function syncOrderEmail(orderId, rawEmail, { existingRow } = {}) {
+  const email = normalizeEmail(rawEmail);
+  if (!email) return null;
+
+  let row = existingRow;
+  if (!row) {
+    const { rows } = await pool.query(
+      'SELECT client_email, customer_id FROM all_bookings WHERE id = $1',
+      [orderId]
+    );
+    row = rows[0] || null;
+  }
+
+  if (!row) return null;
+
+  const current = normalizeEmail(row.client_email);
+  const changed = current !== email;
+
+  if (changed) {
+    await pool.query('UPDATE all_bookings SET client_email = $1 WHERE id = $2', [email, orderId]);
+  }
+
+  if (existingRow) {
+    existingRow.client_email = email;
+  }
+
+  if (changed && row.customer_id) {
+    try {
+      await stripe.customers.update(row.customer_id, { email });
+    } catch (err) {
+      console.warn(
+        'syncOrderEmail: failed to update Stripe customer email',
+        row.customer_id,
+        err?.message || err
+      );
+    }
+  }
+
+  return email;
+}
+
 
 // Pretty Spanish display for service date/time
 function displayEsMX(serviceDateTime, serviceDate, tz = 'America/Mexico_City') {
@@ -993,7 +1042,14 @@ app.get('/order/:orderId', async (req, res) => {
 app.post('/orders/:orderId/refresh-fees', async (req, res) => {
   try {
     const { orderId } = req.params;
-    const { paymentIntentId, paymentMethodId } = req.body || {};
+    const { paymentIntentId, paymentMethodId, billingEmail } = req.body || {};
+    if (billingEmail) {
+      try {
+        await syncOrderEmail(orderId, billingEmail);
+      } catch (emailErr) {
+        console.warn('refresh-fees: failed to persist billing email', orderId, emailErr?.message || emailErr);
+      }
+    }
     const result = await refreshOrderFees(orderId, { paymentIntentId, paymentMethodId });
     return res.json({ ok: true, ...result });
   } catch (err) {
@@ -1235,7 +1291,7 @@ app.post('/tasks/preauth-due', async (req, res) => {
 // Record consent (called from pay.html before confirming)
 app.post('/orders/:id/consent', async (req, res) => {
   const { id } = req.params;
-  const { version, text, hash, locale, tz } = req.body || {};
+  const { version, text, hash, locale, tz, billingEmail } = req.body || {};
   const ua = req.headers['user-agent'] || '';
   const ip = String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').split(',')[0].trim();
 
@@ -1258,6 +1314,14 @@ app.post('/orders/:id/consent', async (req, res) => {
   const row = or.rows[0];
   if (!row) return res.status(404).send({ error: 'order not found' });
   const parentOrderId = row.parent_id || row.id;
+
+  if (billingEmail) {
+    try {
+      await syncOrderEmail(row.id, billingEmail, { existingRow: row });
+    } catch (emailErr) {
+      console.warn('consent: failed to persist billing email', row.id, emailErr?.message || emailErr);
+    }
+  }
 
   let customerId = row.customer_id || null;
   if (!customerId) {
