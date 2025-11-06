@@ -134,6 +134,12 @@
         text-decoration: underline;
       }
 
+      .consent-details {
+        font-size: 11px;
+        color: #aaa;
+        line-height: 1.5;
+      }
+
       .support {
         font-size: 12px;
         color: #ccc;
@@ -333,12 +339,10 @@
           <div class="terms-checkbox-wrapper">
             <input type="checkbox" id="consent-checkbox" />
             <label for="consent-checkbox" class="terms-label">
-              Autorizo a SERVI a <strong>guardar esta tarjeta</strong> y realizar
-              <strong>cargos adicionales</strong> relacionados con mi servicio
-              (horas extra, piezas adicionales o correcciones), previa confirmación por WhatsApp.
+              <strong> Guardar como método de pago.</strong>
               <a href="#" id="consent-more">Ver detalles</a>
-              <span id="consent-details" style="display:none"><br>
-                Autorizo a SERVI a guardar esta tarjeta y realizar cargos adicionales relacionados con mi servicio.<br>
+              <span id="consent-details" class="consent-details" style="display:none"><br>
+                Autorizo a SERVI a guardar esta tarjeta para cargos adicionales relacionados con mi servicio (horas extra, piezas adicionales o correcciones).<br>
                 • Datos guardados de forma segura en Stripe.<br>
                 • No se efectuará ningún cobro sin confirmación previa por mensaje.<br>
                 • Puedo solicitar la eliminación de mi método de pago en cualquier momento.
@@ -668,7 +672,7 @@
     // Record consent on the server
     async function recordConsent(orderId){
       const CONSENT_VERSION = '1.0';
-      const text = 'Guardar como método de pago.';
+      const text = 'Autorizo a SERVI a guardar esta tarjeta y realizar cargos adicionales relacionados con mi servicio, previa confirmación por WhatsApp. Si mi banco exige verificación, se me pedirá confirmarlo (3-D Secure). Puedo solicitar la eliminación de mi método de pago en cualquier momento.';
       const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
       const bytes = new Uint8Array(buf);
       const hash  = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
