@@ -104,29 +104,32 @@
         margin-bottom: -5px;
       }
 
-      #terms-checkbox {
-      margin-left: 10px;
+      .form-row.checkbox-centered {
+        flex-direction: row;
+        justify-content: center;
+        align-items: flex-start;
       }
 
       .terms-checkbox-wrapper {
         display: flex;
         justify-content: center;
-        align-items: center;
-        text-align: center;
-        flex-wrap: nowrap;
+        align-items: flex-start;
+        text-align: left;
+        gap: 8px;
+        max-width: 320px;
       }
 
       .terms-label {
-      font-size: 12px;
-      color: #ccc;
-      line-height: 1.4;
-      flex: 1;
-      word-break: break-word;
+        font-size: 12px;
+        color: #ccc;
+        line-height: 1.4;
+        word-break: break-word;
       }
 
       .terms-checkbox-wrapper input[type="checkbox"] {
         transform: scale(0.9);
-        margin-top: -13px;
+        margin: 2px 0 0 0;
+        flex-shrink: 0;
       }
 
       .terms-label a {
@@ -323,7 +326,7 @@
             />
         </div>
 
-        <div class="form-row">
+        <div class="form-row checkbox-centered">
           <div class="terms-checkbox-wrapper">
             <input type="checkbox" id="terms-checkbox" />
             <label for="terms-checkbox" class="terms-label">
@@ -335,17 +338,14 @@
           </div>
         </div>
 
-        <div class="form-row">
+        <div class="form-row checkbox-centered">
           <div class="terms-checkbox-wrapper">
             <input type="checkbox" id="consent-checkbox" />
             <label for="consent-checkbox" class="terms-label">
               <strong> Guardar como método de pago.</strong>
               <a href="#" id="consent-more">Ver detalles</a>
               <span id="consent-details" class="consent-details" style="display:none"><br>
-                Autorizo a SERVI a guardar esta tarjeta para cargos adicionales relacionados con mi servicio (horas extra, piezas adicionales o correcciones).<br>
-                • Datos guardados de forma segura en Stripe.<br>
-                • No se efectuará ningún cobro sin confirmación previa por mensaje.<br>
-                • Puedo solicitar la eliminación de mi método de pago en cualquier momento.
+                Autorizo a SERVI a guardar de forma segura en Stripe, esta tarjeta para cargos adicionales relacionados con mi servicio (horas extra, piezas adicionales o correcciones). No se efectuará ningún cobro sin confirmación previa por mensaje.
               </span>
             </label>
           </div>
