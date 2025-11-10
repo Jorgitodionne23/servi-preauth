@@ -247,7 +247,7 @@
     <img src="poweredbystripe.png" alt="Powered by Stripe" />
   </div>
 
-  <script type="module">
+  <script>
     // Minimal helpers
     const $ = (sel) => document.querySelector(sel);
     const mxnFormatter = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' });
@@ -278,286 +278,289 @@
         serviceAddress: order.service_address || ''
       };
     }
-    const params = new URLSearchParams(location.search);
-    const orderId = params.get('orderId');
-
-    if (!orderId) {
-      alert('Falta el parámetro orderId.');
-      throw new Error('Missing orderId');
-    }
-
-    // Load Stripe publishable key
-    const { pk } = await fetch('/config/stripe').then(r => r.json());
-    if (!pk) { alert('Stripe no está configurado.'); throw new Error('Missing Stripe key'); }
-    const stripe = Stripe(pk);
-
-    // Get order (expects saved_card and (if needed) client_secret for 3DS)
-    const res = await fetch(`/order/${encodeURIComponent(orderId)}`);
-    if (!res.ok) { alert('Orden no encontrada.'); throw new Error('Order not found'); }
-    const order = await res.json();
-
-    // If no saved card, fallback to full payment form
-    if (!order?.saved_card) {
-      // Extra guard: if server returns 409 later, we still redirect from the click handler.
-      location.href = `/pay?orderId=${encodeURIComponent(orderId)}`;
-      return;
-    }
-
-    // Prefer richer display if server provides it
-    const isAdjustment = String(order.kind || '').toLowerCase() === 'adjustment';
-    const reasonText = String(order.adjustment_reason || '').trim();
-
-    if (isAdjustment) {
-      const heading = document.querySelector('.container h2');
-      const summaryTitle = document.querySelector('.summary-box h3');
-      if (heading) heading.textContent = 'Confirmar ajuste';
-      if (summaryTitle) summaryTitle.textContent = 'Detalles del ajuste';
-    }
-
-    const fechaTexto = formatFecha(order);
-    const servicio = (order.service_description || "servicio").trim();
-    const summaryEl = $('#service-summary');
-    const summaryCopy = (() => {
-      if (!isAdjustment) {
-        return `Reserva de ${servicio} el ${fechaTexto}.`;
-      }
-      const parts = [];
-      if (servicio) parts.push(`Ajuste para ${servicio}`);
-      if (fechaTexto && fechaTexto !== '—') parts.push(`Servicio: ${fechaTexto}`);
-      return parts.length ? `${parts.join('. ')}.` : 'Ajuste pendiente de confirmación.';
-    })();
-    summaryEl.textContent = summaryCopy;
-
-    const reasonRow = document.getElementById('adjustment-reason-row');
-    const reasonValue = document.getElementById('adjustment-reason');
-    if (isAdjustment && reasonRow) {
-      reasonRow.style.display = 'flex';
-      if (reasonValue) reasonValue.textContent = reasonText || 'SERVI adjustment';
-    } else if (reasonRow) {
-      reasonRow.style.display = 'none';
-    }
-
-    if (isAdjustment) {
-      const noteCopy = document.querySelector('.note');
-      if (noteCopy) {
-        noteCopy.textContent = 'Se usará tu método guardado para este ajuste. Puedes cambiarlo desde el portal.';
-      }
-    }
-
-    const summaryBox = document.querySelector('.summary-box');
-    const totalRow = document.getElementById('total-row');
-    const totalEl = document.getElementById('summary-total');
-    const noteEl = document.getElementById('summary-note');
-
-    const totalCents = toCents(order.amount ?? order.pricing?.total_amount);
-    const vatCents = toCents(order.vat_amount ?? order.pricing?.vat_amount);
-    const totalFormatted = formatMoneyFromCents(totalCents);
-
-    if (totalCents > 0) {
-      totalEl.textContent = totalFormatted;
-      totalRow.style.display = 'flex';
-      noteEl.style.display = vatCents > 0 ? 'block' : 'none';
-    } else {
-      totalRow.style.display = 'none';
-      noteEl.style.display = 'none';
-    }
-
-    if (noteEl && summaryBox) {
-      summaryBox.appendChild(noteEl);
-    }
-
-    try {
-      const previewSnapshot = buildPreviewFromOrder(order, { totalCents, vatCents, reasonText });
-      storeSuccessPreview(previewSnapshot);
-    } catch (_) {}
-
-    // Saved card mask (brand + last4 + expiry if available)
-    const sc = order.saved_card || {};
-    const brand = String(sc.brand || 'Tarjeta').toUpperCase();
-    const exp = (sc.exp_month && sc.exp_year)
-      ? ` • vence ${String(sc.exp_month).padStart(2,'0')}/${String(sc.exp_year).slice(-2)}`
-      : '';
-    $('#card-mask').textContent = `${brand} •••• ${sc.last4 || '----'}${exp}`;
-
-   // If PI window not open yet (>7 days), keep button ENABLED but change copy
-    if (order.kind === 'book' && order.preauth_window_open === false) {
-      const btn = document.querySelector('#btn-book');
-      btn.disabled = false; // keep clickable
-      btn.textContent = isAdjustment ? 'Confirmar ajuste' : 'Confirmar reserva';
-    }
-
-
 
     function formatFecha(orderObj) {
-      const dateOnly  = orderObj.service_date || null;
-      const dateTime  = orderObj.service_datetime || null;
+      const dateOnly = orderObj.service_date || null;
+      const dateTime = orderObj.service_datetime || null;
       const raw = dateTime || dateOnly;
-      if (!raw) return "—";
+      if (!raw) return '—';
 
       const d = new Date(raw);
       if (isNaN(d)) return String(raw);
 
-      // Date WITHOUT year
-      const fecha = d.toLocaleDateString("es-MX", {
-        weekday: "long",
-        day: "2-digit",
-        month: "long",
+      const fecha = d.toLocaleDateString('es-MX', {
+        weekday: 'long',
+        day: '2-digit',
+        month: 'long'
       });
       const cap = fecha.charAt(0).toUpperCase() + fecha.slice(1);
+      if (!dateTime) return cap;
 
-      // Show time only when we actually have a timestamp (service_datetime)
-    if (!dateTime) return cap;
-
-    const hora = d.toLocaleTimeString("es-MX", {
-      hour: "numeric",
-      minute: "2-digit",
-      hour12: true
-    });
-
-    return `${cap}, a las ${hora}`;
-  }
-
-  async function syncProcessingFee(orderId, paymentIntentId, paymentMethodId) {
-    if (!orderId || (!paymentIntentId && !paymentMethodId)) return;
-    try {
-      const payload = {};
-      if (paymentIntentId) payload.paymentIntentId = paymentIntentId;
-      if (paymentMethodId) payload.paymentMethodId = paymentMethodId;
-      await fetch(`/orders/${encodeURIComponent(orderId)}/refresh-fees`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+      const hora = d.toLocaleTimeString('es-MX', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
       });
-    } catch (err) {
-      console.warn('No se pudo actualizar la comisión real de Stripe:', err);
+      return `${cap}, a las ${hora}`;
     }
-  }
 
-
-    // Record consent (audit trail) — harmless if already recorded
-    async function recordConsent() {
-      const reasonPhrase = isAdjustment ? 'este ajuste' : 'mi reserva';
-      const text = `Autorizo el cargo por ${totalFormatted} correspondiente a ${reasonPhrase} a mi tarjeta •••• ${sc.last4 || ''}`;
+    async function syncProcessingFee(orderId, paymentIntentId, paymentMethodId) {
+      if (!orderId || (!paymentIntentId && !paymentMethodId)) return;
       try {
-        const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-        const bytes = new Uint8Array(buf);
-        const hash  = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
-        await fetch(`/orders/${encodeURIComponent(orderId)}/consent`, {
+        const payload = {};
+        if (paymentIntentId) payload.paymentIntentId = paymentIntentId;
+        if (paymentMethodId) payload.paymentMethodId = paymentMethodId;
+        await fetch(`/orders/${encodeURIComponent(orderId)}/refresh-fees`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            version: 'v1', text, hash,
-            locale: navigator.language || 'es-MX',
-            tz: Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Mexico_City'
-          })
+          body: JSON.stringify(payload)
         });
-      } catch {}
-    }
-
-    // Button: Reservar (off-session with saved card; 3DS fallback)
-    const btnBook = $('#btn-book');
-    if (isAdjustment) {
-      btnBook.textContent = 'Confirmar ajuste';
-    }
-
-    btnBook.onclick = async () => {
-      const btnManage = $('#btn-manage');
-
-      btnBook.disabled = true;
-      btnManage.disabled = true;
-    $('#spinner').style.display = 'block';
-
-    await recordConsent();
-
-    const r = await fetch('/confirm-with-saved', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ orderId })
-    });
-
-    const payload = await r.json().catch(() => ({}));
-
-    // ✅ Success (off-session authorized/captured)
-    if (r.status === 200) {
-      if (payload?.paymentIntentId || payload?.paymentMethodId) {
-        await syncProcessingFee(orderId, payload?.paymentIntentId || null, payload?.paymentMethodId || null);
+      } catch (err) {
+        console.warn('No se pudo actualizar la comisión real de Stripe:', err);
       }
-      location.href = `/success?orderId=${encodeURIComponent(orderId)}`;
-      return;
     }
 
-    if (r.status === 409) {
-      if (payload?.error === 'no_saved_card') {
-        alert(payload?.message || 'Necesitamos que actualices tu método de pago para continuar.');
-        const fallback = `/pay?orderId=${encodeURIComponent(orderId)}`;
-        location.href = payload?.redirect || fallback;
+    async function initBookPage() {
+      const params = new URLSearchParams(location.search);
+      const orderId = params.get('orderId');
+      if (!orderId) {
+        alert('Falta el parámetro orderId.');
+        throw new Error('missing_order_id');
+      }
+
+      const stripeResp = await fetch('/config/stripe');
+      const { pk } = await stripeResp.json().catch(() => ({}));
+      if (!pk) {
+        alert('Stripe no está configurado.');
+        throw new Error('missing_stripe_pk');
+      }
+      const stripe = Stripe(pk);
+
+      const res = await fetch(`/order/${encodeURIComponent(orderId)}`);
+      if (!res.ok) {
+        alert('Orden no encontrada.');
+        throw new Error('order_not_found');
+      }
+      const order = await res.json();
+
+      if (!order?.saved_card) {
+        location.href = `/pay?orderId=${encodeURIComponent(orderId)}`;
         return;
       }
-      if (payload?.paymentMethodId || payload?.paymentIntentId) {
-        await syncProcessingFee(orderId, payload?.paymentIntentId || null, payload?.paymentMethodId || null);
-      }
-      const scheduledMsg = isAdjustment
-        ? 'Tu ajuste quedó programado. Realizaremos la preautorización 12 horas antes de la fecha.'
-        : 'Tu servicio quedó programado. Realizaremos la preautorización 12 horas antes de la fecha.';
-      alert(payload?.message || scheduledMsg);
-      location.href = `/success?orderId=${encodeURIComponent(orderId)}`;
-      return;
-    }
 
-    // 3DS required → confirm in browser
-    if (r.status === 402 && payload?.clientSecret) {
-      const result = await stripe.confirmCardPayment(payload.clientSecret);
-      if (result.error) {
-        alert(result.error.message || 'Error de autenticación');
-        $('#spinner').style.display = 'none';
-        btnBook.disabled = false;
-        btnManage.disabled = false;
-      } else {
-        const piId = result.paymentIntent?.id || null;
-        const pmId = payload?.paymentMethodId || null;
-        if (piId || pmId) {
-          await syncProcessingFee(orderId, piId, pmId);
+      const isAdjustment = String(order.kind || '').toLowerCase() === 'adjustment';
+      const reasonText = String(order.adjustment_reason || '').trim();
+
+      if (isAdjustment) {
+        const heading = document.querySelector('.container h2');
+        const summaryTitle = document.querySelector('.summary-box h3');
+        if (heading) heading.textContent = 'Confirmar ajuste';
+        if (summaryTitle) summaryTitle.textContent = 'Detalles del ajuste';
+      }
+
+      const fechaTexto = formatFecha(order);
+      const servicio = (order.service_description || 'servicio').trim();
+      const summaryEl = $('#service-summary');
+      const summaryCopy = (() => {
+        if (!isAdjustment) {
+          return `Reserva de ${servicio} el ${fechaTexto}.`;
         }
-        location.href = `/success?orderId=${encodeURIComponent(orderId)}`;
+        const parts = [];
+        if (servicio) parts.push(`Ajuste para ${servicio}`);
+        if (fechaTexto && fechaTexto !== '—') parts.push(`Servicio: ${fechaTexto}`);
+        return parts.length ? `${parts.join('. ')}.` : 'Ajuste pendiente de confirmación.';
+      })();
+      if (summaryEl) summaryEl.textContent = summaryCopy;
+
+      const reasonRow = document.getElementById('adjustment-reason-row');
+      const reasonValue = document.getElementById('adjustment-reason');
+      if (isAdjustment && reasonRow) {
+        reasonRow.style.display = 'flex';
+        if (reasonValue) reasonValue.textContent = reasonText || 'SERVI adjustment';
+      } else if (reasonRow) {
+        reasonRow.style.display = 'none';
       }
-      return;
-    }
 
-    // Other errors
-    alert(payload?.error || 'No se pudo confirmar el pago.');
-      $('#spinner').style.display = 'none';
-      btnBook.disabled = false;
-      btnManage.disabled = false;
-    };
+      if (isAdjustment) {
+        const noteCopy = document.querySelector('.note');
+        if (noteCopy) {
+          noteCopy.textContent = 'Se usará tu método guardado para este ajuste. Puedes cambiarlo desde el portal.';
+        }
+      }
 
+      const summaryBox = document.querySelector('.summary-box');
+      const totalRow = document.getElementById('total-row');
+      const totalEl = document.getElementById('summary-total');
+      const noteEl = document.getElementById('summary-note');
 
-    // Button: Administrar pago (Stripe Billing Portal)
-    $('#btn-manage').onclick = async () => {
-      const btnBook = $('#btn-book');
-      const btnManage = $('#btn-manage');
-      btnBook.disabled = true;
-      btnManage.disabled = true;
+      const totalCents = toCents(order.amount ?? order.pricing?.total_amount);
+      const vatCents = toCents(order.vat_amount ?? order.pricing?.vat_amount);
+      const totalFormatted = formatMoneyFromCents(totalCents);
+
+      if (totalRow && totalEl) {
+        if (totalCents > 0) {
+          totalEl.textContent = totalFormatted;
+          totalRow.style.display = 'flex';
+          if (noteEl) noteEl.style.display = vatCents > 0 ? 'block' : 'none';
+        } else {
+          totalRow.style.display = 'none';
+          if (noteEl) noteEl.style.display = 'none';
+        }
+      }
+
+      if (noteEl && summaryBox) {
+        summaryBox.appendChild(noteEl);
+      }
 
       try {
-        const r = await fetch('/billing-portal', {
+        const previewSnapshot = buildPreviewFromOrder(order, { totalCents, vatCents, reasonText });
+        storeSuccessPreview(previewSnapshot);
+      } catch (_) {}
+
+      const sc = order.saved_card || {};
+      const brand = String(sc.brand || 'Tarjeta').toUpperCase();
+      const exp = sc.exp_month && sc.exp_year
+        ? ` • vence ${String(sc.exp_month).padStart(2, '0')}/${String(sc.exp_year).slice(-2)}`
+        : '';
+      const maskEl = $('#card-mask');
+      if (maskEl) maskEl.textContent = `${brand} •••• ${sc.last4 || '----'}${exp}`;
+
+      if (order.kind === 'book' && order.preauth_window_open === false) {
+        const btn = document.querySelector('#btn-book');
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = isAdjustment ? 'Confirmar ajuste' : 'Confirmar reserva';
+        }
+      }
+
+      async function recordConsent() {
+        const reasonPhrase = isAdjustment ? 'este ajuste' : 'mi reserva';
+        const text = `Autorizo el cargo por ${totalFormatted} correspondiente a ${reasonPhrase} a mi tarjeta •••• ${sc.last4 || ''}`;
+        try {
+          const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+          const bytes = new Uint8Array(buf);
+          const hash = Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
+          await fetch(`/orders/${encodeURIComponent(orderId)}/consent`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              version: 'v1',
+              text,
+              hash,
+              locale: navigator.language || 'es-MX',
+              tz: Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Mexico_City'
+            })
+          });
+        } catch {}
+      }
+
+      const btnBook = $('#btn-book');
+      const btnManage = $('#btn-manage');
+      const spinner = $('#spinner');
+      if (!btnBook || !btnManage) return;
+
+      if (isAdjustment) {
+        btnBook.textContent = 'Confirmar ajuste';
+      }
+
+      btnBook.addEventListener('click', async () => {
+        btnBook.disabled = true;
+        btnManage.disabled = true;
+        if (spinner) spinner.style.display = 'block';
+
+        await recordConsent();
+
+        const r = await fetch('/confirm-with-saved', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ orderId, returnUrl: location.href })
+          body: JSON.stringify({ orderId })
         });
 
-        const out = await r.json().catch(() => ({}));
-        if (r.ok && out?.url) {
-          location.href = out.url; // Stripe Billing Portal
+        const payload = await r.json().catch(() => ({}));
+
+        if (r.status === 200) {
+          if (payload?.paymentIntentId || payload?.paymentMethodId) {
+            await syncProcessingFee(orderId, payload?.paymentIntentId || null, payload?.paymentMethodId || null);
+          }
+          location.href = `/success?orderId=${encodeURIComponent(orderId)}`;
           return;
         }
-        alert(out?.error || out?.message || 'No se pudo abrir el portal de pago.');
-      } catch {
-        alert('No se pudo abrir el portal de pago.');
-      } finally {
+
+        if (r.status === 409) {
+          if (payload?.error === 'no_saved_card') {
+            alert(payload?.message || 'Necesitamos que actualices tu método de pago para continuar.');
+            const fallback = `/pay?orderId=${encodeURIComponent(orderId)}`;
+            location.href = payload?.redirect || fallback;
+            return;
+          }
+          if (payload?.paymentMethodId || payload?.paymentIntentId) {
+            await syncProcessingFee(orderId, payload?.paymentIntentId || null, payload?.paymentMethodId || null);
+          }
+          const scheduledMsg = isAdjustment
+            ? 'Tu ajuste quedó programado. Realizaremos la preautorización 12 horas antes de la fecha.'
+            : 'Tu servicio quedó programado. Realizaremos la preautorización 12 horas antes de la fecha.';
+          alert(payload?.message || scheduledMsg);
+          location.href = `/success?orderId=${encodeURIComponent(orderId)}`;
+          return;
+        }
+
+        if (r.status === 402 && payload?.clientSecret) {
+          const result = await stripe.confirmCardPayment(payload.clientSecret);
+          if (result.error) {
+            alert(result.error.message || 'Error de autenticación');
+            if (spinner) spinner.style.display = 'none';
+            btnBook.disabled = false;
+            btnManage.disabled = false;
+          } else {
+            const piId = result.paymentIntent?.id || null;
+            const pmId = payload?.paymentMethodId || null;
+            if (piId || pmId) {
+              await syncProcessingFee(orderId, piId, pmId);
+            }
+            location.href = `/success?orderId=${encodeURIComponent(orderId)}`;
+          }
+          return;
+        }
+
+        alert(payload?.error || 'No se pudo confirmar el pago.');
+        if (spinner) spinner.style.display = 'none';
         btnBook.disabled = false;
         btnManage.disabled = false;
+      });
+
+      btnManage.addEventListener('click', async () => {
+        btnBook.disabled = true;
+        btnManage.disabled = true;
+
+        try {
+          const r = await fetch('/billing-portal', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ orderId, returnUrl: location.href })
+          });
+
+          const out = await r.json().catch(() => ({}));
+          if (r.ok && out?.url) {
+            location.href = out.url;
+            return;
+          }
+          alert(out?.error || out?.message || 'No se pudo abrir el portal de pago.');
+        } catch {
+          alert('No se pudo abrir el portal de pago.');
+        } finally {
+          btnBook.disabled = false;
+          btnManage.disabled = false;
+        }
+      });
+    }
+
+    initBookPage().catch((err) => {
+      console.error('Book page init failed:', err);
+      if (!window.__BOOK_ALERT_SHOWN__) {
+        window.__BOOK_ALERT_SHOWN__ = true;
+        alert('No se pudo cargar la reserva. Actualiza la página o contacta a soporte.');
       }
-    };
+    });
   </script>
 </body>
 </html>
