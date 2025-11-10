@@ -108,6 +108,7 @@ export async function initDb() {
     CREATE TABLE IF NOT EXISTS consented_offsession_bookings (
       order_id TEXT PRIMARY KEY,
       customer_id TEXT,
+      customer_name TEXT,
       payment_method_id TEXT,
       version TEXT,
       consent_text TEXT,
@@ -119,10 +120,14 @@ export async function initDb() {
       tz TEXT
     );
 
+    ALTER TABLE consented_offsession_bookings
+      ADD COLUMN IF NOT EXISTS customer_name TEXT;
+
     -- 1-row-per-customer consent registry
     CREATE TABLE IF NOT EXISTS saved_servi_users (
       customer_id              TEXT PRIMARY KEY,
       customer_name            TEXT,
+      customer_email           TEXT,
       customer_phone           TEXT,
       latest_payment_method_id TEXT,
       latest_text_hash         TEXT,
@@ -139,6 +144,8 @@ export async function initDb() {
 
       ALTER TABLE saved_servi_users
         ADD COLUMN IF NOT EXISTS customer_phone TEXT;
+      ALTER TABLE saved_servi_users
+        ADD COLUMN IF NOT EXISTS customer_email TEXT;
 
 
     ALTER INDEX IF EXISTS idx_customer_consents_last_checked_at RENAME TO idx_saved_servi_users_last_checked_at;

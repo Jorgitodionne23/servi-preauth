@@ -1347,9 +1347,10 @@ app.post('/orders/:id/consent', async (req, res) => {
 
   // 1) Per-order audit (kept as is)
   await pool.query(`
-    INSERT INTO consented_offsession_bookings (order_id, customer_id, payment_method_id, version, consent_text, text_hash, checked_at, ip, user_agent, locale, tz)
-    VALUES ($1,$2,$3,$4,$5,$6,NOW(),$7,$8,$9,$10)
+    INSERT INTO consented_offsession_bookings (order_id, customer_id, customer_name, payment_method_id, version, consent_text, text_hash, checked_at, ip, user_agent, locale, tz)
+    VALUES ($1,$2,$3,$4,$5,$6,NOW(),$7,$8,$9,$10,$11)
     ON CONFLICT (order_id) DO UPDATE SET
+      customer_name = COALESCE(EXCLUDED.customer_name, consented_offsession_bookings.customer_name),
       version = EXCLUDED.version,
       consent_text = EXCLUDED.consent_text,
       text_hash = EXCLUDED.text_hash,
@@ -1358,21 +1359,22 @@ app.post('/orders/:id/consent', async (req, res) => {
       user_agent = EXCLUDED.user_agent,
       locale = EXCLUDED.locale,
       tz = EXCLUDED.tz
-  `, [id, row.customer_id, row.saved_payment_method_id, version || '1.0', text || '', serverHash, ip, ua, locale || null, tz || null]);
+  `, [id, row.customer_id, row.client_name || null, row.saved_payment_method_id, version || '1.0', text || '', serverHash, ip, ua, locale || null, tz || null]);
 
   // 2) One-row-per-customer registry (NEW) — only if we already have a customer_id
   if (row.customer_id) {
     await pool.query(`
       INSERT INTO saved_servi_users (
-        customer_id, customer_name, customer_phone,
+        customer_id, customer_name, customer_email, customer_phone,
         latest_payment_method_id, latest_text_hash, latest_version,
         first_checked_at, last_checked_at,
         first_order_id, last_order_id,
         ip, user_agent, locale, tz
       )
-      VALUES ($1,$2,$3,$4,$5,$6, NOW(), NOW(), $7, $8, $9,$10,$11,$12)
+      VALUES ($1,$2,$3,$4,$5,$6,$7, NOW(), NOW(), $8, $9, $10,$11,$12,$13)
       ON CONFLICT (customer_id) DO UPDATE SET
         customer_name            = COALESCE(EXCLUDED.customer_name, saved_servi_users.customer_name),
+        customer_email           = COALESCE(EXCLUDED.customer_email, saved_servi_users.customer_email),
         customer_phone           = COALESCE(EXCLUDED.customer_phone, saved_servi_users.customer_phone),
         latest_payment_method_id = COALESCE(EXCLUDED.latest_payment_method_id, saved_servi_users.latest_payment_method_id),
         latest_text_hash         = COALESCE(EXCLUDED.latest_text_hash, saved_servi_users.latest_text_hash),
@@ -1388,6 +1390,7 @@ app.post('/orders/:id/consent', async (req, res) => {
     `, [
       row.customer_id,
       row.client_name || null,
+      row.client_email || null,
       row.client_phone || null,
       row.saved_payment_method_id || null,
       serverHash,
@@ -1943,10 +1946,11 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
         if (cust) {
           const orderInfo = await pool.query(
-            'SELECT client_name, client_phone, parent_id, payment_intent_id FROM all_bookings WHERE id = $1',
+            'SELECT client_name, client_email, client_phone, parent_id, payment_intent_id FROM all_bookings WHERE id = $1',
             [orderId]
           );
           const customerName  = orderInfo.rows[0]?.client_name  || null;
+          const customerEmail = orderInfo.rows[0]?.client_email || null;
           const customerPhone = orderInfo.rows[0]?.client_phone || null;
           const parentForCustomer = orderInfo.rows[0]?.parent_id || orderId;
           const paymentIntentId = orderInfo.rows[0]?.payment_intent_id || null;
@@ -1955,6 +1959,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
             INSERT INTO saved_servi_users (
               customer_id,
               customer_name,
+              customer_email,
               customer_phone,
               latest_payment_method_id,
               latest_text_hash,
@@ -1969,27 +1974,29 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
               tz
             )
             VALUES (
-              $1,$2,$3,$4,
-              $5,$6,$7,NOW(),
-              $8,$8,$9,$10,$11,$12
+              $1,$2,$3,$4,$5,
+              $6,$7,$8,NOW(),
+              $9,$9,$10,$11,$12,$13
             )
             ON CONFLICT (customer_id) DO UPDATE SET
               customer_name            = COALESCE($2, saved_servi_users.customer_name),
-              customer_phone           = COALESCE($3, saved_servi_users.customer_phone),
-              latest_payment_method_id = COALESCE($4, saved_servi_users.latest_payment_method_id),
-              latest_text_hash         = COALESCE($5, saved_servi_users.latest_text_hash),
-              latest_version           = COALESCE($6, saved_servi_users.latest_version),
-              first_checked_at         = COALESCE(saved_servi_users.first_checked_at, $7),
+              customer_email           = COALESCE($3, saved_servi_users.customer_email),
+              customer_phone           = COALESCE($4, saved_servi_users.customer_phone),
+              latest_payment_method_id = COALESCE($5, saved_servi_users.latest_payment_method_id),
+              latest_text_hash         = COALESCE($6, saved_servi_users.latest_text_hash),
+              latest_version           = COALESCE($7, saved_servi_users.latest_version),
+              first_checked_at         = COALESCE(saved_servi_users.first_checked_at, $8),
               last_checked_at          = NOW(),
-              first_order_id           = COALESCE(saved_servi_users.first_order_id, $8),
-              last_order_id            = $8,
-              ip                       = COALESCE($9, saved_servi_users.ip),
-              user_agent               = COALESCE($10, saved_servi_users.user_agent),
-              locale                   = COALESCE($11, saved_servi_users.locale),
-              tz                       = COALESCE($12, saved_servi_users.tz)
+              first_order_id           = COALESCE(saved_servi_users.first_order_id, $9),
+              last_order_id            = $9,
+              ip                       = COALESCE($10, saved_servi_users.ip),
+              user_agent               = COALESCE($11, saved_servi_users.user_agent),
+              locale                   = COALESCE($12, saved_servi_users.locale),
+              tz                       = COALESCE($13, saved_servi_users.tz)
           `, [
             cust,
             customerName,
+            customerEmail,
             customerPhone,
             pmId || null,
             consentMeta.text_hash || null,
@@ -2205,18 +2212,20 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
           INSERT INTO saved_servi_users (
             customer_id,
             customer_name,
+            customer_email,
             customer_phone,
             latest_payment_method_id,
             last_checked_at
           )
-          VALUES ($1,$2,$3,$4,NOW())
+          VALUES ($1,$2,$3,$4,$5,NOW())
           ON CONFLICT (customer_id) DO UPDATE SET
             customer_name            = COALESCE($2, saved_servi_users.customer_name),
-            customer_phone           = COALESCE($3, saved_servi_users.customer_phone),
-            latest_payment_method_id = COALESCE($4, saved_servi_users.latest_payment_method_id),
+            customer_email           = COALESCE($3, saved_servi_users.customer_email),
+            customer_phone           = COALESCE($4, saved_servi_users.customer_phone),
+            latest_payment_method_id = COALESCE($5, saved_servi_users.latest_payment_method_id),
             last_checked_at          = NOW()
         `,
-        [c.id, c.name || null, c.phone || null, primaryPaymentMethodId]
+        [c.id, c.name || null, c.email || null, c.phone || null, primaryPaymentMethodId]
       );
 
       if (GOOGLE_SCRIPT_WEBHOOK_URL) {
