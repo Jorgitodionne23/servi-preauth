@@ -339,5 +339,21 @@
       }
     })();
   </script>
+
+  <script>
+    // Keep users from navigating back into payment pages via the browser back button.
+    (function preventBackNavigation() {
+      const lockState = () => {
+        window.history.pushState(null, '', window.location.href);
+      };
+      lockState();
+      window.addEventListener('popstate', lockState);
+      window.addEventListener('pageshow', (event) => {
+        if (event.persisted) {
+          lockState();
+        }
+      });
+    })();
+  </script>
 </body>
 </html>
