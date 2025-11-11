@@ -164,6 +164,7 @@
     const summaryBox = document.querySelector('.summary-box');
 
     const PREVIEW_KEY = 'serviSuccessPreview';
+    const PREVENT_BACK_KEY = 'serviPreventBack';
 
     function fmtAmount(cents) {
       try { return (Number(cents || 0) / 100).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' }); }
@@ -302,6 +303,7 @@
       }
 
       localStorage.setItem('orderId', String(orderId));
+      sessionStorage.setItem(PREVENT_BACK_KEY, String(orderId));
       const previewSnapshot = getPreview(orderId);
 
       try {

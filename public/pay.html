@@ -518,6 +518,7 @@
     };
 
     const PREVIEW_KEY = 'serviSuccessPreview';
+    const PREVENT_BACK_KEY = 'serviPreventBack';
 
     function storeSuccessPreview(snapshot) {
       try {
@@ -539,6 +540,19 @@
         serviceAddress: order.service_address || ''
       };
     }
+
+    (function guardCompletedOrderAccess() {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const currentOrderId = params.get('orderId');
+        const lockedOrderId = sessionStorage.getItem(PREVENT_BACK_KEY);
+        if (currentOrderId && lockedOrderId && currentOrderId === lockedOrderId) {
+          window.location.replace(`/success?orderId=${encodeURIComponent(currentOrderId)}`);
+        }
+      } catch (guardErr) {
+        console.warn('Back-navigation guard failed', guardErr);
+      }
+    })();
 
     // Fetch once, cache, and use everywhere
     let cachedOrder = null;
