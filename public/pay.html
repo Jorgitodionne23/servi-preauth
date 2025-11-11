@@ -540,11 +540,25 @@
       window.location.replace(`/success?orderId=${encodeURIComponent(orderId)}`);
     }
 
+    function redirectToBook(orderId) {
+      if (!orderId) return;
+      window.location.replace(`/book?orderId=${encodeURIComponent(orderId)}`);
+    }
+
     function redirectIfCompleted(order) {
       if (!order || !order.id) return false;
       const status = String(order.status || '').trim().toLowerCase();
       if (!COMPLETED_STATUSES.has(status)) return false;
       redirectToSuccess(order.id);
+      return true;
+    }
+
+    function redirectIfSavedCardFlow(order) {
+      if (!order || !order.id) return false;
+      const kind = String(order.kind || '').trim().toLowerCase();
+      const hasSavedCard = !!order.saved_card || !!order.saved_payment_method_id;
+      if (!hasSavedCard && kind !== 'book') return false;
+      redirectToBook(order.id);
       return true;
     }
 
@@ -658,6 +672,10 @@
 
       cachedOrder = await response.json();
       if (redirectIfCompleted(cachedOrder)) {
+        cachedOrder = null;
+        return null;
+      }
+      if (redirectIfSavedCardFlow(cachedOrder)) {
         cachedOrder = null;
         return null;
       }
