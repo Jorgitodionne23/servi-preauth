@@ -14,6 +14,7 @@ function doPost(e) {
     Logger.log('RAW BODY: %s', payloadText);
 
     const data = JSON.parse(payloadText);
+    const customerIdPayload = String(data.customerId || '').trim();
 
     if (data && data.type === 'customer.consent') {
       const consentResult = handleCustomerConsentWebhook_(data);
@@ -41,7 +42,6 @@ function doPost(e) {
         ).setMimeType(ContentService.MimeType.JSON);
       }
 
-      const customerIdPayload = String(data.customerId || '').trim();
       const paymentIntentPayload = String(data.paymentIntentId || '').trim();
       const amountPayload = Number(data.amount || 0);
       const sheet =

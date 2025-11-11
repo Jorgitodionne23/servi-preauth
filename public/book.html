@@ -258,11 +258,33 @@
     };
     const PREVIEW_KEY = 'serviSuccessPreview';
     const PREVENT_BACK_KEY = 'serviPreventBack';
+    const COMPLETED_STATUSES = new Set(['scheduled', 'confirmed', 'captured']);
 
     function storeSuccessPreview(snapshot) {
       try {
         sessionStorage.setItem(PREVIEW_KEY, JSON.stringify(snapshot));
       } catch (_) {}
+    }
+
+    function setPreventBackLock(orderId) {
+      if (!orderId) return;
+      try {
+        sessionStorage.setItem(PREVENT_BACK_KEY, String(orderId));
+      } catch (_) {}
+    }
+
+    function redirectToSuccess(orderId) {
+      if (!orderId) return;
+      setPreventBackLock(orderId);
+      window.location.replace(`/success?orderId=${encodeURIComponent(orderId)}`);
+    }
+
+    function redirectIfCompleted(order) {
+      if (!order || !order.id) return false;
+      const status = String(order.status || '').trim().toLowerCase();
+      if (!COMPLETED_STATUSES.has(status)) return false;
+      redirectToSuccess(order.id);
+      return true;
     }
 
     function buildPreviewFromOrder(order, { totalCents, vatCents, reasonText }) {
@@ -286,7 +308,7 @@
         const currentOrderId = params.get('orderId');
         const lockedOrderId = sessionStorage.getItem(PREVENT_BACK_KEY);
         if (currentOrderId && lockedOrderId && currentOrderId === lockedOrderId) {
-          window.location.replace(`/success?orderId=${encodeURIComponent(currentOrderId)}`);
+          redirectToSuccess(currentOrderId);
         }
       } catch (guardErr) {
         console.warn('Back-navigation guard failed', guardErr);
@@ -356,6 +378,8 @@
         throw new Error('order_not_found');
       }
       const order = await res.json();
+
+      if (redirectIfCompleted(order)) return;
 
       if (!order?.saved_card) {
         location.href = `/pay?orderId=${encodeURIComponent(orderId)}`;
