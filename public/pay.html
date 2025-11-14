@@ -237,56 +237,14 @@
       font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     }
 
-    .select-wrapper {
-      position: relative;
-    }
-
-    .select-wrapper::after {
-      content: "";
-      position: absolute;
-      top: 50%;
-      right: 16px;
-      width: 0;
-      height: 0;
-      border-left: 6px solid transparent;
-      border-right: 6px solid transparent;
-      border-top: 6px solid #b0b0b0;
-      transform: translateY(-50%);
-      pointer-events: none;
-    }
-
-    .select-flag {
-      position: absolute;
-      top: 50%;
-      left: 16px;
-      transform: translateY(-50%);
-      font-size: 18px;
-      pointer-events: none;
-    }
-
-    .input-select {
-      appearance: none;
-      background-color: #222;
-      border: 1px solid #444;
+    .currency-note {
+      background-color: #1c1c1c;
+      border: 1px solid #2f2f2f;
       border-radius: 6px;
-      color: #fff;
-      font-size: 16px;
-      height: 48px;
-      line-height: 24px;
-      padding: 12px 40px 12px 52px;
-      width: 100%;
-      font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-      transition: border-color 0.2s ease, box-shadow 0.2s ease;
-    }
-
-    .input-select:hover {
-      border-color: #666;
-    }
-
-    .input-select:focus {
-      outline: none;
-      border-color: #888;
-      box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.1);
+      color: #d1d5db;
+      font-size: 13px;
+      padding: 12px;
+      line-height: 1.4;
     }
 
     .summary-box {
@@ -428,16 +386,9 @@
         </div>
 
         <div class="form-row">
-          <label for="card-currency" class="form-label">Moneda de la tarjeta</label>
-          <div class="select-wrapper">
-            <span class="select-flag" id="currency-flag">🇲🇽</span>
-            <select id="card-currency" name="card-currency" class="input-select">
-              <option value="mxn" data-flag="🇲🇽">Peso mexicano (MXN)</option>
-              <option value="usd" data-flag="🇺🇸">Dólar estadounidense (USD)</option>
-              <option value="cad" data-flag="🇨🇦">Dólar canadiense (CAD)</option>
-              <option value="eur" data-flag="🇪🇺">Euro (EUR)</option>
-            </select>
-          </div>
+          <p class="currency-note">
+            Todos los cargos se realizan en pesos mexicanos (MXN).
+          </p>
         </div>
 
         <div class="form-row">
@@ -507,6 +458,7 @@
       window.stripe = Stripe(pk);
     })();
 
+    const CHARGE_CURRENCY = 'mxn';
     const mxnFormatter = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' });
     const formatMoneyFromCents = (value) => {
       const cents = Number(value || 0);
@@ -712,7 +664,10 @@
     async function syncProcessingFee(orderId, paymentIntentId, paymentMethodId, extras = {}) {
       if (!orderId || (!paymentIntentId && !paymentMethodId)) return;
       try {
-        const payload = extras && typeof extras === 'object' ? { ...extras } : {};
+        const payload = {};
+        if (extras && typeof extras === 'object' && extras.billingEmail) {
+          payload.billingEmail = extras.billingEmail;
+        }
         if (paymentIntentId) payload.paymentIntentId = paymentIntentId;
         if (paymentMethodId) payload.paymentMethodId = paymentMethodId;
         await fetch(`/orders/${encodeURIComponent(orderId)}/refresh-fees`, {
@@ -730,36 +685,6 @@
     const spinner = document.getElementById("spinner");
     const emailInput = document.getElementById("customer-email");
     const cardholderInput = document.getElementById("cardholder-name");
-    const currencySelect = document.getElementById("card-currency");
-    const currencyFlag = document.getElementById("currency-flag");
-    const CARD_CURRENCY_STORAGE_KEY = 'serviCardCurrency';
-
-    const updateCurrencyFlag = (value) => {
-      if (!currencyFlag || !currencySelect) return;
-      const option = currencySelect.querySelector(`option[value="${value}"]`);
-      const flag = option?.dataset?.flag || '💳';
-      currencyFlag.textContent = flag;
-    };
-
-    if (currencySelect) {
-      let preset = null;
-      try {
-        preset = localStorage.getItem(CARD_CURRENCY_STORAGE_KEY);
-      } catch (_) {}
-
-      if (preset && currencySelect.querySelector(`option[value="${preset}"]`)) {
-        currencySelect.value = preset;
-      }
-
-      updateCurrencyFlag(currencySelect.value);
-      currencySelect.addEventListener('change', () => {
-        const value = currencySelect.value;
-        updateCurrencyFlag(value);
-        try {
-          localStorage.setItem(CARD_CURRENCY_STORAGE_KEY, value);
-        } catch (_) {}
-      });
-    }
 
     // Init: fill summary + mount appropriate payment UI
     (async () => {
@@ -874,7 +799,7 @@
 
 
         // Express wallets
-        const requestCurrency = currencySelect?.value || 'mxn';
+        const requestCurrency = CHARGE_CURRENCY;
         const paymentRequest = (window.paymentRequest = (window.stripe).paymentRequest({
           country: "MX",
           currency: requestCurrency,
@@ -892,11 +817,10 @@
           prButton.mount("#express-pay-button");
           paymentRequest.on("paymentmethod", async (ev) => {
             const consentBox = document.getElementById("consent-checkbox");
-            const selectedCurrency = currencySelect?.value || 'mxn';
             const rawEmail = emailInput?.value ?? ev.paymentMethod?.billing_details?.email ?? '';
             const emailValue = typeof rawEmail === 'string' ? rawEmail.trim() : '';
             if (consentBox && consentBox.checked) {
-              await recordConsent(order.id, { cardCurrency: selectedCurrency, billingEmail: emailValue });
+              await recordConsent(order.id, { billingEmail: emailValue });
               await applyConsentToCurrentPI(order.id);
             }
 
@@ -911,7 +835,7 @@
             if (second.error) { alert("Error al confirmar: " + second.error.message); return; }
             const piId = second.paymentIntent?.id;
             if (piId) {
-              await syncProcessingFee(order.id, piId, null, { cardCurrency: selectedCurrency, billingEmail: emailValue });
+              await syncProcessingFee(order.id, piId, null, { billingEmail: emailValue });
             }
             localStorage.setItem('orderId', String(order.id));
             window.location.href = `/success?orderId=${encodeURIComponent(order.id)}`;
@@ -951,9 +875,8 @@
         locale: navigator.language || 'es-MX',
         tz: Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Mexico_City'
       };
-      if (extras && typeof extras === 'object') {
-        if (extras.cardCurrency) payload.cardCurrency = extras.cardCurrency;
-        if (extras.billingEmail) payload.billingEmail = extras.billingEmail;
+      if (extras && typeof extras === 'object' && extras.billingEmail) {
+        payload.billingEmail = extras.billingEmail;
       }
       await fetch(`/orders/${orderId}/consent`, {
         method:'POST',
@@ -970,7 +893,6 @@
       const consentChecked = document.getElementById("consent-checkbox").checked;
       const cardholder = (cardholderInput?.value || "").trim();
       const email = (emailInput?.value || "").trim();
-      const selectedCurrency = currencySelect?.value || 'mxn';
 
       const mode = submitBtn.dataset.mode || '';
       const missingAlerts = [];
@@ -999,7 +921,7 @@
             return;
           }
 
-          await recordConsent(order.id, { cardCurrency: selectedCurrency, billingEmail: email });
+          await recordConsent(order.id, { billingEmail: email });
 
           if (!setupClientSecret) {
             cachedOrder = null;
@@ -1025,7 +947,7 @@
           }
 
           if (result.setupIntent?.payment_method) {
-            await syncProcessingFee(order.id, null, result.setupIntent.payment_method, { cardCurrency: selectedCurrency, billingEmail: email });
+            await syncProcessingFee(order.id, null, result.setupIntent.payment_method, { billingEmail: email });
           }
           localStorage.setItem('orderId', String(order.id));
           window.location.href = `/success?orderId=${encodeURIComponent(order.id)}`;
@@ -1035,7 +957,7 @@
         // ========== CASE C: Normal payment confirmation ==========
         if (mode === 'confirm-payment') {
           if (consentChecked) {
-            await recordConsent(order.id, { cardCurrency: selectedCurrency, billingEmail: email });
+            await recordConsent(order.id, { billingEmail: email });
             await applyConsentToCurrentPI(order.id);
           }
           
@@ -1056,7 +978,7 @@
           
           if (result.paymentIntent.status === "succeeded" || result.paymentIntent.status === "requires_capture") {
             if (result.paymentIntent.id) {
-              await syncProcessingFee(order.id, result.paymentIntent.id, null, { cardCurrency: selectedCurrency, billingEmail: email });
+              await syncProcessingFee(order.id, result.paymentIntent.id, null, { billingEmail: email });
             }
             localStorage.setItem('orderId', String(order.id));
             window.location.href = `/success?orderId=${encodeURIComponent(order.id)}`;
