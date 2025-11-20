@@ -43,7 +43,7 @@ function hoursUntilService(row) {
 
 const BOOK_SUCCESS_STATUSES = new Set(['Scheduled', 'Confirmed', 'Captured']);
 const PAY_SUCCESS_STATUSES = new Set(['Scheduled', 'Confirmed', 'Captured']);
-const LINK_EXPIRATION_HOURS = 72;
+const LINK_EXPIRATION_HOURS = 2;
 const LINK_EXPIRATION_MS = LINK_EXPIRATION_HOURS * 60 * 60 * 1000;
 
 function getLinkExpirationInfo(createdAt) {
