@@ -292,6 +292,26 @@
       font-size: 12px;
       color: #9ca3af;
     }
+    .notice {
+      background-color: #1a1a1a;
+      border: 1px solid #f87171;
+      border-radius: 10px;
+      padding: 14px;
+      font-size: 14px;
+      text-align: center;
+      color: #fff;
+    }
+    .notice strong {
+      display: block;
+      font-size: 15px;
+      margin-bottom: 4px;
+    }
+    .notice small {
+      display: block;
+      margin-top: 6px;
+      font-size: 12px;
+      color: #fca5a5;
+    }
 
     #spinner {
     display: none;
@@ -341,6 +361,11 @@
           <span>Motivo del ajuste</span>
           <span id="adjustment-reason">—</span>
         </div>
+      </div>
+      <div id="link-expired" class="notice" style="display:none;">
+        <strong>Enlace expirado</strong>
+        <span>Este enlace ha caducado. Solicita un nuevo enlace con tu concierge de SERVI.</span>
+        <small id="link-expired-date" style="display:none;"></small>
       </div>
 
       <!-- Setup (save-card) UI mounts here when intentType === 'setup' -->
@@ -456,6 +481,38 @@
     const PREVIEW_KEY = 'serviSuccessPreview';
     const PREVENT_BACK_KEY = 'serviPreventBack';
     const COMPLETED_STATUSES = new Set(['scheduled', 'confirmed', 'captured']);
+    const expiredBox = document.getElementById('link-expired');
+    const expiredDateEl = document.getElementById('link-expired-date');
+
+    function formatExpirationDate(iso) {
+      if (!iso) return null;
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return null;
+      return d.toLocaleString('es-MX', {
+        weekday: 'long',
+        day: '2-digit',
+        month: 'long',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    }
+
+    function showLinkExpired(expiresAtIso) {
+      const formEl = document.getElementById('payment-form');
+      if (formEl) formEl.style.display = 'none';
+      const summaryBox = document.querySelector('.summary-box');
+      if (summaryBox) summaryBox.style.display = 'none';
+      if (expiredBox) expiredBox.style.display = 'block';
+      if (expiredDateEl) {
+        const formatted = formatExpirationDate(expiresAtIso);
+        if (formatted) {
+          expiredDateEl.textContent = `Venció el ${formatted}.`;
+          expiredDateEl.style.display = 'block';
+        } else {
+          expiredDateEl.style.display = 'none';
+        }
+      }
+    }
 
     function storeSuccessPreview(snapshot) {
       try {
@@ -604,6 +661,11 @@
       if (!orderId) return null;
 
       const response = await fetch(`/order/${orderId}`);
+      if (response.status === 410) {
+        const payload = await response.json().catch(() => ({}));
+        showLinkExpired(payload?.linkExpiresAt || payload?.link_expires_at || null);
+        return null;
+      }
       if (!response.ok) return null;
 
       cachedOrder = await response.json();

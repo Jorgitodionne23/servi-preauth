@@ -43,6 +43,31 @@ function hoursUntilService(row) {
 
 const BOOK_SUCCESS_STATUSES = new Set(['Scheduled', 'Confirmed', 'Captured']);
 const PAY_SUCCESS_STATUSES = new Set(['Scheduled', 'Confirmed', 'Captured']);
+const LINK_EXPIRATION_HOURS = 72;
+const LINK_EXPIRATION_MS = LINK_EXPIRATION_HOURS * 60 * 60 * 1000;
+
+function getLinkExpirationInfo(createdAt) {
+  const createdMs = createdAt ? new Date(createdAt).getTime() : null;
+  if (!createdMs || Number.isNaN(createdMs)) {
+    return { expired: false, expiresAtMs: null, expiresAtIso: null };
+  }
+  const expiresAtMs = createdMs + LINK_EXPIRATION_MS;
+  return {
+    expired: Date.now() >= expiresAtMs,
+    expiresAtMs,
+    expiresAtIso: new Date(expiresAtMs).toISOString()
+  };
+}
+
+function assertOrderLinkActive(row, { allowExpired = false } = {}) {
+  const info = getLinkExpirationInfo(row?.created_at || row?.createdAt || null);
+  if (info.expired && !allowExpired) {
+    const err = makeError('link_expired', 'This payment or booking link has expired', 410);
+    err.linkExpiresAt = info.expiresAtIso || null;
+    throw err;
+  }
+  return info;
+}
 
 // ── generate a unique public_code for /o/:code ────────────────────────────
 async function generateUniqueCode(len = 10) {
@@ -315,7 +340,8 @@ async function refreshOrderFees(orderId, { paymentIntentId, paymentMethodId } = 
             stripe_percent_fee,
             stripe_fixed_fee,
             stripe_fee_tax_rate,
-            payment_intent_id
+            payment_intent_id,
+            created_at
        FROM all_bookings
       WHERE id = $1`,
     [orderId]
@@ -324,6 +350,7 @@ async function refreshOrderFees(orderId, { paymentIntentId, paymentMethodId } = 
   if (!order) {
     throw makeError('order_not_found', 'order not found', 404);
   }
+  assertOrderLinkActive(order);
 
   if (paymentIntentId && order.payment_intent_id && order.payment_intent_id !== paymentIntentId) {
     throw makeError('mismatched_payment_intent', 'payment intent does not match order', 409);
@@ -735,6 +762,7 @@ app.get('/config/stripe', (_req, res) => {
 app.get('/order/:orderId', async (req, res) => {
   try {
     const { orderId } = req.params;
+    const allowExpired = String(req.query.allowExpired || '') === '1';
 
     const { rows } = await pool.query(`
       SELECT id, payment_intent_id, amount, provider_amount, booking_fee_amount, processing_fee_amount,
@@ -749,6 +777,8 @@ app.get('/order/:orderId', async (req, res) => {
 
     const row = rows[0];
     if (!row) return res.status(404).send({ error: 'Order not found' });
+    const linkInfo = assertOrderLinkActive(row, { allowExpired });
+    const linkExpired = linkInfo.expired;
 
     let pi = null;
     let intentType = null;       // 'payment' | 'setup' | null
@@ -760,7 +790,7 @@ app.get('/order/:orderId', async (req, res) => {
       return !!c.rows.length;
     }
 
-    if (!row.payment_intent_id) {
+    if (!linkExpired && !row.payment_intent_id) {
       let kind = String(row.kind || '').toLowerCase();
 
       if (kind === 'setup_required') {
@@ -954,7 +984,7 @@ app.get('/order/:orderId', async (req, res) => {
       }
 
 
-    } else {
+    } else if (!linkExpired) {
       // Retrieve existing Intent
       const id = row.payment_intent_id;
       if (id) {
@@ -977,7 +1007,7 @@ app.get('/order/:orderId', async (req, res) => {
 
     // saved-card summary (unchanged)
     let saved_card = null;
-    if (row.customer_id) {
+    if (!linkExpired && row.customer_id) {
       try {
         const pmList = await stripe.paymentMethods.list({
           customer: row.customer_id,
@@ -1028,14 +1058,24 @@ app.get('/order/:orderId', async (req, res) => {
       saved_card: saved_card || null,
       service_display,
       days_ahead,
-      hours_ahead,             
-      preauth_window_open      
+      hours_ahead,
+      preauth_window_open,
+      link_expired: linkExpired,
+      link_expires_at: linkInfo.expiresAtIso || null
     });
 
 
   } catch (err) {
-    console.error('Error retrieving order:', err);
-    res.status(500).send({ error: 'Internal server error' });
+    const status = err.status || 500;
+    if (status >= 500) {
+      console.error('Error retrieving order:', err);
+    }
+    res.status(status).send({
+      error: err.code || 'order_fetch_failed',
+      message: err.message || 'Internal server error',
+      linkExpired: err.code === 'link_expired',
+      linkExpiresAt: err.linkExpiresAt || null
+    });
   }
 });
 
@@ -1079,13 +1119,20 @@ app.get('/o/:code', async (req, res) => {
               kind,
               customer_id,
               saved_payment_method_id,
-              status
+              status,
+              created_at
          FROM all_bookings
         WHERE public_code = $1`,
       [code]
     );
     if (!rows[0]) return res.status(404).send('Not found');
     const row = rows[0];
+    const linkInfo = getLinkExpirationInfo(row.created_at);
+    if (linkInfo.expired) {
+      return res
+        .status(410)
+        .send('Este enlace ha expirado. Solicita uno nuevo con el equipo de SERVI.');
+    }
     const rowStatus = String(row.status || '').trim();
     if (BOOK_SUCCESS_STATUSES.has(rowStatus) || PAY_SUCCESS_STATUSES.has(rowStatus)) {
       return res.redirect(302, `/success?orderId=${encodeURIComponent(row.id)}`);
@@ -1290,134 +1337,148 @@ app.post('/tasks/preauth-due', async (req, res) => {
 
 // Record consent (called from pay.html before confirming)
 app.post('/orders/:id/consent', async (req, res) => {
-  const { id } = req.params;
-  const { version, text, hash, locale, tz, billingEmail } = req.body || {};
-  const ua = req.headers['user-agent'] || '';
-  const ip = String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').split(',')[0].trim();
+  try {
+    const { id } = req.params;
+    const { version, text, hash, locale, tz, billingEmail } = req.body || {};
+    const ua = req.headers['user-agent'] || '';
+    const ip = String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').split(',')[0].trim();
 
-  const serverHash = createHash('sha256').update(String(text || ''), 'utf8').digest('hex');
-  if (hash && hash !== serverHash) return res.status(400).send({ error: 'bad hash' });
+    const serverHash = createHash('sha256').update(String(text || ''), 'utf8').digest('hex');
+    if (hash && hash !== serverHash) return res.status(400).send({ error: 'bad hash' });
 
-  // Pull order info
-  const or = await pool.query(`
-    SELECT id,
-           parent_id,
-           customer_id,
-           saved_payment_method_id,
-           client_name,
-           client_email,
-           client_phone,
-           payment_intent_id
-      FROM all_bookings
-     WHERE id = $1
-  `, [id]);
-  const row = or.rows[0];
-  if (!row) return res.status(404).send({ error: 'order not found' });
-  const parentOrderId = row.parent_id || row.id;
+    // Pull order info
+    const or = await pool.query(`
+      SELECT id,
+             parent_id,
+             customer_id,
+             saved_payment_method_id,
+             client_name,
+             client_email,
+             client_phone,
+             payment_intent_id,
+             created_at
+        FROM all_bookings
+       WHERE id = $1
+    `, [id]);
+    const row = or.rows[0];
+    if (!row) return res.status(404).send({ error: 'order not found' });
+    assertOrderLinkActive(row);
+    const parentOrderId = row.parent_id || row.id;
 
-  if (billingEmail) {
-    try {
-      await syncOrderEmail(row.id, billingEmail, { existingRow: row });
-    } catch (emailErr) {
-      console.warn('consent: failed to persist billing email', row.id, emailErr?.message || emailErr);
+    if (billingEmail) {
+      try {
+        await syncOrderEmail(row.id, billingEmail, { existingRow: row });
+      } catch (emailErr) {
+        console.warn('consent: failed to persist billing email', row.id, emailErr?.message || emailErr);
+      }
     }
-  }
 
-  let customerId = row.customer_id || null;
-  if (!customerId) {
-    customerId = await ensureCustomerForOrder(stripe, row);
-    row.customer_id = customerId;
-  } else {
-    try {
-      await ensureCustomerForOrder(stripe, row);
-    } catch (errEnsure) {
-      console.warn('ensureCustomerForOrder update failed', errEnsure?.message || errEnsure);
+    let customerId = row.customer_id || null;
+    if (!customerId) {
+      customerId = await ensureCustomerForOrder(stripe, row);
+      row.customer_id = customerId;
+    } else {
+      try {
+        await ensureCustomerForOrder(stripe, row);
+      } catch (errEnsure) {
+        console.warn('ensureCustomerForOrder update failed', errEnsure?.message || errEnsure);
+      }
     }
-  }
 
-  if (customerId && row.payment_intent_id) {
-    try {
-      await stripe.paymentIntents.update(row.payment_intent_id, {
-        customer: customerId
-      });
-    } catch (errPi) {
-      console.warn('PI update for consent failed', errPi?.message || errPi);
+    if (customerId && row.payment_intent_id) {
+      try {
+        await stripe.paymentIntents.update(row.payment_intent_id, {
+          customer: customerId
+        });
+      } catch (errPi) {
+        console.warn('PI update for consent failed', errPi?.message || errPi);
+      }
     }
-  }
 
-  // 1) Per-order audit (kept as is)
-  await pool.query(`
-    INSERT INTO consented_offsession_bookings (order_id, customer_id, customer_name, payment_method_id, version, consent_text, text_hash, checked_at, ip, user_agent, locale, tz)
-    VALUES ($1,$2,$3,$4,$5,$6,NOW(),$7,$8,$9,$10,$11)
-    ON CONFLICT (order_id) DO UPDATE SET
-      customer_name = COALESCE(EXCLUDED.customer_name, consented_offsession_bookings.customer_name),
-      version = EXCLUDED.version,
-      consent_text = EXCLUDED.consent_text,
-      text_hash = EXCLUDED.text_hash,
-      checked_at = NOW(),
-      ip = EXCLUDED.ip,
-      user_agent = EXCLUDED.user_agent,
-      locale = EXCLUDED.locale,
-      tz = EXCLUDED.tz
-  `, [id, row.customer_id, row.client_name || null, row.saved_payment_method_id, version || '1.0', text || '', serverHash, ip, ua, locale || null, tz || null]);
-
-  // 2) One-row-per-customer registry (NEW) — only if we already have a customer_id
-  if (row.customer_id) {
+    // 1) Per-order audit (kept as is)
     await pool.query(`
-      INSERT INTO saved_servi_users (
-        customer_id, customer_name, customer_email, customer_phone,
-        latest_payment_method_id, latest_text_hash, latest_version,
-        first_checked_at, last_checked_at,
-        first_order_id, last_order_id,
-        ip, user_agent, locale, tz
-      )
-      VALUES ($1,$2,$3,$4,$5,$6,$7, NOW(), NOW(), $8, $9, $10,$11,$12,$13)
-      ON CONFLICT (customer_id) DO UPDATE SET
-        customer_name            = COALESCE(EXCLUDED.customer_name, saved_servi_users.customer_name),
-        customer_email           = COALESCE(EXCLUDED.customer_email, saved_servi_users.customer_email),
-        customer_phone           = COALESCE(EXCLUDED.customer_phone, saved_servi_users.customer_phone),
-        latest_payment_method_id = COALESCE(EXCLUDED.latest_payment_method_id, saved_servi_users.latest_payment_method_id),
-        latest_text_hash         = COALESCE(EXCLUDED.latest_text_hash, saved_servi_users.latest_text_hash),
-        latest_version           = COALESCE(EXCLUDED.latest_version, saved_servi_users.latest_version),
-        first_checked_at         = COALESCE(saved_servi_users.first_checked_at, EXCLUDED.first_checked_at),
-        first_order_id           = COALESCE(saved_servi_users.first_order_id,   EXCLUDED.first_order_id),
-        last_checked_at          = EXCLUDED.last_checked_at,
-        last_order_id            = EXCLUDED.last_order_id,
-        ip                       = EXCLUDED.ip,
-        user_agent               = EXCLUDED.user_agent,
-        locale                   = EXCLUDED.locale,
-        tz                       = EXCLUDED.tz
-    `, [
-      row.customer_id,
-      row.client_name || null,
-      row.client_email || null,
-      row.client_phone || null,
-      row.saved_payment_method_id || null,
-      serverHash,
-      version || '1.0',
-      parentOrderId, // first_order_id
-      row.id, // last_order_id
-      ip,
-      ua,
-      locale || null,
-      tz || null
-    ]);
+      INSERT INTO consented_offsession_bookings (order_id, customer_id, customer_name, payment_method_id, version, consent_text, text_hash, checked_at, ip, user_agent, locale, tz)
+      VALUES ($1,$2,$3,$4,$5,$6,NOW(),$7,$8,$9,$10,$11)
+      ON CONFLICT (order_id) DO UPDATE SET
+        customer_name = COALESCE(EXCLUDED.customer_name, consented_offsession_bookings.customer_name),
+        version = EXCLUDED.version,
+        consent_text = EXCLUDED.consent_text,
+        text_hash = EXCLUDED.text_hash,
+        checked_at = NOW(),
+        ip = EXCLUDED.ip,
+        user_agent = EXCLUDED.user_agent,
+        locale = EXCLUDED.locale,
+        tz = EXCLUDED.tz
+    `, [id, row.customer_id, row.client_name || null, row.saved_payment_method_id, version || '1.0', text || '', serverHash, ip, ua, locale || null, tz || null]);
+
+    // 2) One-row-per-customer registry (NEW) — only if we already have a customer_id
+    if (row.customer_id) {
+      await pool.query(`
+        INSERT INTO saved_servi_users (
+          customer_id, customer_name, customer_email, customer_phone,
+          latest_payment_method_id, latest_text_hash, latest_version,
+          first_checked_at, last_checked_at,
+          first_order_id, last_order_id,
+          ip, user_agent, locale, tz
+        )
+        VALUES ($1,$2,$3,$4,$5,$6,$7, NOW(), NOW(), $8, $9, $10,$11,$12,$13)
+        ON CONFLICT (customer_id) DO UPDATE SET
+          customer_name            = COALESCE(EXCLUDED.customer_name, saved_servi_users.customer_name),
+          customer_email           = COALESCE(EXCLUDED.customer_email, saved_servi_users.customer_email),
+          customer_phone           = COALESCE(EXCLUDED.customer_phone, saved_servi_users.customer_phone),
+          latest_payment_method_id = COALESCE(EXCLUDED.latest_payment_method_id, saved_servi_users.latest_payment_method_id),
+          latest_text_hash         = COALESCE(EXCLUDED.latest_text_hash, saved_servi_users.latest_text_hash),
+          latest_version           = COALESCE(EXCLUDED.latest_version, saved_servi_users.latest_version),
+          first_checked_at         = COALESCE(saved_servi_users.first_checked_at, EXCLUDED.first_checked_at),
+          first_order_id           = COALESCE(saved_servi_users.first_order_id,   EXCLUDED.first_order_id),
+          last_checked_at          = EXCLUDED.last_checked_at,
+          last_order_id            = EXCLUDED.last_order_id,
+          ip                       = EXCLUDED.ip,
+          user_agent               = EXCLUDED.user_agent,
+          locale                   = EXCLUDED.locale,
+          tz                       = EXCLUDED.tz
+      `, [
+        row.customer_id,
+        row.client_name || null,
+        row.client_email || null,
+        row.client_phone || null,
+        row.saved_payment_method_id || null,
+        serverHash,
+        version || '1.0',
+        parentOrderId, // first_order_id
+        row.id, // last_order_id
+        ip,
+        ua,
+        locale || null,
+        tz || null
+      ]);
+    }
+
+    notifyConsentChange({
+      customerId: row.customer_id,
+      parentOrderId,
+      sourceOrderId: row.id,
+      consent: true,
+      paymentMethodId: row.saved_payment_method_id || null,
+      paymentIntentId: row.payment_intent_id || null
+    });
+
+
+    // Promote order if it was gated
+    await pool.query("UPDATE all_bookings SET kind='setup' WHERE id=$1 AND kind='setup_required'", [id]);
+
+    res.send({ ok: true, hash: serverHash, version: version || '1.0' });
+  } catch (err) {
+    const status = err.status || 500;
+    if (status >= 500) {
+      console.error('consent error:', err);
+    }
+    res.status(status).send({
+      error: err.code || 'consent_failed',
+      message: err.message || 'Internal error',
+      linkExpiresAt: err.linkExpiresAt || null
+    });
   }
-
-  notifyConsentChange({
-    customerId: row.customer_id,
-    parentOrderId,
-    sourceOrderId: row.id,
-    consent: true,
-    paymentMethodId: row.saved_payment_method_id || null,
-    paymentIntentId: row.payment_intent_id || null
-  });
-
-
-  // Promote order if it was gated
-  await pool.query("UPDATE all_bookings SET kind='setup' WHERE id=$1 AND kind='setup_required'", [id]);
-
-  res.send({ ok: true, hash: serverHash, version: version || '1.0' });
 });
 
 
@@ -2429,13 +2490,15 @@ app.post('/confirm-with-saved', async (req, res) => {
               status,
               saved_payment_method_id,
               capture_method,
-              adjustment_reason
+              adjustment_reason,
+              created_at
          FROM all_bookings
         WHERE id = $1`,
       [orderId]
     );
     const row = rows[0];
     if (!row) return res.status(404).send({ error: 'order not found' });
+    assertOrderLinkActive(row);
 
     let savedPmId = row.saved_payment_method_id || null;
     const capturePref = String(row.capture_method || '').toLowerCase();
@@ -2616,8 +2679,15 @@ app.post('/confirm-with-saved', async (req, res) => {
       throw e;
     }
   } catch (err) {
-    console.error('confirm-with-saved error:', err);
-    res.status(500).send({ error: 'Internal error' });
+    const status = err.status || 500;
+    if (status >= 500) {
+      console.error('confirm-with-saved error:', err);
+    }
+    res.status(status).send({
+      error: err.code || 'Internal error',
+      message: err.message || 'Internal error',
+      linkExpiresAt: err.linkExpiresAt || null
+    });
   }
 });
 
@@ -2625,11 +2695,12 @@ app.post('/confirm-with-saved', async (req, res) => {
 app.post('/orders/:id/apply-consent-to-current-pi', async (req, res) => {
   try {
     const { id } = req.params;
-    const r = await pool.query('SELECT payment_intent_id FROM all_bookings WHERE id=$1', [id]);
+    const r = await pool.query('SELECT payment_intent_id, created_at FROM all_bookings WHERE id=$1', [id]);
     const row = r.rows[0];
     if (!row || !row.payment_intent_id) {
       return res.status(400).json({ error: 'no_pi' });
     }
+    assertOrderLinkActive(row);
 
     // Important: update BEFORE confirmCardPayment happens on the client
     const updated = await stripe.paymentIntents.update(row.payment_intent_id, {
@@ -2638,8 +2709,15 @@ app.post('/orders/:id/apply-consent-to-current-pi', async (req, res) => {
 
     res.json({ ok: true, payment_intent_id: updated.id, setup_future_usage: updated.setup_future_usage });
   } catch (e) {
-    console.error('apply-consent-to-current-pi error:', e?.message);
-    res.status(500).json({ error: e?.message || 'internal' });
+    const status = e.status || 500;
+    if (status >= 500) {
+      console.error('apply-consent-to-current-pi error:', e?.message || e);
+    }
+    res.status(status).json({
+      error: e.code || 'internal',
+      message: e.message || 'Internal error',
+      linkExpiresAt: e.linkExpiresAt || null
+    });
   }
 });
 

@@ -307,7 +307,7 @@
       const previewSnapshot = getPreview(orderId);
 
       try {
-        const res = await fetch(`/order/${encodeURIComponent(orderId)}`);
+        const res = await fetch(`/order/${encodeURIComponent(orderId)}?allowExpired=1`);
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const order = await res.json();
 
