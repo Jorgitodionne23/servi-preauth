@@ -1131,7 +1131,7 @@ app.get('/o/:code', async (req, res) => {
     if (linkInfo.expired) {
       return res
         .status(410)
-        .send('Este enlace ha expirado. Solicita uno nuevo con el equipo de SERVI.');
+        .sendFile(path.join(__dirname, 'public', 'link-expired.html'));
     }
     const rowStatus = String(row.status || '').trim();
     if (BOOK_SUCCESS_STATUSES.has(rowStatus) || PAY_SUCCESS_STATUSES.has(rowStatus)) {
