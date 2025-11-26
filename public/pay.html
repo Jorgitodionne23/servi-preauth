@@ -401,13 +401,9 @@
         </div>
 
         <div class="form-row">
-          <label for="card-number-element" class="form-label">Información de la tarjeta</label>
+          <label for="card-element" class="form-label">Información de la tarjeta</label>
           <div class="card-fieldset">
-            <div class="card-control" id="card-number-element"></div>
-            <div class="card-row">
-              <div class="card-control" id="card-expiry-element"></div>
-              <div class="card-control" id="card-cvc-element"></div>
-            </div>
+            <div class="card-control" id="card-element"></div>
           </div>
         </div>
 
@@ -603,8 +599,8 @@
     let setupClientSecret = null;
 
     function mountCardElement() {
-      if (window.cardNumber && window.cardExpiry && window.cardCvc) {
-        return window.cardNumber;
+      if (window.card) {
+        return window.card;
       }
 
       const elements = window.elements || window.stripe.elements({ locale: 'es' });
@@ -626,19 +622,10 @@
         invalid: { color: '#ef4444' }
       };
 
-      const cardNumber = elements.create('cardNumber', {
+      const card = elements.create('card', {
         style: sharedStyle,
-        showIcon: true,
-        iconStyle: 'solid',
-        placeholder: 'Número de tarjeta'
-      });
-      const cardExpiry = elements.create('cardExpiry', {
-        style: sharedStyle,
-        placeholder: 'MM/AA'
-      });
-      const cardCvc = elements.create('cardCvc', {
-        style: sharedStyle,
-        placeholder: 'CVV'
+        hidePostalCode: true,
+        iconStyle: 'solid'
       });
 
       const bindState = (element, selector) => {
@@ -651,20 +638,12 @@
         });
       };
 
-      cardNumber.mount('#card-number-element');
-      cardExpiry.mount('#card-expiry-element');
-      cardCvc.mount('#card-cvc-element');
+      card.mount('#card-element');
+      bindState(card, '#card-element');
 
-      bindState(cardNumber, '#card-number-element');
-      bindState(cardExpiry, '#card-expiry-element');
-      bindState(cardCvc, '#card-cvc-element');
+      window.card = card;
 
-      window.cardNumber = cardNumber;
-      window.cardExpiry = cardExpiry;
-      window.cardCvc = cardCvc;
-      window.card = cardNumber;
-
-      return cardNumber;
+      return card;
     }
 
     async function getOrder() {
