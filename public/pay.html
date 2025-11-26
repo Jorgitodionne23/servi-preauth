@@ -71,6 +71,12 @@
         margin-top: -15px;
       }
 
+      .checkbox-group {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
       .form-row {
         display: flex;
         flex-direction: column;
@@ -418,28 +424,30 @@
           />
         </div>
 
-        <div class="form-row checkbox-centered">
-          <div class="terms-checkbox-wrapper">
-            <input type="checkbox" id="terms-checkbox" />
-            <label for="terms-checkbox" class="terms-label">
-              Al realizar tu pedido, aceptas nuestros
-              <a href="https://serviservices.my.canva.site/helpcenter/#términos-y-condiciones" target="_blank">Términos y Condiciones</a>
-              y nuestro
-              <a href="https://serviservices.my.canva.site/helpcenter/#aviso-de-privacidad" target="_blank">Aviso de Privacidad</a>.
-            </label>
+        <div class="checkbox-group">
+          <div class="form-row checkbox-centered">
+            <div class="terms-checkbox-wrapper">
+              <input type="checkbox" id="terms-checkbox" />
+              <label for="terms-checkbox" class="terms-label">
+                Al realizar tu pedido, aceptas nuestros
+                <a href="https://serviservices.my.canva.site/helpcenter/#términos-y-condiciones" target="_blank">Términos y Condiciones</a>
+                y nuestro
+                <a href="https://serviservices.my.canva.site/helpcenter/#aviso-de-privacidad" target="_blank">Aviso de Privacidad</a>.
+              </label>
+            </div>
           </div>
-        </div>
 
-        <div class="form-row checkbox-centered">
-          <div class="terms-checkbox-wrapper">
-            <input type="checkbox" id="consent-checkbox" />
-            <label for="consent-checkbox" class="terms-label">
-              <strong> Guardar como método de pago.</strong>
-              <a href="#" id="consent-more">Ver detalles</a>
-              <span id="consent-details" class="consent-details" style="display:none"><br>
-                Autorizo a SERVI a guardar de forma segura en Stripe, esta tarjeta para cargos futuros relacionados con mi servicio.
-              </span>
-            </label>
+          <div class="form-row checkbox-centered">
+            <div class="terms-checkbox-wrapper">
+              <input type="checkbox" id="consent-checkbox" />
+              <label for="consent-checkbox" class="terms-label">
+                <strong> Guardar como método de pago.</strong>
+                <a href="#" id="consent-more">Ver detalles</a>
+                <span id="consent-details" class="consent-details" style="display:none"><br>
+                  Autorizo a SERVI a guardar de forma segura en Stripe, esta tarjeta para cargos futuros relacionados con mi servicio.
+                </span>
+              </label>
+            </div>
           </div>
         </div>
 
@@ -862,7 +870,7 @@
         }));
         const prButton = elements.create("paymentRequestButton", {
           paymentRequest,
-          style: { paymentRequestButton: { type: "default", theme: "dark", height: "50px" } }
+          style: { paymentRequestButton: { type: "default", theme: "dark", height: "45px" } }
         });
         const can = await paymentRequest.canMakePayment();
         if (can) {
