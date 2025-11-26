@@ -61,7 +61,7 @@
         letter-spacing: .2px;
       }
       .container > .summary-box {
-        margin-top: -8px;
+        margin-top: -12px;
       }
 
       form {
@@ -244,7 +244,7 @@
       background-color: #1a1a1a;
       padding: 15px;
       border-radius: 10px;
-      margin-bottom: -5px;
+      margin-bottom: -4px;
       box-shadow: 0 0 10px rgba(255, 255, 255, 0.05);
       font-size: 16px;
       }
@@ -862,7 +862,7 @@
         }));
         const prButton = elements.create("paymentRequestButton", {
           paymentRequest,
-          style: { paymentRequestButton: { type: "default", theme: "dark", height: "40px" } }
+          style: { paymentRequestButton: { type: "default", theme: "dark", height: "50px" } }
         });
         const can = await paymentRequest.canMakePayment();
         if (can) {
