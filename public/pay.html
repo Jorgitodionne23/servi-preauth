@@ -495,6 +495,7 @@
     };
 
     const PREVIEW_KEY = 'serviSuccessPreview';
+    const PREVIEW_CACHE_PREFIX = `${PREVIEW_KEY}:`;
     const PREVENT_BACK_KEY = 'serviPreventBack';
     const COMPLETED_STATUSES = new Set(['scheduled', 'confirmed', 'captured']);
     const expiredBox = document.getElementById('link-expired');
@@ -532,8 +533,25 @@
     }
 
     function storeSuccessPreview(snapshot) {
+      if (!snapshot) return;
       try {
         sessionStorage.setItem(PREVIEW_KEY, JSON.stringify(snapshot));
+      } catch (_) {}
+      try {
+        if (snapshot.orderId) {
+          localStorage.setItem(`${PREVIEW_CACHE_PREFIX}${snapshot.orderId}`, JSON.stringify(snapshot));
+        }
+      } catch (_) {}
+    }
+
+    function snapshotOrderForSuccess(order) {
+      if (!order) return;
+      try {
+        const totalCents = toCents(order.amount ?? order.pricing?.total_amount);
+        const vatCents = toCents(order.vat_amount ?? order.pricing?.vat_amount);
+        const reasonText = String(order.adjustment_reason || '');
+        const previewSnapshot = buildPreviewFromOrder(order, { totalCents, vatCents, reasonText });
+        storeSuccessPreview(previewSnapshot);
       } catch (_) {}
     }
 
@@ -559,6 +577,7 @@
       if (!order || !order.id) return false;
       const status = String(order.status || '').trim().toLowerCase();
       if (!COMPLETED_STATUSES.has(status)) return false;
+      snapshotOrderForSuccess(order);
       redirectToSuccess(order.id);
       return true;
     }

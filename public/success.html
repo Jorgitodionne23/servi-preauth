@@ -167,6 +167,7 @@
     const summaryBox = document.querySelector('.summary-box');
 
     const PREVIEW_KEY = 'serviSuccessPreview';
+    const PREVIEW_CACHE_PREFIX = `${PREVIEW_KEY}:`;
     const PREVENT_BACK_KEY = 'serviPreventBack';
 
     function fmtAmount(cents) {
@@ -207,19 +208,36 @@
     }
 
     function storePreview(snapshot) {
+      if (!snapshot) return;
       try {
         sessionStorage.setItem(PREVIEW_KEY, JSON.stringify(snapshot));
       } catch (_) {}
+      try {
+        if (snapshot.orderId) {
+          localStorage.setItem(`${PREVIEW_CACHE_PREFIX}${snapshot.orderId}`, JSON.stringify(snapshot));
+        }
+      } catch (_) {}
+    }
+
+    function getPersistentPreview(orderId) {
+      if (!orderId) return null;
+      try {
+        const raw = localStorage.getItem(`${PREVIEW_CACHE_PREFIX}${orderId}`);
+        return raw ? JSON.parse(raw) : null;
+      } catch (_) {
+        return null;
+      }
     }
 
     function getPreview(orderId) {
       try {
         const raw = sessionStorage.getItem(PREVIEW_KEY);
-        if (!raw) return null;
-        const parsed = JSON.parse(raw);
-        if (parsed && parsed.orderId && parsed.orderId === orderId) return parsed;
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && parsed.orderId && parsed.orderId === orderId) return parsed;
+        }
       } catch (_) {}
-      return null;
+      return getPersistentPreview(orderId);
     }
 
     function renderOrder(order, { totalsOverride = null, reasonOverride = null, skipStripeReason = false } = {}) {
