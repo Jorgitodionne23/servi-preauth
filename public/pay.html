@@ -488,6 +488,11 @@
       const n = Number(value);
       return Number.isFinite(n) ? Math.round(n) : 0;
     };
+    const MERIDIEM_REGEX = /\b([ap])\.\s*m\.?/gi;
+    const enforceUpperMeridiem = (value) => {
+      if (typeof value !== 'string') return value;
+      return value.replace(MERIDIEM_REGEX, (_, meridiem) => `${meridiem.toUpperCase()}.M.`);
+    };
 
     const PREVIEW_KEY = 'serviSuccessPreview';
     const PREVENT_BACK_KEY = 'serviPreventBack';
@@ -499,13 +504,14 @@
       if (!iso) return null;
       const d = new Date(iso);
       if (Number.isNaN(d.getTime())) return null;
-      return d.toLocaleString('es-MX', {
+      const formatted = d.toLocaleString('es-MX', {
         weekday: 'long',
         day: '2-digit',
         month: 'long',
         hour: '2-digit',
         minute: '2-digit'
       });
+      return enforceUpperMeridiem(formatted);
     }
 
     function showLinkExpired(expiresAtIso) {
@@ -698,7 +704,7 @@
         hour12: true
       });
 
-      return `${cap}, a las ${hora}`;
+      return `${cap}, a las ${enforceUpperMeridiem(hora)}`;
     }
 
     async function syncProcessingFee(orderId, paymentIntentId, paymentMethodId, extras = {}) {
