@@ -63,6 +63,15 @@ function doPost(e) {
         ).trim();
         if (oid && oid === orderId) {
           writeStatusSafelyWebhook_(sheet, r, cols.STATUS, status);
+          if (cols.BILLING_PORTAL_LINK) {
+            applyBillingPortalMessageWebhook_(
+              sheet,
+              r,
+              cols.BILLING_PORTAL_LINK,
+              data,
+              status
+            );
+          }
           if (/^scheduled$/i.test(status)) {
             sheet
               .getRange(r, cols.RECEIPT)
@@ -165,16 +174,25 @@ function doPost(e) {
       const matchesOrderId =
         !matchesPi && orderIdFromPayload && orderIdCell === orderIdFromPayload;
 
-      if (matchesPi || matchesOrderId) {
-        if (paymentIntentId && cell !== paymentIntentId) {
-          sheet.getRange(row, paymentIdCol).setValue(paymentIntentId);
-        }
-        writeStatusSafelyWebhook_(sheet, row, statusCol, status);
+        if (matchesPi || matchesOrderId) {
+          if (paymentIntentId && cell !== paymentIntentId) {
+            sheet.getRange(row, paymentIdCol).setValue(paymentIntentId);
+          }
+          writeStatusSafelyWebhook_(sheet, row, statusCol, status);
+          if (cols.BILLING_PORTAL_LINK) {
+            applyBillingPortalMessageWebhook_(
+              sheet,
+              row,
+              cols.BILLING_PORTAL_LINK,
+              data,
+              status
+            );
+          }
 
-        const sLower = status.toLowerCase();
-        if (sLower === 'confirmed' || sLower === 'captured') {
-          sheet
-            .getRange(row, receiptCol)
+          const sLower = status.toLowerCase();
+          if (sLower === 'confirmed' || sLower === 'captured') {
+            sheet
+              .getRange(row, receiptCol)
             .setValue(buildReceiptMessage(sheet, row));
         }
 
@@ -292,6 +310,26 @@ function writeStatusSafelyWebhook_(sheet, row, statusColIndex, newStatusRaw) {
 
   if ((forwardOnly[current] || []).includes(nxt)) {
     sheet.getRange(row, statusColIndex).setValue(nxt);
+  }
+}
+
+function applyBillingPortalMessageWebhook_(sheet, row, columnIndex, payload, status) {
+  if (!columnIndex) return;
+  const message = String(
+    (payload && payload.billingPortalMessage) || ''
+  ).trim();
+  const url = String((payload && payload.billingPortalUrl) || '').trim();
+  const target = sheet.getRange(row, columnIndex);
+  if (message) {
+    target.setValue(message);
+    return;
+  }
+  if (url) {
+    target.setValue(url);
+    return;
+  }
+  if (/^(confirmed|captured|scheduled)$/i.test(String(status || ''))) {
+    target.clearContent();
   }
 }
 

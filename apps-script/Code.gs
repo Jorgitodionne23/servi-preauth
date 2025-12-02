@@ -30,6 +30,7 @@ const ORDER_HEADER_ALIASES = {
   PI_ID: ['Payment Intent ID'],
   SHORT_CODE: ['Short Order ID', 'Short Code'],
   DATE_CREATED: ['Date created', 'Date Created', 'Created At'],
+  BILLING_PORTAL_LINK: ['Billing Portal Link'],
 };
 
 const ADJ_HEADER_ALIASES = {
@@ -228,9 +229,15 @@ function onOpen() {
     const ordersSheet = ss.getSheetByName(SHEET_NAMES.ORDERS);
     if (ordersSheet) {
       const cols = ordersColumnMap_(ordersSheet);
-      const wrapCols = [cols.ADDRESS, cols.LINK_MSG, cols.RECEIPT];
+      const wrapCols = [
+        cols.ADDRESS,
+        cols.LINK_MSG,
+        cols.RECEIPT,
+        cols.BILLING_PORTAL_LINK,
+      ];
       const maxRows = Math.max(ordersSheet.getMaxRows(), 1);
       wrapCols.forEach(function (colIdx) {
+        if (!colIdx) return;
         ordersSheet.getRange(1, colIdx, maxRows, 1).setWrap(true);
       });
       ordersSheet

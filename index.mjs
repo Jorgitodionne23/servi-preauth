@@ -280,6 +280,75 @@ function notifyConsentChange({
   postToGoogleWebhook(payload);
 }
 
+async function createBillingPortalPrompt(orderRow) {
+  try {
+    if (!orderRow.customer_id) {
+      const ensured = await ensureCustomerForOrder(stripe, orderRow);
+      orderRow.customer_id = ensured;
+    }
+    if (!orderRow.customer_id) return null;
+    const base = process.env.PUBLIC_BASE_URL || 'https://servi-preauth.onrender.com';
+    const session = await stripe.billingPortal.sessions.create({
+      customer: orderRow.customer_id,
+      return_url: `${base}/book?orderId=${encodeURIComponent(orderRow.id)}`
+    });
+    const firstName = String(orderRow.client_name || '')
+      .trim()
+      .split(/\s+/)[0] || 'SERVI cliente';
+    const serviceText = displayEsMX(
+      orderRow.service_datetime,
+      orderRow.service_date,
+      'America/Mexico_City'
+    );
+    const message = `Hola ${firstName}, tu método de pago no se pudo confirmar${
+      serviceText ? ` para ${serviceText}` : ''
+    }. Actualiza tu método aquí: ${session.url}`;
+    return { url: session.url, message };
+  } catch (err) {
+    console.warn('createBillingPortalPrompt failed', orderRow?.id, err?.message || err);
+    return null;
+  }
+}
+
+async function handlePreauthFailure(orderRow, { error } = {}) {
+  if (!orderRow || !orderRow.id) return null;
+  const statusLabel = 'Declined';
+  try {
+    await pool.query('UPDATE all_bookings SET status=$1 WHERE id=$2', [statusLabel, orderRow.id]);
+  } catch (statusErr) {
+    console.warn('handlePreauthFailure status update failed', orderRow.id, statusErr?.message || statusErr);
+  }
+
+  let portal = null;
+  try {
+    portal = await createBillingPortalPrompt(orderRow);
+  } catch (portalErr) {
+    console.warn('handlePreauthFailure portal creation failed', orderRow.id, portalErr?.message || portalErr);
+  }
+
+  if (GOOGLE_SCRIPT_WEBHOOK_URL) {
+    const payload = {
+      type: 'order.status',
+      orderId: orderRow.id,
+      status: statusLabel,
+      customerId: orderRow.customer_id || '',
+      parentOrderId: orderRow.parent_id || ''
+    };
+    if (portal?.message) payload.billingPortalMessage = portal.message;
+    if (portal?.url) payload.billingPortalUrl = portal.url;
+    fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }).catch(() => {});
+  }
+
+  if (error) {
+    console.warn('handlePreauthFailure triggered by error', orderRow.id, error?.code || '', error?.message || error);
+  }
+  return portal;
+}
+
 function firstChargeFromPaymentIntent(pi) {
   if (!pi) return null;
   if (pi.latest_charge && typeof pi.latest_charge === 'object') {
@@ -1277,6 +1346,11 @@ app.post('/tasks/preauth-due', async (req, res) => {
           customer_id,
           saved_payment_method_id,
           parent_id,
+          kind,
+          client_name,
+          client_email,
+          service_date,
+          service_datetime,
           /* Use full timestamp if present; otherwise assume 08:00 local on service_date */
           COALESCE(
             service_datetime,
@@ -1288,7 +1362,7 @@ app.post('/tasks/preauth-due', async (req, res) => {
           AND saved_payment_method_id IS NOT NULL
           AND payment_intent_id IS NULL
       )
-      SELECT id, amount, customer_id, saved_payment_method_id, parent_id
+      SELECT id, amount, customer_id, saved_payment_method_id, parent_id, kind, client_name, client_email, service_date, service_datetime
       FROM service_ts
       WHERE svc_at >= NOW()
         AND svc_at <  NOW() + INTERVAL '15 hours'
@@ -1326,6 +1400,11 @@ app.post('/tasks/preauth-due', async (req, res) => {
         results.push({ orderId: row.id, pi: pi.id, status: pi.status });
       } catch (e) {
         console.error('[preauth-due] failed for', row.id, e?.message);
+        try {
+          await handlePreauthFailure(row, { error: e });
+        } catch (handleErr) {
+          console.warn('[preauth-due] handlePreauthFailure error', row.id, handleErr?.message || handleErr);
+        }
         results.push({ orderId: row.id, error: e?.message || 'stripe_error' });
       }
     }
@@ -2678,7 +2757,21 @@ app.post('/confirm-with-saved', async (req, res) => {
           paymentMethodId: pm.id
         });
       }
-      throw e;
+      let portal = null;
+      try {
+        portal = await handlePreauthFailure(row, { error: e });
+      } catch (handleErr) {
+        console.warn('confirm-with-saved handlePreauthFailure failed', row.id, handleErr?.message || handleErr);
+      }
+      const friendly =
+        'No se pudo autorizar el método de pago. Pide al cliente que actualice su tarjeta en el portal.';
+      return res.status(409).json({
+        ok: false,
+        error: 'preauth_failed',
+        message: friendly,
+        billingPortalMessage: portal?.message || null,
+        billingPortalUrl: portal?.url || null
+      });
     }
   } catch (err) {
     const status = err.status || 500;
