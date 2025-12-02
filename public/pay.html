@@ -532,6 +532,22 @@
       }
     }
 
+    function alertLinkExpiredAndRedirect() {
+      alert('link_expired\n\nSolicita un nuevo enlace y continua con tu reserva.');
+      window.location.href = '/link-expired.html';
+    }
+
+    function handleLinkExpiredError(err) {
+      if (!err) return false;
+      const code = String(err.code || '').toLowerCase();
+      const message = String(err.message || '').toLowerCase();
+      if (code === 'link_expired' || message === 'link_expired') {
+        alertLinkExpiredAndRedirect();
+        return true;
+      }
+      return false;
+    }
+
     function storeSuccessPreview(snapshot) {
       if (!snapshot) return;
       try {
@@ -894,10 +910,19 @@
               { payment_method: ev.paymentMethod.id },
               { handleActions: false }
             );
-            if (first.error) { ev.complete("fail"); alert(first.error.message); return; }
+            if (first.error) {
+              ev.complete("fail");
+              if (handleLinkExpiredError(first.error)) return;
+              alert(first.error.message);
+              return;
+            }
             ev.complete("success");
             const second = await (window.stripe).confirmCardPayment(clientSecret);
-            if (second.error) { alert("Error al confirmar: " + second.error.message); return; }
+            if (second.error) {
+              if (handleLinkExpiredError(second.error)) return;
+              alert("Error al confirmar: " + second.error.message);
+              return;
+            }
             const piId = second.paymentIntent?.id;
             if (piId) {
               await syncProcessingFee(order.id, piId, null, { billingEmail: emailValue });
@@ -1007,6 +1032,7 @@
           });
 
           if (result.error) {
+            if (handleLinkExpiredError(result.error)) return;
             alert("No se pudo guardar el método: " + result.error.message);
             return;
           }
@@ -1037,6 +1063,7 @@
           });
           
           if (result.error) {
+            if (handleLinkExpiredError(result.error)) return;
             alert("Error: " + result.error.message);
             return;
           }

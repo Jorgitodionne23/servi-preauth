@@ -418,6 +418,11 @@
       }
     }
 
+    function alertLinkExpiredAndRedirect() {
+      alert('link_expired\n\nSolicita un nuevo enlace y continua con tu reserva.');
+      window.location.href = '/link-expired.html';
+    }
+
     function storeSuccessPreview(snapshot) {
       if (!snapshot) return;
       try {
@@ -585,8 +590,8 @@
           return `Reserva de ${servicio} el ${fechaTexto}.`;
         }
         const parts = [];
-        if (servicio) parts.push(`Ajuste para ${servicio}`);
-        if (fechaTexto && fechaTexto !== '—') parts.push(`Servicio: ${fechaTexto}`);
+        if (servicio) parts.push(`Ajuste de precio`);
+        if (fechaTexto && fechaTexto !== '—') parts.push(`${fechaTexto}`);
         return parts.length ? `${parts.join('. ')}.` : 'Ajuste pendiente de confirmación.';
       })();
       if (summaryEl) summaryEl.textContent = summaryCopy;
@@ -705,6 +710,11 @@
         });
 
         const payload = await r.json().catch(() => ({}));
+
+        if (r.status === 410 || payload?.error === 'link_expired') {
+          alertLinkExpiredAndRedirect();
+          return;
+        }
 
         if (r.status === 200) {
           if (payload?.paymentIntentId || payload?.paymentMethodId) {

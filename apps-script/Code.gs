@@ -746,6 +746,32 @@ function toISOWithOffset_(dateObj, tz) {
   return isoLocal + off;
 }
 
+function setCellRichTextWithLink_(range, content, linkUrl) {
+  if (!range) return;
+  const text = content == null ? '' : String(content);
+  const url = linkUrl == null ? '' : String(linkUrl).trim();
+  if (!text) {
+    range.setValue('');
+    return;
+  }
+  if (!url) {
+    range.setValue(text);
+    return;
+  }
+  try {
+    const builder = SpreadsheetApp.newRichTextValue().setText(text);
+    const idx = text.indexOf(url);
+    if (idx >= 0) {
+      builder.setLinkUrl(idx, idx + url.length - 1, url);
+    } else {
+      builder.setLinkUrl(url);
+    }
+    range.setRichTextValue(builder.build());
+  } catch (err) {
+    range.setValue(text);
+  }
+}
+
 function generatePaymentLink() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
   if (sheet.getName() !== 'SERVI Orders') {
@@ -789,6 +815,7 @@ function generatePaymentLink() {
   const shortCodeCol = ORD_COL.SHORT_CODE;
   const clientIdCol = ORD_COL.CLIENT_ID;
   const clientTypeCol = ORD_COL.CLIENT_TYPE;
+  const linkCell = sheet.getRange(editedRow, linkCol);
 
   const clientName = sheet.getRange(editedRow, clientNameCol).getValue();
   const serviceDescription = sheet
@@ -934,7 +961,7 @@ function generatePaymentLink() {
             .getRange(editedRow, orderIdCol)
             .setValue(String(dataErr.orderId));
           sheet.getRange(editedRow, paymentIntentCol).clearContent();
-          sheet.getRange(editedRow, linkCol).setValue(paymentText);
+          setCellRichTextWithLink_(linkCell, paymentText, paymentLink);
           sheet.getRange(editedRow, statusCol).setValue('Setup required');
           sheet
             .getRange(editedRow, shortCodeCol)
@@ -983,7 +1010,7 @@ function generatePaymentLink() {
     sheet
       .getRange(editedRow, paymentIntentCol)
       .setValue(String(data.paymentIntentId || ''));
-    sheet.getRange(editedRow, linkCol).setValue(paymentText);
+    setCellRichTextWithLink_(linkCell, paymentText, paymentLink);
     sheet
       .getRange(editedRow, statusCol)
       .setValue(data.requiresSetup ? 'Setup required' : 'Pending');
@@ -1021,7 +1048,7 @@ function generatePaymentLink() {
     if (String((err && err.message) || '').indexOf('Transient 503') === -1) {
       humanMsg = '⚠️ No se pudo generar el enlace. Reintenta.';
     }
-    sheet.getRange(editedRow, linkCol).setValue(humanMsg);
+    linkCell.setValue(humanMsg);
     sheet.getRange(editedRow, statusCol).setValue('Error');
 
     const cell = sheet.getRange(editedRow, orderIdCol);
@@ -1042,6 +1069,7 @@ function generateAdjustment() {
   if (row < 2) return;
 
   const COL = adjustmentsColumnMap_(sh);
+  const messageCell = sh.getRange(row, COL.MESSAGE);
 
   const parentOrderId = String(
     sh.getRange(row, COL.PARENT_ORDER_ID).getDisplayValue() || ''
@@ -1162,7 +1190,7 @@ function generateAdjustment() {
       : 'Confírmalo aquí:',
     shortLink,
   ].filter(Boolean);
-  sh.getRange(row, COL.MESSAGE).setValue(messageLines.join('\n'));
+  setCellRichTextWithLink_(messageCell, messageLines.join('\n'), shortLink);
 }
 
 function captureCompletedService() {
