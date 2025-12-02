@@ -45,6 +45,8 @@ const BOOK_SUCCESS_STATUSES = new Set(['Scheduled', 'Confirmed', 'Captured']);
 const PAY_SUCCESS_STATUSES = new Set(['Scheduled', 'Confirmed', 'Captured']);
 const LINK_EXPIRATION_HOURS = 2;
 const LINK_EXPIRATION_MS = LINK_EXPIRATION_HOURS * 60 * 60 * 1000;
+const PREAUTH_WINDOW_HOURS = 15;
+const PREAUTH_WINDOW_MS = PREAUTH_WINDOW_HOURS * 60 * 60 * 1000;
 
 function getLinkExpirationInfo(createdAt) {
   const createdMs = createdAt ? new Date(createdAt).getTime() : null;
@@ -668,8 +670,8 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
 
     // Short-lead (≤5d)
     if (!longLead) {
-      // If the customer ALREADY has a saved card and we're still >12h out,
-        if (saved && hoursAhead > 12) {
+      // If the customer ALREADY has a saved card and we're still outside the preauth window (>15h),
+        if (saved && hoursAhead > PREAUTH_WINDOW_HOURS) {
           if (hasConsent) {
             await pool.query('UPDATE all_bookings SET kind=$1 WHERE id=$2', ['book', orderId]);
             return res.send({
@@ -886,7 +888,7 @@ app.get('/order/:orderId', async (req, res) => {
 
         if (hasSavedCardForBook) {
           // Saved-card booking: never create a PI here.
-          // The /confirm-with-saved route decides when to create/confirm (≤12h).
+          // The /confirm-with-saved route decides when to create/confirm (≤15h).
           pi = null;
           intentType = null;
         } else {
@@ -944,7 +946,7 @@ app.get('/order/:orderId', async (req, res) => {
         }
 
       } else {
-        // Default (legacy primary/adjustments) — but DON'T create a PI early for saved + >12h
+        // Default (legacy primary/adjustments) — but DON'T create a PI early for saved + >15h
         const hours_ahead = hoursUntilService(row);
 
         let alreadySaved = false;
@@ -952,7 +954,7 @@ app.get('/order/:orderId', async (req, res) => {
           alreadySaved = await hasSavedCard(row.customer_id, stripe);
         }
 
-        if (alreadySaved && hours_ahead > 12) {
+        if (alreadySaved && hours_ahead > PREAUTH_WINDOW_HOURS) {
           // Convert legacy "primary" into "book" lazily, with no PI on read
           await pool.query('UPDATE all_bookings SET kind=$1 WHERE id=$2', ['book', row.id]);
           pi = null;
@@ -1031,7 +1033,7 @@ app.get('/order/:orderId', async (req, res) => {
 
     const service_display = displayEsMX(row.service_datetime, row.service_date, 'America/Mexico_City');
     const hours_ahead = hoursUntilService(row);
-    const preauth_window_open = hours_ahead <= 12 && hours_ahead >= 0;
+    const preauth_window_open = hours_ahead <= PREAUTH_WINDOW_HOURS && hours_ahead >= 0;
     const days_ahead = Math.ceil(Math.max(0, hours_ahead) / 24);
 
     res.set('Cache-Control', 'no-store');
@@ -1267,7 +1269,7 @@ app.post('/create-standalone-setup', async (req, res) => {
 app.post('/tasks/preauth-due', async (req, res) => {
   try {
     const { rows } = await pool.query(`
-      /* Pick saved-card "book" orders that are entering the 12h preauth window */
+      /* Pick saved-card "book" orders that are entering the 15h preauth window */
       WITH service_ts AS (
         SELECT
           id,
@@ -1289,7 +1291,7 @@ app.post('/tasks/preauth-due', async (req, res) => {
       SELECT id, amount, customer_id, saved_payment_method_id, parent_id
       FROM service_ts
       WHERE svc_at >= NOW()
-        AND svc_at <  NOW() + INTERVAL '12 hours'
+        AND svc_at <  NOW() + INTERVAL '15 hours'
       ORDER BY svc_at ASC
       LIMIT 50
     `);
@@ -2507,7 +2509,7 @@ app.post('/confirm-with-saved', async (req, res) => {
       ? `SERVI ajuste: ${row.adjustment_reason || 'SERVI adjustment'}`
       : null;
     const hoursAhead = hoursUntilService(row);
-    if (hoursAhead > 12 && !force) {
+    if (hoursAhead > PREAUTH_WINDOW_HOURS && !force) {
       if (!savedPmId && row.customer_id) {
         const list = await stripe.paymentMethods.list({
           customer: row.customer_id,
@@ -2568,7 +2570,7 @@ app.post('/confirm-with-saved', async (req, res) => {
       const serviceMs = row.service_datetime
         ? new Date(row.service_datetime).getTime()
         : new Date(String(row.service_date) + 'T08:00:00-05:00').getTime();
-      const opensAtMs = serviceMs - (12 * 60 * 60 * 1000);
+      const opensAtMs = serviceMs - PREAUTH_WINDOW_MS;
 
       return res.status(409).json({
         error: 'preauth_window_closed',
@@ -2583,7 +2585,7 @@ app.post('/confirm-with-saved', async (req, res) => {
 
 
 
-    // ≤12h → create/confirm a manual-capture PI now
+    // ≤15h → create/confirm a manual-capture PI now
     let piId = row.payment_intent_id || null;
     const isSetup = piId && String(piId).startsWith('seti_');
 
@@ -2767,7 +2769,7 @@ app.get('/success', async (req, res) => {
   
     if (String(row.kind || '').toLowerCase() === 'book') {
       const h = hoursUntilService(row);
-      if (!row.payment_intent_id || h > 12) {
+      if (!row.payment_intent_id || h > PREAUTH_WINDOW_HOURS) {
         // Mark as Scheduled server-side (idempotent)…
         await pool.query(
           "UPDATE all_bookings SET status = 'Scheduled' WHERE id = $1 AND (status IS NULL OR status NOT IN ('Confirmed','Captured'))",

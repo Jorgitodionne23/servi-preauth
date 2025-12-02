@@ -280,7 +280,7 @@ function autoPreauthScheduled_() {
 
     if (!orderId) continue;
     if (status !== 'Scheduled') continue;
-    if (isNaN(hours) || hours > 12) continue;
+    if (isNaN(hours) || hours > 15) continue;
     if (pi) continue; // already has a PI / progressed
 
     try {
@@ -392,7 +392,7 @@ function ensureOrdersHoursColumn_() {
 
     const yellowRule = SpreadsheetApp.newConditionalFormatRule()
       .whenFormulaSatisfied(
-        `=AND($${statusColLetter}${startRow}="Scheduled",$${hoursColLetter}${startRow}>12)`
+        `=AND($${statusColLetter}${startRow}="Scheduled",$${hoursColLetter}${startRow}>15)`
       )
       .setBackground('#FFE598')
       .setRanges([hoursRange])
@@ -400,7 +400,7 @@ function ensureOrdersHoursColumn_() {
 
     const greenRule = SpreadsheetApp.newConditionalFormatRule()
       .whenFormulaSatisfied(
-        `=AND($${statusColLetter}${startRow}="Confirmed",$${hoursColLetter}${startRow}<=12,$${hoursColLetter}${startRow}>2)`
+        `=AND($${statusColLetter}${startRow}="Confirmed",$${hoursColLetter}${startRow}<=15,$${hoursColLetter}${startRow}>2)`
       )
       .setBackground('#b7e1cd')
       .setRanges([hoursRange])
@@ -561,7 +561,7 @@ function InitiatePaymentIntentForScheduledOrder() {
     // Just warn the agent and offer to force the preauth.
     const ui = SpreadsheetApp.getUi();
 
-    let msg = out.message || 'Aún estás fuera de la ventana de 12 horas.';
+    let msg = out.message || 'Aún estás fuera de la ventana de 15 horas.';
     if (typeof out.remaining_hours === 'number') {
       msg += '\n(Faltan ~' + Math.ceil(out.remaining_hours) + ' h)';
     }
@@ -1491,7 +1491,7 @@ function resyncSelectedRow() {
 
   if (savedCard) {
     const farFromService =
-      hoursAhead === null ? kind === 'book' : hoursAhead > 12;
+      hoursAhead === null ? kind === 'book' : hoursAhead > 15;
     if (farFromService) {
       writeStatusSafely('Scheduled');
       SpreadsheetApp.getUi().alert('Fila re-sincronizada: Scheduled.');
@@ -1499,7 +1499,7 @@ function resyncSelectedRow() {
     }
   }
 
-  if (savedCard && hoursAhead !== null && hoursAhead <= 12 && !piId) {
+  if (savedCard && hoursAhead !== null && hoursAhead <= 15 && !piId) {
     writeStatusSafely('Scheduled');
     SpreadsheetApp.getUi().alert(
       'Fila re-sincronizada: Scheduled (ventana abierta).'
