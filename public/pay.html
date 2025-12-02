@@ -321,6 +321,22 @@
       font-size: 12px;
       color: #fca5a5;
     }
+    .link-expired-btn {
+      margin-top: 10px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background-color: #fff;
+      color: #000;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-weight: 600;
+      text-decoration: none;
+      font-size: 14px;
+    }
+    .link-expired-btn:hover {
+      opacity: 0.9;
+    }
 
     #spinner {
     display: none;
@@ -377,6 +393,14 @@
         <strong>Enlace expirado</strong>
         <span>Este enlace ha caducado. Solicita un nuevo enlace con tu concierge de SERVI.</span>
         <small id="link-expired-date" style="display:none;"></small>
+        <a
+          class="link-expired-btn"
+          href="https://wa.me/525525112588?text=Solicitar%20nuevo%20enlace"
+          target="_blank"
+          rel="noopener"
+        >
+          Solicitar enlace
+        </a>
       </div>
 
       <!-- Setup (save-card) UI mounts here when intentType === 'setup' -->
