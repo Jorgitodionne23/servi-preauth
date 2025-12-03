@@ -1385,7 +1385,7 @@ function resyncSelectedRow() {
   let data;
   try {
     const resp = UrlFetchApp.fetch(
-      base + '/order/' + encodeURIComponent(orderId),
+      base + '/order/' + encodeURIComponent(orderId) + '?allowExpired=1',
       {
         method: 'get',
         muteHttpExceptions: true,
@@ -1445,7 +1445,12 @@ function resyncSelectedRow() {
     if (!next || next === current) return;
     if (current === 'Captured') return;
 
-    if (next === 'Canceled' || next === 'Failed') {
+    if (
+      next === 'Canceled' ||
+      next === 'Failed' ||
+      next === 'Declined' ||
+      next.startsWith('Canceled (')
+    ) {
       sh.getRange(row, COL.STATUS).setValue(next);
       return;
     }

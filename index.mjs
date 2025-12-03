@@ -1479,7 +1479,7 @@ app.post('/orders/:id/consent', async (req, res) => {
     // 1) Per-order audit (kept as is)
     await pool.query(`
       INSERT INTO consented_offsession_bookings (order_id, customer_id, customer_name, payment_method_id, version, consent_text, text_hash, checked_at, ip, user_agent, locale, tz)
-      VALUES ($1,$2,$3,$4,$5,$6,NOW(),$7,$8,$9,$10,$11)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,NOW(),$8,$9,$10,$11)
       ON CONFLICT (order_id) DO UPDATE SET
         customer_name = COALESCE(EXCLUDED.customer_name, consented_offsession_bookings.customer_name),
         version = EXCLUDED.version,
@@ -2764,7 +2764,7 @@ app.post('/confirm-with-saved', async (req, res) => {
         console.warn('confirm-with-saved handlePreauthFailure failed', row.id, handleErr?.message || handleErr);
       }
       const friendly =
-        'No se pudo autorizar el método de pago. Pide al cliente que actualice su tarjeta en el portal.';
+        'No se pudo autorizar el método de pago. Actualice su tarjeta en el portal.';
       return res.status(409).json({
         ok: false,
         error: 'preauth_failed',
