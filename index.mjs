@@ -30,13 +30,13 @@ function hoursUntilService(row) {
   // Prefer exact timestamp if you store it
   if (row.service_datetime) {
     const t = new Date(row.service_datetime).getTime();
-    return Math.floor((t - Date.now()) / 3_600_000);
+    return (t - Date.now()) / 3_600_000;
   }
-  // Fallback: date-only anchored at local noon to avoid DST edges
+  // Fallback: date-only anchored at midnight local time to avoid DST edges
   if (row.service_date) {
     const [y,m,d] = String(row.service_date).split('-').map(Number);
     const t = new Date(y, (m||1)-1, d||1, 0, 0, 0, 0).getTime();
-    return Math.floor((t - Date.now()) / 3_600_000);
+    return (t - Date.now()) / 3_600_000;
   }
   return Infinity;
 }
