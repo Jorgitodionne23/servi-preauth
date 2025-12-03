@@ -280,17 +280,17 @@ function notifyConsentChange({
   postToGoogleWebhook(payload);
 }
 
-async function createBillingPortalPrompt(orderRow) {
+async function createBillingPortalPrompt(orderRow, { failureReason } = {}) {
   try {
     if (!orderRow.customer_id) {
       const ensured = await ensureCustomerForOrder(stripe, orderRow);
       orderRow.customer_id = ensured;
     }
     if (!orderRow.customer_id) return null;
-    const base = process.env.PUBLIC_BASE_URL || 'https://servi-preauth.onrender.com';
+    const baseUrl = process.env.PUBLIC_BASE_URL || 'https://servi-preauth.onrender.com';
     const session = await stripe.billingPortal.sessions.create({
       customer: orderRow.customer_id,
-      return_url: `${base}/book?orderId=${encodeURIComponent(orderRow.id)}`
+      return_url: `${baseUrl}/book?orderId=${encodeURIComponent(orderRow.id)}`
     });
     const firstName = String(orderRow.client_name || '')
       .trim()
@@ -300,9 +300,12 @@ async function createBillingPortalPrompt(orderRow) {
       orderRow.service_date,
       'America/Mexico_City'
     );
-    const message = `Hola ${firstName}, tu método de pago no se pudo confirmar${
-      serviceText ? ` para ${serviceText}` : ''
-    }. Actualiza tu método aquí: ${session.url}`;
+    const intro =
+      `Hola ${firstName}, tu método de pago no se pudo confirmar` +
+      (serviceText ? ` para ${serviceText}` : '') +
+      '.';
+    const reasonLine = failureReason ? ` Motivo: ${failureReason}.` : '';
+    const message = `${intro}${reasonLine} Actualiza tu método aquí: ${session.url}`;
     return { url: session.url, message };
   } catch (err) {
     console.warn('createBillingPortalPrompt failed', orderRow?.id, err?.message || err);
@@ -310,9 +313,11 @@ async function createBillingPortalPrompt(orderRow) {
   }
 }
 
-async function handlePreauthFailure(orderRow, { error } = {}) {
+async function handlePreauthFailure(orderRow, { error, failure } = {}) {
   if (!orderRow || !orderRow.id) return null;
   const statusLabel = 'Declined';
+  const failureInfo = failure || (error ? describeStripeFailure(error) : null);
+  const failureMessage = failureInfo?.friendly || failureInfo?.message || null;
   try {
     await pool.query('UPDATE all_bookings SET status=$1 WHERE id=$2', [statusLabel, orderRow.id]);
   } catch (statusErr) {
@@ -321,7 +326,7 @@ async function handlePreauthFailure(orderRow, { error } = {}) {
 
   let portal = null;
   try {
-    portal = await createBillingPortalPrompt(orderRow);
+    portal = await createBillingPortalPrompt(orderRow, { failureReason: failureMessage });
   } catch (portalErr) {
     console.warn('handlePreauthFailure portal creation failed', orderRow.id, portalErr?.message || portalErr);
   }
@@ -334,6 +339,11 @@ async function handlePreauthFailure(orderRow, { error } = {}) {
       customerId: orderRow.customer_id || '',
       parentOrderId: orderRow.parent_id || ''
     };
+    if (failureMessage) payload.failureReason = failureMessage;
+    if (failureInfo?.decline_code) payload.failureCode = failureInfo.decline_code;
+    if (failureInfo?.payment_intent_id && !payload.paymentIntentId) {
+      payload.paymentIntentId = failureInfo.payment_intent_id;
+    }
     if (portal?.message) payload.billingPortalMessage = portal.message;
     if (portal?.url) payload.billingPortalUrl = portal.url;
     fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
@@ -344,7 +354,10 @@ async function handlePreauthFailure(orderRow, { error } = {}) {
   }
 
   if (error) {
-    console.warn('handlePreauthFailure triggered by error', orderRow.id, error?.code || '', error?.message || error);
+    const info = failureInfo || describeStripeFailure(error) || {};
+    const code = info?.decline_code || info?.failure_code || error?.code || '';
+    const msg = info?.friendly || info?.message || error?.message || error;
+    console.warn('handlePreauthFailure triggered by error', orderRow.id, code, msg);
   }
   return portal;
 }
@@ -356,6 +369,53 @@ function firstChargeFromPaymentIntent(pi) {
   }
   const list = pi.charges?.data;
   return Array.isArray(list) && list.length ? list[0] : null;
+}
+
+function describeStripeFailure(error) {
+  if (!error) return null;
+  const raw = error?.raw || error;
+  const piValue = raw?.payment_intent || error?.payment_intent || null;
+  const paymentIntent =
+    piValue && typeof piValue === 'object' ? piValue : null;
+  const paymentIntentId =
+    typeof piValue === 'string' ? piValue : paymentIntent?.id || null;
+  const lastError =
+    raw?.last_payment_error ||
+    paymentIntent?.last_payment_error ||
+    raw?.error ||
+    null;
+  const charge = firstChargeFromPaymentIntent(paymentIntent) || null;
+  const declineCode =
+    raw?.decline_code ||
+    lastError?.decline_code ||
+    charge?.outcome?.reason ||
+    null;
+  const failureCode = lastError?.code || raw?.code || null;
+  const sellerMessage =
+    charge?.outcome?.seller_message || charge?.failure_message || null;
+  const baseMessage =
+    lastError?.message ||
+    sellerMessage ||
+    raw?.message ||
+    error?.message ||
+    null;
+  const friendlyParts = [];
+  if (baseMessage) friendlyParts.push(baseMessage);
+  if (
+    declineCode &&
+    !String(baseMessage || '')
+      .toLowerCase()
+      .includes(String(declineCode).toLowerCase())
+  ) {
+    friendlyParts.push(`(${declineCode})`);
+  }
+  return {
+    payment_intent_id: paymentIntentId,
+    decline_code: declineCode || null,
+    failure_code: failureCode || null,
+    message: baseMessage || null,
+    friendly: friendlyParts.join(' ').trim() || null
+  };
 }
 
 function computeProcessingFeeCents({ totalCents, percent, fixedFeePesos, feeVatRate }) {
@@ -1391,13 +1451,20 @@ app.post('/tasks/preauth-due', async (req, res) => {
 
         results.push({ orderId: row.id, pi: pi.id, status: pi.status });
       } catch (e) {
-        console.error('[preauth-due] failed for', row.id, e?.message);
+        const failure = describeStripeFailure(e);
+        const logMsg = failure?.friendly || failure?.message || e?.message;
+        console.error('[preauth-due] failed for', row.id, logMsg);
         try {
-          await handlePreauthFailure(row, { error: e });
+          await handlePreauthFailure(row, { error: e, failure });
         } catch (handleErr) {
           console.warn('[preauth-due] handlePreauthFailure error', row.id, handleErr?.message || handleErr);
         }
-        results.push({ orderId: row.id, error: e?.message || 'stripe_error' });
+        results.push({
+          orderId: row.id,
+          error: e?.message || 'stripe_error',
+          decline_code: failure?.decline_code || null,
+          failure_reason: failure?.friendly || failure?.message || null
+        });
       }
     }
 
@@ -2749,20 +2816,27 @@ app.post('/confirm-with-saved', async (req, res) => {
           paymentMethodId: pm.id
         });
       }
+      const failure = describeStripeFailure(e);
       let portal = null;
       try {
-        portal = await handlePreauthFailure(row, { error: e });
+        portal = await handlePreauthFailure(row, { error: e, failure });
       } catch (handleErr) {
         console.warn('confirm-with-saved handlePreauthFailure failed', row.id, handleErr?.message || handleErr);
       }
-      const friendly =
-        'No se pudo autorizar el método de pago. Actualice su tarjeta en el portal.';
+      const reasonText = failure?.friendly || failure?.message || null;
+      const friendly = reasonText
+        ? `No se pudo autorizar el método de pago (${reasonText}). Actualice su tarjeta en el portal.`
+        : 'No se pudo autorizar el método de pago. Actualice su tarjeta en el portal.';
       return res.status(409).json({
         ok: false,
         error: 'preauth_failed',
         message: friendly,
         billingPortalMessage: portal?.message || null,
-        billingPortalUrl: portal?.url || null
+        billingPortalUrl: portal?.url || null,
+        decline_code: failure?.decline_code || null,
+        failure_code: failure?.failure_code || null,
+        stripe_message: failure?.message || null,
+        paymentIntentId: failure?.payment_intent_id || piId || null
       });
     }
   } catch (err) {

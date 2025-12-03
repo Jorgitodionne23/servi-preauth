@@ -319,6 +319,7 @@ function applyBillingPortalMessageWebhook_(sheet, row, columnIndex, payload, sta
     (payload && payload.billingPortalMessage) || ''
   ).trim();
   const url = String((payload && payload.billingPortalUrl) || '').trim();
+  const reason = String((payload && payload.failureReason) || '').trim();
   const target = sheet.getRange(row, columnIndex);
   if (message) {
     target.setValue(message);
@@ -326,6 +327,10 @@ function applyBillingPortalMessageWebhook_(sheet, row, columnIndex, payload, sta
   }
   if (url) {
     target.setValue(url);
+    return;
+  }
+  if (reason) {
+    target.setValue(`Motivo: ${reason}`);
     return;
   }
   if (/^(confirmed|captured|scheduled)$/i.test(String(status || ''))) {
