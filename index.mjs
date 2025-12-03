@@ -584,19 +584,11 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
     // Compute policy early
     const longLead = daysAheadFromYMD(serviceDate) >= 5;
 
-    // NEW: compute hoursAhead from serviceDateTime (or date-only as fallback)
-    const hoursAhead = (() => {
-      try {
-        if (serviceDateTime) {
-          return Math.floor((new Date(serviceDateTime).getTime() - Date.now()) / 3_600_000);
-        }
-        if (serviceDate) {
-          // choose a local anchor time that matches your sheet logic (e.g., midnight)
-          return Math.floor((new Date(`${serviceDate}T00:00:00-06:00`).getTime() - Date.now()) / 3_600_000);
-        }
-      } catch {}
-      return Infinity;
-    })();
+    // Precise fractional hours ahead for consistent comparisons everywhere
+    const hoursAhead = hoursUntilService({
+      service_datetime: serviceDateTime || null,
+      service_date: serviceDate || null
+    });
     const {
       providerAmountCents,
       bookingFeeAmountCents,
