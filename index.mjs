@@ -3001,7 +3001,17 @@ app.get('/success', async (req, res) => {
     if (!orderId) return res.redirect(302, '/');
 
     const { rows } = await pool.query(
-      'SELECT id, parent_id, payment_intent_id, kind, service_date, service_datetime, customer_id, saved_payment_method_id FROM all_bookings WHERE id = $1',
+      `SELECT id,
+              parent_id,
+              payment_intent_id,
+              kind,
+              service_date,
+              service_datetime,
+              customer_id,
+              saved_payment_method_id,
+              status
+         FROM all_bookings
+        WHERE id = $1`,
       [orderId]
     );
     const row = rows[0];
@@ -3039,18 +3049,27 @@ app.get('/success', async (req, res) => {
     // If we have a PI, require it to be authorized or captured to show success
     if (row.payment_intent_id) {
       const id = row.payment_intent_id;
-      if (id.startsWith('seti_')) {
-        // SetupIntent path (usually not used for /success in book flow, but safe)
-        const si = await stripe.setupIntents.retrieve(id);
-        if (si && si.status === 'succeeded') {
-          return res.sendFile(path.join(__dirname, 'public', 'success.html'));
+      try {
+        if (id.startsWith('seti_')) {
+          // SetupIntent path (usually not used for /success in book flow, but safe)
+          const si = await stripe.setupIntents.retrieve(id);
+          if (si && si.status === 'succeeded') {
+            return res.sendFile(path.join(__dirname, 'public', 'success.html'));
+          }
+        } else {
+          const pi = await stripe.paymentIntents.retrieve(id);
+          if (pi && (pi.status === 'succeeded' || pi.status === 'requires_capture')) {
+            return res.sendFile(path.join(__dirname, 'public', 'success.html'));
+          }
         }
-      } else {
-        const pi = await stripe.paymentIntents.retrieve(id);
-        if (pi && (pi.status === 'succeeded' || pi.status === 'requires_capture')) {
-          return res.sendFile(path.join(__dirname, 'public', 'success.html'));
-        }
+      } catch (retrieveErr) {
+        console.warn('success route PI lookup failed', id, retrieveErr?.message || retrieveErr);
       }
+    }
+
+    const statusLabel = String(row.status || '').trim();
+    if (BOOK_SUCCESS_STATUSES.has(statusLabel) || PAY_SUCCESS_STATUSES.has(statusLabel)) {
+      return res.sendFile(path.join(__dirname, 'public', 'success.html'));
     }
 
     // Otherwise bounce back to the appropriate page
