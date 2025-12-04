@@ -545,12 +545,13 @@
       return `${cap}, a las ${enforceUpperMeridiem(hora)}`;
     }
 
-    async function syncProcessingFee(orderId, paymentIntentId, paymentMethodId) {
+    async function syncProcessingFee(orderId, paymentIntentId, paymentMethodId, retryToken) {
       if (!orderId || (!paymentIntentId && !paymentMethodId)) return;
       try {
         const payload = {};
         if (paymentIntentId) payload.paymentIntentId = paymentIntentId;
         if (paymentMethodId) payload.paymentMethodId = paymentMethodId;
+        if (retryToken) payload.retryToken = retryToken;
         await fetch(`/orders/${encodeURIComponent(orderId)}/refresh-fees`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -568,6 +569,21 @@
         alert('Falta el parámetro orderId.');
         throw new Error('missing_order_id');
       }
+      const retryToken = params.get('retryToken') || '';
+      const shouldRequestOverride =
+        params.get('allowExpired') === '1' || Boolean(retryToken);
+
+      function withOverrideParams(baseUrl) {
+        if (!shouldRequestOverride) return baseUrl;
+        const [path, hash] = baseUrl.split('#');
+        const sep = path.includes('?') ? '&' : '?';
+        const queryParts = ['allowExpired=1'];
+        if (retryToken) {
+          queryParts.push(`retryToken=${encodeURIComponent(retryToken)}`);
+        }
+        const combined = `${path}${sep}${queryParts.join('&')}`;
+        return hash ? `${combined}#${hash}` : combined;
+      }
 
       const stripeResp = await fetch('/config/stripe');
       const { pk } = await stripeResp.json().catch(() => ({}));
@@ -577,7 +593,8 @@
       }
       const stripe = Stripe(pk);
 
-      const res = await fetch(`/order/${encodeURIComponent(orderId)}`);
+      const orderEndpoint = withOverrideParams(`/order/${encodeURIComponent(orderId)}`);
+      const res = await fetch(orderEndpoint);
       if (res.status === 410) {
         const payload = await res.json().catch(() => ({}));
         showLinkExpired(payload?.linkExpiresAt || payload?.link_expires_at || null);
@@ -592,7 +609,7 @@
       if (redirectIfCompleted(order)) return;
 
       if (!order?.saved_card) {
-        location.href = `/pay?orderId=${encodeURIComponent(orderId)}`;
+        location.href = withOverrideParams(`/pay?orderId=${encodeURIComponent(orderId)}`);
         return;
       }
 
@@ -700,14 +717,15 @@
           await fetch(`/orders/${encodeURIComponent(orderId)}/consent`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              version: 'v1',
-              text,
-              hash,
-              locale: navigator.language || 'es-MX',
-              tz: Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Mexico_City'
-            })
-          });
+          body: JSON.stringify({
+            version: 'v1',
+            text,
+            hash,
+            locale: navigator.language || 'es-MX',
+            tz: Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Mexico_City',
+            retryToken: retryToken || undefined
+          })
+        });
         } catch {}
       }
 
@@ -730,7 +748,10 @@
         const r = await fetch('/confirm-with-saved', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ orderId })
+          body: JSON.stringify({
+            orderId,
+            retryToken: retryToken || undefined
+          })
         });
 
         const payload = await r.json().catch(() => ({}));
@@ -742,7 +763,12 @@
 
         if (r.status === 200) {
           if (payload?.paymentIntentId || payload?.paymentMethodId) {
-            await syncProcessingFee(orderId, payload?.paymentIntentId || null, payload?.paymentMethodId || null);
+            await syncProcessingFee(
+              orderId,
+              payload?.paymentIntentId || null,
+              payload?.paymentMethodId || null,
+              retryToken || null
+            );
           }
           location.href = `/success?orderId=${encodeURIComponent(orderId)}`;
           return;
@@ -751,12 +777,18 @@
         if (r.status === 409) {
           if (payload?.error === 'no_saved_card') {
             alert(payload?.message || 'Necesitamos que actualices tu método de pago para continuar.');
-            const fallback = `/pay?orderId=${encodeURIComponent(orderId)}`;
-            location.href = payload?.redirect || fallback;
+            const fallback = withOverrideParams(`/pay?orderId=${encodeURIComponent(orderId)}`);
+            const redirectUrl = payload?.redirect ? withOverrideParams(payload.redirect) : fallback;
+            location.href = redirectUrl;
             return;
           }
           if (payload?.paymentMethodId || payload?.paymentIntentId) {
-            await syncProcessingFee(orderId, payload?.paymentIntentId || null, payload?.paymentMethodId || null);
+            await syncProcessingFee(
+              orderId,
+              payload?.paymentIntentId || null,
+              payload?.paymentMethodId || null,
+              retryToken || null
+            );
           }
           const scheduledMsg = isAdjustment
             ? 'Tu ajuste quedó programado. Realizaremos la preautorización 15 horas antes de la fecha.'
@@ -777,7 +809,7 @@
             const piId = result.paymentIntent?.id || null;
             const pmId = payload?.paymentMethodId || null;
             if (piId || pmId) {
-              await syncProcessingFee(orderId, piId, pmId);
+              await syncProcessingFee(orderId, piId, pmId, retryToken || null);
             }
             location.href = `/success?orderId=${encodeURIComponent(orderId)}`;
           }

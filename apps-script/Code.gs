@@ -30,7 +30,7 @@ const ORDER_HEADER_ALIASES = {
   PI_ID: ['Payment Intent ID'],
   SHORT_CODE: ['Short Order ID', 'Short Code'],
   DATE_CREATED: ['Date created', 'Date Created', 'Created At'],
-  BILLING_PORTAL_LINK: ['Billing Portal Link'],
+  BILLING_PORTAL_LINK: ['Billing Portal Link', 'Update payment method'],
 };
 
 const ADJ_HEADER_ALIASES = {

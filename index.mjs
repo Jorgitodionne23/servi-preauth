@@ -61,14 +61,36 @@ function getLinkExpirationInfo(createdAt) {
   };
 }
 
-function assertOrderLinkActive(row, { allowExpired = false } = {}) {
-  const info = getLinkExpirationInfo(row?.created_at || row?.createdAt || null);
+function assertOrderLinkActive(row, { allowExpired = false, createdAtOverride = null } = {}) {
+  const createdRef = createdAtOverride ?? row?.created_at ?? row?.createdAt ?? null;
+  const info = getLinkExpirationInfo(createdRef);
   if (info.expired && !allowExpired) {
     const err = makeError('link_expired', 'This payment or booking link has expired', 410);
     err.linkExpiresAt = info.expiresAtIso || null;
     throw err;
   }
   return info;
+}
+
+function normalizeRetryToken(value) {
+  const token = String(value || '').trim();
+  return token || null;
+}
+
+function resolveRetryTokenContext(row, retryToken) {
+  const normalized = normalizeRetryToken(retryToken);
+  if (!normalized) {
+    return { usingRetryToken: false, createdAtOverride: null };
+  }
+  const stored = row?.retry_token || row?.retryToken || null;
+  const created = row?.retry_token_created_at || row?.retryTokenCreatedAt || null;
+  if (!stored || !created) {
+    return { usingRetryToken: false, createdAtOverride: null };
+  }
+  if (!constantTimeEquals(stored, normalized)) {
+    return { usingRetryToken: false, createdAtOverride: null };
+  }
+  return { usingRetryToken: true, createdAtOverride: created };
 }
 
 // ── generate a unique public_code for /o/:code ────────────────────────────
@@ -313,6 +335,46 @@ async function createBillingPortalPrompt(orderRow, { failureReason } = {}) {
   }
 }
 
+async function createBookRetryPrompt(orderRow, { failureReason } = {}) {
+  try {
+    if (!orderRow?.id) return null;
+    const token = randomBytes(12).toString('base64url');
+    const update = await pool.query(
+      `
+        UPDATE all_bookings
+           SET retry_token = $1,
+               retry_token_created_at = NOW()
+         WHERE id = $2
+         RETURNING retry_token_created_at
+      `,
+      [token, orderRow.id]
+    );
+    const issuedAt = update.rows[0]?.retry_token_created_at || new Date().toISOString();
+    const baseUrl = process.env.PUBLIC_BASE_URL || 'https://servi-preauth.onrender.com';
+    const url = `${baseUrl}/book?orderId=${encodeURIComponent(orderRow.id)}&allowExpired=1&retryToken=${token}`;
+
+    const firstName = String(orderRow.client_name || '')
+      .trim()
+      .split(/\s+/)[0] || 'SERVI cliente';
+    const serviceText = displayEsMX(
+      orderRow.service_datetime,
+      orderRow.service_date,
+      'America/Mexico_City'
+    );
+    const intro =
+      `Hola ${firstName}, tu método de pago no se pudo confirmar` +
+      (serviceText ? ` para ${serviceText}` : '') +
+      '.';
+    const reasonLine = failureReason ? ` Motivo: ${failureReason}.` : '';
+    const message = `${intro}${reasonLine} Actualiza tu método y confirma aquí: ${url}`;
+
+    return { url, message, token, issued_at: issuedAt };
+  } catch (err) {
+    console.warn('createBookRetryPrompt failed', orderRow?.id, err?.message || err);
+    return null;
+  }
+}
+
 async function handlePreauthFailure(orderRow, { error, failure } = {}) {
   if (!orderRow || !orderRow.id) return null;
   const statusLabel = 'Declined';
@@ -324,11 +386,11 @@ async function handlePreauthFailure(orderRow, { error, failure } = {}) {
     console.warn('handlePreauthFailure status update failed', orderRow.id, statusErr?.message || statusErr);
   }
 
-  let portal = null;
+  let retryPrompt = null;
   try {
-    portal = await createBillingPortalPrompt(orderRow, { failureReason: failureMessage });
+    retryPrompt = await createBookRetryPrompt(orderRow, { failureReason: failureMessage });
   } catch (portalErr) {
-    console.warn('handlePreauthFailure portal creation failed', orderRow.id, portalErr?.message || portalErr);
+    console.warn('handlePreauthFailure retry prompt failed', orderRow.id, portalErr?.message || portalErr);
   }
 
   if (GOOGLE_SCRIPT_WEBHOOK_URL) {
@@ -344,8 +406,8 @@ async function handlePreauthFailure(orderRow, { error, failure } = {}) {
     if (failureInfo?.payment_intent_id && !payload.paymentIntentId) {
       payload.paymentIntentId = failureInfo.payment_intent_id;
     }
-    if (portal?.message) payload.billingPortalMessage = portal.message;
-    if (portal?.url) payload.billingPortalUrl = portal.url;
+    if (retryPrompt?.message) payload.billingPortalMessage = retryPrompt.message;
+    if (retryPrompt?.url) payload.billingPortalUrl = retryPrompt.url;
     fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -359,7 +421,7 @@ async function handlePreauthFailure(orderRow, { error, failure } = {}) {
     const msg = info?.friendly || info?.message || error?.message || error;
     console.warn('handlePreauthFailure triggered by error', orderRow.id, code, msg);
   }
-  return portal;
+  return retryPrompt;
 }
 
 function firstChargeFromPaymentIntent(pi) {
@@ -454,7 +516,7 @@ function makeError(code, message, status) {
   return err;
 }
 
-async function refreshOrderFees(orderId, { paymentIntentId, paymentMethodId } = {}) {
+async function refreshOrderFees(orderId, { paymentIntentId, paymentMethodId, retryToken } = {}) {
   if (!orderId) throw makeError('order_required', 'order id required', 400);
   if (!paymentIntentId && !paymentMethodId) {
     throw makeError('payment_source_required', 'payment intent or payment method required', 400);
@@ -472,7 +534,9 @@ async function refreshOrderFees(orderId, { paymentIntentId, paymentMethodId } = 
             stripe_fixed_fee,
             stripe_fee_tax_rate,
             payment_intent_id,
-            created_at
+            created_at,
+            retry_token,
+            retry_token_created_at
        FROM all_bookings
       WHERE id = $1`,
     [orderId]
@@ -481,7 +545,9 @@ async function refreshOrderFees(orderId, { paymentIntentId, paymentMethodId } = 
   if (!order) {
     throw makeError('order_not_found', 'order not found', 404);
   }
-  assertOrderLinkActive(order);
+  const { createdAtOverride } = resolveRetryTokenContext(order, retryToken);
+  const linkRow = createdAtOverride ? { ...order, created_at: createdAtOverride } : order;
+  assertOrderLinkActive(linkRow);
 
   if (paymentIntentId && order.payment_intent_id && order.payment_intent_id !== paymentIntentId) {
     throw makeError('mismatched_payment_intent', 'payment intent does not match order', 409);
@@ -885,7 +951,9 @@ app.get('/config/stripe', (_req, res) => {
 app.get('/order/:orderId', async (req, res) => {
   try {
     const { orderId } = req.params;
-    const allowExpired = String(req.query.allowExpired || '') === '1';
+    const tokenParamRaw = String(req.query.retryToken || '');
+    const wantsOverride = String(req.query.allowExpired || '') === '1' || !!tokenParamRaw;
+    const retryTokenParam = wantsOverride ? tokenParamRaw : '';
 
     const { rows } = await pool.query(`
       SELECT id, payment_intent_id, amount, provider_amount, booking_fee_amount, processing_fee_amount,
@@ -893,14 +961,18 @@ app.get('/order/:orderId', async (req, res) => {
         stripe_fee_tax_rate, processing_fee_type, urgency_multiplier, alpha_value,
         client_name, client_phone, client_email,
         service_description, service_date, service_datetime, service_address, status, created_at,
-        public_code, kind, parent_id, customer_id, saved_payment_method_id, capture_method, adjustment_reason
+        public_code, kind, parent_id, customer_id, saved_payment_method_id, capture_method, adjustment_reason,
+        retry_token, retry_token_created_at
       FROM all_bookings
       WHERE id = $1
     `, [orderId]);
 
     const row = rows[0];
     if (!row) return res.status(404).send({ error: 'Order not found' });
-    const linkInfo = assertOrderLinkActive(row, { allowExpired });
+    const { usingRetryToken, createdAtOverride } = resolveRetryTokenContext(row, retryTokenParam);
+    const allowExpired = wantsOverride && !usingRetryToken;
+    const linkSource = createdAtOverride ? { ...row, created_at: createdAtOverride } : row;
+    const linkInfo = assertOrderLinkActive(linkSource, { allowExpired });
     const linkExpired = linkInfo.expired;
 
     let pi = null;
@@ -1172,8 +1244,10 @@ app.get('/order/:orderId', async (req, res) => {
       urgency_multiplier: row.urgency_multiplier ?? null,
       alpha_value: row.alpha_value ?? null
     };
+    const { retry_token, retry_token_created_at, ...rowForResponse } = row;
+
     return res.json({
-      ...row,
+      ...rowForResponse,
       pricing,
       client_secret: pi?.client_secret || null,
       intentType,
@@ -1205,7 +1279,7 @@ app.get('/order/:orderId', async (req, res) => {
 app.post('/orders/:orderId/refresh-fees', async (req, res) => {
   try {
     const { orderId } = req.params;
-    const { paymentIntentId, paymentMethodId, billingEmail } = req.body || {};
+    const { paymentIntentId, paymentMethodId, billingEmail, retryToken } = req.body || {};
     if (billingEmail) {
       try {
         await syncOrderEmail(orderId, billingEmail);
@@ -1213,7 +1287,7 @@ app.post('/orders/:orderId/refresh-fees', async (req, res) => {
         console.warn('refresh-fees: failed to persist billing email', orderId, emailErr?.message || emailErr);
       }
     }
-    const result = await refreshOrderFees(orderId, { paymentIntentId, paymentMethodId });
+    const result = await refreshOrderFees(orderId, { paymentIntentId, paymentMethodId, retryToken });
     return res.json({ ok: true, ...result });
   } catch (err) {
     const status =
@@ -1479,7 +1553,7 @@ app.post('/tasks/preauth-due', async (req, res) => {
 app.post('/orders/:id/consent', async (req, res) => {
   try {
     const { id } = req.params;
-    const { version, text, hash, locale, tz, billingEmail } = req.body || {};
+    const { version, text, hash, locale, tz, billingEmail, retryToken } = req.body || {};
     const ua = req.headers['user-agent'] || '';
     const ip = String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').split(',')[0].trim();
 
@@ -1496,13 +1570,17 @@ app.post('/orders/:id/consent', async (req, res) => {
              client_email,
              client_phone,
              payment_intent_id,
-             created_at
+             created_at,
+             retry_token,
+             retry_token_created_at
         FROM all_bookings
        WHERE id = $1
     `, [id]);
     const row = or.rows[0];
     if (!row) return res.status(404).send({ error: 'order not found' });
-    assertOrderLinkActive(row);
+    const { createdAtOverride } = resolveRetryTokenContext(row, retryToken);
+    const linkRow = createdAtOverride ? { ...row, created_at: createdAtOverride } : row;
+    assertOrderLinkActive(linkRow);
     const parentOrderId = row.parent_id || row.id;
 
     if (billingEmail) {
@@ -2615,7 +2693,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
 app.post('/confirm-with-saved', async (req, res) => {
   try {
-    const { orderId, force } = req.body || {};
+    const { orderId, force, retryToken } = req.body || {};
     if (!orderId) return res.status(400).send({ error: 'orderId required' });
 
     const { rows } = await pool.query(
@@ -2631,14 +2709,18 @@ app.post('/confirm-with-saved', async (req, res) => {
               saved_payment_method_id,
               capture_method,
               adjustment_reason,
-              created_at
+              created_at,
+              retry_token,
+              retry_token_created_at
          FROM all_bookings
         WHERE id = $1`,
       [orderId]
     );
     const row = rows[0];
     if (!row) return res.status(404).send({ error: 'order not found' });
-    assertOrderLinkActive(row);
+    const { createdAtOverride } = resolveRetryTokenContext(row, retryToken);
+    const linkRow = createdAtOverride ? { ...row, created_at: createdAtOverride } : row;
+    assertOrderLinkActive(linkRow);
 
     let savedPmId = row.saved_payment_method_id || null;
     const capturePref = String(row.capture_method || '').toLowerCase();
@@ -2817,22 +2899,22 @@ app.post('/confirm-with-saved', async (req, res) => {
         });
       }
       const failure = describeStripeFailure(e);
-      let portal = null;
+      let retryPrompt = null;
       try {
-        portal = await handlePreauthFailure(row, { error: e, failure });
+        retryPrompt = await handlePreauthFailure(row, { error: e, failure });
       } catch (handleErr) {
         console.warn('confirm-with-saved handlePreauthFailure failed', row.id, handleErr?.message || handleErr);
       }
       const reasonText = failure?.friendly || failure?.message || null;
       const friendly = reasonText
-        ? `No se pudo autorizar el método de pago (${reasonText}). Actualice su tarjeta en el portal.`
-        : 'No se pudo autorizar el método de pago. Actualice su tarjeta en el portal.';
+        ? `No se pudo autorizar el método de pago (${reasonText}). Envía el enlace para actualizar el método.`
+        : 'No se pudo autorizar el método de pago. Envía el enlace para actualizar el método.';
       return res.status(409).json({
         ok: false,
         error: 'preauth_failed',
         message: friendly,
-        billingPortalMessage: portal?.message || null,
-        billingPortalUrl: portal?.url || null,
+        billingPortalMessage: retryPrompt?.message || null,
+        billingPortalUrl: retryPrompt?.url || null,
         decline_code: failure?.decline_code || null,
         failure_code: failure?.failure_code || null,
         stripe_message: failure?.message || null,

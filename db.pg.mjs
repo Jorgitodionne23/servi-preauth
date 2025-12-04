@@ -79,6 +79,8 @@ export async function initDb() {
     ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS alpha_value REAL;
     ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS capture_method TEXT;
     ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS adjustment_reason TEXT;
+    ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS retry_token TEXT;
+    ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS retry_token_created_at TIMESTAMPTZ;
 
     DO $$
     BEGIN
@@ -103,6 +105,9 @@ export async function initDb() {
     CREATE INDEX IF NOT EXISTS idx_all_bookings_parent ON all_bookings(parent_id);
     -- (optional but handy for queries by date)
     CREATE INDEX IF NOT EXISTS idx_all_bookings_service_date ON all_bookings(service_date);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_all_bookings_retry_token
+      ON all_bookings(retry_token)
+      WHERE retry_token IS NOT NULL;
 
     -- Consent audit (per-booking)
     CREATE TABLE IF NOT EXISTS consented_offsession_bookings (
