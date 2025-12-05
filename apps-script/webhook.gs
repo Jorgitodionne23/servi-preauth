@@ -63,11 +63,11 @@ function doPost(e) {
         ).trim();
         if (oid && oid === orderId) {
           writeStatusSafelyWebhook_(sheet, r, cols.STATUS, status);
-          if (cols.BILLING_PORTAL_LINK) {
-            applyBillingPortalMessageWebhook_(
+          if (cols.UPDATE_PAYMENT_METHOD) {
+            applyUpdatePaymentMethodMessageWebhook_(
               sheet,
               r,
-              cols.BILLING_PORTAL_LINK,
+              cols.UPDATE_PAYMENT_METHOD,
               data,
               status
             );
@@ -179,11 +179,11 @@ function doPost(e) {
             sheet.getRange(row, paymentIdCol).setValue(paymentIntentId);
           }
           writeStatusSafelyWebhook_(sheet, row, statusCol, status);
-          if (cols.BILLING_PORTAL_LINK) {
-            applyBillingPortalMessageWebhook_(
+          if (cols.UPDATE_PAYMENT_METHOD) {
+            applyUpdatePaymentMethodMessageWebhook_(
               sheet,
               row,
-              cols.BILLING_PORTAL_LINK,
+              cols.UPDATE_PAYMENT_METHOD,
               data,
               status
             );
@@ -313,12 +313,16 @@ function writeStatusSafelyWebhook_(sheet, row, statusColIndex, newStatusRaw) {
   }
 }
 
-function applyBillingPortalMessageWebhook_(sheet, row, columnIndex, payload, status) {
+function applyUpdatePaymentMethodMessageWebhook_(sheet, row, columnIndex, payload, status) {
   if (!columnIndex) return;
   const message = String(
-    (payload && payload.billingPortalMessage) || ''
+    (payload &&
+      (payload.updatePaymentMessage || payload.billingPortalMessage)) ||
+      ''
   ).trim();
-  const url = String((payload && payload.billingPortalUrl) || '').trim();
+  const url = String(
+    (payload && (payload.updatePaymentUrl || payload.billingPortalUrl)) || ''
+  ).trim();
   const reason = String((payload && payload.failureReason) || '').trim();
   const target = sheet.getRange(row, columnIndex);
   if (message) {

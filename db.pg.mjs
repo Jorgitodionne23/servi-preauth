@@ -43,7 +43,7 @@ export async function initDb() {
       created_at TIMESTAMPTZ DEFAULT NOW(),
       public_code TEXT UNIQUE,
       kind TEXT DEFAULT 'primary',
-      parent_id TEXT,
+      parent_id_of_adjustment TEXT,
       customer_id TEXT,
       saved_payment_method_id TEXT,
       vat_rate REAL,
@@ -97,12 +97,32 @@ export async function initDb() {
       NULL;
     END $$;
 
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'all_bookings'
+          AND column_name = 'parent_id'
+      ) AND NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'all_bookings'
+          AND column_name = 'parent_id_of_adjustment'
+      ) THEN
+        ALTER TABLE all_bookings
+          RENAME COLUMN parent_id TO parent_id_of_adjustment;
+      END IF;
+    EXCEPTION WHEN undefined_column THEN
+      NULL;
+    END $$;
+
     ALTER INDEX IF EXISTS idx_orders_created_at RENAME TO idx_all_bookings_created_at;
     ALTER INDEX IF EXISTS idx_orders_parent RENAME TO idx_all_bookings_parent;
     ALTER INDEX IF EXISTS idx_orders_service_date RENAME TO idx_all_bookings_service_date;
 
     CREATE INDEX IF NOT EXISTS idx_all_bookings_created_at ON all_bookings(created_at);
-    CREATE INDEX IF NOT EXISTS idx_all_bookings_parent ON all_bookings(parent_id);
+    CREATE INDEX IF NOT EXISTS idx_all_bookings_parent ON all_bookings(parent_id_of_adjustment);
     -- (optional but handy for queries by date)
     CREATE INDEX IF NOT EXISTS idx_all_bookings_service_date ON all_bookings(service_date);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_all_bookings_retry_token

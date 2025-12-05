@@ -399,7 +399,7 @@ async function handlePreauthFailure(orderRow, { error, failure } = {}) {
       orderId: orderRow.id,
       status: statusLabel,
       customerId: orderRow.customer_id || '',
-      parentOrderId: orderRow.parent_id || ''
+      parentOrderId: orderRow.parent_id_of_adjustment || ''
     };
     if (failureMessage) payload.failureReason = failureMessage;
     if (failureInfo?.decline_code) payload.failureCode = failureInfo.decline_code;
@@ -961,7 +961,7 @@ app.get('/order/:orderId', async (req, res) => {
         stripe_fee_tax_rate, processing_fee_type, urgency_multiplier, alpha_value,
         client_name, client_phone, client_email,
         service_description, service_date, service_datetime, service_address, status, created_at,
-        public_code, kind, parent_id, customer_id, saved_payment_method_id, capture_method, adjustment_reason,
+        public_code, kind, parent_id_of_adjustment, customer_id, saved_payment_method_id, capture_method, adjustment_reason,
         retry_token, retry_token_created_at
       FROM all_bookings
       WHERE id = $1
@@ -1119,7 +1119,7 @@ app.get('/order/:orderId', async (req, res) => {
               metadata: {
                 order_id: row.id,
                 kind: 'primary',
-                parent_order_id: row.parent_id || ''
+                parent_order_id: row.parent_id_of_adjustment || ''
               }
             });
 
@@ -1169,7 +1169,7 @@ app.get('/order/:orderId', async (req, res) => {
             metadata: {
               order_id: row.id,
               kind: row.kind || 'primary',
-              parent_order_id: row.parent_id || ''
+              parent_order_id: row.parent_id_of_adjustment || ''
             }
           });
           await pool.query('UPDATE all_bookings SET payment_intent_id=$1 WHERE id=$2', [created.id, row.id]);
@@ -1471,7 +1471,7 @@ app.post('/tasks/preauth-due', async (req, res) => {
           amount,
           customer_id,
           saved_payment_method_id,
-          parent_id,
+          parent_id_of_adjustment,
           kind,
           client_name,
           client_email,
@@ -1488,7 +1488,7 @@ app.post('/tasks/preauth-due', async (req, res) => {
           AND saved_payment_method_id IS NOT NULL
           AND payment_intent_id IS NULL
       )
-      SELECT id, amount, customer_id, saved_payment_method_id, parent_id, kind, client_name, client_email, service_date, service_datetime
+      SELECT id, amount, customer_id, saved_payment_method_id, parent_id_of_adjustment, kind, client_name, client_email, service_date, service_datetime
       FROM service_ts
       WHERE svc_at >= NOW()
         AND svc_at <  NOW() + INTERVAL '15 hours'
@@ -1510,7 +1510,7 @@ app.post('/tasks/preauth-due', async (req, res) => {
           payment_method: row.saved_payment_method_id,
           confirm: true,              // off-session auth
           off_session: true,
-          metadata: { kind: row.kind || 'primary', parent_order_id: row.parent_id || '' }
+          metadata: { kind: row.kind || 'primary', parent_order_id: row.parent_id_of_adjustment || '' }
         });
 
         await pool.query(
@@ -1563,7 +1563,7 @@ app.post('/orders/:id/consent', async (req, res) => {
     // Pull order info
     const or = await pool.query(`
       SELECT id,
-             parent_id,
+             parent_id_of_adjustment,
              customer_id,
              saved_payment_method_id,
              client_name,
@@ -1581,7 +1581,7 @@ app.post('/orders/:id/consent', async (req, res) => {
     const { createdAtOverride } = resolveRetryTokenContext(row, retryToken);
     const linkRow = createdAtOverride ? { ...row, created_at: createdAtOverride } : row;
     assertOrderLinkActive(linkRow);
-    const parentOrderId = row.parent_id || row.id;
+    const parentOrderId = row.parent_id_of_adjustment || row.id;
 
     if (billingEmail) {
       try {
@@ -1705,13 +1705,13 @@ app.get('/orders/:id/consent', async (req, res) => {
   const { id } = req.params;
 
   const orderResult = await pool.query(
-    'SELECT customer_id, saved_payment_method_id, parent_id FROM all_bookings WHERE id=$1',
+    'SELECT customer_id, saved_payment_method_id, parent_id_of_adjustment FROM all_bookings WHERE id=$1',
     [id]
   );
   const orderRow = orderResult.rows[0] || null;
   const customerId = orderRow?.customer_id || null;
   const orderSavedPmId = orderRow?.saved_payment_method_id || null;
-  const parentOrderId = orderRow?.parent_id || id;
+  const parentOrderId = orderRow?.parent_id_of_adjustment || id;
 
   let paymentMethodId = orderSavedPmId || null;
   let version = null;
@@ -1984,7 +1984,7 @@ app.post('/create-adjustment', requireAdminAuth, async (req, res) => {
           status,
           public_code,
           kind,
-          parent_id,
+          parent_id_of_adjustment,
           customer_id,
           saved_payment_method_id,
           adjustment_reason,
@@ -2208,13 +2208,13 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
         if (cust) {
           const orderInfo = await pool.query(
-            'SELECT client_name, client_email, client_phone, parent_id, payment_intent_id FROM all_bookings WHERE id = $1',
+            'SELECT client_name, client_email, client_phone, parent_id_of_adjustment, payment_intent_id FROM all_bookings WHERE id = $1',
             [orderId]
           );
           const customerName  = orderInfo.rows[0]?.client_name  || null;
           const customerEmail = orderInfo.rows[0]?.client_email || null;
           const customerPhone = orderInfo.rows[0]?.client_phone || null;
-          const parentForCustomer = orderInfo.rows[0]?.parent_id || orderId;
+          const parentForCustomer = orderInfo.rows[0]?.parent_id_of_adjustment || orderId;
           const paymentIntentId = orderInfo.rows[0]?.payment_intent_id || null;
 
           await pool.query(`
@@ -2384,7 +2384,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
       }
 
       if (obj.capture_method === 'manual' && obj.status === 'requires_capture') {
-        const r = await pool.query('SELECT id, customer_id, parent_id FROM all_bookings WHERE payment_intent_id = $1 LIMIT 1', [obj.id]);
+        const r = await pool.query('SELECT id, customer_id, parent_id_of_adjustment FROM all_bookings WHERE payment_intent_id = $1 LIMIT 1', [obj.id]);
         const row = r.rows[0] || {};
 
         await pool.query('UPDATE all_bookings SET status = $1 WHERE payment_intent_id = $2', ['Confirmed', obj.id]);
@@ -2400,7 +2400,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
               status: 'Confirmed',
               orderId: row.id || '',
               customerId: row.customer_id || '',
-              parentOrderId: row.parent_id || ''
+              parentOrderId: row.parent_id_of_adjustment || ''
             })
           }).catch(() => {});
         }
@@ -2444,7 +2444,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
         let lastOrderId = '';
         try {
           const recentOrder = await pool.query(
-            `SELECT id, parent_id
+            `SELECT id, parent_id_of_adjustment
                FROM all_bookings
               WHERE customer_id = $1
               ORDER BY created_at DESC
@@ -2454,7 +2454,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
           if (recentOrder.rows[0]) {
             lastOrderId = recentOrder.rows[0].id || '';
             parentOrderId =
-              recentOrder.rows[0].parent_id || recentOrder.rows[0].id || '';
+              recentOrder.rows[0].parent_id_of_adjustment || recentOrder.rows[0].id || '';
           }
         } catch (orderLookupErr) {
           console.warn('customer.updated recent order lookup failed', orderLookupErr?.message || orderLookupErr);
@@ -2541,13 +2541,13 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
           }
           if (!parentOrderId || !lastOrderId) {
             const latestOrder = await pool.query(
-              `SELECT id, parent_id FROM all_bookings WHERE customer_id = $1 ORDER BY created_at DESC LIMIT 1`,
+              `SELECT id, parent_id_of_adjustment FROM all_bookings WHERE customer_id = $1 ORDER BY created_at DESC LIMIT 1`,
               [customerId]
             );
             const orderRow = latestOrder.rows[0];
             if (orderRow) {
               if (!lastOrderId) lastOrderId = orderRow.id;
-              if (!parentOrderId) parentOrderId = orderRow.parent_id || orderRow.id;
+              if (!parentOrderId) parentOrderId = orderRow.parent_id_of_adjustment || orderRow.id;
             }
           }
         } catch (err) {
@@ -2642,14 +2642,14 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
         }
         if (!parentOrderId || !lastOrderId) {
           const latestOrder = await pool.query(
-            `SELECT id, parent_id FROM all_bookings WHERE customer_id = $1 ORDER BY created_at DESC LIMIT 1`,
+            `SELECT id, parent_id_of_adjustment FROM all_bookings WHERE customer_id = $1 ORDER BY created_at DESC LIMIT 1`,
             [customerId]
           );
           const orderRow = latestOrder.rows[0];
           if (orderRow) {
             if (!lastOrderId) lastOrderId = orderRow.id;
             if (!parentOrderId)
-              parentOrderId = orderRow.parent_id || orderRow.id;
+              parentOrderId = orderRow.parent_id_of_adjustment || orderRow.id;
           }
         }
       } catch (err) {
@@ -2685,7 +2685,7 @@ app.post('/confirm-with-saved', async (req, res) => {
               customer_id,
               amount,
               kind,
-              parent_id,
+              parent_id_of_adjustment,
               service_date,
               service_datetime,
               status,
@@ -2765,7 +2765,7 @@ app.post('/confirm-with-saved', async (req, res) => {
             orderId: row.id,
             status: statusLabel,
             customerId: row.customer_id || '',
-            parentOrderId: row.parent_id || ''
+            parentOrderId: row.parent_id_of_adjustment || ''
           })
         }).catch(() => {});
       }
@@ -2804,7 +2804,7 @@ app.post('/confirm-with-saved', async (req, res) => {
         metadata: {
           order_id: row.id,
           kind: row.kind || 'primary',
-          parent_order_id: row.parent_id || ''
+          parent_order_id: row.parent_id_of_adjustment || ''
         }
       });
       await pool.query('UPDATE all_bookings SET payment_intent_id=$1 WHERE id=$2', [pi.id, row.id]);
@@ -2823,7 +2823,7 @@ app.post('/confirm-with-saved', async (req, res) => {
       metadata: {
         order_id: row.id,
         kind: row.kind || 'primary',
-        parent_order_id: row.parent_id || ''
+        parent_order_id: row.parent_id_of_adjustment || ''
       }
     });
     try {
@@ -2865,7 +2865,7 @@ app.post('/confirm-with-saved', async (req, res) => {
             customerId: row.customer_id || '',
             paymentIntentId: confirmed.id,
             amount: confirmed.amount || null,
-            parentOrderId: row.parent_id || ''
+            parentOrderId: row.parent_id_of_adjustment || ''
           })
         }).catch(() => {});
       }
@@ -2985,7 +2985,7 @@ app.get('/success', async (req, res) => {
 
     const { rows } = await pool.query(
       `SELECT id,
-              parent_id,
+              parent_id_of_adjustment,
               payment_intent_id,
               kind,
               service_date,
@@ -3019,7 +3019,7 @@ app.get('/success', async (req, res) => {
               orderId: row.id,
               status: 'Scheduled',
               customerId: row.customer_id || '',
-              parentOrderId: row.parent_id || row.id
+              parentOrderId: row.parent_id_of_adjustment || row.id
             })
           }).catch(()=>{});
         }
