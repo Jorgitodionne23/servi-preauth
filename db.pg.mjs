@@ -97,26 +97,6 @@ export async function initDb() {
       NULL;
     END $$;
 
-    DO $$
-    BEGIN
-      IF EXISTS (
-        SELECT 1
-        FROM information_schema.columns
-        WHERE table_name = 'all_bookings'
-          AND column_name = 'parent_id'
-      ) AND NOT EXISTS (
-        SELECT 1
-        FROM information_schema.columns
-        WHERE table_name = 'all_bookings'
-          AND column_name = 'parent_id_of_adjustment'
-      ) THEN
-        ALTER TABLE all_bookings
-          RENAME COLUMN parent_id TO parent_id_of_adjustment;
-      END IF;
-    EXCEPTION WHEN undefined_column THEN
-      NULL;
-    END $$;
-
     ALTER INDEX IF EXISTS idx_orders_created_at RENAME TO idx_all_bookings_created_at;
     ALTER INDEX IF EXISTS idx_orders_parent RENAME TO idx_all_bookings_parent;
     ALTER INDEX IF EXISTS idx_orders_service_date RENAME TO idx_all_bookings_service_date;
