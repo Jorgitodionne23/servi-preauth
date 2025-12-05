@@ -277,6 +277,15 @@ function writeStatusSafelyWebhook_(sheet, row, statusColIndex, newStatusRaw) {
     return;
   }
 
+  if (
+    (current === 'Declined' || current === 'Failed') &&
+    nxt &&
+    nxt !== current
+  ) {
+    sheet.getRange(row, statusColIndex).setValue(nxt);
+    return;
+  }
+
   const forwardOnly = {
     '': [
       'Pending',

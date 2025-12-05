@@ -2890,8 +2890,8 @@ app.post('/confirm-with-saved', async (req, res) => {
       }
       const reasonText = failure?.friendly || failure?.message || null;
       const friendly = reasonText
-        ? `No se pudo autorizar el método de pago. Envía el enlace para actualizar el método.`
-        : 'No se pudo autorizar el método de pago. Envía el enlace para actualizar el método.';
+        ? `No se pudo autorizar el método de pago. Intenta otro método de pago.`
+        : 'No se pudo autorizar el método de pago. Intenta otro método de pago.';
       return res.status(409).json({
         ok: false,
         error: 'preauth_failed',

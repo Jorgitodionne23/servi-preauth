@@ -1479,6 +1479,15 @@ function resyncSelectedRow() {
       return;
     }
 
+    if (
+      (current === 'Declined' || current === 'Failed') &&
+      next &&
+      next !== current
+    ) {
+      sh.getRange(row, COL.STATUS).setValue(next);
+      return;
+    }
+
     const forwardOnly = {
       '': [
         'Pending',
