@@ -6,7 +6,7 @@ import StripePackage from 'stripe';
 import path from 'path';
 import { pool, initDb } from './db.pg.mjs';
 import { computePricing } from './pricing.mjs';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, URLSearchParams } from 'url';
 import { dirname } from 'path';
 import fetch from 'node-fetch';
 import { randomUUID, randomBytes, createHash, timingSafeEqual } from 'crypto';
@@ -345,13 +345,26 @@ async function createBookRetryPrompt(orderRow, { failureReason } = {}) {
            SET retry_token = $1,
                retry_token_created_at = NOW()
          WHERE id = $2
-         RETURNING retry_token_created_at
+         RETURNING retry_token_created_at, public_code
       `,
       [token, orderRow.id]
     );
     const issuedAt = update.rows[0]?.retry_token_created_at || new Date().toISOString();
+    const publicCode =
+      update.rows[0]?.public_code ||
+      orderRow.public_code ||
+      '';
+    const normalizedCode = String(publicCode || '')
+      .trim()
+      .toUpperCase();
     const baseUrl = process.env.PUBLIC_BASE_URL || 'https://servi-preauth.onrender.com';
-    const url = `${baseUrl}/book?orderId=${encodeURIComponent(orderRow.id)}&allowExpired=1&retryToken=${token}`;
+    let url = `${baseUrl}/book?orderId=${encodeURIComponent(orderRow.id)}&allowExpired=1&retryToken=${token}`;
+    if (normalizedCode) {
+      const params = new URLSearchParams();
+      params.set('allowExpired', '1');
+      params.set('retryToken', token);
+      url = `${baseUrl}/o/${normalizedCode}?${params.toString()}`;
+    }
 
     const firstName = String(orderRow.client_name || '')
       .trim()
@@ -1309,6 +1322,10 @@ app.post('/orders/:orderId/refresh-fees', async (req, res) => {
 app.get('/o/:code', async (req, res) => {
   try {
     const code = String(req.params.code || '').toUpperCase();
+    const retryTokenRaw = String(req.query.retryToken || '');
+    const shouldOverride =
+      String(req.query.allowExpired || '') === '1' || Boolean(retryTokenRaw);
+    const retryTokenParam = shouldOverride ? retryTokenRaw : '';
 
     // 1) Find the order by code
     const { rows } = await pool.query(
@@ -1317,22 +1334,42 @@ app.get('/o/:code', async (req, res) => {
               customer_id,
               saved_payment_method_id,
               status,
-              created_at
+              created_at,
+              retry_token,
+              retry_token_created_at
          FROM all_bookings
         WHERE public_code = $1`,
       [code]
     );
     if (!rows[0]) return res.status(404).send('Not found');
     const row = rows[0];
-    const linkInfo = getLinkExpirationInfo(row.created_at);
-    if (linkInfo.expired) {
-      return res
-        .status(410)
-        .sendFile(path.join(__dirname, 'public', 'link-expired.html'));
+    try {
+      const { usingRetryToken, createdAtOverride } = resolveRetryTokenContext(row, retryTokenParam);
+      const allowExpired = shouldOverride && !usingRetryToken;
+      const linkSource = createdAtOverride ? { ...row, created_at: createdAtOverride } : row;
+      assertOrderLinkActive(linkSource, { allowExpired });
+    } catch (err) {
+      if (err?.code === 'link_expired') {
+        return res
+          .status(410)
+          .sendFile(path.join(__dirname, 'public', 'link-expired.html'));
+      }
+      throw err;
     }
     const rowStatus = String(row.status || '').trim();
+    const buildOrderUrl = (basePath) => {
+      const params = new URLSearchParams();
+      params.set('orderId', row.id);
+      if (shouldOverride) {
+        params.set('allowExpired', '1');
+        if (retryTokenRaw) {
+          params.set('retryToken', retryTokenRaw);
+        }
+      }
+      return `${basePath}?${params.toString()}`;
+    };
     if (BOOK_SUCCESS_STATUSES.has(rowStatus) || PAY_SUCCESS_STATUSES.has(rowStatus)) {
-      return res.redirect(302, `/success?orderId=${encodeURIComponent(row.id)}`);
+      return res.redirect(302, buildOrderUrl('/success'));
     }
 
     // 2) Explicit routing by kind
@@ -1360,15 +1397,15 @@ app.get('/o/:code', async (req, res) => {
       }
 
       const target = hasSaved ? '/book' : '/pay';
-      return res.redirect(302, `${target}?orderId=${encodeURIComponent(row.id)}`);
+      return res.redirect(302, buildOrderUrl(target));
     }
-    if (row.kind === 'setup_required') return res.redirect(302, `/pay?orderId=${encodeURIComponent(row.id)}`);
-    if (row.kind === 'setup')          return res.redirect(302, `/pay?orderId=${encodeURIComponent(row.id)}`);
+    if (row.kind === 'setup_required') return res.redirect(302, buildOrderUrl('/pay'));
+    if (row.kind === 'setup')          return res.redirect(302, buildOrderUrl('/pay'));
     if (row.kind === 'book') {
       if (!row.saved_payment_method_id) {
-        return res.redirect(302, `/pay?orderId=${encodeURIComponent(row.id)}`);
+        return res.redirect(302, buildOrderUrl('/pay'));
       }
-      return res.redirect(302, `/book?orderId=${encodeURIComponent(row.id)}`);
+      return res.redirect(302, buildOrderUrl('/book'));
     }
 
     // 3) Legacy 'primary' → check Stripe for saved PMs
@@ -1393,11 +1430,11 @@ app.get('/o/:code', async (req, res) => {
          WHERE id=$2`,
         [firstPmId, row.id]
       );
-      return res.redirect(302, `/book?orderId=${encodeURIComponent(row.id)}`);
+      return res.redirect(302, buildOrderUrl('/book'));
     }
 
     // 5) No saved PM → pay flow
-    return res.redirect(302, `/pay?orderId=${encodeURIComponent(row.id)}`);
+    return res.redirect(302, buildOrderUrl('/pay'));
   } catch (e) {
     console.error('/o/:code error:', e);
     return res.status(500).send('Internal error');
