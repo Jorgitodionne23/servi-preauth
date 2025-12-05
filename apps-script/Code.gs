@@ -4,11 +4,6 @@ const SHEET_NAMES = {
   ADJUSTMENTS: 'SERVI Adjustments',
 };
 
-const OPTIONAL_SHEET_COLUMNS = {
-  [SHEET_NAMES.ORDERS]: new Set(['BILLING_PORTAL_LINK']),
-  [SHEET_NAMES.ADJUSTMENTS]: new Set(),
-};
-
 const ORDER_HEADER_ALIASES = {
   CLIENT_NAME: ['Client Name'],
   PHONE: ['WhatsApp Number', 'WhatsApp (E.164)', 'WhatsApp Associated'],
@@ -35,7 +30,7 @@ const ORDER_HEADER_ALIASES = {
   PI_ID: ['Payment Intent ID'],
   SHORT_CODE: ['Short Order ID', 'Short Code'],
   DATE_CREATED: ['Date created', 'Date Created', 'Created At'],
-  BILLING_PORTAL_LINK: ['Billing Portal Link', 'Update payment method'],
+  UPDATE_PAYMENT_METHOD: ['Update payment method'],
 };
 
 const ADJ_HEADER_ALIASES = {
@@ -116,15 +111,9 @@ function resolveColumnIndex_(headerMap, aliases) {
 function buildColumnMapFromSheet_(sheet, aliasMap, sheetLabel) {
   const headerMap = getSheetHeaderMap_(sheet);
   const result = {};
-  const optionalSet =
-    (sheetLabel && OPTIONAL_SHEET_COLUMNS[sheetLabel]) || null;
   Object.keys(aliasMap).forEach(function (key) {
     const idx = resolveColumnIndex_(headerMap, aliasMap[key]);
     if (!idx) {
-      if (optionalSet && optionalSet.has(key)) {
-        result[key] = null;
-        return;
-      }
       const aliases = [].concat(aliasMap[key] || []);
       throw new Error(
         sheetLabel + ' is missing the "' + aliases[0] + '" column header.'
@@ -244,7 +233,7 @@ function onOpen() {
         cols.ADDRESS,
         cols.LINK_MSG,
         cols.RECEIPT,
-        cols.BILLING_PORTAL_LINK,
+        cols.UPDATE_PAYMENT_METHOD,
       ];
       const maxRows = Math.max(ordersSheet.getMaxRows(), 1);
       wrapCols.forEach(function (colIdx) {
@@ -322,9 +311,7 @@ function autoPreauthScheduled_() {
         sh
           .getRange(r, ORD_COL.PI_ID)
           .setValue(String(out.paymentIntentId || ''));
-        if (ORD_COL.BILLING_PORTAL_LINK) {
-          sh.getRange(r, ORD_COL.BILLING_PORTAL_LINK).clearContent();
-        }
+        sh.getRange(r, ORD_COL.UPDATE_PAYMENT_METHOD).clearContent();
       } else if (code === 402 && out.clientSecret) {
         sh.getRange(r, ORD_COL.STATUS).setValue('Pending (3DS)');
         if (out.paymentIntentId) {
@@ -340,16 +327,16 @@ function autoPreauthScheduled_() {
             .getRange(r, ORD_COL.PI_ID)
             .setValue(String(out.paymentIntentId || ''));
         }
-        if (ORD_COL.BILLING_PORTAL_LINK) {
-          const retryMessage = String(
+        const retryMessage = String(
+          out.updatePaymentMessage ||
             out.billingPortalMessage ||
-              out.billingPortalUrl ||
-              out.message ||
-              ''
-          ).trim();
-          if (retryMessage) {
-            sh.getRange(r, ORD_COL.BILLING_PORTAL_LINK).setValue(retryMessage);
-          }
+            out.updatePaymentUrl ||
+            out.billingPortalUrl ||
+            out.message ||
+            ''
+        ).trim();
+        if (retryMessage) {
+          sh.getRange(r, ORD_COL.UPDATE_PAYMENT_METHOD).setValue(retryMessage);
         }
       }
     } catch (_) {
