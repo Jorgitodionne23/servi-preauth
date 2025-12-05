@@ -2169,24 +2169,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
       const si   = event.data.object;
       const pmId = si.payment_method || null;
       const cust = si.customer || null;
-
-      // Use metadata.order_id when present (we set this when creating the SetupIntent)
-      let orderId = si.metadata?.order_id || null;
-
-      // Fallback: most recent order for this customer in setup/book states
-      if (!orderId && cust) {
-        try {
-          const r = await pool.query(
-            `SELECT id FROM all_bookings
-            WHERE customer_id = $1
-              AND kind IN ('setup_required','setup','book')
-            ORDER BY created_at DESC
-            LIMIT 1`,
-            [cust]
-          );
-          orderId = r.rows[0]?.id || null;
-        } catch {}
-      }
+      const orderId = String(si.metadata?.order_id || '').trim();
 
       if (orderId) {
         const statusLabel = 'Scheduled';
@@ -2907,7 +2890,7 @@ app.post('/confirm-with-saved', async (req, res) => {
       }
       const reasonText = failure?.friendly || failure?.message || null;
       const friendly = reasonText
-        ? `No se pudo autorizar el método de pago (${reasonText}). Envía el enlace para actualizar el método.`
+        ? `No se pudo autorizar el método de pago. Envía el enlace para actualizar el método.`
         : 'No se pudo autorizar el método de pago. Envía el enlace para actualizar el método.';
       return res.status(409).json({
         ok: false,

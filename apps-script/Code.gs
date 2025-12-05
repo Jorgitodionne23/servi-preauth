@@ -4,6 +4,11 @@ const SHEET_NAMES = {
   ADJUSTMENTS: 'SERVI Adjustments',
 };
 
+const OPTIONAL_SHEET_COLUMNS = {
+  [SHEET_NAMES.ORDERS]: new Set(['BILLING_PORTAL_LINK']),
+  [SHEET_NAMES.ADJUSTMENTS]: new Set(),
+};
+
 const ORDER_HEADER_ALIASES = {
   CLIENT_NAME: ['Client Name'],
   PHONE: ['WhatsApp Number', 'WhatsApp (E.164)', 'WhatsApp Associated'],
@@ -111,9 +116,15 @@ function resolveColumnIndex_(headerMap, aliases) {
 function buildColumnMapFromSheet_(sheet, aliasMap, sheetLabel) {
   const headerMap = getSheetHeaderMap_(sheet);
   const result = {};
+  const optionalSet =
+    (sheetLabel && OPTIONAL_SHEET_COLUMNS[sheetLabel]) || null;
   Object.keys(aliasMap).forEach(function (key) {
     const idx = resolveColumnIndex_(headerMap, aliasMap[key]);
     if (!idx) {
+      if (optionalSet && optionalSet.has(key)) {
+        result[key] = null;
+        return;
+      }
       const aliases = [].concat(aliasMap[key] || []);
       throw new Error(
         sheetLabel + ' is missing the "' + aliases[0] + '" column header.'
@@ -308,12 +319,38 @@ function autoPreauthScheduled_() {
               ? 'Captured'
               : String(out.status || 'Confirmed');
         sh.getRange(r, ORD_COL.STATUS).setValue(label);
-        sh.getRange(r, ORD_COL.PI_ID).setValue(
-          String(out.paymentIntentId || '')
-        );
+        sh
+          .getRange(r, ORD_COL.PI_ID)
+          .setValue(String(out.paymentIntentId || ''));
+        if (ORD_COL.BILLING_PORTAL_LINK) {
+          sh.getRange(r, ORD_COL.BILLING_PORTAL_LINK).clearContent();
+        }
       } else if (code === 402 && out.clientSecret) {
         sh.getRange(r, ORD_COL.STATUS).setValue('Pending (3DS)');
+        if (out.paymentIntentId) {
+          sh
+            .getRange(r, ORD_COL.PI_ID)
+            .setValue(String(out.paymentIntentId || ''));
+        }
         // do NOT touch messages
+      } else if (code === 409) {
+        sh.getRange(r, ORD_COL.STATUS).setValue('Declined');
+        if (out.paymentIntentId) {
+          sh
+            .getRange(r, ORD_COL.PI_ID)
+            .setValue(String(out.paymentIntentId || ''));
+        }
+        if (ORD_COL.BILLING_PORTAL_LINK) {
+          const retryMessage = String(
+            out.billingPortalMessage ||
+              out.billingPortalUrl ||
+              out.message ||
+              ''
+          ).trim();
+          if (retryMessage) {
+            sh.getRange(r, ORD_COL.BILLING_PORTAL_LINK).setValue(retryMessage);
+          }
+        }
       }
     } catch (_) {
       // ignore; we'll retry next run
