@@ -569,7 +569,12 @@
         alert('Falta el parámetro orderId.');
         throw new Error('missing_order_id');
       }
-      const retryToken = params.get('retryToken') || '';
+      const tokenParamName = params.has('retryToken')
+        ? 'retryToken'
+        : params.has('rt')
+          ? 'rt'
+          : null;
+      const retryToken = tokenParamName ? params.get(tokenParamName) || '' : '';
       const shouldRequestOverride =
         params.get('allowExpired') === '1' || Boolean(retryToken);
 
@@ -577,9 +582,12 @@
         if (!shouldRequestOverride) return baseUrl;
         const [path, hash] = baseUrl.split('#');
         const sep = path.includes('?') ? '&' : '?';
-        const queryParts = ['allowExpired=1'];
+        const queryParts = [];
         if (retryToken) {
-          queryParts.push(`retryToken=${encodeURIComponent(retryToken)}`);
+          const name = tokenParamName || 'rt';
+          queryParts.push(`${name}=${encodeURIComponent(retryToken)}`);
+        } else {
+          queryParts.push('allowExpired=1');
         }
         const combined = `${path}${sep}${queryParts.join('&')}`;
         return hash ? `${combined}#${hash}` : combined;

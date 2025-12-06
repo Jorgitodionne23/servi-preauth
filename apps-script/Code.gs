@@ -30,8 +30,10 @@ const ORDER_HEADER_ALIASES = {
   PI_ID: ['Payment Intent ID'],
   SHORT_CODE: ['Short Order ID', 'Short Code'],
   DATE_CREATED: ['Date created', 'Date Created', 'Created At'],
-  UPDATE_PAYMENT_METHOD: ['Update payment method'],
+  UPDATE_PAYMENT_METHOD: ['Billing Portal Link', 'Update payment method'],
 };
+
+const OPTIONAL_ORDER_COLUMNS = { UPDATE_PAYMENT_METHOD: true };
 
 const ADJ_HEADER_ALIASES = {
   PARENT_ORDER_ID: ['Parent Order ID'],
@@ -108,12 +110,15 @@ function resolveColumnIndex_(headerMap, aliases) {
   return null;
 }
 
-function buildColumnMapFromSheet_(sheet, aliasMap, sheetLabel) {
+function buildColumnMapFromSheet_(sheet, aliasMap, sheetLabel, optionalKeys) {
   const headerMap = getSheetHeaderMap_(sheet);
   const result = {};
   Object.keys(aliasMap).forEach(function (key) {
     const idx = resolveColumnIndex_(headerMap, aliasMap[key]);
     if (!idx) {
+      if (optionalKeys && optionalKeys[key]) {
+        return;
+      }
       const aliases = [].concat(aliasMap[key] || []);
       throw new Error(
         sheetLabel + ' is missing the "' + aliases[0] + '" column header.'
@@ -124,7 +129,7 @@ function buildColumnMapFromSheet_(sheet, aliasMap, sheetLabel) {
   return result;
 }
 
-function getColumnMap_(cacheKey, sheetName, aliasMap, sheetOpt) {
+function getColumnMap_(cacheKey, sheetName, aliasMap, sheetOpt, optionalKeys) {
   const sheet = sheetOpt || getSheet_(sheetName);
   if (!sheet) throw new Error('Sheet "' + sheetName + '" not found.');
   const cacheId = headerCacheKey_(cacheKey, sheet);
@@ -132,7 +137,8 @@ function getColumnMap_(cacheKey, sheetName, aliasMap, sheetOpt) {
     HEADER_CACHE[cacheId] = buildColumnMapFromSheet_(
       sheet,
       aliasMap,
-      sheetName
+      sheetName,
+      optionalKeys
     );
   }
   return HEADER_CACHE[cacheId];
@@ -162,7 +168,8 @@ function ordersColumnMap_(sheetOpt) {
     'orders',
     SHEET_NAMES.ORDERS,
     ORDER_HEADER_ALIASES,
-    sheetOpt
+    sheetOpt,
+    OPTIONAL_ORDER_COLUMNS
   );
 }
 function adjustmentsColumnMap_(sheetOpt) {
@@ -174,20 +181,29 @@ function adjustmentsColumnMap_(sheetOpt) {
   );
 }
 
-function createColumnProxy_(cacheKey, sheetName, aliasMap) {
+function createColumnProxy_(cacheKey, sheetName, aliasMap, optionalKeys) {
   return new Proxy(
     {},
     {
       get: function (_target, prop) {
         if (typeof prop !== 'string') return undefined;
-        const map = getColumnMap_(cacheKey, sheetName, aliasMap);
+        const map = getColumnMap_(
+          cacheKey,
+          sheetName,
+          aliasMap,
+          undefined,
+          optionalKeys
+        );
         const key = prop.toUpperCase();
-        if (!(key in map)) {
-          throw new Error(
-            'Unknown column key "' + prop + '" for sheet "' + sheetName + '".'
-          );
+        if (key in map) {
+          return map[key];
         }
-        return map[key];
+        if (optionalKeys && optionalKeys[key]) {
+          return null;
+        }
+        throw new Error(
+          'Unknown column key "' + prop + '" for sheet "' + sheetName + '".'
+        );
       },
     }
   );
@@ -196,7 +212,8 @@ function createColumnProxy_(cacheKey, sheetName, aliasMap) {
 const ORD_COL = createColumnProxy_(
   'orders',
   SHEET_NAMES.ORDERS,
-  ORDER_HEADER_ALIASES
+  ORDER_HEADER_ALIASES,
+  OPTIONAL_ORDER_COLUMNS
 );
 const ADJ_COL = createColumnProxy_(
   'adjustments',
@@ -271,6 +288,7 @@ function autoPreauthScheduled_() {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const sh = ss.getSheetByName('SERVI Orders');
   if (!sh) return;
+  const updatePaymentCol = ORD_COL.UPDATE_PAYMENT_METHOD;
 
   const last = sh.getLastRow();
   for (let r = 2; r <= last; r++) {
@@ -308,24 +326,26 @@ function autoPreauthScheduled_() {
               ? 'Captured'
               : String(out.status || 'Confirmed');
         sh.getRange(r, ORD_COL.STATUS).setValue(label);
-        sh
-          .getRange(r, ORD_COL.PI_ID)
-          .setValue(String(out.paymentIntentId || ''));
-        sh.getRange(r, ORD_COL.UPDATE_PAYMENT_METHOD).clearContent();
+        sh.getRange(r, ORD_COL.PI_ID).setValue(
+          String(out.paymentIntentId || '')
+        );
+        if (updatePaymentCol) {
+          sh.getRange(r, updatePaymentCol).clearContent();
+        }
       } else if (code === 402 && out.clientSecret) {
         sh.getRange(r, ORD_COL.STATUS).setValue('Pending (3DS)');
         if (out.paymentIntentId) {
-          sh
-            .getRange(r, ORD_COL.PI_ID)
-            .setValue(String(out.paymentIntentId || ''));
+          sh.getRange(r, ORD_COL.PI_ID).setValue(
+            String(out.paymentIntentId || '')
+          );
         }
         // do NOT touch messages
       } else if (code === 409) {
         sh.getRange(r, ORD_COL.STATUS).setValue('Declined');
         if (out.paymentIntentId) {
-          sh
-            .getRange(r, ORD_COL.PI_ID)
-            .setValue(String(out.paymentIntentId || ''));
+          sh.getRange(r, ORD_COL.PI_ID).setValue(
+            String(out.paymentIntentId || '')
+          );
         }
         const retryMessage = String(
           out.updatePaymentMessage ||
@@ -335,8 +355,8 @@ function autoPreauthScheduled_() {
             out.message ||
             ''
         ).trim();
-        if (retryMessage) {
-          sh.getRange(r, ORD_COL.UPDATE_PAYMENT_METHOD).setValue(retryMessage);
+        if (retryMessage && updatePaymentCol) {
+          sh.getRange(r, updatePaymentCol).setValue(retryMessage);
         }
       }
     } catch (_) {

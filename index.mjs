@@ -93,6 +93,11 @@ function resolveRetryTokenContext(row, retryToken) {
   return { usingRetryToken: true, createdAtOverride: created };
 }
 
+function getRetryTokenFromQuery(query) {
+  if (!query) return '';
+  return String(query.retryToken || query.rt || '');
+}
+
 // ── generate a unique public_code for /o/:code ────────────────────────────
 async function generateUniqueCode(len = 10) {
   for (let i = 0; i < 6; i++) {
@@ -358,11 +363,13 @@ async function createBookRetryPrompt(orderRow, { failureReason } = {}) {
       .trim()
       .toUpperCase();
     const baseUrl = process.env.PUBLIC_BASE_URL || 'https://servi-preauth.onrender.com';
-    let url = `${baseUrl}/book?orderId=${encodeURIComponent(orderRow.id)}&allowExpired=1&retryToken=${token}`;
+    const bookParams = new URLSearchParams();
+    bookParams.set('orderId', orderRow.id);
+    bookParams.set('rt', token);
+    let url = `${baseUrl}/book?${bookParams.toString()}`;
     if (normalizedCode) {
       const params = new URLSearchParams();
-      params.set('allowExpired', '1');
-      params.set('retryToken', token);
+      params.set('rt', token);
       url = `${baseUrl}/o/${normalizedCode}?${params.toString()}`;
     }
 
@@ -964,7 +971,7 @@ app.get('/config/stripe', (_req, res) => {
 app.get('/order/:orderId', async (req, res) => {
   try {
     const { orderId } = req.params;
-    const tokenParamRaw = String(req.query.retryToken || '');
+    const tokenParamRaw = getRetryTokenFromQuery(req.query);
     const wantsOverride = String(req.query.allowExpired || '') === '1' || !!tokenParamRaw;
     const retryTokenParam = wantsOverride ? tokenParamRaw : '';
 
@@ -1322,7 +1329,7 @@ app.post('/orders/:orderId/refresh-fees', async (req, res) => {
 app.get('/o/:code', async (req, res) => {
   try {
     const code = String(req.params.code || '').toUpperCase();
-    const retryTokenRaw = String(req.query.retryToken || '');
+    const retryTokenRaw = getRetryTokenFromQuery(req.query);
     const shouldOverride =
       String(req.query.allowExpired || '') === '1' || Boolean(retryTokenRaw);
     const retryTokenParam = shouldOverride ? retryTokenRaw : '';
@@ -1361,9 +1368,10 @@ app.get('/o/:code', async (req, res) => {
       const params = new URLSearchParams();
       params.set('orderId', row.id);
       if (shouldOverride) {
-        params.set('allowExpired', '1');
         if (retryTokenRaw) {
-          params.set('retryToken', retryTokenRaw);
+          params.set('rt', retryTokenRaw);
+        } else {
+          params.set('allowExpired', '1');
         }
       }
       return `${basePath}?${params.toString()}`;

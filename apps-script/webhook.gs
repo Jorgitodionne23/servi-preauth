@@ -24,7 +24,9 @@ function doPost(e) {
           consent: Boolean(consentResult && consentResult.consent),
           orderId: consentResult && consentResult.orderId,
           customerId: String(
-            consentResult && consentResult.customerId ? consentResult.customerId : ''
+            consentResult && consentResult.customerId
+              ? consentResult.customerId
+              : ''
           ).trim(),
         })
       ).setMimeType(ContentService.MimeType.JSON);
@@ -119,8 +121,8 @@ function doPost(e) {
           status: updated
             ? 'ok_order_status'
             : adjustmentHandled
-            ? 'ok_adjustment_status'
-            : 'not_found_by_order',
+              ? 'ok_adjustment_status'
+              : 'not_found_by_order',
           orderId,
         })
       ).setMimeType(ContentService.MimeType.JSON);
@@ -174,25 +176,25 @@ function doPost(e) {
       const matchesOrderId =
         !matchesPi && orderIdFromPayload && orderIdCell === orderIdFromPayload;
 
-        if (matchesPi || matchesOrderId) {
-          if (paymentIntentId && cell !== paymentIntentId) {
-            sheet.getRange(row, paymentIdCol).setValue(paymentIntentId);
-          }
-          writeStatusSafelyWebhook_(sheet, row, statusCol, status);
-          if (cols.UPDATE_PAYMENT_METHOD) {
-            applyUpdatePaymentMethodMessageWebhook_(
-              sheet,
-              row,
-              cols.UPDATE_PAYMENT_METHOD,
-              data,
-              status
-            );
-          }
+      if (matchesPi || matchesOrderId) {
+        if (paymentIntentId && cell !== paymentIntentId) {
+          sheet.getRange(row, paymentIdCol).setValue(paymentIntentId);
+        }
+        writeStatusSafelyWebhook_(sheet, row, statusCol, status);
+        if (cols.UPDATE_PAYMENT_METHOD) {
+          applyUpdatePaymentMethodMessageWebhook_(
+            sheet,
+            row,
+            cols.UPDATE_PAYMENT_METHOD,
+            data,
+            status
+          );
+        }
 
-          const sLower = status.toLowerCase();
-          if (sLower === 'confirmed' || sLower === 'captured') {
-            sheet
-              .getRange(row, receiptCol)
+        const sLower = status.toLowerCase();
+        if (sLower === 'confirmed' || sLower === 'captured') {
+          sheet
+            .getRange(row, receiptCol)
             .setValue(buildReceiptMessage(sheet, row));
         }
 
@@ -322,7 +324,13 @@ function writeStatusSafelyWebhook_(sheet, row, statusColIndex, newStatusRaw) {
   }
 }
 
-function applyUpdatePaymentMethodMessageWebhook_(sheet, row, columnIndex, payload, status) {
+function applyUpdatePaymentMethodMessageWebhook_(
+  sheet,
+  row,
+  columnIndex,
+  payload,
+  status
+) {
   if (!columnIndex) return;
   const message = String(
     (payload &&
@@ -488,7 +496,13 @@ function buildAdjustmentReceipt_(sheet, row) {
     .join('\n');
 }
 
-function writeIdentityColumnsInOrders_(sheet, row, orderId, customerId, consentOverride) {
+function writeIdentityColumnsInOrders_(
+  sheet,
+  row,
+  orderId,
+  customerId,
+  consentOverride
+) {
   if (customerId) {
     sheet.getRange(row, ORD_COL.CLIENT_ID).setValue(String(customerId));
   }
@@ -571,9 +585,7 @@ function updateAdjustmentStatus_(
       sheet.getRange(r, COL.PARENT_ORDER_ID).getDisplayValue() || ''
     ).trim();
     const linkedCustomerId = String(
-      customerIdOpt ||
-        sheet.getRange(r, COL.CLIENT_ID).getDisplayValue() ||
-        ''
+      customerIdOpt || sheet.getRange(r, COL.CLIENT_ID).getDisplayValue() || ''
     ).trim();
 
     if (linkedCustomerId) {
@@ -626,8 +638,8 @@ function refreshConsentForOrder_(
     typeof applied === 'boolean'
       ? applied
       : typeof consentOverrideOpt === 'boolean'
-      ? consentOverrideOpt
-      : null;
+        ? consentOverrideOpt
+        : null;
   return consentValue;
 }
 
@@ -636,7 +648,9 @@ function findRowByOrderId_(sheet, columnIndex, targetId, allowPartial) {
   if (!target) return 0;
   const last = sheet.getLastRow();
   for (let row = 2; row <= last; row++) {
-    const value = String(sheet.getRange(row, columnIndex).getDisplayValue() || '').trim();
+    const value = String(
+      sheet.getRange(row, columnIndex).getDisplayValue() || ''
+    ).trim();
     if (!value) continue;
     if (value === target) return row;
     if (allowPartial && value.indexOf(target) !== -1) return row;
@@ -646,13 +660,18 @@ function findRowByOrderId_(sheet, columnIndex, targetId, allowPartial) {
 
 function handleCustomerConsentWebhook_(payload) {
   const consentFlag = Boolean(payload && payload.consent);
-  const customerId = String(payload && payload.customerId ? payload.customerId : '').trim();
-  const orderIdRaw = String(payload && payload.orderId ? payload.orderId : '').trim();
+  const customerId = String(
+    payload && payload.customerId ? payload.customerId : ''
+  ).trim();
+  const orderIdRaw = String(
+    payload && payload.orderId ? payload.orderId : ''
+  ).trim();
   const parentOrderId = String(
     payload && payload.parentOrderId ? payload.parentOrderId : orderIdRaw
   ).trim();
   const sourceOrderId = String(
-    (payload && (payload.sourceOrderId || payload.adjustmentOrderId)) || orderIdRaw
+    (payload && (payload.sourceOrderId || payload.adjustmentOrderId)) ||
+      orderIdRaw
   ).trim();
   const paymentIntentId = String(
     (payload && payload.paymentIntentId) || ''
@@ -680,7 +699,11 @@ function handleCustomerConsentWebhook_(payload) {
     const orderCols = ordersColumnMap_(ordersSheet);
     orderIdsToUpdate.forEach(function (orderIdCandidate, idx) {
       if (!orderIdCandidate) return;
-      const rowIdx = findRowByOrderId_(ordersSheet, orderCols.ORDER_ID, orderIdCandidate);
+      const rowIdx = findRowByOrderId_(
+        ordersSheet,
+        orderCols.ORDER_ID,
+        orderIdCandidate
+      );
       if (!rowIdx) return;
       if (idx === 0) parentRow = rowIdx;
       const applied = writeIdentityColumnsInOrders_(
@@ -717,7 +740,9 @@ function handleCustomerConsentWebhook_(payload) {
         .getRange(adjustmentRow, adjCols.CONSENT)
         .setValue(finalConsent ? 'Yes' : 'Missing');
       if (customerId) {
-        adjSheet.getRange(adjustmentRow, adjCols.CLIENT_ID).setValue(customerId);
+        adjSheet
+          .getRange(adjustmentRow, adjCols.CLIENT_ID)
+          .setValue(customerId);
       }
     }
   }
