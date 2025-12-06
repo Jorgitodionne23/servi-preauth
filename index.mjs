@@ -253,12 +253,8 @@ function constantTimeEquals(a, b) {
   return timingSafeEqual(aBuf, bBuf);
 }
 
-function requireAdminAuth(req, res, next) {
-  if (!ADMIN_API_TOKEN) {
-    console.error('ADMIN_API_TOKEN is not configured; rejecting admin route access');
-    return res.status(500).json({ error: 'admin_auth_not_configured' });
-  }
-
+function getAdminTokenFromReq(req) {
+  if (!req) return '';
   const authHeader = req.get('authorization') || '';
   let token = '';
   if (authHeader.startsWith('Bearer ')) {
@@ -267,7 +263,27 @@ function requireAdminAuth(req, res, next) {
   if (!token) {
     token = req.get('x-servi-admin-token') || '';
   }
+  return token;
+}
 
+function isAdminRequest(req) {
+  if (!ADMIN_API_TOKEN) return false;
+  const token = getAdminTokenFromReq(req);
+  if (!token) return false;
+  return constantTimeEquals(token, ADMIN_API_TOKEN);
+}
+
+function requireAdminAuth(req, res, next) {
+  if (!ADMIN_API_TOKEN) {
+    console.error('ADMIN_API_TOKEN is not configured; rejecting admin route access');
+    return res.status(500).json({ error: 'admin_auth_not_configured' });
+  }
+
+  const token = getAdminTokenFromReq(req);
+  if (!token) {
+    console.warn('Rejected admin request due to missing token');
+    return res.status(401).json({ error: 'unauthorized' });
+  }
   if (!constantTimeEquals(token, ADMIN_API_TOKEN)) {
     console.warn('Rejected admin request due to invalid token');
     return res.status(401).json({ error: 'unauthorized' });
@@ -2721,7 +2737,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
 app.post('/confirm-with-saved', async (req, res) => {
   try {
-    const { orderId, force, retryToken } = req.body || {};
+    const { orderId, force, retryToken, allowExpired } = req.body || {};
     if (!orderId) return res.status(400).send({ error: 'orderId required' });
 
     const { rows } = await pool.query(
@@ -2748,7 +2764,9 @@ app.post('/confirm-with-saved', async (req, res) => {
     if (!row) return res.status(404).send({ error: 'order not found' });
     const { createdAtOverride } = resolveRetryTokenContext(row, retryToken);
     const linkRow = createdAtOverride ? { ...row, created_at: createdAtOverride } : row;
-    assertOrderLinkActive(linkRow);
+    const adminRequest = isAdminRequest(req);
+    const allowExpiredFlag = adminRequest && (allowExpired || force);
+    assertOrderLinkActive(linkRow, { allowExpired: allowExpiredFlag });
 
     let savedPmId = row.saved_payment_method_id || null;
     const capturePref = String(row.capture_method || '').toLowerCase();

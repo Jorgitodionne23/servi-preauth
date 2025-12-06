@@ -312,7 +312,8 @@ function autoPreauthScheduled_() {
       const resp = UrlFetchApp.fetch(SERVI_BASE + '/confirm-with-saved', {
         method: 'post',
         contentType: 'application/json',
-        payload: JSON.stringify({ orderId }),
+        payload: JSON.stringify({ orderId, allowExpired: true }),
+        headers: adminHeaders_(),
         muteHttpExceptions: true,
       });
       const code = resp.getResponseCode();
@@ -580,7 +581,8 @@ function InitiatePaymentIntentForScheduledOrder() {
   const resp = UrlFetchApp.fetch(SERVI_BASE + '/confirm-with-saved', {
     method: 'post',
     contentType: 'application/json',
-    payload: JSON.stringify({ orderId }),
+    payload: JSON.stringify({ orderId, allowExpired: true }),
+    headers: adminHeaders_(),
     muteHttpExceptions: true,
   });
 
@@ -639,7 +641,8 @@ function InitiatePaymentIntentForScheduledOrder() {
       const resp2 = UrlFetchApp.fetch(SERVI_BASE + '/confirm-with-saved', {
         method: 'post',
         contentType: 'application/json',
-        payload: JSON.stringify({ orderId, force: true }),
+        payload: JSON.stringify({ orderId, force: true, allowExpired: true }),
+        headers: adminHeaders_(),
         muteHttpExceptions: true,
       });
 
