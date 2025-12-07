@@ -54,6 +54,23 @@ function normalizeNameKey(value) {
     .replace(/\s+/g, ' ');
 }
 
+async function findSavedClientByPhoneDigits(digits) {
+  if (!digits) return null;
+  const { rows } = await pool.query(
+    `
+      SELECT customer_id,
+             customer_name,
+             latest_payment_method_id
+        FROM saved_servi_users
+       WHERE regexp_replace(COALESCE(customer_phone, ''), '[^0-9]', '', 'g') = $1
+       ORDER BY last_checked_at DESC
+       LIMIT 1
+    `,
+    [digits]
+  );
+  return rows[0] || null;
+}
+
 const BOOK_SUCCESS_STATUSES = new Set(['Scheduled', 'Confirmed', 'Captured']);
 const PAY_SUCCESS_STATUSES = new Set(['Scheduled', 'Confirmed', 'Captured']);
 const LINK_EXPIRATION_HOURS = 2;
@@ -565,22 +582,15 @@ function makeError(code, message, status) {
   return err;
 }
 
-async function requireSavedClientNameMatch(clientName, clientPhone) {
+async function requireSavedClientNameMatch(clientName, clientPhone, { savedRecord = null } = {}) {
   const digits = normalizePhoneDigits(clientPhone);
   if (!digits) return;
-  const { rows } = await pool.query(
-    `
-      SELECT customer_name
-        FROM saved_servi_users
-       WHERE latest_payment_method_id IS NOT NULL
-         AND regexp_replace(COALESCE(customer_phone, ''), '[^0-9]', '', 'g') = $1
-       ORDER BY last_checked_at DESC
-       LIMIT 1
-    `,
-    [digits]
-  );
-  const saved = rows[0];
-  if (!saved) return;
+  let saved = savedRecord;
+  if (!saved || !saved.latest_payment_method_id) {
+    const found = await findSavedClientByPhoneDigits(digits);
+    saved = found && found.latest_payment_method_id ? found : saved;
+  }
+  if (!saved || !saved.latest_payment_method_id) return;
   const storedKey = normalizeNameKey(saved.customer_name);
   if (!storedKey) return;
   const providedKey = normalizeNameKey(clientName);
@@ -782,7 +792,24 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
     return res.status(400).send({ error: 'invalid_provider_amount', message: 'amount must be a positive number (MXN pesos)' });
   }
   try {
-    await requireSavedClientNameMatch(clientName, clientPhone);
+    const phoneDigits = normalizePhoneDigits(clientPhone);
+    const savedPhoneRecord = phoneDigits ? await findSavedClientByPhoneDigits(phoneDigits) : null;
+    const storedPhoneNameKey = savedPhoneRecord ? normalizeNameKey(savedPhoneRecord.customer_name) : '';
+    const providedPhoneNameKey = normalizeNameKey(clientName);
+    if (
+      savedPhoneRecord &&
+      !savedPhoneRecord.latest_payment_method_id &&
+      storedPhoneNameKey &&
+      providedPhoneNameKey &&
+      storedPhoneNameKey !== providedPhoneNameKey
+    ) {
+      return res.status(409).send({
+        error: 'phone_name_conflict',
+        message: `Este número ya está asociado a ${savedPhoneRecord.customer_name || 'otro cliente'}. Verifica el nombre antes de continuar.`,
+        existingName: savedPhoneRecord.customer_name || null
+      });
+    }
+    await requireSavedClientNameMatch(clientName, clientPhone, { savedRecord: savedPhoneRecord });
     // 1) Find or create Stripe Customer by email/phone (your existing logic)
     // 1) Only SEARCH for an existing customer now; don't create yet
     let existingCustomer = null;

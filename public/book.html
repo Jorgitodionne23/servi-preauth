@@ -464,6 +464,7 @@
       default: `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false"><rect x="1.5" y="4" width="21" height="16" rx="3" fill="#1E1E1E" stroke="#444" stroke-width="1"></rect><rect x="4.5" y="8" width="5" height="4" rx="1" fill="#7A7A7A"></rect><rect x="4.5" y="14" width="7" height="2" fill="#333"></rect><rect x="13.5" y="14" width="7" height="2" fill="#333"></rect></svg>`
     };
 
+    const PHONE_LOCK_KEY_PREFIX = 'serviPhoneLock:';
     const phoneLockState = {
       overlay: document.getElementById('phone-lock-overlay'),
       input: document.getElementById('phone-last4'),
@@ -474,9 +475,22 @@
     };
     const phoneLockButtons = new Set();
 
+    function phoneLockStorageKey(orderId) {
+      return `${PHONE_LOCK_KEY_PREFIX}${orderId || ''}`;
+    }
+
     function showPhoneLockError(message) {
       if (phoneLockState.error) {
         phoneLockState.error.textContent = message || '';
+      }
+    }
+
+    function updatePhoneLockVisibility() {
+      if (!phoneLockState.overlay) return;
+      if (phoneLockState.unlocked) {
+        phoneLockState.overlay.classList.add('hidden');
+      } else {
+        phoneLockState.overlay.classList.remove('hidden');
       }
     }
 
@@ -503,6 +517,16 @@
 
     function setPhoneLockOrder(orderId) {
       phoneLockState.orderId = orderId || null;
+      if (phoneLockState.orderId) {
+        try {
+          const stored = sessionStorage.getItem(phoneLockStorageKey(phoneLockState.orderId));
+          if (stored === 'unlock') {
+            phoneLockState.unlocked = true;
+            enforcePhoneLockOnButtons(true);
+          }
+        } catch (_) {}
+      }
+      updatePhoneLockVisibility();
     }
 
     function digitsOnly(value) {
@@ -537,10 +561,13 @@
           return false;
         }
         phoneLockState.unlocked = true;
-        enforcePhoneLockOnButtons(true);
-        if (phoneLockState.overlay) {
-          phoneLockState.overlay.classList.add('hidden');
+        if (phoneLockState.orderId) {
+          try {
+            sessionStorage.setItem(phoneLockStorageKey(phoneLockState.orderId), 'unlock');
+          } catch (_) {}
         }
+        enforcePhoneLockOnButtons(true);
+        updatePhoneLockVisibility();
         if (phoneLockState.input) {
           phoneLockState.input.value = '';
         }
