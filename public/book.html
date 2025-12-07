@@ -266,10 +266,100 @@
       margin: 0 auto;
     }
     @keyframes spin { 0% {transform:rotate(0)} 100% {transform:rotate(360deg)} }
+
+    .phone-lock-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.86);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      z-index: 999;
+    }
+    .phone-lock-overlay.hidden {
+      display: none;
+    }
+    .phone-lock-card {
+      width: 100%;
+      max-width: 360px;
+      background: #111;
+      border: 1px solid #222;
+      border-radius: 12px;
+      padding: 24px;
+      text-align: center;
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.6);
+    }
+    .phone-lock-card h3 {
+      margin: 0 0 8px;
+      font-size: 20px;
+      font-weight: 600;
+    }
+    .phone-lock-card p {
+      margin: 0 0 14px;
+      color: #d1d5db;
+      font-size: 14px;
+      line-height: 1.4;
+    }
+    .phone-lock-input {
+      width: 100%;
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid #333;
+      background: #1a1a1a;
+      color: #fff;
+      font-size: 18px;
+      text-align: center;
+      letter-spacing: 4px;
+      margin-bottom: 12px;
+    }
+    .phone-lock-card button {
+      width: 100%;
+      padding: 12px;
+      border-radius: 8px;
+      font-weight: 700;
+      border: none;
+      background: #fff;
+      color: #000;
+      cursor: pointer;
+    }
+    .phone-lock-card button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .phone-lock-error {
+      color: #fca5a5;
+      font-size: 13px;
+      min-height: 18px;
+      margin-top: 8px;
+    }
+    .phone-lock-help {
+      font-size: 12px;
+      color: #9ca3af;
+      margin-top: 10px;
+    }
   </style>
 </head>
 
 <body>
+  <div class="phone-lock-overlay" id="phone-lock-overlay" role="dialog" aria-modal="true">
+    <div class="phone-lock-card">
+      <h3>Confirma tu teléfono</h3>
+      <p>Ingresa los últimos 4 dígitos del número con el que te contactamos.</p>
+      <input
+        type="tel"
+        inputmode="numeric"
+        maxlength="4"
+        class="phone-lock-input"
+        id="phone-last4"
+        placeholder="1234"
+        aria-label="Últimos 4 dígitos"
+      />
+      <button id="btn-verify-phone">Continuar</button>
+      <div class="phone-lock-error" id="phone-lock-error"></div>
+      <div class="phone-lock-help">Protegemos tus métodos guardados con este paso.</div>
+    </div>
+  </div>
   <div class="page">
     <!-- Same header logo as pay.html -->
     <a href="https://serviservices.my.canva.site/servi" target="_blank" rel="noopener">
@@ -373,6 +463,123 @@
       jcb: `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false"><rect width="24" height="24" rx="4" fill="#111"></rect><path fill="#0A6FBE" d="M10.414 5.248c-3.676-.164-4.72 1.329-4.72 2.901 0 1.571 1.044 3.065 4.72 2.9.886-.04 1.827-.27 1.827-.27v-.956c-.463.224-1.022.456-1.74.51-1.382.095-2.256-.516-2.256-1.609 0-1.093.874-1.704 2.256-1.61.718.05 1.277.285 1.74.509v-.953s-.941-.235-1.827-.27z"/><path fill="#007047" d="M13.534 6.47v7.059h4.103c.97 0 1.663-.49 1.663-1.254 0-.685-.65-1.119-1.458-1.175.742-.105 1.233-.545 1.233-1.18 0-.683-.523-1.204-1.663-1.204H13.534zm3.447 1.76h.575c.2 0 .397.026.578.141.148.097.226.24.226.393 0 .154-.078.297-.226.395a.95.95 0 01-.578.141h-.575zm0 2.567h.67c.214 0 .432.03.62.138.167.096.256.236.256.393 0 .158-.09.3-.257.396-.187.107-.405.138-.62.138h-.669z"/><path fill="#BF0A30" d="M4.5 6.55v7.002h2.34l.448-.468.424.467h2.25V6.55H7.211l-.644 1.5-.699-1.5z"/><path fill="#fff" d="M8.34 7.24h.974v4.1h-.974zm-1.82 0h1.05l.524 1.252.504-1.252h.879v4.1H8.65l-.41-1.323-.511 1.323H5.92zM15.01 7.24h2.094c.615 0 1.1.251 1.1.872 0 .523-.393.847-.92.905.549.04.96.412.96.916 0 .646-.523 1.017-1.161 1.017h-2.073zm3.562 0h.987c.548 0 .87.28.87.75 0 .42-.224.716-.697.824.497.077.777.402.777.84 0 .546-.436.917-1.006.917h-.93z"/></svg>`,
       default: `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false"><rect x="1.5" y="4" width="21" height="16" rx="3" fill="#1E1E1E" stroke="#444" stroke-width="1"></rect><rect x="4.5" y="8" width="5" height="4" rx="1" fill="#7A7A7A"></rect><rect x="4.5" y="14" width="7" height="2" fill="#333"></rect><rect x="13.5" y="14" width="7" height="2" fill="#333"></rect></svg>`
     };
+
+    const phoneLockState = {
+      overlay: document.getElementById('phone-lock-overlay'),
+      input: document.getElementById('phone-last4'),
+      button: document.getElementById('btn-verify-phone'),
+      error: document.getElementById('phone-lock-error'),
+      orderId: null,
+      unlocked: false
+    };
+    const phoneLockButtons = new Set();
+
+    function showPhoneLockError(message) {
+      if (phoneLockState.error) {
+        phoneLockState.error.textContent = message || '';
+      }
+    }
+
+    function enforcePhoneLockOnButtons(forceRelease = false) {
+      const locked = !(forceRelease || phoneLockState.unlocked);
+      phoneLockButtons.forEach((btn) => {
+        if (!btn) return;
+        if (locked) {
+          btn.dataset.lockedByPhone = '1';
+          btn.disabled = true;
+        } else if (btn.dataset.lockedByPhone === '1') {
+          delete btn.dataset.lockedByPhone;
+          btn.disabled = false;
+        }
+      });
+    }
+
+    function registerPhoneLockButtons(...buttons) {
+      buttons.forEach((btn) => {
+        if (btn) phoneLockButtons.add(btn);
+      });
+      enforcePhoneLockOnButtons();
+    }
+
+    function setPhoneLockOrder(orderId) {
+      phoneLockState.orderId = orderId || null;
+    }
+
+    function digitsOnly(value) {
+      return String(value || '').replace(/\D+/g, '');
+    }
+
+    async function verifyPhoneLockDigits() {
+      if (phoneLockState.unlocked) return true;
+      if (!phoneLockState.orderId) {
+        showPhoneLockError('No encontramos esta reserva. Actualiza la página.');
+        return false;
+      }
+      const digits = digitsOnly(phoneLockState.input?.value).slice(0, 4);
+      if (digits.length !== 4) {
+        showPhoneLockError('Ingresa los 4 dígitos finales del teléfono.');
+        return false;
+      }
+      if (phoneLockState.button) {
+        phoneLockState.button.disabled = true;
+      }
+      showPhoneLockError('');
+      try {
+        const resp = await fetch(`/orders/${encodeURIComponent(phoneLockState.orderId)}/verify-phone-last4`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ last4: digits })
+        });
+        const payload = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+          const msg = payload?.message || 'Los dígitos no coinciden. Intenta de nuevo.';
+          showPhoneLockError(msg);
+          return false;
+        }
+        phoneLockState.unlocked = true;
+        enforcePhoneLockOnButtons(true);
+        if (phoneLockState.overlay) {
+          phoneLockState.overlay.classList.add('hidden');
+        }
+        if (phoneLockState.input) {
+          phoneLockState.input.value = '';
+        }
+        return true;
+      } catch (err) {
+        console.warn('verify phone failed', err);
+        showPhoneLockError('No se pudo verificar. Intenta nuevamente.');
+        return false;
+      } finally {
+        if (!phoneLockState.unlocked && phoneLockState.button) {
+          phoneLockState.button.disabled = false;
+        }
+      }
+    }
+
+    if (phoneLockState.button) {
+      phoneLockState.button.addEventListener('click', (evt) => {
+        evt.preventDefault();
+        verifyPhoneLockDigits();
+      });
+    }
+    if (phoneLockState.input) {
+      phoneLockState.input.addEventListener('input', () => {
+        const clean = digitsOnly(phoneLockState.input.value).slice(0, 4);
+        phoneLockState.input.value = clean;
+        if (clean.length < 4) {
+          showPhoneLockError('');
+        }
+      });
+      phoneLockState.input.addEventListener('keydown', (evt) => {
+        if (evt.key === 'Enter') {
+          evt.preventDefault();
+          verifyPhoneLockDigits();
+        }
+      });
+      setTimeout(() => {
+        phoneLockState.input && phoneLockState.input.focus();
+      }, 200);
+    }
     const CARD_BRAND_ALIASES = {
       amex: 'americanexpress',
       'american express': 'americanexpress',
@@ -569,6 +776,7 @@
         alert('Falta el parámetro orderId.');
         throw new Error('missing_order_id');
       }
+      setPhoneLockOrder(orderId);
       const tokenParamName = params.has('retryToken')
         ? 'retryToken'
         : params.has('rt')
@@ -741,6 +949,7 @@
       const btnManage = $('#btn-manage');
       const spinner = $('#spinner');
       if (!btnBook || !btnManage) return;
+      registerPhoneLockButtons(btnBook, btnManage);
 
       if (isAdjustment) {
         btnBook.textContent = 'Confirmar ajuste';

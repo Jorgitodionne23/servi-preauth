@@ -41,6 +41,19 @@ function hoursUntilService(row) {
   return Infinity;
 }
 
+function normalizePhoneDigits(value) {
+  return String(value || '').replace(/\D+/g, '');
+}
+
+function normalizeNameKey(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ');
+}
+
 const BOOK_SUCCESS_STATUSES = new Set(['Scheduled', 'Confirmed', 'Captured']);
 const PAY_SUCCESS_STATUSES = new Set(['Scheduled', 'Confirmed', 'Captured']);
 const LINK_EXPIRATION_HOURS = 2;
@@ -552,6 +565,45 @@ function makeError(code, message, status) {
   return err;
 }
 
+async function requireSavedClientNameMatch(clientName, clientPhone) {
+  const digits = normalizePhoneDigits(clientPhone);
+  if (!digits) return;
+  const { rows } = await pool.query(
+    `
+      SELECT customer_name
+        FROM saved_servi_users
+       WHERE latest_payment_method_id IS NOT NULL
+         AND regexp_replace(COALESCE(customer_phone, ''), '[^0-9]', '', 'g') = $1
+       ORDER BY last_checked_at DESC
+       LIMIT 1
+    `,
+    [digits]
+  );
+  const saved = rows[0];
+  if (!saved) return;
+  const storedKey = normalizeNameKey(saved.customer_name);
+  if (!storedKey) return;
+  const providedKey = normalizeNameKey(clientName);
+  if (!providedKey) {
+    const err = makeError(
+      'name_required_for_saved_client',
+      'Ingresa el nombre registrado del cliente para este teléfono.',
+      409
+    );
+    err.expectedName = saved.customer_name || null;
+    throw err;
+  }
+  if (storedKey !== providedKey) {
+    const err = makeError(
+      'name_phone_mismatch',
+      'El nombre no coincide con el teléfono guardado para este SERVI Client.',
+      409
+    );
+    err.expectedName = saved.customer_name || null;
+    throw err;
+  }
+}
+
 async function refreshOrderFees(orderId, { paymentIntentId, paymentMethodId, retryToken } = {}) {
   if (!orderId) throw makeError('order_required', 'order id required', 400);
   if (!paymentIntentId && !paymentMethodId) {
@@ -730,6 +782,7 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
     return res.status(400).send({ error: 'invalid_provider_amount', message: 'amount must be a positive number (MXN pesos)' });
   }
   try {
+    await requireSavedClientNameMatch(clientName, clientPhone);
     // 1) Find or create Stripe Customer by email/phone (your existing logic)
     // 1) Only SEARCH for an existing customer now; don't create yet
     let existingCustomer = null;
@@ -952,7 +1005,15 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
 
   } catch (err) {
     console.error('Error creating payment intent:', err);
-    res.status(400).send({ error: err.message });
+    const status = err.status || 400;
+    const payload = {
+      error: err.code || 'create_payment_intent_failed',
+      message: err.message || 'No se pudo crear la orden'
+    };
+    if (err.expectedName) {
+      payload.expectedName = err.expectedName;
+    }
+    res.status(status).send(payload);
   }
 });
 
@@ -1339,6 +1400,36 @@ app.post('/orders/:orderId/refresh-fees', async (req, res) => {
       console.error('refresh-fees error:', err);
     }
     return res.status(status).json({ error: err.code || 'fee_refresh_failed', message: err.message });
+  }
+});
+
+app.post('/orders/:orderId/verify-phone-last4', async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const submitted = normalizePhoneDigits(req.body?.last4).slice(0, 4);
+    if (!orderId) {
+      return res.status(400).json({ error: 'order_id_required', message: 'orderId requerido' });
+    }
+    if (submitted.length !== 4) {
+      return res.status(400).json({ error: 'invalid_last4', message: 'Ingresa los últimos 4 dígitos del teléfono.' });
+    }
+    const { rows } = await pool.query('SELECT client_phone FROM all_bookings WHERE id = $1', [orderId]);
+    const stored = rows[0];
+    if (!stored) {
+      return res.status(404).json({ error: 'order_not_found', message: 'Orden no encontrada.' });
+    }
+    const phoneDigits = normalizePhoneDigits(stored.client_phone);
+    if (phoneDigits.length < 4) {
+      return res.status(400).json({ error: 'phone_missing', message: 'No hay un teléfono guardado para esta reserva.' });
+    }
+    const last4 = phoneDigits.slice(-4);
+    if (last4 !== submitted) {
+      return res.status(401).json({ error: 'last4_mismatch', message: 'Los dígitos no coinciden.' });
+    }
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('verify-phone-last4 error:', err);
+    return res.status(500).json({ error: 'verify_failed', message: 'No se pudo verificar el teléfono.' });
   }
 });
 

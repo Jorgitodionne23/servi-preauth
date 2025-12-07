@@ -1044,6 +1044,27 @@ function generatePaymentLink() {
           }
           return;
         }
+        if (
+          code === 409 &&
+          dataErr &&
+          (dataErr.error === 'name_phone_mismatch' ||
+            dataErr.error === 'name_required_for_saved_client')
+        ) {
+          const parts = [
+            dataErr.message ||
+              'El nombre y el teléfono no coinciden con el cliente guardado.',
+          ];
+          if (dataErr.expectedName) {
+            parts.push('Nombre registrado: ' + dataErr.expectedName);
+          }
+          const friendly = parts.join(' ');
+          try {
+            ui.alert('⚠️ ' + friendly);
+          } catch (_) {}
+          linkCell.setValue('⚠️ ' + friendly);
+          sheet.getRange(editedRow, statusCol).setValue('Name/phone mismatch');
+          return;
+        }
       } catch (_) {}
       throw new Error('Server ' + code + ': ' + body);
     }
