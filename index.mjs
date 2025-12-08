@@ -75,8 +75,9 @@ const BOOK_SUCCESS_STATUSES = new Set(['Scheduled', 'Confirmed', 'Captured']);
 const PAY_SUCCESS_STATUSES = new Set(['Scheduled', 'Confirmed', 'Captured']);
 const LINK_EXPIRATION_HOURS = 2;
 const LINK_EXPIRATION_MS = LINK_EXPIRATION_HOURS * 60 * 60 * 1000;
-const PREAUTH_WINDOW_HOURS = 15;
+const PREAUTH_WINDOW_HOURS = 24;
 const PREAUTH_WINDOW_MS = PREAUTH_WINDOW_HOURS * 60 * 60 * 1000;
+const EARLY_PREAUTH_THRESHOLD_HOURS = 72;
 
 function getLinkExpirationInfo(createdAt) {
   const createdMs = createdAt ? new Date(createdAt).getTime() : null;
@@ -973,7 +974,7 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
 
     // Short-lead (≤5d)
     if (!longLead) {
-      // If the customer ALREADY has a saved card and we're still outside the preauth window (>15h),
+      // If the customer ALREADY has a saved card and we're still outside the preauth window (>24h),
         if (saved && hoursAhead > PREAUTH_WINDOW_HOURS) {
           if (hasConsent) {
             await pool.query('UPDATE all_bookings SET kind=$1 WHERE id=$2', ['book', orderId]);
@@ -1205,7 +1206,7 @@ app.get('/order/:orderId', async (req, res) => {
 
         if (hasSavedCardForBook) {
           // Saved-card booking: never create a PI here.
-          // The /confirm-with-saved route decides when to create/confirm (≤15h).
+          // The /confirm-with-saved route decides when to create/confirm (≤24h).
           pi = null;
           intentType = null;
         } else {
@@ -1263,7 +1264,7 @@ app.get('/order/:orderId', async (req, res) => {
         }
 
       } else {
-        // Default (legacy primary/adjustments) — but DON'T create a PI early for saved + >15h
+        // Default (legacy primary/adjustments) — but DON'T create a PI early for saved + >24h
         const hours_ahead = hoursUntilService(row);
 
         let alreadySaved = false;
@@ -1643,7 +1644,7 @@ app.post('/create-standalone-setup', async (req, res) => {
 app.post('/tasks/preauth-due', async (req, res) => {
   try {
     const { rows } = await pool.query(`
-      /* Pick saved-card "book" orders that are entering the 15h preauth window */
+      /* Pick saved-card "book" orders that are entering the 24h preauth window */
       WITH service_ts AS (
         SELECT
           id,
@@ -1670,7 +1671,7 @@ app.post('/tasks/preauth-due', async (req, res) => {
       SELECT id, amount, customer_id, saved_payment_method_id, parent_id_of_adjustment, kind, client_name, client_email, service_date, service_datetime
       FROM service_ts
       WHERE svc_at >= NOW()
-        AND svc_at <  NOW() + INTERVAL '15 hours'
+        AND svc_at <  NOW() + INTERVAL '24 hours'
       ORDER BY svc_at ASC
       LIMIT 50
     `);
@@ -2855,7 +2856,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
 app.post('/confirm-with-saved', async (req, res) => {
   try {
-    const { orderId, force, retryToken, allowExpired } = req.body || {};
+    const { orderId, force, retryToken, allowExpired, createOnly } = req.body || {};
     if (!orderId) return res.status(400).send({ error: 'orderId required' });
 
     const { rows } = await pool.query(
@@ -2893,6 +2894,9 @@ app.post('/confirm-with-saved', async (req, res) => {
       ? `SERVI ajuste: ${row.adjustment_reason || 'SERVI adjustment'}`
       : null;
     const hoursAhead = hoursUntilService(row);
+    let piId = row.payment_intent_id || null;
+    const isSetup = piId && String(piId).startsWith('seti_');
+
     if (hoursAhead > PREAUTH_WINDOW_HOURS && !force) {
       if (!savedPmId && row.customer_id) {
         const list = await stripe.paymentMethods.list({
@@ -2956,6 +2960,35 @@ app.post('/confirm-with-saved', async (req, res) => {
         : new Date(String(row.service_date) + 'T08:00:00-05:00').getTime();
       const opensAtMs = serviceMs - PREAUTH_WINDOW_MS;
 
+      if (createOnly && hoursAhead <= EARLY_PREAUTH_THRESHOLD_HOURS) {
+        if (!piId || isSetup) {
+          const pi = await stripe.paymentIntents.create({
+            amount: row.amount,
+            currency: 'mxn',
+            payment_method_types: ['card'],
+            capture_method: captureMethod,
+            customer: row.customer_id || undefined,
+            ...(adjustmentDescription ? { description: adjustmentDescription } : {}),
+            metadata: {
+              order_id: row.id,
+              kind: row.kind || 'primary',
+              parent_order_id: row.parent_id_of_adjustment || ''
+            }
+          });
+          await pool.query('UPDATE all_bookings SET payment_intent_id=$1 WHERE id=$2', [pi.id, row.id]);
+          piId = pi.id;
+        }
+
+        return res.status(200).json({
+          ok: true,
+          createdOnly: true,
+          status: statusLabel,
+          paymentIntentId: piId,
+          paymentMethodId: savedPmId || null,
+          hoursAhead
+        });
+      }
+
       return res.status(409).json({
         error: 'preauth_window_closed',
         remaining_hours: Math.ceil(hoursAhead),
@@ -2969,9 +3002,64 @@ app.post('/confirm-with-saved', async (req, res) => {
 
 
 
-    // ≤15h → create/confirm a manual-capture PI now
-    let piId = row.payment_intent_id || null;
-    const isSetup = piId && String(piId).startsWith('seti_');
+    if (createOnly && hoursAhead <= EARLY_PREAUTH_THRESHOLD_HOURS) {
+      if (!savedPmId && row.customer_id) {
+        const list = await stripe.paymentMethods.list({
+          customer: row.customer_id,
+          type: 'card',
+          limit: 1
+        });
+        savedPmId = list.data[0]?.id || null;
+      }
+
+      if (!savedPmId) {
+        return res.status(409).json({
+          error: 'no_saved_card',
+          redirect: `/pay?orderId=${encodeURIComponent(row.id)}`
+        });
+      }
+
+      if (!piId || isSetup) {
+        const pi = await stripe.paymentIntents.create({
+          amount: row.amount,
+          currency: 'mxn',
+          payment_method_types: ['card'],
+          capture_method: captureMethod,
+          customer: row.customer_id || undefined,
+          ...(adjustmentDescription ? { description: adjustmentDescription } : {}),
+          metadata: {
+            order_id: row.id,
+            kind: row.kind || 'primary',
+            parent_order_id: row.parent_id_of_adjustment || ''
+          }
+        });
+        await pool.query('UPDATE all_bookings SET payment_intent_id=$1 WHERE id=$2', [pi.id, row.id]);
+        piId = pi.id;
+      }
+
+      try {
+        await refreshOrderFees(row.id, { paymentIntentId: piId });
+      } catch (feeErr) {
+        console.warn('confirm-with-saved (createOnly) fee refresh failed', feeErr?.message || feeErr);
+      }
+
+      const label =
+        hoursAhead > PREAUTH_WINDOW_HOURS ? 'Scheduled' : row.status || 'Pending';
+
+      return res.status(200).json({
+        ok: true,
+        createdOnly: true,
+        status: label,
+        paymentIntentId: piId,
+        paymentMethodId: savedPmId || null,
+        hoursAhead
+      });
+    }
+
+
+
+
+    // ≤24h → create/confirm a manual-capture PI now
 
     // Ensure we have a real PI (not a SetupIntent)
     if (!piId || isSetup) {

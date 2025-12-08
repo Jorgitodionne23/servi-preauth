@@ -56,6 +56,9 @@ const ADJ_HEADER_ALIASES = {
   CLIENT_ID: ['Client ID'],
 };
 
+const PREAUTH_WINDOW_HOURS = 24;
+const EARLY_PREAUTH_THRESHOLD_HOURS = 72;
+
 const HEADER_CACHE = Object.create(null);
 const CACHE_KEY_TO_SHEET = {
   orders: SHEET_NAMES.ORDERS,
@@ -284,6 +287,69 @@ function run_autoPreauthOnce() {
   autoPreauthScheduled_();
 }
 
+function applyConfirmWithSavedResult_(sheet, row, code, out, updatePaymentCol) {
+  if (!sheet) return false;
+  const updateCol =
+    typeof updatePaymentCol === 'number' && updatePaymentCol > 0
+      ? updatePaymentCol
+      : ORD_COL.UPDATE_PAYMENT_METHOD;
+
+  if (code === 200 && out && out.createdOnly) {
+    if (out.paymentIntentId) {
+      sheet.getRange(row, ORD_COL.PI_ID).setValue(String(out.paymentIntentId || ''));
+    }
+    const label = String(out.status || '').trim();
+    if (label) {
+      sheet.getRange(row, ORD_COL.STATUS).setValue(label);
+    }
+    return true;
+  }
+
+  if (code === 200) {
+    const label =
+      out.status === 'requires_capture'
+        ? 'Confirmed'
+        : out.status === 'succeeded'
+          ? 'Captured'
+          : String(out.status || 'Confirmed');
+    sheet.getRange(row, ORD_COL.STATUS).setValue(label);
+    sheet.getRange(row, ORD_COL.PI_ID).setValue(String(out.paymentIntentId || ''));
+    if (updateCol) {
+      sheet.getRange(row, updateCol).clearContent();
+    }
+    return true;
+  }
+
+  if (code === 402 && out.clientSecret) {
+    sheet.getRange(row, ORD_COL.STATUS).setValue('Pending (3DS)');
+    if (out.paymentIntentId) {
+      sheet.getRange(row, ORD_COL.PI_ID).setValue(String(out.paymentIntentId || ''));
+    }
+    return true;
+  }
+
+  if (code === 409) {
+    sheet.getRange(row, ORD_COL.STATUS).setValue('Declined');
+    if (out.paymentIntentId) {
+      sheet.getRange(row, ORD_COL.PI_ID).setValue(String(out.paymentIntentId || ''));
+    }
+    const retryMessage = String(
+      out.updatePaymentMessage ||
+        out.billingPortalMessage ||
+        out.updatePaymentUrl ||
+        out.billingPortalUrl ||
+        out.message ||
+        ''
+    ).trim();
+    if (retryMessage && updateCol) {
+      sheet.getRange(row, updateCol).setValue(retryMessage);
+    }
+    return true;
+  }
+
+  return false;
+}
+
 function autoPreauthScheduled_() {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const sh = ss.getSheetByName('SERVI Orders');
@@ -305,7 +371,7 @@ function autoPreauthScheduled_() {
 
     if (!orderId) continue;
     if (status !== 'Scheduled') continue;
-    if (isNaN(hours) || hours > 15) continue;
+    if (isNaN(hours) || hours > PREAUTH_WINDOW_HOURS) continue;
     if (pi) continue; // already has a PI / progressed
 
     try {
@@ -317,49 +383,13 @@ function autoPreauthScheduled_() {
         muteHttpExceptions: true,
       });
       const code = resp.getResponseCode();
-      const out = JSON.parse(resp.getContentText() || '{}');
-
-      if (code === 200) {
-        const label =
-          out.status === 'requires_capture'
-            ? 'Confirmed'
-            : out.status === 'succeeded'
-              ? 'Captured'
-              : String(out.status || 'Confirmed');
-        sh.getRange(r, ORD_COL.STATUS).setValue(label);
-        sh.getRange(r, ORD_COL.PI_ID).setValue(
-          String(out.paymentIntentId || '')
-        );
-        if (updatePaymentCol) {
-          sh.getRange(r, updatePaymentCol).clearContent();
-        }
-      } else if (code === 402 && out.clientSecret) {
-        sh.getRange(r, ORD_COL.STATUS).setValue('Pending (3DS)');
-        if (out.paymentIntentId) {
-          sh.getRange(r, ORD_COL.PI_ID).setValue(
-            String(out.paymentIntentId || '')
-          );
-        }
-        // do NOT touch messages
-      } else if (code === 409) {
-        sh.getRange(r, ORD_COL.STATUS).setValue('Declined');
-        if (out.paymentIntentId) {
-          sh.getRange(r, ORD_COL.PI_ID).setValue(
-            String(out.paymentIntentId || '')
-          );
-        }
-        const retryMessage = String(
-          out.updatePaymentMessage ||
-            out.billingPortalMessage ||
-            out.updatePaymentUrl ||
-            out.billingPortalUrl ||
-            out.message ||
-            ''
-        ).trim();
-        if (retryMessage && updatePaymentCol) {
-          sh.getRange(r, updatePaymentCol).setValue(retryMessage);
-        }
+      let out = {};
+      try {
+        out = JSON.parse(resp.getContentText() || '{}');
+      } catch (_) {
+        out = {};
       }
+      applyConfirmWithSavedResult_(sh, r, code, out, updatePaymentCol);
     } catch (_) {
       // ignore; we'll retry next run
     }
@@ -444,7 +474,7 @@ function ensureOrdersHoursColumn_() {
 
     const yellowRule = SpreadsheetApp.newConditionalFormatRule()
       .whenFormulaSatisfied(
-        `=AND($${statusColLetter}${startRow}="Scheduled",$${hoursColLetter}${startRow}>15)`
+        `=AND($${statusColLetter}${startRow}="Scheduled",$${hoursColLetter}${startRow}>${PREAUTH_WINDOW_HOURS})`
       )
       .setBackground('#FFE598')
       .setRanges([hoursRange])
@@ -452,7 +482,7 @@ function ensureOrdersHoursColumn_() {
 
     const greenRule = SpreadsheetApp.newConditionalFormatRule()
       .whenFormulaSatisfied(
-        `=AND($${statusColLetter}${startRow}="Confirmed",$${hoursColLetter}${startRow}<=15,$${hoursColLetter}${startRow}>2)`
+        `=AND($${statusColLetter}${startRow}="Confirmed",$${hoursColLetter}${startRow}<=${PREAUTH_WINDOW_HOURS},$${hoursColLetter}${startRow}>2)`
       )
       .setBackground('#b7e1cd')
       .setRanges([hoursRange])
@@ -614,7 +644,7 @@ function InitiatePaymentIntentForScheduledOrder() {
     // Just warn the agent and offer to force the preauth.
     const ui = SpreadsheetApp.getUi();
 
-    let msg = out.message || 'Aún estás fuera de la ventana de 15 horas.';
+    let msg = out.message || 'Aún estás fuera de la ventana de 24 horas.';
     if (typeof out.remaining_hours === 'number') {
       msg += '\n(Faltan ~' + Math.ceil(out.remaining_hours) + ' h)';
     }
@@ -1097,7 +1127,17 @@ function generatePaymentLink() {
       sheet.getRange(editedRow, totalPaidCol).setValue(totalCents / 100);
     }
 
-    updateIdentityColumns_(sheet, editedRow, String(data.orderId));
+    const identityInfo = updateIdentityColumns_(
+      sheet,
+      editedRow,
+      String(data.orderId)
+    );
+    attemptImmediatePreauthForSavedClient_(
+      sheet,
+      editedRow,
+      String(data.orderId),
+      identityInfo
+    );
 
     const existingDate = sheet
       .getRange(editedRow, dateCreatedCol)
@@ -1363,6 +1403,10 @@ function captureCompletedService() {
 }
 
 function updateIdentityColumns_(sheet, row, orderId) {
+  let savedCard = false;
+  let hoursAhead = null;
+  let consentOk = false;
+
   // 1) Client ID from order snapshot
   try {
     const r = UrlFetchApp.fetch(
@@ -1375,6 +1419,8 @@ function updateIdentityColumns_(sheet, row, orderId) {
     );
     if (r.getResponseCode() >= 200 && r.getResponseCode() < 300) {
       const d = JSON.parse(r.getContentText() || '{}');
+      if (typeof d.hours_ahead === 'number') hoursAhead = d.hours_ahead;
+      savedCard = !!d.saved_card;
       const totalCentsSnapshot = Number(
         (d.pricing_total_amount ?? d.amount) || 0
       );
@@ -1397,12 +1443,62 @@ function updateIdentityColumns_(sheet, row, orderId) {
     if (r2.getResponseCode() === 200) {
       const c = JSON.parse(r2.getContentText() || '{}');
       const cell = sheet.getRange(row, ORD_COL.CLIENT_TYPE);
-      if (c && c.ok) {
+      consentOk = !!(c && c.ok);
+      if (consentOk) {
         cell.setValue('SERVI Client');
       } else {
         cell.setValue('Guest');
       }
     }
+  } catch (_) {}
+
+  return { savedCard, hoursAhead, consentOk };
+}
+
+function attemptImmediatePreauthForSavedClient_(sheet, row, orderId, info) {
+  const data = info || {};
+  const savedCard = !!(data.savedCard || data.consentOk);
+  if (!sheet || !savedCard) return;
+
+  let hoursAhead =
+    typeof data.hoursAhead === 'number' ? data.hoursAhead : null;
+  if (hoursAhead === null) {
+    const hoursCellVal = Number(
+      sheet.getRange(row, ORD_COL.HOURS).getValue() || ''
+    );
+    hoursAhead = Number.isFinite(hoursCellVal) ? hoursCellVal : null;
+  }
+
+  const existingPi = String(
+    sheet.getRange(row, ORD_COL.PI_ID).getDisplayValue() || ''
+  ).trim();
+  if (existingPi) return;
+  if (hoursAhead === null || hoursAhead > EARLY_PREAUTH_THRESHOLD_HOURS)
+    return;
+
+  const currentStatus = String(
+    sheet.getRange(row, ORD_COL.STATUS).getDisplayValue() || ''
+  ).trim();
+  if (/^captured$/i.test(currentStatus)) return;
+
+  const payload = { orderId, allowExpired: true, createOnly: true };
+
+  try {
+    const resp = UrlFetchApp.fetch(SERVI_BASE + '/confirm-with-saved', {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify(payload),
+      headers: adminHeaders_(),
+      muteHttpExceptions: true,
+    });
+    const code = resp.getResponseCode();
+    let out = {};
+    try {
+      out = JSON.parse(resp.getContentText() || '{}');
+    } catch (_) {
+      out = {};
+    }
+    applyConfirmWithSavedResult_(sheet, row, code, out, ORD_COL.UPDATE_PAYMENT_METHOD);
   } catch (_) {}
 }
 
@@ -1582,7 +1678,7 @@ function resyncSelectedRow() {
 
   if (savedCard) {
     const farFromService =
-      hoursAhead === null ? kind === 'book' : hoursAhead > 15;
+      hoursAhead === null ? kind === 'book' : hoursAhead > PREAUTH_WINDOW_HOURS;
     if (farFromService) {
       writeStatusSafely('Scheduled');
       SpreadsheetApp.getUi().alert('Fila re-sincronizada: Scheduled.');
@@ -1590,7 +1686,12 @@ function resyncSelectedRow() {
     }
   }
 
-  if (savedCard && hoursAhead !== null && hoursAhead <= 15 && !piId) {
+  if (
+    savedCard &&
+    hoursAhead !== null &&
+    hoursAhead <= PREAUTH_WINDOW_HOURS &&
+    !piId
+  ) {
     writeStatusSafely('Scheduled');
     SpreadsheetApp.getUi().alert(
       'Fila re-sincronizada: Scheduled (ventana abierta).'

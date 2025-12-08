@@ -1035,8 +1035,8 @@
             );
           }
           const scheduledMsg = isAdjustment
-            ? 'Tu ajuste quedó programado. Realizaremos la preautorización 15 horas antes de la fecha.'
-            : 'Tu servicio quedó programado. Realizaremos la preautorización 15 horas antes de la fecha.';
+            ? 'Tu ajuste quedó programado. Realizaremos la preautorización 24 horas antes de la fecha.'
+            : 'Tu servicio quedó programado. Realizaremos la preautorización 24 horas antes de la fecha.';
           alert(payload?.message || scheduledMsg);
           location.href = `/success?orderId=${encodeURIComponent(orderId)}`;
           return;
