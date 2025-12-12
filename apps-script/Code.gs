@@ -968,9 +968,18 @@ function generatePaymentLink() {
   const TZ = 'America/Mexico_City';
 
   function parseServiceDateTime_(raw) {
-    if (raw instanceof Date) return raw;
+    const result = { date: null, hasTime: false };
+    if (raw instanceof Date) {
+      result.date = raw;
+      result.hasTime =
+        raw.getHours() !== 0 ||
+        raw.getMinutes() !== 0 ||
+        raw.getSeconds() !== 0 ||
+        raw.getMilliseconds() !== 0;
+      return result;
+    }
     const s = String(raw || '').trim();
-    if (!s) return null;
+    if (!s) return result;
 
     let m = s.match(
       /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})(?:\s+(\d{1,2}):(\d{2}))?$/
@@ -982,7 +991,9 @@ function generatePaymentLink() {
       if (y < 100) y += 2000;
       const hh = parseInt(m[4] || '0', 10);
       const mm = parseInt(m[5] || '0', 10);
-      return new Date(y, mo, d, hh, mm, 0, 0);
+      result.date = new Date(y, mo, d, hh, mm, 0, 0);
+      result.hasTime = m[4] != null;
+      return result;
     }
 
     m = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?$/);
@@ -992,17 +1003,67 @@ function generatePaymentLink() {
         dd = +m[3],
         hh2 = +(m[4] || 0),
         mm2 = +(m[5] || 0);
-      return new Date(yy, mo2, dd, hh2, mm2, 0, 0);
+      result.date = new Date(yy, mo2, dd, hh2, mm2, 0, 0);
+      result.hasTime = m[4] != null;
+      return result;
     }
 
-    return null;
+    return result;
   }
 
-  const parsedDate = parseServiceDateTime_(serviceDateRaw);
+  const parsed = parseServiceDateTime_(serviceDateRaw);
+  const parsedDate = parsed.date;
+  const hasServiceTime = parsed.hasTime;
   const serviceDate = parsedDate
     ? Utilities.formatDate(parsedDate, TZ, 'yyyy-MM-dd')
     : '';
   const serviceDateTime = parsedDate ? toISOWithOffset_(parsedDate, TZ) : '';
+  const serviceDateCell = sheet.getRange(editedRow, serviceDateCol);
+
+  const nowMs = Date.now();
+  const serviceMs = parsedDate ? parsedDate.getTime() : NaN;
+  const approxServiceMs =
+    parsedDate && Number.isFinite(serviceMs)
+      ? serviceMs + (hasServiceTime ? 0 : 12 * 60 * 60 * 1000)
+      : null;
+  const hoursAhead =
+    approxServiceMs !== null && Number.isFinite(approxServiceMs)
+      ? (approxServiceMs - nowMs) / 3_600_000
+      : null;
+  const todayYmd = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
+  const serviceInPast =
+    parsedDate &&
+    (hasServiceTime
+      ? serviceMs < nowMs
+      : serviceDate && serviceDate < todayYmd);
+
+  if (serviceInPast) {
+    const msg =
+      '⚠️ La fecha/hora del servicio ya pasó. Corrige "Service Date and Time" antes de generar el enlace.';
+    try {
+      ui.alert(msg);
+    } catch (_) {}
+    linkCell.setValue(msg);
+    serviceDateCell.setNote(msg);
+    sheet.getRange(editedRow, statusCol).setValue('Invalid date');
+    return;
+  }
+
+  if (hoursAhead !== null && hoursAhead <= 24 && hoursAhead >= 0) {
+    const warning =
+      '⚠️ Servicio solicitado con menos de 24 horas. Prioriza seguimiento.';
+    const existingNote = serviceDateCell.getNote();
+    if (
+      !existingNote ||
+      existingNote.indexOf('Servicio solicitado con menos de 24 horas') === -1
+    ) {
+      const newNote = existingNote ? existingNote + '\n' + warning : warning;
+      serviceDateCell.setNote(newNote);
+    }
+    try {
+      ui.alert(warning);
+    } catch (_) {}
+  }
 
   const amountHeader = String(
     sheet.getRange(1, amountCol).getDisplayValue() || ''
@@ -1049,6 +1110,7 @@ function generatePaymentLink() {
       clientPhone,
       serviceAddress,
       bookingType,
+      hasTimeComponent: hasServiceTime,
     }),
     headers: adminHeaders_(),
     muteHttpExceptions: true,
@@ -1097,6 +1159,18 @@ function generatePaymentLink() {
     if (code < 200 || code >= 300) {
       try {
         const dataErr = JSON.parse(body);
+        if (code === 400 && dataErr && dataErr.error === 'past_service_date') {
+          const msg =
+            dataErr.message ||
+            '⚠️ La fecha/hora del servicio ya pasó. Corrige "Service Date and Time".';
+          linkCell.setValue(msg);
+          serviceDateCell.setNote(msg);
+          sheet.getRange(editedRow, statusCol).setValue('Invalid date');
+          try {
+            ui.alert('⚠️ ' + msg);
+          } catch (_) {}
+          return;
+        }
         if (code === 403 && dataErr && dataErr.error === 'account_required') {
           const paymentLink = SERVI_BASE + '/o/' + dataErr.publicCode;
           const paymentText = buildBookingLinkMessage_(bookingType, paymentLink);

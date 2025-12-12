@@ -823,7 +823,8 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
     clientPhone,
     consent,
     serviceAddress,
-    bookingType: bookingTypeRaw
+    bookingType: bookingTypeRaw,
+    hasTimeComponent
   } = req.body;
   const bookingType = normalizeBookingType(bookingTypeRaw);
   const providerPricePesos = Number(amount);
@@ -863,13 +864,25 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
     }
 
     // Compute policy early
-    const longLead = daysAheadFromYMD(serviceDate) >= 5;
+    const daysAhead = daysAheadFromYMD(serviceDate);
+    const longLead = daysAhead >= 5;
 
     // Precise fractional hours ahead for consistent comparisons everywhere
     const hoursAhead = hoursUntilService({
       service_datetime: serviceDateTime || null,
       service_date: serviceDate || null
     });
+    const hasExplicitTime = typeof hasTimeComponent === 'boolean' ? hasTimeComponent : Boolean(serviceDateTime);
+    const serviceInPast = hasExplicitTime
+      ? Number.isFinite(hoursAhead) && hoursAhead < -0.01
+      : daysAhead < 0;
+    if (serviceInPast) {
+      return res.status(400).send({
+        error: 'past_service_date',
+        message: 'La fecha y hora del servicio ya pasó. Ajusta "Service Date and Time".',
+        hoursAhead
+      });
+    }
     const {
       providerAmountCents,
       bookingFeeAmountCents,
