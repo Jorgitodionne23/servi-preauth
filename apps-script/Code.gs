@@ -1862,13 +1862,13 @@ const ORDER_ACTIONS_SIDEBAR_HTML = `
     <style>
       body { font-family: Arial, sans-serif; margin: 0; padding: 12px; color: #111; }
       h3 { margin: 0 0 6px; font-size: 16px; }
-      .section { margin-bottom: 12px; }
+      .section { margin-bottom: 14px; padding: 10px; border: 1px solid #e5e7eb; border-radius: 8px; }
+      .section h4 { margin: 0 0 6px; font-size: 13px; }
       label { display: block; font-size: 12px; color: #555; margin: 8px 0 4px; }
       textarea, input[type="number"] { width: 100%; box-sizing: border-box; padding: 6px; }
       textarea { min-height: 60px; }
       .pill { display: inline-block; padding: 4px 8px; background: #eef2ff; color: #111; border-radius: 999px; font-size: 12px; }
       .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-      .status { font-weight: bold; color: #334155; }
       button { padding: 8px 10px; background: #111; color: #fff; border: none; border-radius: 6px; cursor: pointer; width: 100%; font-weight: 600; }
       button[disabled] { opacity: 0.6; cursor: not-allowed; }
       .msg { margin-top: 8px; font-size: 12px; }
@@ -1880,47 +1880,48 @@ const ORDER_ACTIONS_SIDEBAR_HTML = `
   </head>
   <body>
     <h3>Orden <span id="order-id"></span></h3>
-    <div class="section">
-      <div class="row">
-        <div class="pill" id="status-pill"></div>
-        <div id="amount-label" class="muted"></div>
-      </div>
-      <div class="muted" id="service-date"></div>
+    <div class="row">
+      <div class="pill" id="status-pill"></div>
+      <div id="amount-label" class="muted"></div>
+    </div>
+    <div class="muted" id="service-date"></div>
+    <div class="muted" id="pi-label"></div>
+
+    <div class="section" id="capture-section">
+      <h4>Capturar pago</h4>
+      <label for="capture-amount">Monto a capturar (MXN, deja vacío para total autorizado)</label>
+      <input type="number" id="capture-amount" min="0" step="0.01" placeholder="Monto total">
+      <div class="muted">Usa esto sólo si el pago está autorizado (requires_capture / Confirmed).</div>
+      <button id="capture-btn">Capturar</button>
     </div>
 
-    <div class="section">
-      <label for="reason">Motivo (opcional)</label>
-      <textarea id="reason" placeholder="Ej. Cliente canceló, reprogramar, etc."></textarea>
+    <div class="section" id="cancel-section">
+      <h4>Cancelar orden (sin reembolso)</h4>
+      <label for="cancel-reason">Motivo (opcional)</label>
+      <textarea id="cancel-reason" placeholder="Ej. Cliente canceló, reprogramar, etc."></textarea>
+      <button id="cancel-btn">Cancelar orden</button>
     </div>
 
-    <div class="section">
-      <label>Reembolso</label>
+    <div class="section" id="refund-section">
+      <h4>Reembolso</h4>
       <div class="radio-row">
-        <input type="radio" name="refund" id="refund-none" value="none" checked>
-        <label for="refund-none">Sin reembolso (solo cancelar/void)</label>
-      </div>
-      <div class="radio-row">
-        <input type="radio" name="refund" id="refund-full" value="full">
+        <input type="radio" name="refund" id="refund-full" value="full" checked>
         <label for="refund-full">Reembolso total</label>
       </div>
       <div class="radio-row">
         <input type="radio" name="refund" id="refund-partial" value="partial">
         <label for="refund-partial">Reembolso parcial (MXN)</label>
       </div>
-      <input type="number" id="partial-amount" min="0" step="0.01" placeholder="0.00" disabled>
+      <input type="number" id="refund-amount" min="0" step="0.01" placeholder="0.00" disabled>
+      <label for="refund-reason">Motivo (opcional)</label>
+      <textarea id="refund-reason" placeholder="Ej. Ajuste, garantía, etc."></textarea>
+      <button id="refund-btn">Reembolsar</button>
     </div>
 
-    <button id="cancel-btn">Cancelar orden</button>
     <div id="msg" class="msg"></div>
 
     <script>
       const data = <?!= JSON.stringify(data) ?>;
-
-      const fmtCurrency = (val) => {
-        if (val == null || isNaN(val)) return '';
-        try { return Number(val).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' }); }
-        catch (_) { return '$' + Number(val).toFixed(2); }
-      };
 
       function setMsg(text, kind) {
         const el = document.getElementById('msg');
@@ -1928,10 +1929,18 @@ const ORDER_ACTIONS_SIDEBAR_HTML = `
         el.className = 'msg ' + (kind || '');
       }
 
-      function setLoading(state) {
-        const btn = document.getElementById('cancel-btn');
-        btn.disabled = !!state;
-        btn.textContent = state ? 'Cancelando…' : 'Cancelar orden';
+      function setButton(btnId, stateText) {
+        const btn = document.getElementById(btnId);
+        if (!btn) return;
+        if (stateText) {
+          btn.disabled = true;
+          btn.textContent = stateText;
+        } else {
+          btn.disabled = false;
+          if (btnId === 'capture-btn') btn.textContent = 'Capturar';
+          if (btnId === 'cancel-btn') btn.textContent = 'Cancelar orden';
+          if (btnId === 'refund-btn') btn.textContent = 'Reembolsar';
+        }
       }
 
       function init() {
@@ -1939,32 +1948,85 @@ const ORDER_ACTIONS_SIDEBAR_HTML = `
         document.getElementById('status-pill').textContent = data.status || '—';
         if (data.amountLabel) document.getElementById('amount-label').textContent = data.amountLabel;
         if (data.serviceDate) document.getElementById('service-date').textContent = data.serviceDate;
-        document.getElementById('cancel-btn').addEventListener('click', cancelOrder);
-        const partialInput = document.getElementById('partial-amount');
+        if (data.paymentIntentId) document.getElementById('pi-label').textContent = 'PI: ' + data.paymentIntentId;
+        if (data.captureDefault && !isNaN(data.captureDefault)) {
+          document.getElementById('capture-amount').value = data.captureDefault;
+        }
+
         const refundRadios = document.querySelectorAll('input[name="refund"]');
+        const refundAmount = document.getElementById('refund-amount');
         refundRadios.forEach((r) => {
           r.addEventListener('change', () => {
-            partialInput.disabled = r.value !== 'partial';
+            refundAmount.disabled = r.value !== 'partial';
           });
         });
+
+        document.getElementById('capture-btn').addEventListener('click', captureOrder);
+        document.getElementById('cancel-btn').addEventListener('click', cancelOrder);
+        document.getElementById('refund-btn').addEventListener('click', refundOrder);
+
+        applyEligibility();
+      }
+
+      function applyEligibility() {
+        const status = String(data.status || '').toLowerCase();
+        const hasPi = !!data.paymentIntentId;
+        const isCaptured = status.indexOf('captured') !== -1 || status.indexOf('refund') !== -1 || status.indexOf('refunded') !== -1;
+        const captureAllowed = hasPi && !isCaptured && (status.indexOf('confirm') !== -1 || status.indexOf('requires_capture') !== -1 || status.indexOf('pending') !== -1);
+        const cancelAllowed = !isCaptured;
+        const refundAllowed = isCaptured;
+
+        document.getElementById('capture-btn').disabled = !captureAllowed;
+        document.getElementById('cancel-btn').disabled = !cancelAllowed;
+        document.getElementById('refund-btn').disabled = !refundAllowed;
+
+        if (!captureAllowed) document.getElementById('capture-section').style.opacity = 0.6;
+        if (!cancelAllowed) document.getElementById('cancel-section').style.opacity = 0.6;
+        if (!refundAllowed) document.getElementById('refund-section').style.opacity = 0.6;
+      }
+
+      function captureOrder() {
+        setMsg('', '');
+        const raw = document.getElementById('capture-amount').value;
+        let amount = null;
+        if (raw && raw.trim()) {
+          const num = parseFloat(raw);
+          if (!num || num <= 0) {
+            setMsg('Ingresa un monto válido para capturar.', 'error');
+            return;
+          }
+          amount = num;
+        }
+        setButton('capture-btn', 'Capturando…');
+        google.script.run
+          .withSuccessHandler(function (out) {
+            setButton('capture-btn', null);
+            if (!out) {
+              setMsg('Sin respuesta del servidor.', 'error');
+              return;
+            }
+            document.getElementById('status-pill').textContent = out.status || data.status || 'Captured';
+            setMsg(out.message || 'Captura enviada. Webhook actualizará la orden.', 'success');
+          })
+          .withFailureHandler(function (err) {
+            setButton('capture-btn', null);
+            const msg = (err && err.message) || 'No se pudo capturar.';
+            setMsg(msg, 'error');
+          })
+          .captureOrderFromSidebar({
+            row: data.row,
+            orderId: data.orderId,
+            amount
+          });
       }
 
       function cancelOrder() {
         setMsg('', '');
-        const refundMode = document.querySelector('input[name="refund"]:checked')?.value || 'none';
-        let partialAmount = null;
-        if (refundMode === 'partial') {
-          partialAmount = parseFloat(document.getElementById('partial-amount').value || '0');
-          if (!partialAmount || partialAmount <= 0) {
-            setMsg('Ingresa un monto válido para reembolso parcial.', 'error');
-            return;
-          }
-        }
-        const reason = (document.getElementById('reason').value || '').trim();
-        setLoading(true);
+        const reason = (document.getElementById('cancel-reason').value || '').trim();
+        setButton('cancel-btn', 'Cancelando…');
         google.script.run
           .withSuccessHandler(function (out) {
-            setLoading(false);
+            setButton('cancel-btn', null);
             if (!out) {
               setMsg('Sin respuesta del servidor.', 'error');
               return;
@@ -1973,15 +2035,49 @@ const ORDER_ACTIONS_SIDEBAR_HTML = `
             setMsg(out.message || 'Orden cancelada.', 'success');
           })
           .withFailureHandler(function (err) {
-            setLoading(false);
+            setButton('cancel-btn', null);
             const msg = (err && err.message) || 'No se pudo cancelar la orden.';
             setMsg(msg, 'error');
           })
           .cancelOrderFromSidebar({
             row: data.row,
             orderId: data.orderId,
-            refundMode,
-            partialAmount,
+            reason
+          });
+      }
+
+      function refundOrder() {
+        setMsg('', '');
+        const refundMode = document.querySelector('input[name="refund"]:checked')?.value || 'full';
+        let amount = null;
+        if (refundMode === 'partial') {
+          amount = parseFloat(document.getElementById('refund-amount').value || '0');
+          if (!amount || amount <= 0) {
+            setMsg('Ingresa un monto válido para reembolso parcial.', 'error');
+            return;
+          }
+        }
+        const reason = (document.getElementById('refund-reason').value || '').trim();
+        setButton('refund-btn', 'Reembolsando…');
+        google.script.run
+          .withSuccessHandler(function (out) {
+            setButton('refund-btn', null);
+            if (!out) {
+              setMsg('Sin respuesta del servidor.', 'error');
+              return;
+            }
+            document.getElementById('status-pill').textContent = out.status || data.status || 'Refunded';
+            setMsg(out.message || 'Reembolso enviado.', 'success');
+          })
+          .withFailureHandler(function (err) {
+            setButton('refund-btn', null);
+            const msg = (err && err.message) || 'No se pudo reembolsar.';
+            setMsg(msg, 'error');
+          })
+          .refundOrderFromSidebar({
+            row: data.row,
+            orderId: data.orderId,
+            amount,
             reason
           });
       }
@@ -2017,13 +2113,16 @@ function openOrderActionsSidebar() {
     return;
   }
 
+  const amountValue = Number(sh.getRange(row, ORD_COL.TOTAL_PAID).getValue() || 0);
   const data = {
     row,
     orderId,
     status: String(sh.getRange(row, ORD_COL.STATUS).getDisplayValue() || '').trim(),
     amountLabel: String(sh.getRange(row, ORD_COL.TOTAL_PAID).getDisplayValue() || '').trim(),
+    captureDefault: amountValue || null,
     serviceDate: String(sh.getRange(row, ORD_COL.SERVICE_DT).getDisplayValue() || '').trim(),
-    clientName: String(sh.getRange(row, ORD_COL.CLIENT_NAME).getDisplayValue() || '').trim()
+    clientName: String(sh.getRange(row, ORD_COL.CLIENT_NAME).getDisplayValue() || '').trim(),
+    paymentIntentId: String(sh.getRange(row, ORD_COL.PI_ID).getDisplayValue() || '').trim()
   };
 
   const tmpl = HtmlService.createTemplate(ORDER_ACTIONS_SIDEBAR_HTML);
@@ -2035,33 +2134,16 @@ function openOrderActionsSidebar() {
 function cancelOrderFromSidebar(payload) {
   const p = payload || {};
   const orderId = String(p.orderId || '').trim();
-  const refundMode = String(p.refundMode || 'none');
   const row = Number(p.row || 0);
   if (!orderId) throw new Error('Order ID requerido.');
 
   const reason = String(p.reason || '').trim().slice(0, 200);
-  let refund = false;
-  let refundAmountCents = null;
-  if (refundMode === 'full') {
-    refund = true;
-  } else if (refundMode === 'partial') {
-    const partialAmount = Number(p.partialAmount || 0);
-    if (!Number.isFinite(partialAmount) || partialAmount <= 0) {
-      throw new Error('Ingresa un monto válido para reembolso parcial.');
-    }
-    refund = true;
-    refundAmountCents = Math.round(partialAmount * 100);
-  } else {
-    refund = false;
-  }
 
   const resp = UrlFetchApp.fetch(SERVI_BASE + '/cancel-order', {
     method: 'post',
     contentType: 'application/json',
     payload: JSON.stringify({
       orderId,
-      refund,
-      refundAmountCents,
       reason
     }),
     headers: adminHeaders_(),
@@ -2085,12 +2167,124 @@ function cancelOrderFromSidebar(payload) {
     if (out.status) {
       sh.getRange(row, ORD_COL.STATUS).setValue(out.status);
     }
+    const noteParts = [];
+    if (reason) noteParts.push('Motivo: ' + reason);
+    if (out.message) noteParts.push(out.message);
+    const noteText = noteParts.join('\n');
+    if (noteText) {
+      sh.getRange(row, ORD_COL.STATUS).setNote(noteText);
+    }
+    const linkCol = ORD_COL.LINK_MSG;
+    if (linkCol) {
+      sh.getRange(row, linkCol).clearContent();
+    }
+  }
+
+  return out;
+}
+
+function captureOrderFromSidebar(payload) {
+  const p = payload || {};
+  const orderId = String(p.orderId || '').trim();
+  const row = Number(p.row || 0);
+  if (!orderId) throw new Error('Order ID requerido.');
+
+  let amountCents = null;
+  if (p.amount != null) {
+    const val = Number(p.amount);
+    if (!Number.isFinite(val) || val <= 0) {
+      throw new Error('Ingresa un monto válido para capturar.');
+    }
+    amountCents = Math.round(val * 100);
+  }
+
+  const resp = UrlFetchApp.fetch(SERVI_BASE + '/capture-order', {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify({
+      orderId,
+      amount: amountCents || undefined
+    }),
+    headers: adminHeaders_(),
+    muteHttpExceptions: true
+  });
+
+  const code = resp.getResponseCode();
+  let out = {};
+  try {
+    out = JSON.parse(resp.getContentText() || '{}');
+  } catch (_) {}
+  if (code < 200 || code >= 300) {
+    const msg = out.error || out.message || resp.getContentText() || 'Captura fallida.';
+    throw new Error(msg);
+  }
+
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAMES.ORDERS);
+  if (sh && row >= 2) {
+    const statusLabel = out.status || 'Captured';
+    sh.getRange(row, ORD_COL.STATUS).setValue(statusLabel);
+    if (typeof out.captured === 'number' && !isNaN(out.captured)) {
+      sh.getRange(row, ORD_COL.TOTAL_PAID).setValue(out.captured / 100);
+    }
+    const note = out.message ? String(out.message) : 'Captura enviada.';
+    sh.getRange(row, ORD_COL.STATUS).setNote(note);
+  }
+
+  return out;
+}
+
+function refundOrderFromSidebar(payload) {
+  const p = payload || {};
+  const orderId = String(p.orderId || '').trim();
+  const row = Number(p.row || 0);
+  if (!orderId) throw new Error('Order ID requerido.');
+
+  let amountCents = null;
+  if (p.amount != null) {
+    const val = Number(p.amount);
+    if (!Number.isFinite(val) || val <= 0) {
+      throw new Error('Ingresa un monto válido para reembolso parcial.');
+    }
+    amountCents = Math.round(val * 100);
+  }
+  const reason = String(p.reason || '').trim().slice(0, 200);
+
+  const resp = UrlFetchApp.fetch(SERVI_BASE + '/refund-order', {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify({
+      orderId,
+      amountCents: amountCents || undefined,
+      reason
+    }),
+    headers: adminHeaders_(),
+    muteHttpExceptions: true
+  });
+
+  const code = resp.getResponseCode();
+  let out = {};
+  try {
+    out = JSON.parse(resp.getContentText() || '{}');
+  } catch (_) {}
+  if (code < 200 || code >= 300) {
+    const msg = out.message || resp.getContentText() || 'Reembolso fallido.';
+    throw new Error(msg);
+  }
+
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAMES.ORDERS);
+  if (sh && row >= 2) {
+    if (out.status) {
+      sh.getRange(row, ORD_COL.STATUS).setValue(out.status);
+    }
     if (typeof out.remainingAmountCents === 'number' && !isNaN(out.remainingAmountCents)) {
       sh.getRange(row, ORD_COL.TOTAL_PAID).setValue(out.remainingAmountCents / 100);
     }
     const noteParts = [];
     if (reason) noteParts.push('Motivo: ' + reason);
     if (out.message) noteParts.push(out.message);
+    if (out.refundedAmountCents) {
+      noteParts.push('Reembolsado: $' + (out.refundedAmountCents / 100).toFixed(2));
+    }
     const noteText = noteParts.join('\n');
     if (noteText) {
       sh.getRange(row, ORD_COL.STATUS).setNote(noteText);

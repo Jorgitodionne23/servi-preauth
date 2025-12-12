@@ -2330,16 +2330,14 @@ app.post('/create-adjustment', requireAdminAuth, async (req, res) => {
   }
 });
 
-// 🚫 Cancel order (optional refund)
+// 🚫 Cancel order (no refund; captured orders not cancelable)
 app.post('/cancel-order', requireAdminAuth, async (req, res) => {
   try {
-    const { orderId, refund, refundAmountCents, reason } = req.body || {};
+    const { orderId, reason } = req.body || {};
     if (!orderId) {
       return res.status(400).json({ error: 'order_required', message: 'orderId is required' });
     }
     const trimmedReason = String(reason || '').trim().slice(0, 200) || null;
-    const wantRefund = refund === true || (Number(refundAmountCents) || 0) > 0;
-    const partialRefundCents = Number(refundAmountCents) || 0;
 
     const { rows } = await pool.query(
       'SELECT id, payment_intent_id, amount, status, kind FROM all_bookings WHERE id = $1 LIMIT 1',
@@ -2352,8 +2350,6 @@ app.post('/cancel-order', requireAdminAuth, async (req, res) => {
 
     let newStatus = 'Canceled';
     let piStatus = null;
-    let refundedAmountCents = 0;
-    let remainingAmountCents = null;
     let message = trimmedReason ? `Cancelado: ${trimmedReason}` : 'Cancelado';
 
     if (row.payment_intent_id) {
@@ -2367,9 +2363,6 @@ app.post('/cancel-order', requireAdminAuth, async (req, res) => {
       if (pi) {
         piStatus = pi.status;
         const amountReceived = typeof pi.amount_received === 'number' ? pi.amount_received : null;
-        const chargeId =
-          pi.latest_charge ||
-          (pi.charges && pi.charges.data && pi.charges.data.length ? pi.charges.data[0].id : null);
 
         const cancelableStatuses = new Set([
           'requires_payment_method',
@@ -2382,44 +2375,16 @@ app.post('/cancel-order', requireAdminAuth, async (req, res) => {
         if (cancelableStatuses.has(pi.status)) {
           await stripe.paymentIntents.cancel(pi.id, { cancellation_reason: 'requested_by_customer' });
           newStatus = 'Canceled';
-          remainingAmountCents = amountReceived || 0;
         } else if (pi.status === 'succeeded') {
-          if (wantRefund) {
-            if (!chargeId) {
-              return res
-                .status(409)
-                .json({ error: 'no_charge_to_refund', message: 'No charge available to refund for this order.' });
-            }
-            const received = amountReceived || row.amount || 0;
-            const amountToRefund =
-              partialRefundCents > 0 ? Math.min(partialRefundCents, received) : Math.max(received, 0);
-            if (!amountToRefund || amountToRefund <= 0) {
-              return res.status(400).json({ error: 'invalid_refund_amount', message: 'Refund amount must be > 0.' });
-            }
-            const refundObj = await stripe.refunds.create({
-              charge: chargeId,
-              amount: amountToRefund,
-              reason: 'requested_by_customer'
-            });
-            refundedAmountCents = refundObj.amount || amountToRefund;
-            const remaining = received - refundedAmountCents;
-            remainingAmountCents = remaining >= 0 ? remaining : 0;
-            newStatus =
-              refundedAmountCents >= received ? 'Canceled (refunded)' : 'Canceled (partial refund)';
-            message = trimmedReason
-              ? `${newStatus}. Motivo: ${trimmedReason}`
-              : `${newStatus}. Monto reembolsado: $${(refundedAmountCents / 100).toFixed(2)}`;
-          } else {
-            newStatus = 'Canceled (no refund)';
-            remainingAmountCents = amountReceived;
-            message = trimmedReason ? `${newStatus}. Motivo: ${trimmedReason}` : newStatus;
-          }
+          return res.status(409).json({
+            error: 'already_captured',
+            message: 'No se puede cancelar una orden capturada. Usa reembolso.',
+            amount_received: amountReceived || null
+          });
         } else if (pi.status === 'canceled') {
           newStatus = 'Canceled';
-          remainingAmountCents = amountReceived || 0;
         } else {
           newStatus = 'Canceled';
-          remainingAmountCents = amountReceived || 0;
         }
       }
     }
@@ -2428,8 +2393,6 @@ app.post('/cancel-order', requireAdminAuth, async (req, res) => {
 
     return res.json({
       status: newStatus,
-      refundedAmountCents,
-      remainingAmountCents,
       paymentIntentStatus: piStatus,
       message
     });
@@ -2439,6 +2402,82 @@ app.post('/cancel-order', requireAdminAuth, async (req, res) => {
     return res.status(status).json({
       error: err.code || 'cancel_failed',
       message: err.message || 'No se pudo cancelar la orden'
+    });
+  }
+});
+
+// 💸 Refund a captured order (full or partial)
+app.post('/refund-order', requireAdminAuth, async (req, res) => {
+  try {
+    const { orderId, amountCents, reason } = req.body || {};
+    if (!orderId) {
+      return res.status(400).json({ error: 'order_required', message: 'orderId is required' });
+    }
+    const { rows } = await pool.query(
+      'SELECT id, payment_intent_id, amount FROM all_bookings WHERE id = $1 LIMIT 1',
+      [orderId]
+    );
+    const row = rows[0];
+    if (!row || !row.payment_intent_id) {
+      return res.status(404).json({ error: 'not_found', message: 'Order or payment intent not found' });
+    }
+    const pi = await stripe.paymentIntents.retrieve(row.payment_intent_id, { expand: ['latest_charge'] });
+    if (!pi || pi.status !== 'succeeded') {
+      return res
+        .status(409)
+        .json({ error: 'not_captured', message: 'Solo se puede reembolsar una orden capturada.' });
+    }
+    const chargeId =
+      pi.latest_charge ||
+      (pi.charges && pi.charges.data && pi.charges.data.length ? pi.charges.data[0].id : null);
+    if (!chargeId) {
+      return res.status(409).json({ error: 'no_charge', message: 'No charge available to refund.' });
+    }
+
+    const received = typeof pi.amount_received === 'number' ? pi.amount_received : row.amount || 0;
+    const requested = Number(amountCents);
+    let amountToRefund = null;
+    if (Number.isInteger(requested) && requested > 0) {
+      if (requested > received) {
+        return res
+          .status(400)
+          .json({ error: 'amount_exceeds', message: 'Refund amount exceeds captured amount.' });
+      }
+      amountToRefund = requested;
+    } else {
+      amountToRefund = received;
+    }
+
+    const refundObj = await stripe.refunds.create({
+      charge: chargeId,
+      amount: amountToRefund,
+      reason: 'requested_by_customer',
+      metadata: { order_id: orderId, note: String(reason || '').slice(0, 200) }
+    });
+
+    const refundedAmountCents = refundObj.amount || amountToRefund;
+    const remainingAmountCents = Math.max(0, received - refundedAmountCents);
+    const newStatus =
+      refundedAmountCents >= received ? 'Refunded' : 'Captured (partial refund)';
+
+    await pool.query('UPDATE all_bookings SET status=$1 WHERE id=$2', [newStatus, orderId]);
+
+    return res.json({
+      status: newStatus,
+      refundedAmountCents,
+      remainingAmountCents,
+      refundId: refundObj.id,
+      message:
+        refundedAmountCents >= received
+          ? 'Reembolso total realizado.'
+          : 'Reembolso parcial realizado.'
+    });
+  } catch (err) {
+    console.error('refund-order error:', err);
+    const status = err.status || 400;
+    return res.status(status).json({
+      error: err.code || 'refund_failed',
+      message: err.message || 'No se pudo reembolsar la orden'
     });
   }
 });
