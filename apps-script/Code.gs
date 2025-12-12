@@ -2221,7 +2221,7 @@ function captureOrderFromSidebar(payload) {
 
   const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAMES.ORDERS);
   if (sh && row >= 2) {
-    const statusLabel = out.status || 'Captured';
+    const statusLabel = out.status === 'succeeded' ? 'Captured' : (out.status || 'Captured');
     sh.getRange(row, ORD_COL.STATUS).setValue(statusLabel);
     if (typeof out.captured === 'number' && !isNaN(out.captured)) {
       sh.getRange(row, ORD_COL.TOTAL_PAID).setValue(out.captured / 100);

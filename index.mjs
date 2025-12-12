@@ -2421,15 +2421,20 @@ app.post('/refund-order', requireAdminAuth, async (req, res) => {
     if (!row || !row.payment_intent_id) {
       return res.status(404).json({ error: 'not_found', message: 'Order or payment intent not found' });
     }
-    const pi = await stripe.paymentIntents.retrieve(row.payment_intent_id, { expand: ['latest_charge'] });
+    const pi = await stripe.paymentIntents.retrieve(row.payment_intent_id, { expand: ['charges'] });
     if (!pi || pi.status !== 'succeeded') {
       return res
         .status(409)
         .json({ error: 'not_captured', message: 'Solo se puede reembolsar una orden capturada.' });
     }
-    const chargeId =
-      pi.latest_charge ||
-      (pi.charges && pi.charges.data && pi.charges.data.length ? pi.charges.data[0].id : null);
+    let chargeId = null;
+    if (typeof pi.latest_charge === 'string') {
+      chargeId = pi.latest_charge;
+    } else if (pi.latest_charge && typeof pi.latest_charge.id === 'string') {
+      chargeId = pi.latest_charge.id;
+    } else if (pi.charges && pi.charges.data && pi.charges.data.length) {
+      chargeId = pi.charges.data[0].id || null;
+    }
     if (!chargeId) {
       return res.status(409).json({ error: 'no_charge', message: 'No charge available to refund.' });
     }
