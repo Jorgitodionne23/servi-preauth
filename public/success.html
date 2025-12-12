@@ -112,7 +112,7 @@
       </div>
       <div class="note" id="vat-note" style="display:none;">*IVA incluido</div>
       <div class="row" id="service-price-row" style="display:none;">
-        <div class="label">Precio del servicio</div>
+        <div class="label" id="service-price-label">Precio del servicio</div>
         <div class="value" id="service-price">—</div>
       </div>
       <div class="row" id="processing-row" style="display:none;">
@@ -160,6 +160,7 @@
     const titleEl = document.getElementById('title');
     const subtitleEl = document.getElementById('subtitle');
     const servicePriceRow = document.getElementById('service-price-row');
+    const servicePriceLabel = document.getElementById('service-price-label');
     const servicePriceEl = document.getElementById('service-price');
     const processingRow = document.getElementById('processing-row');
     const processingEl = document.getElementById('processing-fee');
@@ -203,7 +204,8 @@
         vatCents: toNumber(order.vat_amount ?? order.pricing?.vat_amount),
         kind: String(order.kind || ''),
         reason: String(order.adjustment_reason || ''),
-        serviceAddress: order.service_address || ''
+        serviceAddress: order.service_address || '',
+        bookingType: order.booking_type || null
       };
     }
 
@@ -240,6 +242,15 @@
       return getPersistentPreview(orderId);
     }
 
+    function normalizeBookingType(raw) {
+      const text = String(raw || '').trim();
+      if (!text) return 'rango';
+      const norm = text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      if (norm.includes('visita')) return 'visita';
+      if (norm.includes('anticipo')) return 'anticipo';
+      return 'rango';
+    }
+
     function renderOrder(order, { totalsOverride = null, reasonOverride = null, skipStripeReason = false } = {}) {
       try {
         targetOrderId.textContent = friendlyCode(order);
@@ -254,11 +265,21 @@
       const processingCents = toNumber(order.processing_fee_amount ?? totals.processingCents ?? order.pricing?.processing_fee_amount);
       const vatCents = toNumber(order.vat_amount ?? totals.vatCents ?? order.pricing?.vat_amount);
       const serviceCents = providerCents + bookingCents + vatCents;
+      const bookingTypeKey = normalizeBookingType(order.booking_type || totals.bookingType);
 
       amountEl.textContent = fmtAmount(totalCents);
       if (serviceCents > 0) {
         servicePriceEl.textContent = fmtAmount(serviceCents);
         servicePriceRow.style.display = 'flex';
+        if (servicePriceLabel) {
+          const labelText =
+            bookingTypeKey === 'visita'
+              ? 'Costo de visita'
+              : bookingTypeKey === 'anticipo'
+                ? 'Monto del anticipo'
+                : 'Precio del servicio';
+          servicePriceLabel.textContent = labelText;
+        }
       } else {
         servicePriceRow.style.display = 'none';
       }
