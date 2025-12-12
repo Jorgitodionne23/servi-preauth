@@ -255,6 +255,7 @@ function onOpen() {
         'Initiate Payment Intent for Scheduled Order',
         'InitiatePaymentIntentForScheduledOrder'
       )
+      .addItem('Open Order Actions Sidebar', 'openOrderActionsSidebar')
       .addItem('Re-sync Selected Row', 'resyncSelectedRow')
       .addSeparator()
       .addItem('Install Auto-Preauth (hourly)', 'installAutoPreauthTrigger_')
@@ -1028,7 +1029,7 @@ function generatePaymentLink() {
       : null;
   const hoursAhead =
     approxServiceMs !== null && Number.isFinite(approxServiceMs)
-      ? (approxServiceMs - nowMs) / 3_600_000
+      ? (approxServiceMs - nowMs) / 3600000
       : null;
   const todayYmd = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
   const serviceInPast =
@@ -1850,6 +1851,257 @@ function resyncSelectedRow() {
   if (statusDb) writeStatusSafely(statusDb);
 
   SpreadsheetApp.getUi().alert('Fila re-sincronizada.');
+}
+
+// --- Order Actions Sidebar (cancel / refund) ---
+const ORDER_ACTIONS_SIDEBAR_HTML = `
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <style>
+      body { font-family: Arial, sans-serif; margin: 0; padding: 12px; color: #111; }
+      h3 { margin: 0 0 6px; font-size: 16px; }
+      .section { margin-bottom: 12px; }
+      label { display: block; font-size: 12px; color: #555; margin: 8px 0 4px; }
+      textarea, input[type="number"] { width: 100%; box-sizing: border-box; padding: 6px; }
+      textarea { min-height: 60px; }
+      .pill { display: inline-block; padding: 4px 8px; background: #eef2ff; color: #111; border-radius: 999px; font-size: 12px; }
+      .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      .status { font-weight: bold; color: #334155; }
+      button { padding: 8px 10px; background: #111; color: #fff; border: none; border-radius: 6px; cursor: pointer; width: 100%; font-weight: 600; }
+      button[disabled] { opacity: 0.6; cursor: not-allowed; }
+      .msg { margin-top: 8px; font-size: 12px; }
+      .msg.error { color: #b91c1c; }
+      .msg.success { color: #0f5132; }
+      .radio-row { display: flex; gap: 6px; align-items: center; font-size: 12px; }
+      .muted { color: #6b7280; font-size: 12px; margin-top: 4px; }
+    </style>
+  </head>
+  <body>
+    <h3>Orden <span id="order-id"></span></h3>
+    <div class="section">
+      <div class="row">
+        <div class="pill" id="status-pill"></div>
+        <div id="amount-label" class="muted"></div>
+      </div>
+      <div class="muted" id="service-date"></div>
+    </div>
+
+    <div class="section">
+      <label for="reason">Motivo (opcional)</label>
+      <textarea id="reason" placeholder="Ej. Cliente canceló, reprogramar, etc."></textarea>
+    </div>
+
+    <div class="section">
+      <label>Reembolso</label>
+      <div class="radio-row">
+        <input type="radio" name="refund" id="refund-none" value="none" checked>
+        <label for="refund-none">Sin reembolso (solo cancelar/void)</label>
+      </div>
+      <div class="radio-row">
+        <input type="radio" name="refund" id="refund-full" value="full">
+        <label for="refund-full">Reembolso total</label>
+      </div>
+      <div class="radio-row">
+        <input type="radio" name="refund" id="refund-partial" value="partial">
+        <label for="refund-partial">Reembolso parcial (MXN)</label>
+      </div>
+      <input type="number" id="partial-amount" min="0" step="0.01" placeholder="0.00" disabled>
+    </div>
+
+    <button id="cancel-btn">Cancelar orden</button>
+    <div id="msg" class="msg"></div>
+
+    <script>
+      const data = <?!= JSON.stringify(data) ?>;
+
+      const fmtCurrency = (val) => {
+        if (val == null || isNaN(val)) return '';
+        try { return Number(val).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' }); }
+        catch (_) { return '$' + Number(val).toFixed(2); }
+      };
+
+      function setMsg(text, kind) {
+        const el = document.getElementById('msg');
+        el.textContent = text || '';
+        el.className = 'msg ' + (kind || '');
+      }
+
+      function setLoading(state) {
+        const btn = document.getElementById('cancel-btn');
+        btn.disabled = !!state;
+        btn.textContent = state ? 'Cancelando…' : 'Cancelar orden';
+      }
+
+      function init() {
+        document.getElementById('order-id').textContent = data.orderId || '—';
+        document.getElementById('status-pill').textContent = data.status || '—';
+        if (data.amountLabel) document.getElementById('amount-label').textContent = data.amountLabel;
+        if (data.serviceDate) document.getElementById('service-date').textContent = data.serviceDate;
+        document.getElementById('cancel-btn').addEventListener('click', cancelOrder);
+        const partialInput = document.getElementById('partial-amount');
+        const refundRadios = document.querySelectorAll('input[name="refund"]');
+        refundRadios.forEach((r) => {
+          r.addEventListener('change', () => {
+            partialInput.disabled = r.value !== 'partial';
+          });
+        });
+      }
+
+      function cancelOrder() {
+        setMsg('', '');
+        const refundMode = document.querySelector('input[name="refund"]:checked')?.value || 'none';
+        let partialAmount = null;
+        if (refundMode === 'partial') {
+          partialAmount = parseFloat(document.getElementById('partial-amount').value || '0');
+          if (!partialAmount || partialAmount <= 0) {
+            setMsg('Ingresa un monto válido para reembolso parcial.', 'error');
+            return;
+          }
+        }
+        const reason = (document.getElementById('reason').value || '').trim();
+        setLoading(true);
+        google.script.run
+          .withSuccessHandler(function (out) {
+            setLoading(false);
+            if (!out) {
+              setMsg('Sin respuesta del servidor.', 'error');
+              return;
+            }
+            document.getElementById('status-pill').textContent = out.status || data.status || 'Canceled';
+            setMsg(out.message || 'Orden cancelada.', 'success');
+          })
+          .withFailureHandler(function (err) {
+            setLoading(false);
+            const msg = (err && err.message) || 'No se pudo cancelar la orden.';
+            setMsg(msg, 'error');
+          })
+          .cancelOrderFromSidebar({
+            row: data.row,
+            orderId: data.orderId,
+            refundMode,
+            partialAmount,
+            reason
+          });
+      }
+
+      init();
+    </script>
+  </body>
+</html>
+`;
+
+function openOrderActionsSidebar() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ss.getActiveSheet();
+  const ui = SpreadsheetApp.getUi();
+  if (sh.getName() !== SHEET_NAMES.ORDERS) {
+    ui.alert('Usa esta opción en la hoja "SERVI Orders".');
+    return;
+  }
+  const range = sh.getActiveRange();
+  if (!range) {
+    ui.alert('Selecciona una fila de datos (fila 2 o abajo).');
+    return;
+  }
+  const row = range.getRow();
+  if (row < 2) {
+    ui.alert('Selecciona una fila de datos (fila 2 o abajo).');
+    return;
+  }
+
+  const orderId = String(sh.getRange(row, ORD_COL.ORDER_ID).getDisplayValue() || '').trim();
+  if (!orderId) {
+    ui.alert('No Order ID en la fila seleccionada.');
+    return;
+  }
+
+  const data = {
+    row,
+    orderId,
+    status: String(sh.getRange(row, ORD_COL.STATUS).getDisplayValue() || '').trim(),
+    amountLabel: String(sh.getRange(row, ORD_COL.TOTAL_PAID).getDisplayValue() || '').trim(),
+    serviceDate: String(sh.getRange(row, ORD_COL.SERVICE_DT).getDisplayValue() || '').trim(),
+    clientName: String(sh.getRange(row, ORD_COL.CLIENT_NAME).getDisplayValue() || '').trim()
+  };
+
+  const tmpl = HtmlService.createTemplate(ORDER_ACTIONS_SIDEBAR_HTML);
+  tmpl.data = data;
+  const html = tmpl.evaluate().setTitle('SERVI Order Actions');
+  SpreadsheetApp.getUi().showSidebar(html);
+}
+
+function cancelOrderFromSidebar(payload) {
+  const p = payload || {};
+  const orderId = String(p.orderId || '').trim();
+  const refundMode = String(p.refundMode || 'none');
+  const row = Number(p.row || 0);
+  if (!orderId) throw new Error('Order ID requerido.');
+
+  const reason = String(p.reason || '').trim().slice(0, 200);
+  let refund = false;
+  let refundAmountCents = null;
+  if (refundMode === 'full') {
+    refund = true;
+  } else if (refundMode === 'partial') {
+    const partialAmount = Number(p.partialAmount || 0);
+    if (!Number.isFinite(partialAmount) || partialAmount <= 0) {
+      throw new Error('Ingresa un monto válido para reembolso parcial.');
+    }
+    refund = true;
+    refundAmountCents = Math.round(partialAmount * 100);
+  } else {
+    refund = false;
+  }
+
+  const resp = UrlFetchApp.fetch(SERVI_BASE + '/cancel-order', {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify({
+      orderId,
+      refund,
+      refundAmountCents,
+      reason
+    }),
+    headers: adminHeaders_(),
+    muteHttpExceptions: true
+  });
+
+  const code = resp.getResponseCode();
+  let out = {};
+  try {
+    out = JSON.parse(resp.getContentText() || '{}');
+  } catch (_) {
+    out = {};
+  }
+  if (code < 200 || code >= 300) {
+    const msg = out.message || resp.getContentText() || 'Cancelación fallida.';
+    throw new Error(msg);
+  }
+
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAMES.ORDERS);
+  if (sh && row >= 2) {
+    if (out.status) {
+      sh.getRange(row, ORD_COL.STATUS).setValue(out.status);
+    }
+    if (typeof out.remainingAmountCents === 'number' && !isNaN(out.remainingAmountCents)) {
+      sh.getRange(row, ORD_COL.TOTAL_PAID).setValue(out.remainingAmountCents / 100);
+    }
+    const noteParts = [];
+    if (reason) noteParts.push('Motivo: ' + reason);
+    if (out.message) noteParts.push(out.message);
+    const noteText = noteParts.join('\n');
+    if (noteText) {
+      sh.getRange(row, ORD_COL.STATUS).setNote(noteText);
+    }
+    const linkCol = ORD_COL.LINK_MSG;
+    if (linkCol) {
+      sh.getRange(row, linkCol).clearContent();
+    }
+  }
+
+  return out;
 }
 
 function keepAlive_() {

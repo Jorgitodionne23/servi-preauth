@@ -2330,6 +2330,119 @@ app.post('/create-adjustment', requireAdminAuth, async (req, res) => {
   }
 });
 
+// 🚫 Cancel order (optional refund)
+app.post('/cancel-order', requireAdminAuth, async (req, res) => {
+  try {
+    const { orderId, refund, refundAmountCents, reason } = req.body || {};
+    if (!orderId) {
+      return res.status(400).json({ error: 'order_required', message: 'orderId is required' });
+    }
+    const trimmedReason = String(reason || '').trim().slice(0, 200) || null;
+    const wantRefund = refund === true || (Number(refundAmountCents) || 0) > 0;
+    const partialRefundCents = Number(refundAmountCents) || 0;
+
+    const { rows } = await pool.query(
+      'SELECT id, payment_intent_id, amount, status, kind FROM all_bookings WHERE id = $1 LIMIT 1',
+      [orderId]
+    );
+    const row = rows[0];
+    if (!row) {
+      return res.status(404).json({ error: 'not_found', message: 'Order not found' });
+    }
+
+    let newStatus = 'Canceled';
+    let piStatus = null;
+    let refundedAmountCents = 0;
+    let remainingAmountCents = null;
+    let message = trimmedReason ? `Cancelado: ${trimmedReason}` : 'Cancelado';
+
+    if (row.payment_intent_id) {
+      let pi = null;
+      try {
+        pi = await stripe.paymentIntents.retrieve(row.payment_intent_id, { expand: ['latest_charge'] });
+      } catch (err) {
+        console.warn('cancel-order: could not retrieve PI', row.payment_intent_id, err?.message || err);
+      }
+
+      if (pi) {
+        piStatus = pi.status;
+        const amountReceived = typeof pi.amount_received === 'number' ? pi.amount_received : null;
+        const chargeId =
+          pi.latest_charge ||
+          (pi.charges && pi.charges.data && pi.charges.data.length ? pi.charges.data[0].id : null);
+
+        const cancelableStatuses = new Set([
+          'requires_payment_method',
+          'requires_confirmation',
+          'requires_action',
+          'processing',
+          'requires_capture'
+        ]);
+
+        if (cancelableStatuses.has(pi.status)) {
+          await stripe.paymentIntents.cancel(pi.id, { cancellation_reason: 'requested_by_customer' });
+          newStatus = 'Canceled';
+          remainingAmountCents = amountReceived || 0;
+        } else if (pi.status === 'succeeded') {
+          if (wantRefund) {
+            if (!chargeId) {
+              return res
+                .status(409)
+                .json({ error: 'no_charge_to_refund', message: 'No charge available to refund for this order.' });
+            }
+            const received = amountReceived || row.amount || 0;
+            const amountToRefund =
+              partialRefundCents > 0 ? Math.min(partialRefundCents, received) : Math.max(received, 0);
+            if (!amountToRefund || amountToRefund <= 0) {
+              return res.status(400).json({ error: 'invalid_refund_amount', message: 'Refund amount must be > 0.' });
+            }
+            const refundObj = await stripe.refunds.create({
+              charge: chargeId,
+              amount: amountToRefund,
+              reason: 'requested_by_customer'
+            });
+            refundedAmountCents = refundObj.amount || amountToRefund;
+            const remaining = received - refundedAmountCents;
+            remainingAmountCents = remaining >= 0 ? remaining : 0;
+            newStatus =
+              refundedAmountCents >= received ? 'Canceled (refunded)' : 'Canceled (partial refund)';
+            message = trimmedReason
+              ? `${newStatus}. Motivo: ${trimmedReason}`
+              : `${newStatus}. Monto reembolsado: $${(refundedAmountCents / 100).toFixed(2)}`;
+          } else {
+            newStatus = 'Canceled (no refund)';
+            remainingAmountCents = amountReceived;
+            message = trimmedReason ? `${newStatus}. Motivo: ${trimmedReason}` : newStatus;
+          }
+        } else if (pi.status === 'canceled') {
+          newStatus = 'Canceled';
+          remainingAmountCents = amountReceived || 0;
+        } else {
+          newStatus = 'Canceled';
+          remainingAmountCents = amountReceived || 0;
+        }
+      }
+    }
+
+    await pool.query('UPDATE all_bookings SET status=$1 WHERE id=$2', [newStatus, orderId]);
+
+    return res.json({
+      status: newStatus,
+      refundedAmountCents,
+      remainingAmountCents,
+      paymentIntentStatus: piStatus,
+      message
+    });
+  } catch (err) {
+    console.error('cancel-order error:', err);
+    const status = err.status || 400;
+    return res.status(status).json({
+      error: err.code || 'cancel_failed',
+      message: err.message || 'No se pudo cancelar la orden'
+    });
+  }
+});
+
 // Capture an authorized manual-capture PaymentIntent (optionally partial).
 // Body: { orderId?: string, paymentIntentId?: string, amount?: number }  // amount in CENTS
 app.post('/capture-order', requireAdminAuth, async (req, res) => {
