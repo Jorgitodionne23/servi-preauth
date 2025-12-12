@@ -8,6 +8,7 @@ const ORDER_HEADER_ALIASES = {
   CLIENT_NAME: ['Client Name'],
   PHONE: ['WhatsApp Number', 'WhatsApp (E.164)', 'WhatsApp Associated'],
   SERVICE_DESC: ['Service Description'],
+  BOOKING_TYPE: ['Booking type', 'Booking Type'],
   AMOUNT: ['Amount (MXN)', 'Amount'],
   SERVICE_DT: [
     'Service Date and Time',
@@ -223,6 +224,25 @@ const ADJ_COL = createColumnProxy_(
   SHEET_NAMES.ADJUSTMENTS,
   ADJ_HEADER_ALIASES
 );
+
+const BOOKING_TYPE_LABELS = {
+  RANGO: 'Rango de Precio',
+  VISITA: 'Visita para cotizar',
+  ANTICIPO: 'Anticipo',
+};
+
+function normalizeBookingType_(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return BOOKING_TYPE_LABELS.RANGO;
+  const normalized = raw
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  if (normalized.indexOf('visita') !== -1) return BOOKING_TYPE_LABELS.VISITA;
+  if (normalized.indexOf('anticipo') !== -1) return BOOKING_TYPE_LABELS.ANTICIPO;
+  if (normalized.indexOf('rango') !== -1) return BOOKING_TYPE_LABELS.RANGO;
+  return BOOKING_TYPE_LABELS.RANGO;
+}
 
 function onOpen() {
   try {
@@ -856,6 +876,29 @@ function setCellRichTextWithLink_(range, content, linkUrl) {
   }
 }
 
+function buildBookingLinkMessage_(bookingType, paymentLink) {
+  const type = normalizeBookingType_(bookingType);
+  if (type === BOOKING_TYPE_LABELS.VISITA) {
+    return [
+      'Confirma tu visita para cotizar. Este pago se abona al total final.',
+      'Reserva en nuestro enlace seguro con Stripe:',
+      paymentLink,
+    ].join('\n');
+  }
+  if (type === BOOKING_TYPE_LABELS.ANTICIPO) {
+    return [
+      'Confirma tu anticipo para iniciar tu servicio.',
+      'Paga de forma segura con Stripe:',
+      paymentLink,
+    ].join('\n');
+  }
+  return [
+    '¡Estás a un paso de confirmar tu servicio!',
+    'Elige tu método de pago y reserva a través de nuestro enlace seguro con Stripe:',
+    paymentLink,
+  ].join('\n');
+}
+
 function generatePaymentLink() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
   if (sheet.getName() !== 'SERVI Orders') {
@@ -890,6 +933,7 @@ function generatePaymentLink() {
   const amountCol = ORD_COL.AMOUNT;
   const serviceDateCol = ORD_COL.SERVICE_DT;
   const addressCol = ORD_COL.ADDRESS;
+  const bookingTypeCol = ORD_COL.BOOKING_TYPE;
   const linkCol = ORD_COL.LINK_MSG;
   const statusCol = ORD_COL.STATUS;
   const receiptCol = ORD_COL.RECEIPT;
@@ -900,6 +944,7 @@ function generatePaymentLink() {
   const clientIdCol = ORD_COL.CLIENT_ID;
   const clientTypeCol = ORD_COL.CLIENT_TYPE;
   const linkCell = sheet.getRange(editedRow, linkCol);
+  const bookingTypeCell = sheet.getRange(editedRow, bookingTypeCol);
 
   const clientName = sheet.getRange(editedRow, clientNameCol).getValue();
   const serviceDescription = sheet
@@ -912,6 +957,11 @@ function generatePaymentLink() {
   ).trim();
   const rawPhone = sheet.getRange(editedRow, phoneCol).getDisplayValue();
   const clientPhone = normalizePhoneToE164(rawPhone);
+  const bookingTypeRaw = bookingTypeCell.getDisplayValue();
+  const bookingType = normalizeBookingType_(bookingTypeRaw);
+  if (!bookingTypeRaw) {
+    bookingTypeCell.setValue(bookingType);
+  }
   const clientTypeCell = sheet.getRange(editedRow, clientTypeCol);
   clientTypeCell.setValue('Guest');
 
@@ -954,11 +1004,23 @@ function generatePaymentLink() {
     : '';
   const serviceDateTime = parsedDate ? toISOWithOffset_(parsedDate, TZ) : '';
 
+  const amountHeader = String(
+    sheet.getRange(1, amountCol).getDisplayValue() || ''
+  ).trim();
+  const amountColLetter = columnLetterFromIndex_(amountCol);
+  const amountLabel = amountHeader
+    ? '"' + amountHeader + '"'
+    : amountColLetter
+      ? 'column ' + amountColLetter
+      : 'the Amount column';
+  const amountErrorMessage =
+    '⚠️ Please enter a valid amount (MXN) in ' + amountLabel + '.';
+
   if (!amountMXN || isNaN(amountMXN)) {
     try {
-      ui.alert('⚠️ Please enter a valid amount (MXN) in column E.');
+      ui.alert(amountErrorMessage);
     } catch (err) {
-      Logger.log('⚠️ Invalid amount in column E.');
+      Logger.log('⚠️ Invalid amount in Amount column.');
     }
     return;
   }
@@ -966,9 +1028,9 @@ function generatePaymentLink() {
   const providerPrice = Number(amountMXN);
   if (!Number.isFinite(providerPrice) || providerPrice <= 0) {
     try {
-      ui.alert('⚠️ Please enter a valid amount (MXN) in column E.');
+      ui.alert(amountErrorMessage);
     } catch (err) {
-      Logger.log('⚠️ Invalid amount in column E.');
+      Logger.log('⚠️ Invalid amount in Amount column.');
     }
     return;
   }
@@ -986,6 +1048,7 @@ function generatePaymentLink() {
       serviceDateTime,
       clientPhone,
       serviceAddress,
+      bookingType,
     }),
     headers: adminHeaders_(),
     muteHttpExceptions: true,
@@ -1002,6 +1065,7 @@ function generatePaymentLink() {
         serviceDateTime,
         clientPhone,
         serviceAddress,
+        bookingType,
       })
     );
 
@@ -1035,11 +1099,7 @@ function generatePaymentLink() {
         const dataErr = JSON.parse(body);
         if (code === 403 && dataErr && dataErr.error === 'account_required') {
           const paymentLink = SERVI_BASE + '/o/' + dataErr.publicCode;
-          const paymentText = [
-            '¡Estás a un paso de confirmar tu servicio!',
-            'Elige tu método de pago y reserva a través de nuestro enlace seguro con Stripe:',
-            paymentLink,
-          ].join('\n');
+          const paymentText = buildBookingLinkMessage_(bookingType, paymentLink);
 
           sheet
             .getRange(editedRow, orderIdCol)
@@ -1107,11 +1167,7 @@ function generatePaymentLink() {
     if (!data.publicCode) throw new Error('Missing publicCode in response');
 
     const paymentLink = SERVI_BASE + '/o/' + data.publicCode;
-    const paymentText = [
-      '¡Estás a un paso de confirmar tu servicio!',
-      'Elige tu método de pago y reserva a través de nuestro enlace seguro con Stripe:',
-      paymentLink,
-    ].join('\n');
+    const paymentText = buildBookingLinkMessage_(bookingType, paymentLink);
 
     sheet.getRange(editedRow, orderIdCol).setValue(String(data.orderId));
     sheet
@@ -1298,8 +1354,26 @@ function generateAdjustment() {
     style: 'currency',
     currency: 'MXN',
   });
+  const bookingTypeResp = normalizeBookingType_(out.bookingType || '');
+  const visitCreditMXN = Number(out.visitCreditCents || 0) / 100;
+  const visitCreditLine =
+    bookingTypeResp === BOOKING_TYPE_LABELS.VISITA && visitCreditMXN > 0
+      ? 'Se descontará tu visita de ' +
+        visitCreditMXN.toLocaleString('es-MX', {
+          style: 'currency',
+          currency: 'MXN',
+        }) +
+        ' del total.'
+      : '';
+  const introLine =
+    bookingTypeResp === BOOKING_TYPE_LABELS.VISITA
+      ? 'Saldo final después de tu visita para cotizar.'
+      : bookingTypeResp === BOOKING_TYPE_LABELS.ANTICIPO
+        ? 'Segundo cobro de tu servicio (anticipo no deducible).'
+        : 'Necesitamos confirmar un ajuste en tu servicio.';
   const messageLines = [
-    'Necesitamos confirmar un ajuste en tu servicio.',
+    introLine,
+    visitCreditLine,
     'Monto total: ' + formattedTotal,
     effectiveReason ? 'Motivo: ' + effectiveReason : '',
     flow === 'book'

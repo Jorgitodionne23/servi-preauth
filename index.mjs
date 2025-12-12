@@ -54,6 +54,32 @@ function normalizeNameKey(value) {
     .replace(/\s+/g, ' ');
 }
 
+const BOOKING_TYPE_LABELS = {
+  RANGO: 'Rango de Precio',
+  VISITA: 'Visita para cotizar',
+  ANTICIPO: 'Anticipo'
+};
+
+function normalizeBookingType(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return BOOKING_TYPE_LABELS.RANGO;
+  const norm = raw
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  if (norm.includes('visita')) return BOOKING_TYPE_LABELS.VISITA;
+  if (norm.includes('anticipo')) return BOOKING_TYPE_LABELS.ANTICIPO;
+  if (norm.includes('rango')) return BOOKING_TYPE_LABELS.RANGO;
+  return BOOKING_TYPE_LABELS.RANGO;
+}
+
+function bookingTypeKey(value) {
+  const normalized = normalizeBookingType(value);
+  if (normalized === BOOKING_TYPE_LABELS.VISITA) return 'visita';
+  if (normalized === BOOKING_TYPE_LABELS.ANTICIPO) return 'anticipo';
+  return 'rango';
+}
+
 async function findSavedClientByPhoneDigits(digits) {
   if (!digits) return null;
   const { rows } = await pool.query(
@@ -787,7 +813,19 @@ app.use(express.static('public'));
 
 // 🎯 Create PaymentIntent (save card for later off-session charges)
 app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
-  const { amount, clientName, serviceDescription, serviceDate, serviceDateTime, clientEmail, clientPhone, consent, serviceAddress } = req.body;
+  const {
+    amount,
+    clientName,
+    serviceDescription,
+    serviceDate,
+    serviceDateTime,
+    clientEmail,
+    clientPhone,
+    consent,
+    serviceAddress,
+    bookingType: bookingTypeRaw
+  } = req.body;
+  const bookingType = normalizeBookingType(bookingTypeRaw);
   const providerPricePesos = Number(amount);
   if (!Number.isFinite(providerPricePesos) || providerPricePesos <= 0) {
     return res.status(400).send({ error: 'invalid_provider_amount', message: 'amount must be a positive number (MXN pesos)' });
@@ -885,6 +923,7 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
         client_email,
         service_date,
         service_address,
+        booking_type,
         status,
         public_code,
         kind,
@@ -899,9 +938,9 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
       )
       VALUES (
         $1,$2,$3,$4,$5,$6,$7,
-        $8,$9,$10,$11,$12,$13,
-        'pending',$14,'primary',$15,
-        $16,$17,$18,$19,$20,$21,$22
+        $8,$9,$10,$11,$12,$13,$14,
+        'pending',$15,'primary',$16,
+        $17,$18,$19,$20,$21,$22,$23
       )
       ON CONFLICT (id) DO NOTHING`,
       [
@@ -918,6 +957,7 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
         clientEmail || null,
         serviceDate || null,
         serviceAddress || null,
+        bookingType || null,
         publicCode,
         existingCustomer?.id || null,
         vatRate,
@@ -932,8 +972,16 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
 
     // also persist service_date/service_datetime (you already do)
     await pool.query(
-      'UPDATE all_bookings SET service_date=$1, service_datetime=$2, client_phone=$3, client_email=$4, service_address=$5 WHERE id=$6',
-      [serviceDate || null, serviceDateTime || null, clientPhone || null, clientEmail || null, serviceAddress || null, orderId]
+      'UPDATE all_bookings SET service_date=$1, service_datetime=$2, client_phone=$3, client_email=$4, service_address=$5, booking_type=$6 WHERE id=$7',
+      [
+        serviceDate || null,
+        serviceDateTime || null,
+        clientPhone || null,
+        clientEmail || null,
+        serviceAddress || null,
+        bookingType || null,
+        orderId
+      ]
     );
     // --- NEW: determine if we already have consent (customer-level or order-level) ---
     let hasConsent = false;
@@ -1085,7 +1133,7 @@ app.get('/order/:orderId', async (req, res) => {
         vat_amount, pricing_total_amount, vat_rate, stripe_percent_fee, stripe_fixed_fee,
         stripe_fee_tax_rate, processing_fee_type, urgency_multiplier, alpha_value,
         client_name, client_phone, client_email,
-        service_description, service_date, service_datetime, service_address, status, created_at,
+        service_description, service_date, service_datetime, service_address, booking_type, status, created_at,
         public_code, kind, parent_id_of_adjustment, customer_id, saved_payment_method_id, capture_method, adjustment_reason,
         retry_token, retry_token_created_at
       FROM all_bookings
@@ -2099,7 +2147,9 @@ app.post('/create-adjustment', requireAdminAuth, async (req, res) => {
               service_description,
               service_date,
               service_datetime,
-              service_address
+              service_address,
+              provider_amount,
+              booking_type
          FROM all_bookings
         WHERE id = $1`,
       [parentOrderId]
@@ -2114,6 +2164,9 @@ app.post('/create-adjustment', requireAdminAuth, async (req, res) => {
 
     const captureMethod = String(capture).toLowerCase() === 'manual' ? 'manual' : 'automatic';
     const providerPricePesos = baseAmountCents / 100;
+    const parentBookingType = normalizeBookingType(parentOrder.booking_type);
+    const parentBookingKey = bookingTypeKey(parentBookingType);
+    const parentProviderCents = Number(parentOrder.provider_amount || 0);
 
     let pricing;
     try {
@@ -2136,6 +2189,20 @@ app.post('/create-adjustment', requireAdminAuth, async (req, res) => {
         stripeFeeVatRate
       }
     } = pricing;
+
+    let providerAfterCreditCents = providerAmountCents;
+    let totalAfterCreditCents = totalAmountCents;
+    let creditAppliedCents = 0;
+    if (parentBookingKey === 'visita') {
+      const credit = Math.max(
+        0,
+        Math.min(Number.isFinite(parentProviderCents) ? parentProviderCents : 0, providerAmountCents)
+      );
+      creditAppliedCents = credit;
+      providerAfterCreditCents = providerAmountCents - credit;
+      totalAfterCreditCents =
+        providerAfterCreditCents + bookingFeeAmountCents + processingFeeAmountCents + vatAmountCents;
+    }
 
     const stripeFixedFeeCents = Math.round(Number(stripeFixed || 0) * 100);
     const reason = (note ? String(note) : '').trim() || 'SERVI adjustment';
@@ -2161,6 +2228,7 @@ app.post('/create-adjustment', requireAdminAuth, async (req, res) => {
           service_date,
           service_datetime,
           service_address,
+          booking_type,
           status,
           public_code,
           kind,
@@ -2178,20 +2246,20 @@ app.post('/create-adjustment', requireAdminAuth, async (req, res) => {
         )
         VALUES (
           $1,$2,$3,$4,$5,$6,$7,$8,
-          $9,$10,$11,$12,$13,$14,$15,
-          $16,$17,'adjustment',$18,$19,$20,
+          $9,$10,$11,$12,$13,$14,$15,$16,
+          'Pending',$17,'adjustment',$18,$19,$20,
           $21,$22,$23,$24,$25,$26,$27,$28
         )
       `,
       [
         childId,
         null,
-        totalAmountCents,
-        providerAmountCents,
+        totalAfterCreditCents,
+        providerAfterCreditCents,
         bookingFeeAmountCents,
         processingFeeAmountCents,
         vatAmountCents,
-        totalAmountCents,
+        totalAfterCreditCents,
         parentOrder.client_name || null,
         parentOrder.client_phone || null,
         parentOrder.client_email || null,
@@ -2199,7 +2267,7 @@ app.post('/create-adjustment', requireAdminAuth, async (req, res) => {
         parentOrder.service_date || null,
         parentOrder.service_datetime || null,
         parentOrder.service_address || null,
-        'Pending',
+        parentBookingType || null,
         publicCode,
         parentOrderId,
         parentOrder.customer_id || null,
@@ -2220,7 +2288,9 @@ app.post('/create-adjustment', requireAdminAuth, async (req, res) => {
       childId,
       flow,
       captureMethod,
-      totalAmountCents
+      bookingType: parentBookingType,
+      totalAmountCents: totalAfterCreditCents,
+      visitCreditCents: creditAppliedCents
     });
 
     return res.send({
@@ -2231,9 +2301,11 @@ app.post('/create-adjustment', requireAdminAuth, async (req, res) => {
       captureMethod,
       customerId: parentOrder.customer_id || null,
       savedPaymentMethodId: parentOrder.saved_payment_method_id || null,
-      totalAmountCents,
-      totalAmountMXN: totalAmountCents / 100,
-      providerAmountCents,
+      bookingType: parentBookingType,
+      visitCreditCents: creditAppliedCents,
+      totalAmountCents: totalAfterCreditCents,
+      totalAmountMXN: totalAfterCreditCents / 100,
+      providerAmountCents: providerAfterCreditCents,
       bookingFeeAmountCents,
       processingFeeAmountCents,
       vatAmountCents,

@@ -115,6 +115,12 @@
       font-size: 12px;
       color: #9ca3af;
     }
+    .booking-note {
+      margin-top: 8px;
+      font-size: 13px;
+      color: #cbd5e1;
+      line-height: 1.5;
+    }
     .notice {
       background-color: #1a1a1a;
       border: 1px solid #f87171;
@@ -381,6 +387,7 @@
       <span id="adjustment-reason">—</span>
     </div>
     <div class="summary-note" id="summary-note" style="display:none;">*IVA incluido</div>
+    <div class="booking-note" id="booking-note" style="display:none;"></div>
   </div>
     <div id="link-expired" class="notice" style="display:none;">
       <strong>Enlace expirado</strong>
@@ -741,6 +748,15 @@
       };
     }
 
+    function normalizeBookingType(raw) {
+      const text = String(raw || '').trim();
+      if (!text) return 'rango';
+      const norm = text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      if (norm.includes('visita')) return 'visita';
+      if (norm.includes('anticipo')) return 'anticipo';
+      return 'rango';
+    }
+
     (function guardCompletedOrderAccess() {
       try {
         const params = new URLSearchParams(window.location.search);
@@ -900,6 +916,7 @@
       const totalRow = document.getElementById('total-row');
       const totalEl = document.getElementById('summary-total');
       const noteEl = document.getElementById('summary-note');
+      const bookingNoteEl = document.getElementById('booking-note');
 
       const totalCents = toCents(order.amount ?? order.pricing?.total_amount);
       const vatCents = toCents(order.vat_amount ?? order.pricing?.vat_amount);
@@ -918,6 +935,25 @@
 
       if (noteEl && summaryBox) {
         summaryBox.appendChild(noteEl);
+      }
+      if (bookingNoteEl && summaryBox) {
+        summaryBox.appendChild(bookingNoteEl);
+        const bookingTypeKey = normalizeBookingType(order.booking_type);
+        const bookingNoteCopy = (() => {
+          if (bookingTypeKey === 'visita') {
+            return 'Pago de visita para cotizar; se abonará al total final.';
+          }
+          if (bookingTypeKey === 'anticipo') {
+            return 'Anticipo para iniciar tu servicio. Podría requerir un cobro final.';
+          }
+          return '';
+        })();
+        if (bookingNoteCopy) {
+          bookingNoteEl.textContent = bookingNoteCopy;
+          bookingNoteEl.style.display = 'block';
+        } else {
+          bookingNoteEl.style.display = 'none';
+        }
       }
 
       try {

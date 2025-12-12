@@ -39,6 +39,7 @@ export async function initDb() {
       service_description TEXT,
       service_date TEXT,              -- date-only (YYYY-MM-DD) for >7d rule
       service_address TEXT,
+      booking_type TEXT,
       status TEXT,
       created_at TIMESTAMPTZ DEFAULT NOW(),
       public_code TEXT UNIQUE,
@@ -64,6 +65,8 @@ export async function initDb() {
 
     ALTER TABLE all_bookings
       ADD COLUMN IF NOT EXISTS service_address TEXT;
+    ALTER TABLE all_bookings
+      ADD COLUMN IF NOT EXISTS booking_type TEXT;
 
     ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS provider_amount INTEGER;
     ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS booking_fee_amount INTEGER;
