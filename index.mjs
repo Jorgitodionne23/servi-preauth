@@ -2442,13 +2442,14 @@ app.post('/refund-order', requireAdminAuth, async (req, res) => {
     const received = typeof pi.amount_received === 'number' ? pi.amount_received : row.amount || 0;
     const nonRefundableFee = Math.max(0, Number(row.processing_fee_amount || 0));
     const maxRefundable = Math.max(0, received - nonRefundableFee);
+
+    // Always subtract the non-refundable processing fee from the requested refund
+    // so the business doesn’t eat the fee. If no amount provided, treat as “full”
+    // refund (gross) and subtract the fee once.
     const requested = Number(amountCents);
-    let amountToRefund = null;
-    if (Number.isInteger(requested) && requested > 0) {
-      amountToRefund = Math.min(requested, maxRefundable);
-    } else {
-      amountToRefund = maxRefundable;
-    }
+    const baseRequested = Number.isInteger(requested) && requested > 0 ? Math.min(requested, received) : received;
+    let amountToRefund = Math.max(0, baseRequested - nonRefundableFee);
+    if (amountToRefund > maxRefundable) amountToRefund = maxRefundable;
 
     if (!amountToRefund || amountToRefund <= 0) {
       return res.status(409).json({
