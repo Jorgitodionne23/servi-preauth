@@ -73,6 +73,7 @@ export async function initDb() {
     ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS processing_fee_amount INTEGER;
     ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS vat_amount INTEGER;
     ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS pricing_total_amount INTEGER;
+    ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS final_captured_amount INTEGER;
     ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS vat_rate REAL;
     ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS stripe_percent_fee REAL;
     ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS stripe_fixed_fee INTEGER;

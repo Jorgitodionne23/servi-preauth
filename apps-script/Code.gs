@@ -10,6 +10,7 @@ const ORDER_HEADER_ALIASES = {
   SERVICE_DESC: ['Service Description'],
   BOOKING_TYPE: ['Booking type', 'Booking Type'],
   AMOUNT: ['Amount (MXN)', 'Amount'],
+  FINAL_CAPTURED: ['Final Captured Amount', 'Captured (Final)', 'Net Captured Amount'],
   SERVICE_DT: [
     'Service Date and Time',
     'Service Date and Time (Dia, mes, año, hora)',
@@ -34,7 +35,7 @@ const ORDER_HEADER_ALIASES = {
   UPDATE_PAYMENT_METHOD: ['Billing Portal Link', 'Update payment method'],
 };
 
-const OPTIONAL_ORDER_COLUMNS = { UPDATE_PAYMENT_METHOD: true };
+const OPTIONAL_ORDER_COLUMNS = { UPDATE_PAYMENT_METHOD: true, FINAL_CAPTURED: true };
 
 const ADJ_HEADER_ALIASES = {
   PARENT_ORDER_ID: ['Parent Order ID'],
@@ -2224,7 +2225,11 @@ function captureOrderFromSidebar(payload) {
     const statusLabel = out.status === 'succeeded' ? 'Captured' : (out.status || 'Captured');
     sh.getRange(row, ORD_COL.STATUS).setValue(statusLabel);
     if (typeof out.captured === 'number' && !isNaN(out.captured)) {
+      // Total Paid is the captured-before-refunds amount; set once on capture.
       sh.getRange(row, ORD_COL.TOTAL_PAID).setValue(out.captured / 100);
+      if (ORD_COL.FINAL_CAPTURED) {
+        sh.getRange(row, ORD_COL.FINAL_CAPTURED).setValue(out.captured / 100);
+      }
     }
     const note = out.message ? String(out.message) : 'Captura enviada.';
     sh.getRange(row, ORD_COL.STATUS).setNote(note);
@@ -2276,8 +2281,12 @@ function refundOrderFromSidebar(payload) {
     if (out.status) {
       sh.getRange(row, ORD_COL.STATUS).setValue(out.status);
     }
-    if (typeof out.remainingAmountCents === 'number' && !isNaN(out.remainingAmountCents)) {
-      sh.getRange(row, ORD_COL.TOTAL_PAID).setValue(out.remainingAmountCents / 100);
+    if (
+      ORD_COL.FINAL_CAPTURED &&
+      typeof out.remainingAmountCents === 'number' &&
+      !isNaN(out.remainingAmountCents)
+    ) {
+      sh.getRange(row, ORD_COL.FINAL_CAPTURED).setValue(out.remainingAmountCents / 100);
     }
     const noteParts = [];
     if (reason) noteParts.push('Motivo: ' + reason);

@@ -2414,7 +2414,7 @@ app.post('/refund-order', requireAdminAuth, async (req, res) => {
       return res.status(400).json({ error: 'order_required', message: 'orderId is required' });
     }
     const { rows } = await pool.query(
-      'SELECT id, payment_intent_id, amount FROM all_bookings WHERE id = $1 LIMIT 1',
+      'SELECT id, payment_intent_id, amount, processing_fee_amount, final_captured_amount FROM all_bookings WHERE id = $1 LIMIT 1',
       [orderId]
     );
     const row = rows[0];
@@ -2440,17 +2440,21 @@ app.post('/refund-order', requireAdminAuth, async (req, res) => {
     }
 
     const received = typeof pi.amount_received === 'number' ? pi.amount_received : row.amount || 0;
+    const nonRefundableFee = Math.max(0, Number(row.processing_fee_amount || 0));
+    const maxRefundable = Math.max(0, received - nonRefundableFee);
     const requested = Number(amountCents);
     let amountToRefund = null;
     if (Number.isInteger(requested) && requested > 0) {
-      if (requested > received) {
-        return res
-          .status(400)
-          .json({ error: 'amount_exceeds', message: 'Refund amount exceeds captured amount.' });
-      }
-      amountToRefund = requested;
+      amountToRefund = Math.min(requested, maxRefundable);
     } else {
-      amountToRefund = received;
+      amountToRefund = maxRefundable;
+    }
+
+    if (!amountToRefund || amountToRefund <= 0) {
+      return res.status(409).json({
+        error: 'nothing_refundable',
+        message: 'No hay monto reembolsable después de las comisiones de procesamiento.'
+      });
     }
 
     const refundObj = await stripe.refunds.create({
@@ -2465,12 +2469,17 @@ app.post('/refund-order', requireAdminAuth, async (req, res) => {
     const newStatus =
       refundedAmountCents >= received ? 'Refunded' : 'Captured (partial refund)';
 
-    await pool.query('UPDATE all_bookings SET status=$1 WHERE id=$2', [newStatus, orderId]);
+    await pool.query('UPDATE all_bookings SET status=$1, final_captured_amount=$2 WHERE id=$3', [
+      newStatus,
+      remainingAmountCents,
+      orderId
+    ]);
 
     return res.json({
       status: newStatus,
       refundedAmountCents,
       remainingAmountCents,
+      finalCapturedAmount: remainingAmountCents,
       refundId: refundObj.id,
       message:
         refundedAmountCents >= received
@@ -2496,7 +2505,7 @@ app.post('/capture-order', requireAdminAuth, async (req, res) => {
     let orderRow = null;
 
     if (!piId && orderId) {
-      const r = await pool.query('SELECT id, payment_intent_id, amount FROM all_bookings WHERE id=$1', [orderId]);
+    const r = await pool.query('SELECT id, payment_intent_id, amount FROM all_bookings WHERE id=$1', [orderId]);
       if (!r.rows[0] || !r.rows[0].payment_intent_id) return res.status(404).send({ error: 'order not found' });
       orderRow = r.rows[0];
       piId = orderRow.payment_intent_id;
@@ -2538,6 +2547,9 @@ app.post('/capture-order', requireAdminAuth, async (req, res) => {
     const captured = (params.amount_to_capture !== undefined)
       ? params.amount_to_capture
       : (Number.isInteger(orderRow.amount) ? orderRow.amount : 'full');
+    if (Number.isInteger(captured)) {
+      await pool.query('UPDATE all_bookings SET final_captured_amount = $1 WHERE id=$2', [captured, orderRow.id]);
+    }
     return res.send({ ok: true, paymentIntentId: updated.id, status: updated.status, captured });
   } catch (e) {
     console.error('capture-order error:', e);
