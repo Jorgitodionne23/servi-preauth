@@ -29,10 +29,11 @@ export function computePricing({
   alphaGamma = DEFAULTS.alphaGamma,
   beta = DEFAULTS.beta,
   vatRate = DEFAULTS.vatRate,
-  stripePercent = DEFAULTS.stripePercent,
   stripeFixed = DEFAULTS.stripeFixed,
   stripeFeeVatRate = DEFAULTS.stripeFeeVatRate
 } = {}) {
+  // Fixed at worst-case percent so payment method does not change pricing
+  const stripePercent = DEFAULTS.stripePercent;
   const P = toNumber(providerPricePesos, 0);
   if (P <= 0) {
     throw new Error('Provider price must be a positive number');
