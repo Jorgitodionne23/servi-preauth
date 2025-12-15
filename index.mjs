@@ -577,19 +577,20 @@ function computeProcessingFeeCents({ totalCents, percent, fixedFeePesos, feeVatR
   const amountPesos = totalCents / 100;
   const feeBeforeVat = percent * amountPesos + fixedFeePesos;
   const feeWithVat = feeBeforeVat * (1 + feeVatRate);
-  return Math.max(0, Math.round(feeWithVat * 100));
+  return Math.max(0, Math.ceil(feeWithVat * 100));
 }
 
 function rebalanceBookingAndVat({ totalCents, providerCents, processingCents, vatRate }) {
+  // VAT applies only to booking + processing; iterate to satisfy total = provider + booking + processing + VAT
   let bookingCents = Math.max(
     0,
-    totalCents - providerCents - processingCents - Math.round(vatRate * (providerCents + processingCents))
+    totalCents - providerCents - processingCents - Math.ceil(vatRate * processingCents)
   );
 
   for (let i = 0; i < 6; i++) {
-    const baseCents = providerCents + bookingCents;
-    const vatCents = Math.round(vatRate * (baseCents + processingCents));
-    const totalCheck = baseCents + processingCents + vatCents;
+    const vatBaseCents = bookingCents + processingCents;
+    const vatCents = Math.ceil(vatRate * vatBaseCents);
+    const totalCheck = providerCents + bookingCents + processingCents + vatCents;
     const diff = totalCents - totalCheck;
     if (diff === 0) {
       return { bookingCents, vatCents };
@@ -597,8 +598,7 @@ function rebalanceBookingAndVat({ totalCents, providerCents, processingCents, va
     bookingCents = Math.max(0, bookingCents + diff);
   }
 
-  const baseCents = providerCents + bookingCents;
-  const vatCents = Math.round(vatRate * (baseCents + processingCents));
+  const vatCents = Math.ceil(vatRate * (bookingCents + processingCents));
   return { bookingCents, vatCents };
 }
 
@@ -702,13 +702,8 @@ async function refreshOrderFees(orderId, { paymentIntentId, paymentMethodId, ret
     }
   }
 
-  let percent = 0.036; // base domestic rate
-  if (cardCountry && cardCountry !== 'MX') {
-    percent += 0.005;
-  }
-  if (currency && currency !== 'mxn') {
-    percent += 0.02;
-  }
+  const storedPercentRaw = Number(order.stripe_percent_fee);
+  const percent = Number.isFinite(storedPercentRaw) ? storedPercentRaw : 0.061; // stick to stored/worst-case rate
 
   const isInternational = !!cardCountry && cardCountry !== 'MX';
   const isConversion = currency && currency !== 'mxn';
@@ -726,7 +721,11 @@ async function refreshOrderFees(orderId, { paymentIntentId, paymentMethodId, ret
   const feeVatRateRaw = Number(order.stripe_fee_tax_rate);
   const feeVatRate = Number.isFinite(feeVatRateRaw) ? feeVatRateRaw : 0.16;
   const fixedFeeRaw = Number(order.stripe_fixed_fee);
-  const fixedFeePesos = Number.isFinite(fixedFeeRaw) ? fixedFeeRaw / 100 : 3;
+  // Handle both historical pesos storage (e.g., 3) and cent storage (e.g., 300)
+  let fixedFeePesos = 3;
+  if (Number.isFinite(fixedFeeRaw)) {
+    fixedFeePesos = fixedFeeRaw >= 50 ? fixedFeeRaw / 100 : fixedFeeRaw;
+  }
 
   const totalCents = Number(order.amount ?? order.pricing_total_amount ?? 0);
   const providerCents = Number(order.provider_amount ?? 0);
@@ -894,7 +893,7 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
         urgencyMultiplier,
         vatRate,
         stripePercent,
-        stripeFixed: stripeFixedFeeCents,
+        stripeFixed: stripeFixedPesos,
         stripeFeeVatRate
       }
     } = computePricing({
@@ -921,6 +920,7 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
     // Create the order row (allow NULL customer_id for now)
     const orderId = randomUUID();
     const publicCode = await generateUniqueCode();
+    const stripeFixedFeeCents = Math.round(Number(stripeFixedPesos || 0) * 100);
     await pool.query(
       `INSERT INTO all_bookings (
         id,
