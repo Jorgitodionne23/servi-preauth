@@ -625,7 +625,9 @@
         vatCents: Number.isFinite(vatCents) ? vatCents : toCents(order.vat_amount ?? order.pricing?.vat_amount),
         kind: order.kind || '',
         reason: reasonText || String(order.adjustment_reason || ''),
-        serviceAddress: order.service_address || ''
+        serviceAddress: order.service_address || '',
+        bookingType: order.booking_type || null,
+        savedPaymentMethodId: order.saved_payment_method_id || null
       };
     }
 
@@ -636,6 +638,14 @@
       if (norm.includes('visita')) return 'visita';
       if (norm.includes('anticipo')) return 'anticipo';
       return 'rango';
+    }
+
+    function needsConsentForBooking(order) {
+      if (!order) return false;
+      const bookingKey = normalizeBookingType(order.booking_type || order.bookingType);
+      const requiresByType = bookingKey === 'visita' || bookingKey === 'anticipo';
+      const hasSavedCard = !!order.saved_card || !!order.saved_payment_method_id || !!order.savedPaymentMethodId;
+      return requiresByType && !hasSavedCard;
     }
 
     (function guardCompletedOrderAccess() {
@@ -929,6 +939,7 @@
           style: { paymentRequestButton: { type: "default", theme: "dark", height: "45px" } }
         });
         const can = await paymentRequest.canMakePayment();
+        const requireConsentForBooking = needsConsentForBooking(order);
         if (can) {
           show('#express-pay-container');
           prButton.mount("#express-pay-button");
@@ -936,6 +947,11 @@
             const consentBox = document.getElementById("consent-checkbox");
             const rawEmail = emailInput?.value ?? ev.paymentMethod?.billing_details?.email ?? '';
             const emailValue = typeof rawEmail === 'string' ? rawEmail.trim() : '';
+            if (requireConsentForBooking && consentBox && !consentBox.checked) {
+              ev.complete("fail");
+              alert("Debes autorizar guardar tu método de pago para continuar con esta visita/anticipo.");
+              return;
+            }
             if (consentBox && consentBox.checked) {
               await recordConsent(order.id, { billingEmail: emailValue });
               await applyConsentToCurrentPI(order.id);
@@ -1021,6 +1037,9 @@
       const email = (emailInput?.value || "").trim();
 
       const mode = submitBtn.dataset.mode || '';
+      const order = await getOrder();
+      if (!order) { alert("Orden no encontrada."); return; }
+      const requireConsentForBooking = needsConsentForBooking(order);
       const missingAlerts = [];
       if (!termsChecked) {
         missingAlerts.push("Debes aceptar los Términos y Condiciones y el Aviso de Privacidad para continuar.");
@@ -1028,13 +1047,13 @@
       if (mode === 'confirm-setup' && !consentChecked) {
         missingAlerts.push("Debes autorizar guardar tu método de pago para reserva con más de 5 días de anticipación.");
       }
+      if (mode === 'confirm-payment' && requireConsentForBooking && !consentChecked) {
+        missingAlerts.push("Debes autorizar guardar tu método de pago para esta visita/anticipo.");
+      }
       if (missingAlerts.length) {
         alert(missingAlerts.join('\n\n'));
         return;
       }
-
-      const order = await getOrder();
-      if (!order) { alert("Orden no encontrada."); return; }
 
       submitBtn.disabled = true;
       spinner.style.display = "block";
