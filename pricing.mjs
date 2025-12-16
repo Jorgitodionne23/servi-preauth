@@ -1,8 +1,8 @@
 // pricing.mjs — central pricing calculations for SERVI orders
 
 const DEFAULTS = {
-  alphaMax: 0.18,
-  alphaMin: 0.08,
+  alphaMax: 0.17,
+  alphaMin: 0.075,
   alphaP0: 1200,
   alphaGamma: 1.2,
   beta: 9, // MXN
@@ -44,7 +44,7 @@ export function computePricing({
   const alphaValue = alphaMin + (alphaNumerator / alphaDenominator);
 
   const rawBookingFee = alphaValue * P + beta;
-  const guardrailMax = Math.max(40, Math.min(399, 0.20 * P));
+  const guardrailMax = Math.max(40, Math.min(500, 0.20 * P));
   const clampedBookingFee = Math.min(guardrailMax, Math.max(40, rawBookingFee));
   const bookingFeePesos = roundUpToNearestFive(clampedBookingFee);
   const bookingFeeCents = Math.round(bookingFeePesos * 100);
