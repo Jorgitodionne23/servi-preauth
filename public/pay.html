@@ -67,7 +67,7 @@
       form {
         display: flex;
         flex-direction: column;
-        gap: 16px;
+        gap: 10px;
         margin-top: -15px;
       }
 
@@ -75,6 +75,7 @@
         display: flex;
         flex-direction: column;
         gap: 8px;
+        margin: 6px 0 10px;
       }
 
       .form-row {
@@ -149,7 +150,7 @@
         font-size: 17px;
         font-weight: 700;
         cursor: pointer;
-        margin-bottom: -5px;
+        margin-bottom: 10px;
       }
 
       .form-row.checkbox-centered {
@@ -167,17 +168,41 @@
         max-width: 320px;
       }
 
+      .terms-checkbox-wrapper.consent-wrapper {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 2px;
+      }
+
+      .consent-checkbox-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+      }
+
       .terms-label {
-        font-size: 12px;
+        font-size: 13px;
         color: #ccc;
         line-height: 1.4;
         word-break: break-word;
       }
 
+      .consent-lead {
+        display: block;
+        color: #e5e7eb;
+        margin: 0;
+        font-weight: 600;
+        font-size: 13.5px;
+      }
+
       .terms-checkbox-wrapper input[type="checkbox"] {
-        transform: scale(0.9);
-        margin: 2px 0 0 0;
+        transform: scale(1.15);
+        margin: 5px 0 0 0;
         flex-shrink: 0;
+      }
+
+      .consent-checkbox-row input[type="checkbox"] {
+        margin-top: 5px;
       }
 
       .terms-label a {
@@ -186,7 +211,7 @@
       }
 
       .consent-details {
-        font-size: 11px;
+        font-size: 10.5px;
         color: #aaa;
         line-height: 1.5;
       }
@@ -429,6 +454,22 @@
 
         <div class="checkbox-group">
           <div class="form-row checkbox-centered">
+            <div class="terms-checkbox-wrapper consent-wrapper">
+              <span class="consent-lead">Haz tus próximas reservas en un solo paso.</span>
+              <div class="consent-checkbox-row">
+                <input type="checkbox" id="consent-checkbox" />
+                <label for="consent-checkbox" class="terms-label">
+                  Añadir tarjeta para próximos pagos rápidos.
+                  <a href="#" id="consent-more">Ver&nbsp;detalles</a>
+                  <span id="consent-details" class="consent-details" style="display:none"><br>
+                    Autorizas a SERVI a guardar tu tarjeta de forma segura en Stripe. Los datos de tu tarjeta se almacenan cifrados en Stripe y solo se utilizarán para cargos relacionados con tus servicios, nunca sin tu confirmación previa.
+                  </span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-row checkbox-centered">
             <div class="terms-checkbox-wrapper">
               <input type="checkbox" id="terms-checkbox" />
               <label for="terms-checkbox" class="terms-label">
@@ -436,19 +477,6 @@
                 <a href="https://serviservices.my.canva.site/helpcenter/#términos-y-condiciones" target="_blank">Términos y Condiciones</a>
                 y nuestro
                 <a href="https://serviservices.my.canva.site/helpcenter/#aviso-de-privacidad" target="_blank">Aviso de Privacidad</a>.
-              </label>
-            </div>
-          </div>
-
-          <div class="form-row checkbox-centered">
-            <div class="terms-checkbox-wrapper">
-              <input type="checkbox" id="consent-checkbox" />
-              <label for="consent-checkbox" class="terms-label">
-                <strong> Guardar como método de pago.</strong>
-                <a href="#" id="consent-more">Ver detalles</a>
-                <span id="consent-details" class="consent-details" style="display:none"><br>
-                  Autorizo a SERVI a guardar de forma segura en Stripe, esta tarjeta para cargos futuros relacionados con mi servicio.
-                </span>
               </label>
             </div>
           </div>
@@ -939,6 +967,7 @@
           style: { paymentRequestButton: { type: "default", theme: "dark", height: "45px" } }
         });
         const can = await paymentRequest.canMakePayment();
+        const bookingTypeKey = normalizeBookingType(order.booking_type);
         const requireConsentForBooking = needsConsentForBooking(order);
         if (can) {
           show('#express-pay-container');
@@ -949,7 +978,13 @@
             const emailValue = typeof rawEmail === 'string' ? rawEmail.trim() : '';
             if (requireConsentForBooking && consentBox && !consentBox.checked) {
               ev.complete("fail");
-              alert("Debes autorizar guardar tu método de pago para continuar con esta visita/anticipo.");
+              const consentMessage =
+                bookingTypeKey === 'visita'
+                  ? "Para agendar esta visita, es necesario autorizar el guardado de tu método de pago. Este método se utilizará para los cargos relacionados con la visita, siempre después de tu confirmación."
+                  : bookingTypeKey === 'anticipo'
+                    ? "Este servicio requiere un anticipo. Para continuar, necesitamos guardar tu método de pago. El cobro restante se hará con ese método, siempre después de tu confirmación."
+                    : "Debes autorizar guardar tu método de pago.";
+              alert(consentMessage);
               return;
             }
             if (consentBox && consentBox.checked) {
@@ -1039,6 +1074,7 @@
       const mode = submitBtn.dataset.mode || '';
       const order = await getOrder();
       if (!order) { alert("Orden no encontrada."); return; }
+      const bookingTypeKey = normalizeBookingType(order.booking_type || order.bookingType);
       const requireConsentForBooking = needsConsentForBooking(order);
       const missingAlerts = [];
       if (!termsChecked) {
@@ -1048,7 +1084,13 @@
         missingAlerts.push("Debes autorizar guardar tu método de pago para reserva con más de 5 días de anticipación.");
       }
       if (mode === 'confirm-payment' && requireConsentForBooking && !consentChecked) {
-        missingAlerts.push("Debes autorizar guardar tu método de pago para esta visita/anticipo.");
+        const consentMessage =
+          bookingTypeKey === 'visita'
+            ? "Para agendar esta visita, es necesario autorizar el guardado de tu método de pago. Este método se utilizará para los cargos relacionados con la visita, siempre después de tu confirmación."
+            : bookingTypeKey === 'anticipo'
+              ? "Este servicio requiere un anticipo. Para continuar, necesitamos guardar tu método de pago. El cobro restante se hará con ese método, siempre después de tu confirmación."
+              : "Debes autorizar guardar tu método de pago.";
+        missingAlerts.push(consentMessage);
       }
       if (missingAlerts.length) {
         alert(missingAlerts.join('\n\n'));
