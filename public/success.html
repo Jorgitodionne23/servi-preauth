@@ -119,6 +119,10 @@
         <div class="label">Comisión por procesamiento</div>
         <div class="value" id="processing-fee">—</div>
       </div>
+      <div class="row" id="email-row" style="display:none;">
+        <div class="label">Correo</div>
+        <div class="value" id="email-value">—</div>
+      </div>
       <div class="row">
         <div class="label">Dirección</div>
         <div class="value" id="address">—</div>
@@ -164,6 +168,8 @@
     const servicePriceEl = document.getElementById('service-price');
     const processingRow = document.getElementById('processing-row');
     const processingEl = document.getElementById('processing-fee');
+    const emailRow = document.getElementById('email-row');
+    const emailValueEl = document.getElementById('email-value');
     const vatNoteEl = document.getElementById('vat-note');
     const summaryBox = document.querySelector('.summary-box');
 
@@ -197,6 +203,7 @@
       return {
         orderId: order.id || null,
         publicCode: order.public_code || null,
+        email: order.client_email || null,
         totalCents: toNumber(order.amount ?? order.pricing?.total_amount),
         providerCents: toNumber(order.provider_amount ?? order.pricing?.provider_amount),
         bookingCents: toNumber(order.booking_fee_amount ?? order.pricing?.booking_fee_amount),
@@ -297,6 +304,13 @@
       }
 
       addressEl.textContent = order.service_address || totals.serviceAddress || '—';
+      const emailValue = (order.client_email || totals.email || '').trim();
+      if (emailValue) {
+        emailValueEl.textContent = emailValue;
+        emailRow.style.display = 'flex';
+      } else {
+        emailRow.style.display = 'none';
+      }
       statusEl.textContent = order.status || '—';
 
       const isAdjustment = String(order.kind || totals.kind || '').toLowerCase() === 'adjustment';
@@ -360,6 +374,7 @@
           const pseudoOrder = {
             id: previewSnapshot.orderId,
             public_code: previewSnapshot.publicCode,
+            client_email: previewSnapshot.email,
             amount: previewSnapshot.totalCents,
             provider_amount: previewSnapshot.providerCents,
             booking_fee_amount: previewSnapshot.bookingCents,

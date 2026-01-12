@@ -271,19 +271,6 @@
       font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     }
 
-    .readonly-field {
-      background-color: #1a1a1a;
-      border: 1px solid #333;
-      border-radius: 6px;
-      padding: 12px;
-      color: #cbd5e1;
-      font-size: 16px;
-      line-height: 24px;
-      min-height: 48px;
-      display: flex;
-      align-items: center;
-    }
-
     .summary-box {
       background-color: #1a1a1a;
       padding: 15px;
@@ -432,11 +419,6 @@
       </div>
 
       <form id="payment-form">
-        <div class="form-row">
-          <label class="form-label">Correo registrado</label>
-          <div id="customer-email-display" class="readonly-field">Cargando…</div>
-        </div>
-
         <div class="form-row">
           <label for="card-element" class="form-label">Información de la tarjeta</label>
           <div class="card-fieldset">
@@ -651,6 +633,7 @@
       return {
         orderId: order.id || null,
         publicCode: order.public_code || null,
+        email: order.client_email || null,
         totalCents: Number(totalCents || 0),
         providerCents: toCents(order.provider_amount ?? order.pricing?.provider_amount),
         bookingCents: toCents(order.booking_fee_amount ?? order.pricing?.booking_fee_amount),
@@ -823,7 +806,6 @@
     const form = document.getElementById("payment-form");
     const submitBtn = document.getElementById("submit");
     const spinner = document.getElementById("spinner");
-    const emailDisplay = document.getElementById("customer-email-display");
     const cardholderInput = document.getElementById("cardholder-name");
 
     // Init: fill summary + mount appropriate payment UI
@@ -833,9 +815,6 @@
       if (!order) return;
 
       const clientEmail = (order.client_email || "").trim();
-      if (emailDisplay) {
-        emailDisplay.textContent = clientEmail || "Sin correo";
-      }
       if (cardholderInput && order.client_name) {
         cardholderInput.value = order.client_name;
       }
