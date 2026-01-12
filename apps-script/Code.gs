@@ -6,6 +6,7 @@ const SHEET_NAMES = {
 
 const ORDER_HEADER_ALIASES = {
   CLIENT_NAME: ['Client Name'],
+  EMAIL: ['Email'],
   PHONE: ['WhatsApp Number', 'WhatsApp (E.164)', 'WhatsApp Associated'],
   SERVICE_DESC: ['Service Description'],
   BOOKING_TYPE: ['Booking type', 'Booking Type'],
@@ -35,7 +36,11 @@ const ORDER_HEADER_ALIASES = {
   UPDATE_PAYMENT_METHOD: ['Billing Portal Link', 'Update payment method'],
 };
 
-const OPTIONAL_ORDER_COLUMNS = { UPDATE_PAYMENT_METHOD: true, FINAL_CAPTURED: true };
+const OPTIONAL_ORDER_COLUMNS = {
+  UPDATE_PAYMENT_METHOD: true,
+  FINAL_CAPTURED: true,
+  EMAIL: true, // new column; keep optional to avoid breaking older sheets, but enforce in UI
+};
 
 const ADJ_HEADER_ALIASES = {
   PARENT_ORDER_ID: ['Parent Order ID'],
@@ -243,6 +248,13 @@ function normalizeBookingType_(value) {
   if (normalized.indexOf('anticipo') !== -1) return BOOKING_TYPE_LABELS.ANTICIPO;
   if (normalized.indexOf('rango') !== -1) return BOOKING_TYPE_LABELS.RANGO;
   return BOOKING_TYPE_LABELS.RANGO;
+}
+
+function normalizeEmail_(raw) {
+  const email = String(raw || '').trim().toLowerCase();
+  if (!email) return '';
+  const pattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return pattern.test(email) ? email : '';
 }
 
 function onOpen() {
@@ -937,6 +949,7 @@ function generatePaymentLink() {
   const addressCol = ORD_COL.ADDRESS;
   const bookingTypeCol = ORD_COL.BOOKING_TYPE;
   const linkCol = ORD_COL.LINK_MSG;
+  const emailCol = ORD_COL.EMAIL;
   const statusCol = ORD_COL.STATUS;
   const receiptCol = ORD_COL.RECEIPT;
   const orderIdCol = ORD_COL.ORDER_ID;
@@ -947,6 +960,15 @@ function generatePaymentLink() {
   const clientTypeCol = ORD_COL.CLIENT_TYPE;
   const linkCell = sheet.getRange(editedRow, linkCol);
   const bookingTypeCell = sheet.getRange(editedRow, bookingTypeCol);
+  if (!emailCol) {
+    try {
+      ui.alert('Añade una columna llamada "Email" antes de generar enlaces.');
+    } catch (_) {}
+    linkCell.setValue('⚠️ Falta la columna "Email" en la hoja.');
+    sheet.getRange(editedRow, statusCol).setValue('Missing email column');
+    return;
+  }
+  const emailCell = sheet.getRange(editedRow, emailCol);
 
   const clientName = sheet.getRange(editedRow, clientNameCol).getValue();
   const serviceDescription = sheet
@@ -959,6 +981,39 @@ function generatePaymentLink() {
   ).trim();
   const rawPhone = sheet.getRange(editedRow, phoneCol).getDisplayValue();
   const clientPhone = normalizePhoneToE164(rawPhone);
+  const phoneDigitsOnly = String(clientPhone || '').replace(/\D+/g, '');
+  if (!clientPhone || !phoneDigitsOnly) {
+    try {
+      ui.alert('Ingresa el WhatsApp del cliente antes de generar el enlace.');
+    } catch (_) {}
+    linkCell.setValue('⚠️ Falta teléfono del cliente.');
+    sheet.getRange(editedRow, statusCol).setValue('Missing phone');
+    return;
+  }
+  let clientEmail = normalizeEmail_(emailCell.getDisplayValue());
+  if (!clientEmail) {
+    const lookup = lookupEmailForPhone_(clientPhone);
+    if (lookup && lookup.email) {
+      clientEmail = lookup.email;
+      emailCell.setValue(clientEmail);
+      if (lookup.customerId && clientIdCol) {
+        const existing = sheet.getRange(editedRow, clientIdCol).getDisplayValue();
+        if (!existing) {
+          sheet.getRange(editedRow, clientIdCol).setValue(String(lookup.customerId));
+        }
+      }
+    }
+  }
+  if (!clientEmail) {
+    const msg =
+      '⚠️ Falta email. Coloca el correo en la columna "Email" antes de generar el enlace.';
+    linkCell.setValue(msg);
+    sheet.getRange(editedRow, statusCol).setValue('Missing email');
+    try {
+      ui.alert(msg);
+    } catch (_) {}
+    return;
+  }
   const bookingTypeRaw = bookingTypeCell.getDisplayValue();
   const bookingType = normalizeBookingType_(bookingTypeRaw);
   if (!bookingTypeRaw) {
@@ -1110,6 +1165,7 @@ function generatePaymentLink() {
       serviceDate,
       serviceDateTime,
       clientPhone,
+      clientEmail,
       serviceAddress,
       bookingType,
       hasTimeComponent: hasServiceTime,
@@ -1128,6 +1184,7 @@ function generatePaymentLink() {
         serviceDate,
         serviceDateTime,
         clientPhone,
+        clientEmail,
         serviceAddress,
         bookingType,
       })
@@ -1233,6 +1290,34 @@ function generatePaymentLink() {
           sheet.getRange(editedRow, statusCol).setValue('Name/phone mismatch');
           return;
         }
+        if (
+          code === 400 &&
+          dataErr &&
+          (dataErr.error === 'email_required' ||
+            dataErr.error === 'invalid_email' ||
+            dataErr.error === 'phone_required_for_email')
+        ) {
+          const msg =
+            dataErr.message ||
+            '⚠️ Añade un email válido en la columna "Email" antes de generar el enlace.';
+          linkCell.setValue(msg);
+          sheet.getRange(editedRow, statusCol).setValue('Email missing');
+          try {
+            ui.alert(msg);
+          } catch (_) {}
+          return;
+        }
+        if (code === 409 && dataErr && dataErr.error === 'email_phone_conflict') {
+          const msg =
+            dataErr.message ||
+            '⚠️ Este email ya está asociado a otro número. Verifica el email y el WhatsApp.';
+          linkCell.setValue(msg);
+          sheet.getRange(editedRow, statusCol).setValue('Email conflict');
+          try {
+            ui.alert(msg);
+          } catch (_) {}
+          return;
+        }
       } catch (_) {}
       throw new Error('Server ' + code + ': ' + body);
     }
@@ -1241,6 +1326,10 @@ function generatePaymentLink() {
     Logger.log('Parsed Response: %s', JSON.stringify(data));
 
     if (!data.publicCode) throw new Error('Missing publicCode in response');
+
+    if (data.clientEmail) {
+      emailCell.setValue(data.clientEmail);
+    }
 
     const paymentLink = SERVI_BASE + '/o/' + data.publicCode;
     const paymentText = buildBookingLinkMessage_(bookingType, paymentLink);
@@ -1581,6 +1670,13 @@ function updateIdentityColumns_(sheet, row, orderId) {
       }
       if (d.customer_id)
         sheet.getRange(row, ORD_COL.CLIENT_ID).setValue(String(d.customer_id));
+      if (d.client_email && ORD_COL.EMAIL) {
+        const emailCell = sheet.getRange(row, ORD_COL.EMAIL);
+        const existingEmail = normalizeEmail_(emailCell.getDisplayValue());
+        if (!existingEmail) {
+          emailCell.setValue(String(d.client_email));
+        }
+      }
     }
   } catch (_) {}
 
@@ -1650,6 +1746,27 @@ function attemptImmediatePreauthForSavedClient_(sheet, row, orderId, info) {
     }
     applyConfirmWithSavedResult_(sheet, row, code, out, ORD_COL.UPDATE_PAYMENT_METHOD);
   } catch (_) {}
+}
+
+function lookupEmailForPhone_(phone) {
+  if (!phone) return null;
+  try {
+    const resp = UrlFetchApp.fetch(
+      `${SERVI_BASE}/admin/contact-lookup?phone=${encodeURIComponent(phone)}`,
+      {
+        method: 'get',
+        muteHttpExceptions: true,
+        headers: adminHeaders_(),
+      }
+    );
+    if (resp.getResponseCode() >= 200 && resp.getResponseCode() < 300) {
+      const data = JSON.parse(resp.getContentText() || '{}');
+      if (data && data.email) return data;
+    }
+  } catch (err) {
+    Logger.log('lookupEmailForPhone_ error: ' + (err && err.message));
+  }
+  return null;
 }
 
 /** Normalize phone to E.164 (+52 default for 10-digit MX). */

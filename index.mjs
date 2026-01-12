@@ -86,7 +86,10 @@ async function findSavedClientByPhoneDigits(digits) {
     `
       SELECT customer_id,
              customer_name,
-             latest_payment_method_id
+             customer_email,
+             customer_phone,
+             latest_payment_method_id,
+             last_order_id
         FROM saved_servi_users
        WHERE regexp_replace(COALESCE(customer_phone, ''), '[^0-9]', '', 'g') = $1
        ORDER BY last_checked_at DESC
@@ -95,6 +98,144 @@ async function findSavedClientByPhoneDigits(digits) {
     [digits]
   );
   return rows[0] || null;
+}
+
+async function findSavedClientByEmailNormalized(email) {
+  const normalized = normalizeEmail(email);
+  if (!normalized) return null;
+  const { rows } = await pool.query(
+    `
+      SELECT customer_id,
+             customer_name,
+             customer_email,
+             customer_phone,
+             latest_payment_method_id,
+             last_order_id
+        FROM saved_servi_users
+       WHERE LOWER(customer_email) = LOWER($1)
+       ORDER BY last_checked_at DESC
+       LIMIT 1
+    `,
+    [normalized]
+  );
+  return rows[0] || null;
+}
+
+async function findLatestEmailByPhoneDigits(digits) {
+  if (!digits) return null;
+  const saved = await findSavedClientByPhoneDigits(digits);
+  if (saved && normalizeEmail(saved.customer_email)) {
+    return { ...saved, source: 'saved' };
+  }
+  const { rows } = await pool.query(
+    `
+      SELECT id,
+             client_email,
+             client_phone,
+             client_name,
+             customer_id,
+             created_at
+        FROM all_bookings
+       WHERE regexp_replace(COALESCE(client_phone, ''), '[^0-9]', '', 'g') = $1
+         AND client_email IS NOT NULL
+       ORDER BY created_at DESC
+       LIMIT 1
+    `,
+    [digits]
+  );
+  const row = rows[0] || null;
+  if (row && normalizeEmail(row.client_email)) {
+    return { ...row, source: 'order' };
+  }
+  return null;
+}
+
+async function findExistingEmailOwner(email) {
+  const normalized = normalizeEmail(email);
+  if (!normalized) return null;
+
+  const saved = await findSavedClientByEmailNormalized(normalized);
+  if (saved) {
+    return {
+      email: saved.customer_email,
+      phone: saved.customer_phone,
+      customerId: saved.customer_id,
+      customerName: saved.customer_name,
+      source: 'saved',
+      orderId: saved.last_order_id || null
+    };
+  }
+
+  const { rows } = await pool.query(
+    `
+      SELECT id,
+             client_email,
+             client_phone,
+             client_name,
+             customer_id
+        FROM all_bookings
+       WHERE LOWER(client_email) = LOWER($1)
+       ORDER BY created_at DESC
+       LIMIT 1
+    `,
+    [normalized]
+  );
+  const row = rows[0] || null;
+  if (!row) return null;
+  return {
+    email: row.client_email,
+    phone: row.client_phone,
+    customerId: row.customer_id,
+    customerName: row.client_name,
+    orderId: row.id,
+    source: 'order'
+  };
+}
+
+async function lookupContactByPhoneDigits(digits) {
+  if (!digits) return null;
+  const found = await findLatestEmailByPhoneDigits(digits);
+  if (!found) return null;
+  return {
+    email: found.customer_email || found.client_email || null,
+    phone: found.customer_phone || found.client_phone || null,
+    customerId: found.customer_id || null,
+    customerName: found.customer_name || found.client_name || null,
+    orderId: found.last_order_id || found.id || null,
+    source: found.source || null
+  };
+}
+
+async function upsertSavedServiUserContact({
+  customerId,
+  name,
+  email,
+  phone,
+  lastOrderId = null
+}) {
+  if (!customerId) return;
+  await pool.query(
+    `
+      INSERT INTO saved_servi_users (
+        customer_id,
+        customer_name,
+        customer_email,
+        customer_phone,
+        last_order_id,
+        first_checked_at,
+        last_checked_at
+      )
+      VALUES ($1,$2,$3,$4,$5,NOW(),NOW())
+      ON CONFLICT (customer_id) DO UPDATE SET
+        customer_name  = COALESCE(EXCLUDED.customer_name, saved_servi_users.customer_name),
+        customer_email = COALESCE(EXCLUDED.customer_email, saved_servi_users.customer_email),
+        customer_phone = COALESCE(EXCLUDED.customer_phone, saved_servi_users.customer_phone),
+        last_order_id  = COALESCE(EXCLUDED.last_order_id, saved_servi_users.last_order_id),
+        last_checked_at = NOW(),
+        first_checked_at = COALESCE(saved_servi_users.first_checked_at, EXCLUDED.first_checked_at)
+    `,
+    [customerId, name || null, normalizeEmail(email), phone || null, lastOrderId || null]
+  );
 }
 
 const BOOK_SUCCESS_STATUSES = new Set(['Scheduled', 'Confirmed', 'Captured']);
@@ -175,21 +316,35 @@ async function ensureCustomerForOrder(stripe, orderRow) {
   if (orderRow.customer_id) {
     const updates = {};
     if (orderRow.client_name) updates.name = orderRow.client_name;
-    if (orderRow.client_email) updates.email = orderRow.client_email;
+    if (orderRow.client_email) updates.email = normalizeEmail(orderRow.client_email);
     if (orderRow.client_phone) updates.phone = orderRow.client_phone;
     if (Object.keys(updates).length) {
       await stripe.customers.update(orderRow.customer_id, updates);
     }  
+    await upsertSavedServiUserContact({
+      customerId: orderRow.customer_id,
+      name: orderRow.client_name || null,
+      email: orderRow.client_email || null,
+      phone: orderRow.client_phone || null,
+      lastOrderId: orderRow.id || null
+    });
     return orderRow.customer_id;
   }
 
   const customer = await stripe.customers.create({
     name: orderRow.client_name || undefined,
-    email: orderRow.client_email || undefined,
+    email: normalizeEmail(orderRow.client_email) || undefined,
     phone: orderRow.client_phone || undefined,
   });
 
   await pool.query('UPDATE all_bookings SET customer_id=$1 WHERE id=$2', [customer.id, orderRow.id]);
+  await upsertSavedServiUserContact({
+    customerId: customer.id,
+    name: orderRow.client_name || null,
+    email: orderRow.client_email || null,
+    phone: orderRow.client_phone || null,
+    lastOrderId: orderRow.id || null
+  });
   return customer.id;
 }
 
@@ -236,6 +391,20 @@ async function syncOrderEmail(orderId, rawEmail, { existingRow } = {}) {
         row.customer_id,
         err?.message || err
       );
+    }
+  }
+
+  if (row.customer_id) {
+    try {
+      await upsertSavedServiUserContact({
+        customerId: row.customer_id,
+        name: existingRow?.client_name || row.client_name || null,
+        email,
+        phone: existingRow?.client_phone || row.client_phone || null,
+        lastOrderId: existingRow?.id || null
+      });
+    } catch (contactErr) {
+      console.warn('syncOrderEmail: failed to upsert saved_servi_users', row.customer_id, contactErr?.message || contactErr);
     }
   }
 
@@ -830,8 +999,21 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
   if (!Number.isFinite(providerPricePesos) || providerPricePesos <= 0) {
     return res.status(400).send({ error: 'invalid_provider_amount', message: 'amount must be a positive number (MXN pesos)' });
   }
+  const clientEmailNormalized = normalizeEmail(clientEmail);
+  if (!clientEmailNormalized) {
+    return res.status(400).send({
+      error: 'email_required',
+      message: 'Ingresa un email válido antes de generar el enlace.'
+    });
+  }
+  const phoneDigits = normalizePhoneDigits(clientPhone);
+  if (!phoneDigits) {
+    return res.status(400).send({
+      error: 'phone_required_for_email',
+      message: 'Agrega el WhatsApp del cliente antes de generar el enlace.'
+    });
+  }
   try {
-    const phoneDigits = normalizePhoneDigits(clientPhone);
     const savedPhoneRecord = phoneDigits ? await findSavedClientByPhoneDigits(phoneDigits) : null;
     const storedPhoneNameKey = savedPhoneRecord ? normalizeNameKey(savedPhoneRecord.customer_name) : '';
     const providedPhoneNameKey = normalizeNameKey(clientName);
@@ -849,12 +1031,24 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
       });
     }
     await requireSavedClientNameMatch(clientName, clientPhone, { savedRecord: savedPhoneRecord });
+    const emailOwner = await findExistingEmailOwner(clientEmailNormalized);
+    if (emailOwner) {
+      const ownerDigits = normalizePhoneDigits(emailOwner.phone);
+      if (ownerDigits && phoneDigits && ownerDigits !== phoneDigits) {
+        return res.status(409).send({
+          error: 'email_phone_conflict',
+          message: 'Este email ya está asociado a otro número. Revisa el email y el WhatsApp.',
+          existingPhone: emailOwner.phone || ownerDigits || null,
+          existingCustomerId: emailOwner.customerId || null
+        });
+      }
+    }
     // 1) Find or create Stripe Customer by email/phone (your existing logic)
     // 1) Only SEARCH for an existing customer now; don't create yet
     let existingCustomer = null;
     const esc = (s) => String(s || '').replace(/'/g, "\\'");
-    if (clientEmail) {
-      const found = await stripe.customers.search({ query: `email:'${esc(clientEmail)}'` });
+    if (clientEmailNormalized) {
+      const found = await stripe.customers.search({ query: `email:'${esc(clientEmailNormalized)}'` });
       if (found.data?.length) existingCustomer = found.data[0];
     }
     if (!existingCustomer && clientPhone) {
@@ -907,14 +1101,21 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
       saved = await hasSavedCard(existingCustomer.id, stripe);
     }
 
-    if (existingCustomer && (clientPhone || clientEmail || clientName)) {
+    if (existingCustomer && (clientPhone || clientEmailNormalized || clientName)) {
       const updates = {};
       if (clientName && !existingCustomer.name) updates.name = clientName;
-      if (clientEmail && !existingCustomer.email) updates.email = clientEmail;
+      if (clientEmailNormalized && !existingCustomer.email) updates.email = clientEmailNormalized;
       if (clientPhone && !existingCustomer.phone) updates.phone = clientPhone;
       if (Object.keys(updates).length) {
         await stripe.customers.update(existingCustomer.id, updates);
       }
+      await upsertSavedServiUserContact({
+        customerId: existingCustomer.id,
+        name: clientName || existingCustomer.name || null,
+        email: clientEmailNormalized || existingCustomer.email || null,
+        phone: clientPhone || existingCustomer.phone || null,
+        lastOrderId: null
+      });
     }
 
     // Create the order row (allow NULL customer_id for now)
@@ -967,7 +1168,7 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
         clientName || null,
         serviceDescription || null,
         clientPhone || null,
-        clientEmail || null,
+        clientEmailNormalized || null,
         serviceDate || null,
         serviceAddress || null,
         bookingType || null,
@@ -990,7 +1191,7 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
         serviceDate || null,
         serviceDateTime || null,
         clientPhone || null,
-        clientEmail || null,
+        clientEmailNormalized || null,
         serviceAddress || null,
         bookingType || null,
         orderId
@@ -1013,25 +1214,26 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
         // no saved card and no consent → gate; DON'T create a Stripe customer yet
         await pool.query('UPDATE all_bookings SET status=$1, kind=$2 WHERE id=$3', ['Blocked', 'setup_required', orderId]);
 
-        return res.status(403).send({
-          error: 'account_required',
-          message: 'Solo usuarios con cuenta pueden reservar con 5 días o mas de anticipación.',
-          orderId,
-          publicCode,
-          amount: totalAmountCents
-        });
-      }
+          return res.status(403).send({
+            error: 'account_required',
+            message: 'Solo usuarios con cuenta pueden reservar con 5 días o mas de anticipación.',
+            orderId,
+            publicCode,
+            amount: totalAmountCents,
+            clientEmail: clientEmailNormalized
+          });
+        }
 
-      if (!saved) {
-        // we have consent but no saved card: we'll create a Customer later when we start SetupIntent
-        await pool.query('UPDATE all_bookings SET kind=$1 WHERE id=$2', ['setup', orderId]);
-        return res.send({ orderId, publicCode, requiresSetup: true, hasSavedCard: false, amount: totalAmountCents });
-      }
+        if (!saved) {
+          // we have consent but no saved card: we'll create a Customer later when we start SetupIntent
+          await pool.query('UPDATE all_bookings SET kind=$1 WHERE id=$2', ['setup', orderId]);
+          return res.send({ orderId, publicCode, requiresSetup: true, hasSavedCard: false, amount: totalAmountCents, clientEmail: clientEmailNormalized });
+        }
 
-      // already saved (because existingCustomer had PMs) → book flow, no PI yet
-      await pool.query('UPDATE all_bookings SET kind=$1 WHERE id=$2', ['book', orderId]);
-      return res.send({ orderId, publicCode, hasSavedCard: true, amount: totalAmountCents });
-    }
+        // already saved (because existingCustomer had PMs) → book flow, no PI yet
+        await pool.query('UPDATE all_bookings SET kind=$1 WHERE id=$2', ['book', orderId]);
+        return res.send({ orderId, publicCode, hasSavedCard: true, amount: totalAmountCents, clientEmail: clientEmailNormalized });
+      }
 
     // Short-lead (≤5d)
     if (!longLead) {
@@ -1044,7 +1246,8 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
               publicCode,
               hasSavedCard: true,
               paymentIntentId: null,   // no PI yet
-              amount: totalAmountCents
+              amount: totalAmountCents,
+              clientEmail: clientEmailNormalized
             });
           } else {
             // Saved card found but no consent recorded → collect consent with Setup flow
@@ -1054,7 +1257,8 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
               publicCode,
               requiresSetup: true,    // Sheet should NOT set "Scheduled"
               hasSavedCard: true,
-              amount: totalAmountCents
+              amount: totalAmountCents,
+              clientEmail: clientEmailNormalized
             });
           }
         }
@@ -1063,11 +1267,18 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
       // Otherwise proceed (create or reuse customer, then create a PI now)
       const customer = existingCustomer || await stripe.customers.create({
         name: clientName || undefined,
-        email: clientEmail || undefined,
+        email: clientEmailNormalized || undefined,
         phone: clientPhone || undefined,
       });
 
       await pool.query('UPDATE all_bookings SET customer_id=$1 WHERE id=$2', [customer.id, orderId]);
+      await upsertSavedServiUserContact({
+        customerId: customer.id,
+        name: clientName || null,
+        email: clientEmailNormalized || null,
+        phone: clientPhone || null,
+        lastOrderId: orderId
+      });
 
       const paymentIntent = await stripe.paymentIntents.create({
         amount: totalAmountCents,
@@ -1087,7 +1298,8 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
         orderId,
         publicCode,
         hasSavedCard: saved,
-        amount: totalAmountCents
+        amount: totalAmountCents,
+        clientEmail: clientEmailNormalized
       });
     }
 
@@ -1131,6 +1343,39 @@ app.get('/save', (req, res) => {
 // Serve publishable key to the client (same origin, no CORS needed)
 app.get('/config/stripe', (_req, res) => {
   res.send({ pk: process.env.STRIPE_PUBLISHABLE_KEY || '' });
+});
+
+app.get('/admin/contact-lookup', requireAdminAuth, async (req, res) => {
+  try {
+    const phoneDigits = normalizePhoneDigits(req.query.phone);
+    const emailNormalized = normalizeEmail(req.query.email);
+
+    if (!phoneDigits && !emailNormalized) {
+      return res.status(400).json({
+        error: 'phone_or_email_required',
+        message: 'Phone or email is required for lookup'
+      });
+    }
+
+    let contact = null;
+    if (phoneDigits) {
+      contact = await lookupContactByPhoneDigits(phoneDigits);
+    }
+    if (!contact && emailNormalized) {
+      contact = await findExistingEmailOwner(emailNormalized);
+    }
+    if (!contact) {
+      return res.status(404).json({ error: 'not_found' });
+    }
+    return res.json(contact);
+  } catch (err) {
+    const status = err.status || 500;
+    console.error('contact-lookup error:', err?.message || err);
+    return res.status(status).json({
+      error: 'contact_lookup_failed',
+      message: err.message || 'Lookup failed'
+    });
+  }
 });
 
 
@@ -1267,7 +1512,7 @@ app.get('/order/:orderId', async (req, res) => {
 
         if (hasSavedCardForBook) {
           // Saved-card booking: never create a PI here.
-          // The /confirm-with-saved route decides when to create/confirm (≤24h).
+          // The /confirm-with-saved route decides when to create/confirm (≤72h window).
           pi = null;
           intentType = null;
         } else {
@@ -3152,7 +3397,8 @@ app.post('/confirm-with-saved', async (req, res) => {
     let piId = row.payment_intent_id || null;
     const isSetup = piId && String(piId).startsWith('seti_');
 
-    if (hoursAhead > PREAUTH_WINDOW_HOURS && !force) {
+    // >72h: keep scheduled flow; no PI until 24h window
+    if (hoursAhead > EARLY_PREAUTH_THRESHOLD_HOURS && !force) {
       if (!savedPmId && row.customer_id) {
         const list = await stripe.paymentMethods.list({
           customer: row.customer_id,
@@ -3253,10 +3499,7 @@ app.post('/confirm-with-saved', async (req, res) => {
       });
     }
 
-
-
-
-
+    // ≤72h: allow PI creation (no auto-confirm) if requested
     if (createOnly && hoursAhead <= EARLY_PREAUTH_THRESHOLD_HOURS) {
       if (!savedPmId && row.customer_id) {
         const list = await stripe.paymentMethods.list({
@@ -3298,8 +3541,7 @@ app.post('/confirm-with-saved', async (req, res) => {
         console.warn('confirm-with-saved (createOnly) fee refresh failed', feeErr?.message || feeErr);
       }
 
-      const label =
-        hoursAhead > PREAUTH_WINDOW_HOURS ? 'Scheduled' : row.status || 'Pending';
+      const label = row.status || 'Pending';
 
       return res.status(200).json({
         ok: true,
@@ -3314,7 +3556,7 @@ app.post('/confirm-with-saved', async (req, res) => {
 
 
 
-    // ≤24h → create/confirm a manual-capture PI now
+    // ≤72h → create/confirm a manual-capture PI now (triggered by client)
 
     // Ensure we have a real PI (not a SetupIntent)
     if (!piId || isSetup) {

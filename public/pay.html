@@ -271,6 +271,19 @@
       font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     }
 
+    .readonly-field {
+      background-color: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 6px;
+      padding: 12px;
+      color: #cbd5e1;
+      font-size: 16px;
+      line-height: 24px;
+      min-height: 48px;
+      display: flex;
+      align-items: center;
+    }
+
     .summary-box {
       background-color: #1a1a1a;
       padding: 15px;
@@ -420,16 +433,8 @@
 
       <form id="payment-form">
         <div class="form-row">
-          <label for="customer-email" class="form-label">Correo electrónico</label>
-          <input
-            type="email"
-            id="customer-email"
-            name="customer-email"
-            placeholder="cliente@ejemplo.com"
-            class="input-text"
-            autocomplete="email"
-            required
-          />
+          <label class="form-label">Correo registrado</label>
+          <div id="customer-email-display" class="readonly-field">Cargando…</div>
         </div>
 
         <div class="form-row">
@@ -818,7 +823,7 @@
     const form = document.getElementById("payment-form");
     const submitBtn = document.getElementById("submit");
     const spinner = document.getElementById("spinner");
-    const emailInput = document.getElementById("customer-email");
+    const emailDisplay = document.getElementById("customer-email-display");
     const cardholderInput = document.getElementById("cardholder-name");
 
     // Init: fill summary + mount appropriate payment UI
@@ -827,8 +832,9 @@
       const order = await getOrder();
       if (!order) return;
 
-      if (emailInput && order.client_email) {
-        emailInput.value = order.client_email;
+      const clientEmail = (order.client_email || "").trim();
+      if (emailDisplay) {
+        emailDisplay.textContent = clientEmail || "Sin correo";
       }
       if (cardholderInput && order.client_name) {
         cardholderInput.value = order.client_name;
@@ -974,7 +980,7 @@
           prButton.mount("#express-pay-button");
           paymentRequest.on("paymentmethod", async (ev) => {
             const consentBox = document.getElementById("consent-checkbox");
-            const rawEmail = emailInput?.value ?? ev.paymentMethod?.billing_details?.email ?? '';
+            const rawEmail = clientEmail || ev.paymentMethod?.billing_details?.email || '';
             const emailValue = typeof rawEmail === 'string' ? rawEmail.trim() : '';
             if (requireConsentForBooking && consentBox && !consentBox.checked) {
               ev.complete("fail");
@@ -1069,7 +1075,7 @@
       const termsChecked = document.getElementById("terms-checkbox").checked;
       const consentChecked = document.getElementById("consent-checkbox").checked;
       const cardholder = (cardholderInput?.value || "").trim();
-      const email = (emailInput?.value || "").trim();
+      const email = (order.client_email || "").trim();
 
       const mode = submitBtn.dataset.mode || '';
       const order = await getOrder();
