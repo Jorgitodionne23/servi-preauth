@@ -46,7 +46,7 @@ const OPTIONAL_ORDER_COLUMNS = {
 
 const ADJ_HEADER_ALIASES = {
   PARENT_ORDER_ID: ['Parent Order ID'],
-  REASON: ['Reason'],
+  REASON: ['Adjustment Type', 'Reason'],
   AMOUNT: ['Amount (MXN)', 'Amount'],
   CAPTURE_TYPE: ['Capture Type'],
   MESSAGE: [
@@ -236,7 +236,6 @@ const ADJ_COL = createColumnProxy_(
 const BOOKING_TYPE_LABELS = {
   RANGO: 'Rango de Precio',
   VISITA: 'Visita para cotizar',
-  ANTICIPO: 'Anticipo',
 };
 
 function normalizeBookingType_(value) {
@@ -247,7 +246,7 @@ function normalizeBookingType_(value) {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '');
   if (normalized.indexOf('visita') !== -1) return BOOKING_TYPE_LABELS.VISITA;
-  if (normalized.indexOf('anticipo') !== -1) return BOOKING_TYPE_LABELS.ANTICIPO;
+  if (normalized.indexOf('anticipo') !== -1) return BOOKING_TYPE_LABELS.VISITA; // map legacy anticipo to visita
   if (normalized.indexOf('rango') !== -1) return BOOKING_TYPE_LABELS.RANGO;
   return BOOKING_TYPE_LABELS.RANGO;
 }
@@ -566,7 +565,7 @@ function ensureAdjustmentsSheet() {
 
   const headers = [
     'Parent Order ID',
-    'Reason',
+    'Adjustment Type',
     'Amount (MXN)',
     'Capture Type',
     'Adjustment Payment Link',
@@ -614,6 +613,17 @@ function ensureAdjustmentsSheet() {
     .build();
   sh.getRange(2, cols.CAPTURE_TYPE, Math.max(rows - 1, 1), 1).setDataValidation(
     rule
+  );
+
+  const adjTypeRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(
+      ['Surcharge', 'Final price', 'Deposit (anticipo)', 'Billing error'],
+      true
+    )
+    .setAllowInvalid(false)
+    .build();
+  sh.getRange(2, cols.REASON, Math.max(rows - 1, 1), 1).setDataValidation(
+    adjTypeRule
   );
 }
 
@@ -921,13 +931,6 @@ function buildBookingLinkMessage_(bookingType, paymentLink) {
       paymentLink,
     ].join('\n');
   }
-  if (type === BOOKING_TYPE_LABELS.ANTICIPO) {
-    return [
-      'Confirma tu anticipo para iniciar tu servicio.',
-      'Paga de forma segura con Stripe:',
-      paymentLink,
-    ].join('\n');
-  }
   return [
     '¡Estás a un paso de confirmar tu servicio!',
     'Elige tu método de pago y reserva a través de nuestro enlace seguro con Stripe:',
@@ -1118,11 +1121,13 @@ function generatePaymentLink() {
       ? (approxServiceMs - nowMs) / 3600000
       : null;
   const todayYmd = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
+  const timePastToday = hoursAhead !== null && hoursAhead < 0;
   const serviceInPast =
     parsedDate &&
-    (hasServiceTime
-      ? serviceMs < nowMs
-      : serviceDate && serviceDate < todayYmd);
+    (timePastToday ||
+      (hasServiceTime
+        ? serviceMs < nowMs
+        : serviceDate && serviceDate < todayYmd));
 
   if (serviceInPast) {
     const msg =
@@ -1138,7 +1143,7 @@ function generatePaymentLink() {
 
   if (hoursAhead !== null && hoursAhead <= 24 && hoursAhead >= 0) {
     const warning =
-      '⚠️ Servicio solicitado con menos de 24 horas. Prioriza seguimiento.';
+      '⚠️ Servicio solicitado con menos de 24 horas. Prioriza seguimiento y captura inmediata.';
     const existingNote = serviceDateCell.getNote();
     if (
       !existingNote ||
@@ -1443,7 +1448,7 @@ function generateAdjustment() {
   const parentOrderId = String(
     sh.getRange(row, COL.PARENT_ORDER_ID).getDisplayValue() || ''
   ).trim();
-  const reason = String(
+  const adjustmentType = String(
     sh.getRange(row, COL.REASON).getDisplayValue() || ''
   ).trim();
   const amountMXN = Number(sh.getRange(row, COL.AMOUNT).getValue() || 0);
@@ -1482,7 +1487,7 @@ function generateAdjustment() {
   const payload = {
     parentOrderId,
     amount: Math.round(amountMXN * 100),
-    note: reason || 'SERVI adjustment',
+    note: adjustmentType || 'SERVI adjustment',
     capture,
   };
 
@@ -1545,7 +1550,7 @@ function generateAdjustment() {
   sh.getRange(row, COL.STATUS).setValue('Pending');
   sh.getRange(row, COL.CLIENT_ID).setValue(out.customerId || '');
 
-  const effectiveReason = String(out.adjustmentReason || reason || '').trim();
+  const effectiveReason = String(out.adjustmentReason || adjustmentType || '').trim();
   const formattedTotal = totalMXN.toLocaleString('es-MX', {
     style: 'currency',
     currency: 'MXN',
@@ -1564,9 +1569,7 @@ function generateAdjustment() {
   const introLine =
     bookingTypeResp === BOOKING_TYPE_LABELS.VISITA
       ? 'Saldo final después de tu visita para cotizar.'
-      : bookingTypeResp === BOOKING_TYPE_LABELS.ANTICIPO
-        ? 'Segundo cobro de tu servicio (anticipo no deducible).'
-        : 'Necesitamos confirmar un ajuste en tu servicio.';
+      : 'Necesitamos confirmar un ajuste en tu servicio.';
   const messageLines = [
     introLine,
     visitCreditLine,

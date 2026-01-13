@@ -56,8 +56,7 @@ function normalizeNameKey(value) {
 
 const BOOKING_TYPE_LABELS = {
   RANGO: 'Rango de Precio',
-  VISITA: 'Visita para cotizar',
-  ANTICIPO: 'Anticipo'
+  VISITA: 'Visita para cotizar'
 };
 
 function normalizeBookingType(value) {
@@ -68,7 +67,7 @@ function normalizeBookingType(value) {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '');
   if (norm.includes('visita')) return BOOKING_TYPE_LABELS.VISITA;
-  if (norm.includes('anticipo')) return BOOKING_TYPE_LABELS.ANTICIPO;
+  if (norm.includes('anticipo')) return BOOKING_TYPE_LABELS.VISITA; // map legacy anticipo to visita
   if (norm.includes('rango')) return BOOKING_TYPE_LABELS.RANGO;
   return BOOKING_TYPE_LABELS.RANGO;
 }
@@ -76,7 +75,6 @@ function normalizeBookingType(value) {
 function bookingTypeKey(value) {
   const normalized = normalizeBookingType(value);
   if (normalized === BOOKING_TYPE_LABELS.VISITA) return 'visita';
-  if (normalized === BOOKING_TYPE_LABELS.ANTICIPO) return 'anticipo';
   return 'rango';
 }
 
