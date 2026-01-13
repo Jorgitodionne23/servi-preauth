@@ -1054,11 +1054,11 @@
       const termsChecked = document.getElementById("terms-checkbox").checked;
       const consentChecked = document.getElementById("consent-checkbox").checked;
       const cardholder = (cardholderInput?.value || "").trim();
-      const email = (order.client_email || "").trim();
 
       const mode = submitBtn.dataset.mode || '';
       const order = await getOrder();
       if (!order) { alert("Orden no encontrada."); return; }
+      const email = (order.client_email || "").trim();
       const bookingTypeKey = normalizeBookingType(order.booking_type || order.bookingType);
       const requireConsentForBooking = needsConsentForBooking(order);
       const missingAlerts = [];
