@@ -1201,6 +1201,8 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
         orderId
       ]
     );
+    const bookingKey = bookingTypeKey(bookingType);
+
     // --- NEW: determine if we already have consent (customer-level or order-level) ---
     let hasConsent = false;
     if (existingCustomer?.id) {
@@ -1210,6 +1212,19 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
     if (!hasConsent) {
       const oc = await pool.query('SELECT 1 FROM consented_offsession_bookings WHERE order_id = $1', [orderId]);
       hasConsent = !!oc.rows.length;
+    }
+
+    // --- NEW POLICY: visits must be associated with an account/saved card ---
+    if (bookingKey === 'visita' && !saved) {
+      await pool.query('UPDATE all_bookings SET status=$1, kind=$2 WHERE id=$3', ['Blocked', 'setup_required', orderId]);
+      return res.status(403).send({
+        error: 'account_required',
+        message: 'Las visitas para cotizar requieren una cuenta con método guardado.',
+        orderId,
+        publicCode,
+        amount: totalAmountCents,
+        clientEmail: clientEmailNormalized
+      });
     }
 
     // Long-lead policy handling
