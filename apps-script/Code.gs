@@ -10,6 +10,7 @@ const ORDER_HEADER_ALIASES = {
   PHONE: ['WhatsApp Number', 'WhatsApp (E.164)', 'WhatsApp Associated'],
   SERVICE_DESC: ['Service Description'],
   BOOKING_TYPE: ['Booking type', 'Booking Type'],
+  CAPTURE_TYPE: ['Capture Type'],
   AMOUNT: ['Amount (MXN)', 'Amount'],
   FINAL_CAPTURED: ['Final Captured Amount', 'Captured (Final)', 'Net Captured Amount'],
   SERVICE_DT: [
@@ -40,6 +41,7 @@ const OPTIONAL_ORDER_COLUMNS = {
   UPDATE_PAYMENT_METHOD: true,
   FINAL_CAPTURED: true,
   EMAIL: true, // new column; keep optional to avoid breaking older sheets, but enforce in UI
+  CAPTURE_TYPE: true,
 };
 
 const ADJ_HEADER_ALIASES = {
@@ -279,6 +281,7 @@ function onOpen() {
 
     ensureOrdersDateCreatedColumn_();
     ensureOrdersHoursColumn_();
+    ensureOrdersCaptureTypeColumn_();
 
     const ordersSheet = ss.getSheetByName(SHEET_NAMES.ORDERS);
     if (ordersSheet) {
@@ -389,9 +392,11 @@ function autoPreauthScheduled_() {
   const sh = ss.getSheetByName('SERVI Orders');
   if (!sh) return;
   const updatePaymentCol = ORD_COL.UPDATE_PAYMENT_METHOD;
+  const deadline = Date.now() + 5 * 60 * 1000; // stop early to avoid 6m limit
 
   const last = sh.getLastRow();
   for (let r = 2; r <= last; r++) {
+    if (Date.now() > deadline) break;
     const status = String(
       sh.getRange(r, ORD_COL.STATUS).getDisplayValue() || ''
     ).trim();
@@ -535,6 +540,23 @@ function ensureOrdersHoursColumn_() {
     );
   } catch (err) {
     Logger.log('ensureOrdersHoursColumn_: ' + err.message);
+  }
+}
+
+function ensureOrdersCaptureTypeColumn_() {
+  const sh = getSheet_(SHEET_NAMES.ORDERS);
+  if (!sh) return;
+  const col = ORD_COL.CAPTURE_TYPE;
+  if (!col) return;
+  try {
+    const rule = SpreadsheetApp.newDataValidation()
+      .requireValueInList(['Automatic', 'Manual'], true)
+      .setAllowInvalid(false)
+      .build();
+    const rows = Math.max(sh.getMaxRows() - 1, 1);
+    sh.getRange(2, col, rows, 1).setDataValidation(rule);
+  } catch (err) {
+    Logger.log('ensureOrdersCaptureTypeColumn_: ' + err.message);
   }
 }
 
@@ -948,6 +970,7 @@ function generatePaymentLink() {
   const serviceDateCol = ORD_COL.SERVICE_DT;
   const addressCol = ORD_COL.ADDRESS;
   const bookingTypeCol = ORD_COL.BOOKING_TYPE;
+  const captureTypeCol = ORD_COL.CAPTURE_TYPE;
   const linkCol = ORD_COL.LINK_MSG;
   const emailCol = ORD_COL.EMAIL;
   const statusCol = ORD_COL.STATUS;
@@ -1021,6 +1044,13 @@ function generatePaymentLink() {
   }
   const clientTypeCell = sheet.getRange(editedRow, clientTypeCol);
   clientTypeCell.setValue('Guest');
+  const captureTypeCell = captureTypeCol
+    ? sheet.getRange(editedRow, captureTypeCol)
+    : null;
+  const captureChoice = String(
+    captureTypeCell ? captureTypeCell.getDisplayValue() : ''
+  ).trim();
+  const captureMethod = /^automatic$/i.test(captureChoice) ? 'automatic' : 'manual';
 
   const TZ = 'America/Mexico_City';
 
@@ -1168,6 +1198,7 @@ function generatePaymentLink() {
       clientEmail,
       serviceAddress,
       bookingType,
+      capture: captureMethod,
       hasTimeComponent: hasServiceTime,
     }),
     headers: adminHeaders_(),

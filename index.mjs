@@ -992,7 +992,8 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
     consent,
     serviceAddress,
     bookingType: bookingTypeRaw,
-    hasTimeComponent
+    hasTimeComponent,
+    capture
   } = req.body;
   const bookingType = normalizeBookingType(bookingTypeRaw);
   const providerPricePesos = Number(amount);
@@ -1014,6 +1015,7 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
     });
   }
   try {
+    const captureMethod = String(capture).toLowerCase() === 'automatic' ? 'automatic' : 'manual';
     const savedPhoneRecord = phoneDigits ? await findSavedClientByPhoneDigits(phoneDigits) : null;
     const storedPhoneNameKey = savedPhoneRecord ? normalizeNameKey(savedPhoneRecord.customer_name) : '';
     const providedPhoneNameKey = normalizeNameKey(clientName);
@@ -1138,6 +1140,7 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
         service_date,
         service_address,
         booking_type,
+        capture_method,
         status,
         public_code,
         kind,
@@ -1153,8 +1156,8 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
       VALUES (
         $1,$2,$3,$4,$5,$6,$7,
         $8,$9,$10,$11,$12,$13,$14,
-        'pending',$15,'primary',$16,
-        $17,$18,$19,$20,$21,$22,$23
+        $15,'pending',$16,'primary',$17,
+        $18,$19,$20,$21,$22,$23,$24
       )
       ON CONFLICT (id) DO NOTHING`,
       [
@@ -1172,6 +1175,7 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
         serviceDate || null,
         serviceAddress || null,
         bookingType || null,
+        captureMethod,
         publicCode,
         existingCustomer?.id || null,
         vatRate,
@@ -1283,7 +1287,7 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
       const paymentIntent = await stripe.paymentIntents.create({
         amount: totalAmountCents,
         currency: 'mxn',
-        capture_method: 'manual',
+        capture_method: captureMethod,
         payment_method_types: ['card'],
         customer: customer.id,
         ...(consent ? { setup_future_usage: 'off_session' } : {}),
