@@ -54,6 +54,16 @@ function normalizeNameKey(value) {
     .replace(/\s+/g, ' ');
 }
 
+function normalizeAddressKey(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .replace(/[^\w\s,#.\-\/]/g, '');
+}
+
 const BOOKING_TYPE_LABELS = {
   RANGO: 'Rango de Precio',
   VISITA: 'Visita para cotizar'
@@ -234,6 +244,55 @@ async function upsertSavedServiUserContact({
     `,
     [customerId, name || null, normalizeEmail(email), phone || null, lastOrderId || null]
   );
+}
+
+async function recordClientAddress({
+  customerId = null,
+  phone = null,
+  address = '',
+  orderId = null
+}) {
+  const trimmed = String(address || '').trim();
+  if (!trimmed) return;
+  const normalizedAddress = normalizeAddressKey(trimmed);
+  if (!normalizedAddress) return;
+  const phoneDigits = normalizePhoneDigits(phone) || null;
+  const orderRef = orderId || null;
+
+  // Upsert a phone-scoped row (guest) so we can suggest addresses even without customer_id
+  if (phoneDigits) {
+    await pool.query(
+      `
+        INSERT INTO client_addresses (
+          id, customer_id, phone_digits, address, address_normalized, source_order_id, created_at, last_used_at
+        )
+        VALUES ($1, NULL, $2, $3, $4, $5, NOW(), NOW())
+        ON CONFLICT (phone_digits, address_normalized) WHERE customer_id IS NULL DO UPDATE SET
+          address = EXCLUDED.address,
+          source_order_id = COALESCE(EXCLUDED.source_order_id, client_addresses.source_order_id),
+          last_used_at = NOW()
+      `,
+      [randomUUID(), phoneDigits, trimmed, normalizedAddress, orderRef]
+    );
+  }
+
+  // Upsert a customer-scoped row so saved clients get their own list
+  if (customerId) {
+    await pool.query(
+      `
+        INSERT INTO client_addresses (
+          id, customer_id, phone_digits, address, address_normalized, source_order_id, created_at, last_used_at
+        )
+        VALUES ($1,$2,$3,$4,$5,$6,NOW(),NOW())
+        ON CONFLICT ON CONSTRAINT client_addresses_unique_customer DO UPDATE SET
+          phone_digits = COALESCE(client_addresses.phone_digits, EXCLUDED.phone_digits),
+          address = EXCLUDED.address,
+          source_order_id = COALESCE(EXCLUDED.source_order_id, client_addresses.source_order_id),
+          last_used_at = NOW()
+      `,
+      [randomUUID(), customerId, phoneDigits, trimmed, normalizedAddress, orderRef]
+    );
+  }
 }
 
 const BOOK_SUCCESS_STATUSES = new Set(['Scheduled', 'Confirmed', 'Captured']);
@@ -1199,6 +1258,16 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
         orderId
       ]
     );
+    try {
+      await recordClientAddress({
+        customerId: existingCustomer?.id || null,
+        phone: clientPhone || null,
+        address: serviceAddress || '',
+        orderId
+      });
+    } catch (addrErr) {
+      console.warn('recordClientAddress initial failed', orderId, addrErr?.message || addrErr);
+    }
     const bookingKey = bookingTypeKey(bookingType);
 
     // --- NEW: determine if we already have consent (customer-level or order-level) ---
@@ -1296,6 +1365,16 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
         phone: clientPhone || null,
         lastOrderId: orderId
       });
+      try {
+        await recordClientAddress({
+          customerId: customer.id,
+          phone: clientPhone || null,
+          address: serviceAddress || '',
+          orderId
+        });
+      } catch (addrErr) {
+        console.warn('recordClientAddress customer failed', orderId, addrErr?.message || addrErr);
+      }
 
       const paymentIntent = await stripe.paymentIntents.create({
         amount: totalAmountCents,
@@ -1390,6 +1469,49 @@ app.get('/admin/contact-lookup', requireAdminAuth, async (req, res) => {
     console.error('contact-lookup error:', err?.message || err);
     return res.status(status).json({
       error: 'contact_lookup_failed',
+      message: err.message || 'Lookup failed'
+    });
+  }
+});
+
+app.get('/admin/client-addresses', requireAdminAuth, async (req, res) => {
+  try {
+    const customerId = String(req.query.customerId || '').trim();
+    const phoneDigits = normalizePhoneDigits(req.query.phone);
+    if (!customerId && !phoneDigits) {
+      return res.status(400).json({
+        error: 'customer_or_phone_required',
+        message: 'Customer ID or phone is required for address lookup'
+      });
+    }
+    const { rows } = await pool.query(
+      `
+        SELECT address, last_used_at FROM (
+          SELECT
+            address,
+            address_normalized,
+            last_used_at,
+            ROW_NUMBER() OVER (PARTITION BY address_normalized ORDER BY last_used_at DESC) AS rn
+          FROM client_addresses
+          WHERE ($1 IS NOT NULL AND customer_id = $1)
+             OR ($2 IS NOT NULL AND phone_digits = $2)
+        ) t
+        WHERE rn = 1
+        ORDER BY last_used_at DESC
+        LIMIT 8
+      `,
+      [customerId || null, phoneDigits || null]
+    );
+    const addresses = rows.map(r => ({
+      address: r.address,
+      lastUsedAt: r.last_used_at
+    }));
+    return res.json({ addresses });
+  } catch (err) {
+    const status = err.status || 500;
+    console.error('client-addresses lookup error:', err?.message || err);
+    return res.status(status).json({
+      error: 'client_addresses_lookup_failed',
       message: err.message || 'Lookup failed'
     });
   }

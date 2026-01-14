@@ -1040,6 +1040,10 @@ function generatePaymentLink() {
     } catch (_) {}
     return;
   }
+  const existingClientId = clientIdCol
+    ? sheet.getRange(editedRow, clientIdCol).getDisplayValue()
+    : '';
+  refreshAddressDropdown_(sheet, editedRow, existingClientId, clientPhone);
   const bookingTypeRaw = bookingTypeCell.getDisplayValue();
   const bookingType = normalizeBookingType_(bookingTypeRaw);
   if (!bookingTypeRaw) {
@@ -1732,6 +1736,14 @@ function updateIdentityColumns_(sheet, row, orderId) {
     }
   } catch (_) {}
 
+  // Refresh address dropdown with any saved addresses for this client/phone
+  try {
+    const phoneRaw = sheet.getRange(row, ORD_COL.PHONE).getDisplayValue();
+    const phoneE164 = normalizePhoneToE164(phoneRaw);
+    const clientIdVal = sheet.getRange(row, ORD_COL.CLIENT_ID).getDisplayValue();
+    refreshAddressDropdown_(sheet, row, clientIdVal, phoneE164);
+  } catch (_) {}
+
   return { savedCard, hoursAhead, consentOk };
 }
 
@@ -1801,6 +1813,64 @@ function lookupEmailForPhone_(phone) {
     Logger.log('lookupEmailForPhone_ error: ' + (err && err.message));
   }
   return null;
+}
+
+function fetchAddressesForClient_(customerId, phone) {
+  const params = [];
+  if (customerId) params.push('customerId=' + encodeURIComponent(String(customerId || '').trim()));
+  if (phone) params.push('phone=' + encodeURIComponent(String(phone || '').trim()));
+  if (!params.length) return [];
+  try {
+    const resp = UrlFetchApp.fetch(
+      `${SERVI_BASE}/admin/client-addresses?${params.join('&')}`,
+      {
+        method: 'get',
+        muteHttpExceptions: true,
+        headers: adminHeaders_(),
+      }
+    );
+    if (resp.getResponseCode() >= 200 && resp.getResponseCode() < 300) {
+      const data = JSON.parse(resp.getContentText() || '{}');
+      if (data && Array.isArray(data.addresses)) {
+        return data.addresses
+          .map(function (a) {
+            if (!a) return '';
+            if (typeof a === 'string') return a;
+            return a.address || '';
+          })
+          .filter(function (s) {
+            return String(s || '').trim();
+          });
+      }
+    }
+  } catch (err) {
+    Logger.log('fetchAddressesForClient_ error: ' + (err && err.message));
+  }
+  return [];
+}
+
+function applyAddressDropdown_(sheet, row, addresses) {
+  if (!sheet || !Array.isArray(addresses) || !addresses.length) return;
+  const cleaned = addresses
+    .map(function (s) {
+      return String(s || '').trim();
+    })
+    .filter(Boolean);
+  if (!cleaned.length) return;
+  try {
+    const rule = SpreadsheetApp.newDataValidation()
+      .requireValueInList(cleaned, true)
+      .setAllowInvalid(true) // allow typing new addresses while offering dropdown
+      .build();
+    sheet.getRange(row, ORD_COL.ADDRESS).setDataValidation(rule);
+  } catch (err) {
+    Logger.log('applyAddressDropdown_ error: ' + err.message);
+  }
+}
+
+function refreshAddressDropdown_(sheet, row, customerId, phone) {
+  const addresses = fetchAddressesForClient_(customerId, phone);
+  applyAddressDropdown_(sheet, row, addresses);
 }
 
 /** Normalize phone to E.164 (+52 default for 10-digit MX). */
@@ -1903,6 +1973,13 @@ function resyncSelectedRow() {
   } catch (_) {
     // leave existing value if consent lookup fails
   }
+
+  try {
+    const phoneRaw = sh.getRange(row, ORD_COL.PHONE).getDisplayValue();
+    const phoneE164 = normalizePhoneToE164(phoneRaw);
+    const clientIdVal = sh.getRange(row, ORD_COL.CLIENT_ID).getDisplayValue();
+    refreshAddressDropdown_(sh, row, clientIdVal, phoneE164);
+  } catch (_) {}
 
   function writeStatusSafely(newStatus) {
     const current = String(
