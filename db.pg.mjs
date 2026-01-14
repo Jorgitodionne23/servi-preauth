@@ -165,30 +165,5 @@ export async function initDb() {
 
     CREATE INDEX IF NOT EXISTS idx_saved_servi_users_latest_pm
       ON saved_servi_users (latest_payment_method_id);
-
-    -- Saved client addresses (per customer or phone)
-    CREATE TABLE IF NOT EXISTS client_addresses (
-      id TEXT PRIMARY KEY,
-      customer_id TEXT,
-      phone_digits TEXT,
-      address TEXT,
-      address_normalized TEXT,
-      source_order_id TEXT,
-      created_at TIMESTAMPTZ DEFAULT NOW(),
-      last_used_at TIMESTAMPTZ DEFAULT NOW(),
-      CONSTRAINT client_addresses_unique_customer UNIQUE (customer_id, address_normalized)
-    );
-
-    ALTER TABLE client_addresses
-      DROP CONSTRAINT IF EXISTS client_addresses_unique_phone;
-
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_client_addresses_unique_phone_null_customer
-      ON client_addresses (phone_digits, address_normalized)
-      WHERE customer_id IS NULL AND phone_digits IS NOT NULL AND address_normalized IS NOT NULL;
-
-    CREATE INDEX IF NOT EXISTS idx_client_addresses_customer_last_used
-      ON client_addresses (customer_id, last_used_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_client_addresses_phone_last_used
-      ON client_addresses (phone_digits, last_used_at DESC);
   `);
 }
