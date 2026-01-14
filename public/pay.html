@@ -1068,8 +1068,8 @@
       if (mode === 'confirm-setup' && !consentChecked) {
         const setupMessage =
           bookingTypeKey === 'visita'
-            ? "Para tu visita para cotizar, necesitamos guardar tu método de pago antes de continuar."
-            : "Debes autorizar guardar tu método de pago para reserva con más de 5 días de anticipación.";
+            ? "Para tu visita, necesitamos guardar tu método de pago antes de continuar. Este método se utilizará para los cargos relacionados con la visita, siempre después de tu confirmación."
+            : "Debes autorizar guardar tu método de pago para reservar con más de 5 días de anticipación. Esto agiliza el proceso y asegura tu reserva";
         missingAlerts.push(setupMessage);
       }
       if (mode === 'confirm-payment' && requireConsentForBooking && !consentChecked) {
