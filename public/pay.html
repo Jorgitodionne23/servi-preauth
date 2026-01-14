@@ -1066,7 +1066,11 @@
         missingAlerts.push("Debes aceptar los Términos y Condiciones y el Aviso de Privacidad para continuar.");
       }
       if (mode === 'confirm-setup' && !consentChecked) {
-        missingAlerts.push("Debes autorizar guardar tu método de pago para reserva con más de 5 días de anticipación.");
+        const setupMessage =
+          bookingTypeKey === 'visita'
+            ? "Para tu visita para cotizar, necesitamos guardar tu método de pago antes de continuar."
+            : "Debes autorizar guardar tu método de pago para reserva con más de 5 días de anticipación.";
+        missingAlerts.push(setupMessage);
       }
       if (mode === 'confirm-payment' && requireConsentForBooking && !consentChecked) {
         const consentMessage =
