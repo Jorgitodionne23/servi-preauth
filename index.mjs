@@ -1595,9 +1595,24 @@ app.get('/order/:orderId', async (req, res) => {
           alreadySaved = await hasSavedCard(row.customer_id, stripe);
         }
 
-        if (alreadySaved && hours_ahead > PREAUTH_WINDOW_HOURS) {
-          // Convert legacy "primary" into "book" lazily, with no PI on read
-          await pool.query('UPDATE all_bookings SET kind=$1 WHERE id=$2', ['book', row.id]);
+        if (alreadySaved && hours_ahead > EARLY_PREAUTH_THRESHOLD_HOURS) {
+          // Convert legacy "primary" into "book" lazily, with no PI on read; clear PI so it re-creates inside 24h
+          await pool.query(
+            `
+              UPDATE all_bookings
+                 SET kind = 'book',
+                     payment_intent_id = NULL,
+                     status = CASE
+                       WHEN status IN ('Confirmed','Captured') THEN status
+                       ELSE 'Scheduled'
+                     END
+               WHERE id = $1
+            `,
+            [row.id]
+          );
+          row.kind = 'book';
+          row.payment_intent_id = null;
+          row.status = row.status === 'Confirmed' || row.status === 'Captured' ? row.status : 'Scheduled';
           pi = null;
           intentType = null;
         } else {

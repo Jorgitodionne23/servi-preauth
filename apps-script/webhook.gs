@@ -56,14 +56,25 @@ function doPost(e) {
       const cols = ordersColumnMap_(sheet);
 
       const last = sheet.getLastRow();
+      const paymentIdCol = cols.PI_ID;
       let updated = false;
       let foundRow = 0;
 
       for (let r = 2; r <= last; r++) {
-        const oid = String(
-          sheet.getRange(r, cols.ORDER_ID).getDisplayValue()
-        ).trim();
-        if (oid && oid === orderId) {
+        const oid = String(sheet.getRange(r, cols.ORDER_ID).getDisplayValue()).trim();
+        const pidCell = paymentIdCol
+          ? String(sheet.getRange(r, paymentIdCol).getDisplayValue()).trim()
+          : '';
+        const matchesOrder = oid && orderId && oid === orderId;
+        const matchesPi =
+          paymentIdCol && paymentIntentPayload
+            ? pidCell && (pidCell === paymentIntentPayload || pidCell.includes(paymentIntentPayload))
+            : false;
+
+        if (matchesOrder || matchesPi) {
+          if (paymentIdCol && paymentIntentPayload && pidCell !== paymentIntentPayload) {
+            sheet.getRange(r, paymentIdCol).setValue(paymentIntentPayload);
+          }
           writeStatusSafelyWebhook_(sheet, r, cols.STATUS, status);
           if (cols.UPDATE_PAYMENT_METHOD) {
             applyUpdatePaymentMethodMessageWebhook_(
@@ -260,29 +271,32 @@ function writeStatusSafelyWebhook_(sheet, row, statusColIndex, newStatusRaw) {
   const nxt = String(newStatusRaw || '').trim();
   if (!nxt) return;
 
+  const nxtLower = nxt.toLowerCase();
   const current = String(
     sheet.getRange(row, statusColIndex).getDisplayValue() || ''
   ).trim();
+  const currentLower = current.toLowerCase();
+
   if (!current) {
     sheet.getRange(row, statusColIndex).setValue(nxt);
     return;
   }
-  if (current === 'Captured') return;
+  if (currentLower === 'captured') return;
 
   if (
-    nxt === 'Canceled' ||
-    nxt === 'Failed' ||
-    nxt === 'Declined' ||
-    nxt.startsWith('Canceled (')
+    nxtLower === 'canceled' ||
+    nxtLower === 'failed' ||
+    nxtLower === 'declined' ||
+    nxtLower.startsWith('canceled (')
   ) {
     sheet.getRange(row, statusColIndex).setValue(nxt);
     return;
   }
 
   if (
-    (current === 'Declined' || current === 'Failed') &&
+    (currentLower === 'declined' || currentLower === 'failed') &&
     nxt &&
-    nxt !== current
+    nxtLower !== currentLower
   ) {
     sheet.getRange(row, statusColIndex).setValue(nxt);
     return;
@@ -290,36 +304,36 @@ function writeStatusSafelyWebhook_(sheet, row, statusColIndex, newStatusRaw) {
 
   const forwardOnly = {
     '': [
-      'Pending',
-      'Setup required',
-      'Setup created',
-      'Pending (3DS)',
-      'Scheduled',
-      'Confirmed',
-      'Captured',
+      'pending',
+      'setup required',
+      'setup created',
+      'pending (3ds)',
+      'scheduled',
+      'confirmed',
+      'captured',
     ],
-    Pending: [
-      'Setup required',
-      'Setup created',
-      'Pending (3DS)',
-      'Scheduled',
-      'Confirmed',
-      'Captured',
+    pending: [
+      'setup required',
+      'setup created',
+      'pending (3ds)',
+      'scheduled',
+      'confirmed',
+      'captured',
     ],
-    'Setup required': [
-      'Setup created',
-      'Pending (3DS)',
-      'Scheduled',
-      'Confirmed',
-      'Captured',
+    'setup required': [
+      'setup created',
+      'pending (3ds)',
+      'scheduled',
+      'confirmed',
+      'captured',
     ],
-    'Setup created': ['Pending (3DS)', 'Scheduled', 'Confirmed', 'Captured'],
-    'Pending (3DS)': ['Scheduled', 'Confirmed', 'Captured'],
-    Scheduled: ['Confirmed', 'Captured'],
-    Confirmed: ['Captured'],
+    'setup created': ['pending (3ds)', 'scheduled', 'confirmed', 'captured'],
+    'pending (3ds)': ['scheduled', 'confirmed', 'captured'],
+    scheduled: ['confirmed', 'captured'],
+    confirmed: ['captured'],
   };
 
-  if ((forwardOnly[current] || []).includes(nxt)) {
+  if ((forwardOnly[currentLower] || []).includes(nxtLower)) {
     sheet.getRange(row, statusColIndex).setValue(nxt);
   }
 }

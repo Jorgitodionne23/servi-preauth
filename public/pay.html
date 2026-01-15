@@ -1124,7 +1124,27 @@
           }
 
           if (result.setupIntent?.payment_method) {
-            await syncProcessingFee(order.id, null, result.setupIntent.payment_method, { billingEmail: email });
+            let piFromSaved = null;
+            try {
+              if (typeof order.hours_ahead === 'number' && order.hours_ahead <= 72) {
+                const resp = await fetch('/confirm-with-saved', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ orderId: order.id })
+                });
+                const payload = await resp.json().catch(() => ({}));
+                if (resp.ok) {
+                  piFromSaved = payload?.paymentIntentId || null;
+                }
+              }
+            } catch (_) {}
+
+            await syncProcessingFee(
+              order.id,
+              piFromSaved,
+              result.setupIntent.payment_method,
+              { billingEmail: email }
+            );
           }
           localStorage.setItem('orderId', String(order.id));
           window.location.href = `/success?orderId=${encodeURIComponent(order.id)}`;
