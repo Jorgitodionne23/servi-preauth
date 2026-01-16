@@ -88,12 +88,16 @@ function doPost(e) {
           if (/^scheduled$/i.test(status)) {
             sheet
               .getRange(r, cols.RECEIPT)
-              .setValue(buildReceiptMessage(sheet, r));
+              .setValue(buildReceiptMessage(sheet, r, status));
           } else if (
             /^saved$/i.test(status) ||
             /^setup created$/i.test(status)
           ) {
             sheet.getRange(r, cols.RECEIPT).clearContent();
+          } else if (/^(failed|declined|canceled|requires_payment_method)/i.test(status)) {
+            sheet
+              .getRange(r, cols.RECEIPT)
+              .setValue(buildReceiptMessage(sheet, r, status));
           }
           foundRow = r;
           updated = true;
@@ -206,7 +210,11 @@ function doPost(e) {
         if (sLower === 'confirmed' || sLower === 'captured') {
           sheet
             .getRange(row, receiptCol)
-            .setValue(buildReceiptMessage(sheet, row));
+            .setValue(buildReceiptMessage(sheet, row, status));
+        } else if (/^(failed|declined|canceled|requires_payment_method)/.test(sLower)) {
+          sheet
+            .getRange(row, receiptCol)
+            .setValue(buildReceiptMessage(sheet, row, status));
         }
 
         const orderIdFromSheet = String(
@@ -373,7 +381,20 @@ function applyUpdatePaymentMethodMessageWebhook_(
   }
 }
 
-function buildReceiptMessage(sheet, row) {
+const ORDER_RECEIPT_SUCCESS_MESSAGES = {
+  [BOOKING_TYPE_LABELS.VISITA]:
+    'Tu visita de diagnóstico está confirmada. Detalles:',
+  [BOOKING_TYPE_LABELS.RANGO]: 'Tu reserva está confirmada. Detalles:',
+};
+
+const ORDER_RECEIPT_FAILURE_MESSAGES = {
+  [BOOKING_TYPE_LABELS.VISITA]:
+    'El pago de la visita no se pudo completar y la reserva no quedó confirmada. Intenta de nuevo o actualiza tu método de pago.',
+  [BOOKING_TYPE_LABELS.RANGO]:
+    'El pago no se pudo completar y tu reserva aún no está confirmada. Por favor intenta de nuevo o actualiza tu método de pago.',
+};
+
+function buildReceiptMessage(sheet, row, statusOpt) {
   const cols = ordersColumnMap_(sheet);
 
   const name = String(
@@ -415,6 +436,21 @@ function buildReceiptMessage(sheet, row) {
     Number.isFinite(totalNum) && totalNum > 0
       ? totalNum.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })
       : '_____';
+
+  const bookingTypeRaw = String(
+    sheet.getRange(row, cols.BOOKING_TYPE).getDisplayValue() || ''
+  ).trim();
+  const bookingType = normalizeBookingType_(bookingTypeRaw);
+  const statusLower = String(statusOpt || '').toLowerCase();
+  const isFailure =
+    statusLower &&
+    /^(failed|declined|canceled|requires_payment_method)/.test(statusLower);
+
+  const header = isFailure
+    ? ORDER_RECEIPT_FAILURE_MESSAGES[bookingType] ||
+      ORDER_RECEIPT_FAILURE_MESSAGES[BOOKING_TYPE_LABELS.RANGO]
+    : ORDER_RECEIPT_SUCCESS_MESSAGES[bookingType] ||
+      ORDER_RECEIPT_SUCCESS_MESSAGES[BOOKING_TYPE_LABELS.RANGO];
 
   function parseServiceDate(displayValue) {
     if (!displayValue) return null;
@@ -459,15 +495,25 @@ function buildReceiptMessage(sheet, row) {
     whenLine = timePart ? `${datePart}, ${timePart}` : datePart;
   }
 
-  const lines = [
-    `¡${blank(name)}, tu servicio de ${blank(service)} ha sido confirmado!`,
-    `Tu número de orden es: ${orderCode}`,
-    '¿Necesitas modificar algo o cancelar? Solo responde a este mensaje.',
-    'Detalles de tu SERVI:',
-    whenLine,
-    address || '_____',
-    `${totalText}.`,
-  ];
+  const details = [
+    `Orden: ${orderCode}`,
+    `Servicio: ${blank(service)}`,
+    name ? `Cliente: ${blank(name)}` : '',
+    `Fecha y hora: ${whenLine}`,
+    `Dirección: ${address || '_____'}`
+  ].filter(Boolean);
+
+  const lines = [header, ''];
+
+  if (!isFailure) {
+    lines.push(
+      ...details,
+      `Monto: ${totalText}`,
+      '¿Necesitas modificar algo o cancelar? Solo responde a este mensaje.'
+    );
+  } else {
+    lines.push(...details, `Monto: ${totalText}`);
+  }
 
   return lines.join('\n');
 }
@@ -477,7 +523,29 @@ function initAuth() {
   ss.getSheets()[0].getName();
 }
 
-function buildAdjustmentReceipt_(sheet, row) {
+const ADJUSTMENT_SUCCESS_MESSAGES = {
+  final_price: 'Hemos recibido el pago del resto de tu servicio. Detalles:',
+  deposit:
+    'Tu anticipo se procesó correctamente y tu servicio quedó confirmado. Detalles:',
+  surcharge:
+    'El cargo adicional de tu servicio se procesó correctamente. Detalles:',
+  billing_error: 'Se corrigió el cobro de tu servicio correctamente.',
+  default: 'Ajuste confirmado.',
+};
+
+const ADJUSTMENT_FAILURE_MESSAGES = {
+  final_price:
+    'El pago del resto de tu servicio no se pudo completar. Tu saldo sigue pendiente; intenta de nuevo o actualiza tu método de pago.',
+  deposit:
+    'El pago del anticipo no se pudo completar y el servicio aún no está confirmado. Intenta de nuevo o actualiza tu método de pago.',
+  surcharge:
+    'El cargo extra de tu servicio no se pudo completar. Por favor intenta de nuevo o actualiza tu método de pago.',
+  billing_error:
+    'El cobro corregido de tu servicio no se pudo completar. Tu pago sigue pendiente de regularizar; intenta de nuevo o contáctanos.',
+  default: 'Pago no exitoso.',
+};
+
+function buildAdjustmentReceipt_(sheet, row, statusOpt) {
   const cols = adjustmentsColumnMap_(sheet);
 
   const reason = String(
@@ -498,16 +566,32 @@ function buildAdjustmentReceipt_(sheet, row) {
   const amountText = amtVal
     ? amtVal.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })
     : '________';
+  const reasonLower = reason.toLowerCase();
+  const statusLower = String(statusOpt || '').toLowerCase();
+  const isFailure =
+    statusLower &&
+    /^(failed|declined|canceled|requires_payment_method)/.test(statusLower);
 
-  return [
-    'Ajuste confirmado',
+  let key = 'default';
+  if (reasonLower.indexOf('final price') !== -1) key = 'final_price';
+  else if (reasonLower.indexOf('deposit') !== -1 || reasonLower.indexOf('anticipo') !== -1) key = 'deposit';
+  else if (reasonLower.indexOf('surcharge') !== -1) key = 'surcharge';
+  else if (reasonLower.indexOf('billing') !== -1) key = 'billing_error';
+
+  const header = isFailure
+    ? ADJUSTMENT_FAILURE_MESSAGES[key] || ADJUSTMENT_FAILURE_MESSAGES.default
+    : ADJUSTMENT_SUCCESS_MESSAGES[key] || ADJUSTMENT_SUCCESS_MESSAGES.default;
+
+  const lines = [
+    header,
+    '',
     reason ? `Motivo: ${reason}` : '',
     `Monto: ${amountText}`,
     childId ? `Adjustment ID: ${childId}` : '',
     short ? `Enlace: ${SERVI_BASE}/o/${short}` : '',
-  ]
-    .filter(Boolean)
-    .join('\n');
+  ].filter(Boolean);
+
+  return lines.join('\n');
 }
 
 function writeIdentityColumnsInOrders_(
@@ -587,12 +671,11 @@ function updateAdjustmentStatus_(
     writeStatusSafelyWebhook_(sheet, r, COL.STATUS, status);
 
     if (/^(confirmed|captured)$/i.test(status)) {
-      const txt = buildAdjustmentReceipt_(sheet, r);
+      const txt = buildAdjustmentReceipt_(sheet, r, status);
       sheet.getRange(r, COL.RECEIPT).setValue(txt);
-    } else if (/^canceled$/i.test(status)) {
-      sheet.getRange(r, COL.RECEIPT).setValue('Autorización cancelada.');
-    } else if (/^failed$/i.test(status)) {
-      sheet.getRange(r, COL.RECEIPT).setValue('Pago fallido.');
+    } else if (/^(canceled|failed|declined|requires_payment_method)/i.test(status)) {
+      const txt = buildAdjustmentReceipt_(sheet, r, status);
+      sheet.getRange(r, COL.RECEIPT).setValue(txt);
     }
 
     const parentOrderId = String(

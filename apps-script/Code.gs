@@ -52,6 +52,7 @@ const ADJ_HEADER_ALIASES = {
   PARENT_ORDER_ID: ['Parent Order ID'],
   REASON: ['Adjustment Type', 'Reason'],
   AMOUNT: ['Amount (MXN)', 'Amount'],
+  FINAL_PRICE: ['Final Price'],
   CAPTURE_TYPE: ['Capture Type'],
   MESSAGE: [
     'Adj. Payment Message with Link integrated',
@@ -67,6 +68,10 @@ const ADJ_HEADER_ALIASES = {
   SHORT_CODE: ['Short Order ID', 'Short Code'],
   PAYMENT_INTENT_ID: ['Adj. Payment Intent ID', 'Payment Intent ID'],
   CLIENT_ID: ['Client ID'],
+};
+
+const ADJ_OPTIONAL_COLUMNS = {
+  FINAL_PRICE: true,
 };
 
 const PREAUTH_WINDOW_HOURS = 24;
@@ -193,7 +198,8 @@ function adjustmentsColumnMap_(sheetOpt) {
     'adjustments',
     SHEET_NAMES.ADJUSTMENTS,
     ADJ_HEADER_ALIASES,
-    sheetOpt
+    sheetOpt,
+    ADJ_OPTIONAL_COLUMNS
   );
 }
 
@@ -616,6 +622,9 @@ function ensureAdjustmentsSheet() {
   const rows = Math.max(sh.getMaxRows(), 1);
   sh.getRange(1, cols.AMOUNT, rows, 1).setNumberFormat('$#,##0.00');
   sh.getRange(1, cols.TOTAL_CHARGED, rows, 1).setNumberFormat('$#,##0.00');
+  if (cols.FINAL_PRICE) {
+    sh.getRange(1, cols.FINAL_PRICE, rows, 1).setNumberFormat('$#,##0.00');
+  }
   [cols.MESSAGE, cols.RECEIPT].forEach(function (colIdx) {
     sh.getRange(1, colIdx, rows, 1).setWrap(true);
   });
@@ -940,15 +949,16 @@ function buildBookingLinkMessage_(bookingType, paymentLink) {
   const type = normalizeBookingType_(bookingType);
   if (type === BOOKING_TYPE_LABELS.VISITA) {
     return [
-      'Confirma tu cotización.',
-      'El cargo de visita existe para asegurar la cita y se descuenta del precio final.',
-      'Reserva en nuestro enlace seguro con Stripe:',
+      'Usa este enlace para agendar tu visita de diagnóstico.',
+      'El monto cubre la visita y se descuenta del total si decides continuar con el servicio.',
+      'Enlace seguro con Stripe:',
       paymentLink,
     ].join('\n');
   }
   return [
-    '¡Estás a un paso de confirmar tu servicio!',
-    'Elige tu método de pago y reserva a través de nuestro enlace seguro con Stripe:',
+    'Usa este enlace para reservar tu servicio.',
+    'SERVI solo cobrará al finalizar el trabajo, según lo realizado.',
+    'Enlace seguro con Stripe:',
     paymentLink,
   ].join('\n');
 }
@@ -1579,6 +1589,15 @@ function generateAdjustment() {
   } else {
     totalCell.clearContent();
   }
+  const finalCents =
+    (totalCents > 0 ? totalCents : Math.round(totalMXN * 100)) +
+    Math.round(Number(out.visitCreditCents || 0));
+  if (COL.FINAL_PRICE && finalCents > 0) {
+    const finalMXN = finalCents / 100;
+    const finalCell = sh.getRange(row, COL.FINAL_PRICE);
+    finalCell.setValue(finalMXN);
+    finalCell.setNumberFormat('$#,##0.00');
+  }
 
   const flow = String(out.flow || out.mode || '').toLowerCase();
   const linkLabel = flow === 'book' ? 'Link (cliente)' : 'Link (invitado)';
@@ -1604,21 +1623,46 @@ function generateAdjustment() {
         }) +
         ' del total.'
       : '';
-  const introLine =
-    bookingTypeResp === BOOKING_TYPE_LABELS.VISITA
-      ? 'Saldo final después de tu visita para cotizar.'
-      : 'Necesitamos confirmar un ajuste en tu servicio.';
-  const messageLines = [
-    introLine,
-    visitCreditLine,
-    'Monto total: ' + formattedTotal,
-    effectiveReason ? 'Motivo: ' + effectiveReason : '',
-    flow === 'book'
-      ? 'Confírmalo con tu método guardado aquí:'
-      : 'Confírmalo aquí:',
-    shortLink,
-  ].filter(Boolean);
-  setCellRichTextWithLink_(messageCell, messageLines.join('\n'), shortLink);
+
+  function buildAdjustmentLinkMessage_(reasonLabel) {
+    const reason = String(reasonLabel || '').toLowerCase();
+    const amountLine = 'Monto: ' + formattedTotal;
+    if (reason.indexOf('final price') !== -1) {
+      return [
+        'Este enlace es para pagar el resto de tu servicio. Se desconto lo que pagaste inicialmente!',
+        amountLine,
+        shortLink,
+      ];
+    }
+    if (reason.indexOf('deposit') !== -1 || reason.indexOf('anticipo') !== -1) {
+      return [
+        'Usa este enlace para pagar el anticipo de tu servicio. Este monto se descuenta del total y el resto se cobrará al finalizar el trabajo.',
+        amountLine,
+        shortLink,
+      ];
+    }
+    if (reason.indexOf('surcharge') !== -1) {
+      return ['Confirma aquí el cargo extra de tu servicio.', amountLine, shortLink];
+    }
+    if (reason.indexOf('billing error') !== -1 || reason.indexOf('billing') !== -1) {
+      return [
+        'Detectamos un error en el cobro de tu servicio. Usa este enlace para corregir el pago; el monto ya está ajustado según lo correcto.',
+        amountLine,
+        shortLink,
+      ];
+    }
+    return [
+      effectiveReason ? 'Motivo: ' + effectiveReason : 'Confirma el ajuste de tu servicio.',
+      amountLine,
+      shortLink,
+    ];
+  }
+
+  const messageLines = buildAdjustmentLinkMessage_(effectiveReason || adjustmentType);
+  if (visitCreditLine) {
+    messageLines.splice(1, 0, visitCreditLine);
+  }
+  setCellRichTextWithLink_(messageCell, messageLines.filter(Boolean).join('\n'), shortLink);
 }
 
 function captureCompletedService() {
