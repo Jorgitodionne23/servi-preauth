@@ -560,9 +560,8 @@
         showPhoneLockError('Ingresa los 4 dígitos finales del teléfono.');
         return false;
       }
-      if (phoneLockState.button) {
-        phoneLockState.button.disabled = true;
-      }
+      const btn = phoneLockState.button;
+      if (btn) btn.disabled = true;
       showPhoneLockError('');
       try {
         const resp = await fetch(`/orders/${encodeURIComponent(phoneLockState.orderId)}/verify-phone-last4`, {
@@ -574,6 +573,7 @@
         if (!resp.ok) {
           const msg = payload?.message || 'Los dígitos no coinciden. Intenta de nuevo.';
           showPhoneLockError(msg);
+          alert(msg);
           return false;
         }
         phoneLockState.unlocked = true;
@@ -590,12 +590,12 @@
         return true;
       } catch (err) {
         console.warn('verify phone failed', err);
-        showPhoneLockError('No se pudo verificar. Intenta nuevamente.');
+        const msg = 'No se pudo verificar. Intenta nuevamente.';
+        showPhoneLockError(msg);
+        alert(msg);
         return false;
       } finally {
-        if (phoneLockState.button) {
-          phoneLockState.button.disabled = false;
-        }
+        if (btn) btn.disabled = false;
       }
     }
 
