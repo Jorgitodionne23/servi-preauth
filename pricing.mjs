@@ -12,6 +12,9 @@ const DEFAULTS = {
   stripeFeeVatRate: 0.16
 };
 
+export const VISIT_PREAUTH_TOTAL_PESOS = 140;
+export const VISIT_PREAUTH_PROVIDER_PESOS = 90;
+
 function toNumber(value, fallback = 0) {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
@@ -81,6 +84,78 @@ export function computePricing({
       stripePercent,
       stripeFixed,
       stripeFeeVatRate
+    }
+  };
+}
+
+// Fixed-price visit preauthorization (customer pays $140, internal split uses provider=90)
+export function computeVisitPreauthPricing({
+  totalPesos = VISIT_PREAUTH_TOTAL_PESOS,
+  providerPesos = VISIT_PREAUTH_PROVIDER_PESOS,
+  vatRate = DEFAULTS.vatRate,
+  stripePercent = DEFAULTS.stripePercent,
+  stripeFixed = DEFAULTS.stripeFixed
+} = {}) {
+  const totalAmountCents = Math.round(toNumber(totalPesos, 0) * 100);
+  const providerAmountCents = Math.round(toNumber(providerPesos, 0) * 100);
+  if (totalAmountCents <= 0) {
+    throw new Error('Visit preauth total must be a positive number');
+  }
+  if (providerAmountCents <= 0 || providerAmountCents >= totalAmountCents) {
+    throw new Error('Visit provider amount must be positive and below total');
+  }
+
+  const nonProviderCents = totalAmountCents - providerAmountCents;
+  const processingFeeAmountCents = Math.round(
+    (stripePercent * (totalAmountCents / 100) + stripeFixed) * 100
+  );
+
+  // Split remaining into booking + VAT on (booking + processing)
+  const baseBeforeVatCents = Math.max(
+    0,
+    Math.round(nonProviderCents / (1 + vatRate))
+  );
+  let bookingFeeAmountCents = Math.max(
+    0,
+    baseBeforeVatCents - processingFeeAmountCents
+  );
+  let vatAmountCents = Math.max(0, nonProviderCents - baseBeforeVatCents);
+
+  // Tuck any rounding residue into booking fee
+  const residue =
+    nonProviderCents -
+    (processingFeeAmountCents + bookingFeeAmountCents + vatAmountCents);
+  if (residue !== 0) {
+    bookingFeeAmountCents = Math.max(0, bookingFeeAmountCents + residue);
+  }
+
+  const totalCheck =
+    providerAmountCents +
+    bookingFeeAmountCents +
+    processingFeeAmountCents +
+    vatAmountCents;
+  if (totalCheck !== totalAmountCents) {
+    const finalResidue = totalAmountCents - totalCheck;
+    bookingFeeAmountCents = Math.max(
+      0,
+      bookingFeeAmountCents + finalResidue
+    );
+  }
+
+  return {
+    providerAmountCents,
+    bookingFeeAmountCents,
+    processingFeeAmountCents,
+    vatAmountCents,
+    totalAmountCents,
+    components: {
+      vatRate,
+      stripePercent,
+      stripeFixed,
+      stripeFeeVatRate: DEFAULTS.stripeFeeVatRate,
+      visitPreauth: true,
+      visitProviderPesos: providerPesos,
+      visitTotalPesos: totalPesos
     }
   };
 }

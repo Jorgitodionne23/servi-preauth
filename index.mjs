@@ -5,7 +5,12 @@ import express from 'express';
 import StripePackage from 'stripe';
 import path from 'path';
 import { pool, initDb } from './db.pg.mjs';
-import { computePricing } from './pricing.mjs';
+import {
+  computePricing,
+  computeVisitPreauthPricing,
+  VISIT_PREAUTH_PROVIDER_PESOS,
+  VISIT_PREAUTH_TOTAL_PESOS
+} from './pricing.mjs';
 import { fileURLToPath, URLSearchParams } from 'url';
 import { dirname } from 'path';
 import fetch from 'node-fetch';
@@ -994,8 +999,14 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
     capture
   } = req.body;
   const bookingType = normalizeBookingType(bookingTypeRaw);
-  const providerPricePesos = Number(amount);
-  if (!Number.isFinite(providerPricePesos) || providerPricePesos <= 0) {
+  const bookingKey = bookingTypeKey(bookingType);
+  let providerPricePesos = Number(amount);
+  if (bookingKey === 'visita') {
+    providerPricePesos =
+      Number.isFinite(providerPricePesos) && providerPricePesos > 0
+        ? providerPricePesos
+        : VISIT_PREAUTH_PROVIDER_PESOS;
+  } else if (!Number.isFinite(providerPricePesos) || providerPricePesos <= 0) {
     return res.status(400).send({ error: 'invalid_provider_amount', message: 'amount must be a positive number (MXN pesos)' });
   }
   const clientEmailNormalized = normalizeEmail(clientEmail);
@@ -1090,10 +1101,16 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
         stripeFixed: stripeFixedPesos,
         stripeFeeVatRate
       }
-    } = computePricing({
-      providerPricePesos,
-      leadTimeHours: hoursAhead
-    });
+    } =
+      bookingKey === 'visita'
+        ? computeVisitPreauthPricing({
+            totalPesos: VISIT_PREAUTH_TOTAL_PESOS,
+            providerPesos: VISIT_PREAUTH_PROVIDER_PESOS
+          })
+        : computePricing({
+            providerPricePesos,
+            leadTimeHours: hoursAhead
+          });
     // If long lead and NO consent, do not create a new customer yet
     // We can still check for saved card if an existing customer was found
     let saved = false;
@@ -1199,8 +1216,6 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
         orderId
       ]
     );
-    const bookingKey = bookingTypeKey(bookingType);
-
     // --- NEW: determine if we already have consent (customer-level or order-level) ---
     let hasConsent = false;
     if (existingCustomer?.id) {
