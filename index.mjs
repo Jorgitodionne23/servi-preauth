@@ -2499,10 +2499,8 @@ app.post('/create-adjustment', requireAdminAuth, async (req, res) => {
     let totalAfterCreditCents = totalAmountCents;
     let creditAppliedCents = 0;
     if (parentBookingKey === 'visita') {
-      const credit = Math.max(
-        0,
-        Math.min(Number.isFinite(parentProviderCents) ? parentProviderCents : 0, providerAmountCents)
-      );
+      const visitCreditCents = Math.round(Number(VISIT_PREAUTH_TOTAL_PESOS || 0) * 100);
+      const credit = Math.max(0, Math.min(visitCreditCents, providerAmountCents));
       creditAppliedCents = credit;
       providerAfterCreditCents = providerAmountCents - credit;
       totalAfterCreditCents =

@@ -593,7 +593,7 @@
         showPhoneLockError('No se pudo verificar. Intenta nuevamente.');
         return false;
       } finally {
-        if (!phoneLockState.unlocked && phoneLockState.button) {
+        if (phoneLockState.button) {
           phoneLockState.button.disabled = false;
         }
       }
