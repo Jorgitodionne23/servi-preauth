@@ -935,7 +935,6 @@
       const vatCents = toCents(order.vat_amount ?? order.pricing?.vat_amount);
       const totalFormatted = formatMoneyFromCents(totalCents);
       const bookingTypeKey = normalizeBookingType(order.booking_type);
-      const isAdjustment = String(order.kind || '').toLowerCase() === 'adjustment';
       const isVisitFinalAdjustment = isAdjustment && bookingTypeKey === 'visita';
 
       if (totalRow && totalEl) {
