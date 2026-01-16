@@ -378,6 +378,14 @@
   <div class="summary-box">
     <h3>Detalles de tu reserva</h3>
     <p id="service-summary">Cargando…</p>
+    <div class="summary-row" id="final-price-row" style="display:none;">
+      <span>Precio final</span>
+      <span id="final-price-value">—</span>
+    </div>
+    <div class="summary-row" id="visit-credit-row" style="display:none;">
+      <span>Pago de visita (se descuenta)</span>
+      <span id="visit-credit-value">—</span>
+    </div>
     <div class="summary-row total" id="total-row" style="display:none;">
       <span>Total a pagar</span>
       <span id="summary-total">—</span>
@@ -450,6 +458,7 @@
       const n = Number(value);
       return Number.isFinite(n) ? Math.round(n) : 0;
     };
+    const VISIT_CREDIT_CENTS = 14000; // fixed upfront visit payment to subtract on final price
     const MERIDIEM_REGEX = /\b([ap])\.\s*m\.?/gi;
     const enforceUpperMeridiem = (value) => {
       if (typeof value !== 'string') return value;
@@ -912,15 +921,22 @@
         }
       }
 
-      const summaryBox = document.querySelector('.summary-box');
-      const totalRow = document.getElementById('total-row');
-      const totalEl = document.getElementById('summary-total');
-      const noteEl = document.getElementById('summary-note');
-      const bookingNoteEl = document.getElementById('booking-note');
+    const summaryBox = document.querySelector('.summary-box');
+    const totalRow = document.getElementById('total-row');
+    const totalEl = document.getElementById('summary-total');
+    const noteEl = document.getElementById('summary-note');
+    const bookingNoteEl = document.getElementById('booking-note');
+      const finalPriceRow = document.getElementById('final-price-row');
+      const finalPriceValue = document.getElementById('final-price-value');
+      const visitCreditRow = document.getElementById('visit-credit-row');
+      const visitCreditValue = document.getElementById('visit-credit-value');
 
       const totalCents = toCents(order.amount ?? order.pricing?.total_amount);
       const vatCents = toCents(order.vat_amount ?? order.pricing?.vat_amount);
       const totalFormatted = formatMoneyFromCents(totalCents);
+      const bookingTypeKey = normalizeBookingType(order.booking_type);
+      const isAdjustment = String(order.kind || '').toLowerCase() === 'adjustment';
+      const isVisitFinalAdjustment = isAdjustment && bookingTypeKey === 'visita';
 
       if (totalRow && totalEl) {
         if (totalCents > 0) {
@@ -936,9 +952,18 @@
       if (noteEl && summaryBox) {
         summaryBox.appendChild(noteEl);
       }
+      if (isVisitFinalAdjustment && finalPriceRow && visitCreditRow && finalPriceValue && visitCreditValue) {
+        const beforeCreditCents = totalCents + VISIT_CREDIT_CENTS;
+        finalPriceValue.textContent = formatMoneyFromCents(beforeCreditCents);
+        visitCreditValue.textContent = `- ${formatMoneyFromCents(VISIT_CREDIT_CENTS)}`;
+        finalPriceRow.style.display = 'flex';
+        visitCreditRow.style.display = 'flex';
+      } else {
+        if (finalPriceRow) finalPriceRow.style.display = 'none';
+        if (visitCreditRow) visitCreditRow.style.display = 'none';
+      }
       if (bookingNoteEl && summaryBox) {
         summaryBox.appendChild(bookingNoteEl);
-        const bookingTypeKey = normalizeBookingType(order.booking_type);
         const bookingNoteCopy = (() => {
           if (bookingTypeKey === 'visita') {
             return 'Pago de visita para cotizar; se abonará al total final.';
