@@ -12,7 +12,11 @@ const ORDER_HEADER_ALIASES = {
   BOOKING_TYPE: ['Booking type', 'Booking Type'],
   CAPTURE_TYPE: ['Capture Type'],
   AMOUNT: ['Amount (MXN)', 'Amount'],
-  FINAL_CAPTURED: ['Final Captured Amount', 'Captured (Final)', 'Net Captured Amount'],
+  FINAL_CAPTURED: [
+    'Final Captured Amount',
+    'Captured (Final)',
+    'Net Captured Amount',
+  ],
   SERVICE_DT: [
     'Service Date and Time',
     'Service Date and Time (Dia, mes, año, hora)',
@@ -252,7 +256,9 @@ function normalizeBookingType_(value) {
 }
 
 function normalizeEmail_(raw) {
-  const email = String(raw || '').trim().toLowerCase();
+  const email = String(raw || '')
+    .trim()
+    .toLowerCase();
   if (!email) return '';
   const pattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   return pattern.test(email) ? email : '';
@@ -332,7 +338,9 @@ function applyConfirmWithSavedResult_(sheet, row, code, out, updatePaymentCol) {
 
   if (code === 200 && out && out.createdOnly) {
     if (out.paymentIntentId) {
-      sheet.getRange(row, ORD_COL.PI_ID).setValue(String(out.paymentIntentId || ''));
+      sheet
+        .getRange(row, ORD_COL.PI_ID)
+        .setValue(String(out.paymentIntentId || ''));
     }
     const label = String(out.status || '').trim();
     if (label) {
@@ -349,7 +357,9 @@ function applyConfirmWithSavedResult_(sheet, row, code, out, updatePaymentCol) {
           ? 'Captured'
           : String(out.status || 'Confirmed');
     sheet.getRange(row, ORD_COL.STATUS).setValue(label);
-    sheet.getRange(row, ORD_COL.PI_ID).setValue(String(out.paymentIntentId || ''));
+    sheet
+      .getRange(row, ORD_COL.PI_ID)
+      .setValue(String(out.paymentIntentId || ''));
     if (updateCol) {
       sheet.getRange(row, updateCol).clearContent();
     }
@@ -359,7 +369,9 @@ function applyConfirmWithSavedResult_(sheet, row, code, out, updatePaymentCol) {
   if (code === 402 && out.clientSecret) {
     sheet.getRange(row, ORD_COL.STATUS).setValue('Pending (3DS)');
     if (out.paymentIntentId) {
-      sheet.getRange(row, ORD_COL.PI_ID).setValue(String(out.paymentIntentId || ''));
+      sheet
+        .getRange(row, ORD_COL.PI_ID)
+        .setValue(String(out.paymentIntentId || ''));
     }
     return true;
   }
@@ -367,7 +379,9 @@ function applyConfirmWithSavedResult_(sheet, row, code, out, updatePaymentCol) {
   if (code === 409) {
     sheet.getRange(row, ORD_COL.STATUS).setValue('Declined');
     if (out.paymentIntentId) {
-      sheet.getRange(row, ORD_COL.PI_ID).setValue(String(out.paymentIntentId || ''));
+      sheet
+        .getRange(row, ORD_COL.PI_ID)
+        .setValue(String(out.paymentIntentId || ''));
     }
     const retryMessage = String(
       out.updatePaymentMessage ||
@@ -926,7 +940,8 @@ function buildBookingLinkMessage_(bookingType, paymentLink) {
   const type = normalizeBookingType_(bookingType);
   if (type === BOOKING_TYPE_LABELS.VISITA) {
     return [
-      'Confirma tu visita para cotizar. Este pago se abona al total final.',
+      'Confirma tu cotización.',
+      'El cargo de visita existe para asegurar la cita y se descuenta del precio final.',
       'Reserva en nuestro enlace seguro con Stripe:',
       paymentLink,
     ].join('\n');
@@ -1000,7 +1015,7 @@ function generatePaymentLink() {
   const serviceDescription = sheet
     .getRange(editedRow, serviceDescCol)
     .getValue();
-  const amountMXN = sheet.getRange(editedRow, amountCol).getValue();
+  let amountMXN = sheet.getRange(editedRow, amountCol).getValue();
   const serviceDateRaw = sheet.getRange(editedRow, serviceDateCol).getValue();
   const serviceAddress = String(
     sheet.getRange(editedRow, addressCol).getDisplayValue() || ''
@@ -1023,9 +1038,13 @@ function generatePaymentLink() {
       clientEmail = lookup.email;
       emailCell.setValue(clientEmail);
       if (lookup.customerId && clientIdCol) {
-        const existing = sheet.getRange(editedRow, clientIdCol).getDisplayValue();
+        const existing = sheet
+          .getRange(editedRow, clientIdCol)
+          .getDisplayValue();
         if (!existing) {
-          sheet.getRange(editedRow, clientIdCol).setValue(String(lookup.customerId));
+          sheet
+            .getRange(editedRow, clientIdCol)
+            .setValue(String(lookup.customerId));
         }
       }
     }
@@ -1045,6 +1064,14 @@ function generatePaymentLink() {
   if (!bookingTypeRaw) {
     bookingTypeCell.setValue(bookingType);
   }
+  const VISIT_PREAUTH_TOTAL_MXN = 140;
+  if (
+    bookingType === BOOKING_TYPE_LABELS.VISITA &&
+    (!amountMXN || isNaN(amountMXN) || Number(amountMXN) <= 0)
+  ) {
+    amountMXN = VISIT_PREAUTH_TOTAL_MXN;
+    sheet.getRange(editedRow, amountCol).setValue(amountMXN);
+  }
   const clientTypeCell = sheet.getRange(editedRow, clientTypeCol);
   clientTypeCell.setValue('Guest');
   const captureTypeCell = captureTypeCol
@@ -1053,7 +1080,9 @@ function generatePaymentLink() {
   const captureChoice = String(
     captureTypeCell ? captureTypeCell.getDisplayValue() : ''
   ).trim();
-  const captureMethod = /^automatic$/i.test(captureChoice) ? 'automatic' : 'manual';
+  const captureMethod = /^automatic$/i.test(captureChoice)
+    ? 'automatic'
+    : 'manual';
 
   const TZ = 'America/Mexico_City';
 
@@ -1268,7 +1297,10 @@ function generatePaymentLink() {
         }
         if (code === 403 && dataErr && dataErr.error === 'account_required') {
           const paymentLink = SERVI_BASE + '/o/' + dataErr.publicCode;
-          const paymentText = buildBookingLinkMessage_(bookingType, paymentLink);
+          const paymentText = buildBookingLinkMessage_(
+            bookingType,
+            paymentLink
+          );
 
           sheet
             .getRange(editedRow, orderIdCol)
@@ -1343,7 +1375,11 @@ function generatePaymentLink() {
           } catch (_) {}
           return;
         }
-        if (code === 409 && dataErr && dataErr.error === 'email_phone_conflict') {
+        if (
+          code === 409 &&
+          dataErr &&
+          dataErr.error === 'email_phone_conflict'
+        ) {
           const msg =
             dataErr.message ||
             '⚠️ Este email ya está asociado a otro número. Verifica el email y el WhatsApp.';
@@ -1550,7 +1586,9 @@ function generateAdjustment() {
   sh.getRange(row, COL.STATUS).setValue('Pending');
   sh.getRange(row, COL.CLIENT_ID).setValue(out.customerId || '');
 
-  const effectiveReason = String(out.adjustmentReason || adjustmentType || '').trim();
+  const effectiveReason = String(
+    out.adjustmentReason || adjustmentType || ''
+  ).trim();
   const formattedTotal = totalMXN.toLocaleString('es-MX', {
     style: 'currency',
     currency: 'MXN',
@@ -1740,8 +1778,7 @@ function attemptImmediatePreauthForSavedClient_(sheet, row, orderId, info) {
   const savedCard = !!(data.savedCard || data.consentOk);
   if (!sheet || !savedCard) return;
 
-  let hoursAhead =
-    typeof data.hoursAhead === 'number' ? data.hoursAhead : null;
+  let hoursAhead = typeof data.hoursAhead === 'number' ? data.hoursAhead : null;
   if (hoursAhead === null) {
     const hoursCellVal = Number(
       sheet.getRange(row, ORD_COL.HOURS).getValue() || ''
@@ -1753,8 +1790,7 @@ function attemptImmediatePreauthForSavedClient_(sheet, row, orderId, info) {
     sheet.getRange(row, ORD_COL.PI_ID).getDisplayValue() || ''
   ).trim();
   if (existingPi) return;
-  if (hoursAhead === null || hoursAhead > EARLY_PREAUTH_THRESHOLD_HOURS)
-    return;
+  if (hoursAhead === null || hoursAhead > EARLY_PREAUTH_THRESHOLD_HOURS) return;
 
   const currentStatus = String(
     sheet.getRange(row, ORD_COL.STATUS).getDisplayValue() || ''
@@ -1778,7 +1814,13 @@ function attemptImmediatePreauthForSavedClient_(sheet, row, orderId, info) {
     } catch (_) {
       out = {};
     }
-    applyConfirmWithSavedResult_(sheet, row, code, out, ORD_COL.UPDATE_PAYMENT_METHOD);
+    applyConfirmWithSavedResult_(
+      sheet,
+      row,
+      code,
+      out,
+      ORD_COL.UPDATE_PAYMENT_METHOD
+    );
   } catch (_) {}
 }
 
@@ -2259,22 +2301,36 @@ function openOrderActionsSidebar() {
     return;
   }
 
-  const orderId = String(sh.getRange(row, ORD_COL.ORDER_ID).getDisplayValue() || '').trim();
+  const orderId = String(
+    sh.getRange(row, ORD_COL.ORDER_ID).getDisplayValue() || ''
+  ).trim();
   if (!orderId) {
     ui.alert('No Order ID en la fila seleccionada.');
     return;
   }
 
-  const amountValue = Number(sh.getRange(row, ORD_COL.TOTAL_PAID).getValue() || 0);
+  const amountValue = Number(
+    sh.getRange(row, ORD_COL.TOTAL_PAID).getValue() || 0
+  );
   const data = {
     row,
     orderId,
-    status: String(sh.getRange(row, ORD_COL.STATUS).getDisplayValue() || '').trim(),
-    amountLabel: String(sh.getRange(row, ORD_COL.TOTAL_PAID).getDisplayValue() || '').trim(),
+    status: String(
+      sh.getRange(row, ORD_COL.STATUS).getDisplayValue() || ''
+    ).trim(),
+    amountLabel: String(
+      sh.getRange(row, ORD_COL.TOTAL_PAID).getDisplayValue() || ''
+    ).trim(),
     captureDefault: amountValue || null,
-    serviceDate: String(sh.getRange(row, ORD_COL.SERVICE_DT).getDisplayValue() || '').trim(),
-    clientName: String(sh.getRange(row, ORD_COL.CLIENT_NAME).getDisplayValue() || '').trim(),
-    paymentIntentId: String(sh.getRange(row, ORD_COL.PI_ID).getDisplayValue() || '').trim()
+    serviceDate: String(
+      sh.getRange(row, ORD_COL.SERVICE_DT).getDisplayValue() || ''
+    ).trim(),
+    clientName: String(
+      sh.getRange(row, ORD_COL.CLIENT_NAME).getDisplayValue() || ''
+    ).trim(),
+    paymentIntentId: String(
+      sh.getRange(row, ORD_COL.PI_ID).getDisplayValue() || ''
+    ).trim(),
   };
 
   const tmpl = HtmlService.createTemplate(ORDER_ACTIONS_SIDEBAR_HTML);
@@ -2289,17 +2345,19 @@ function cancelOrderFromSidebar(payload) {
   const row = Number(p.row || 0);
   if (!orderId) throw new Error('Order ID requerido.');
 
-  const reason = String(p.reason || '').trim().slice(0, 200);
+  const reason = String(p.reason || '')
+    .trim()
+    .slice(0, 200);
 
   const resp = UrlFetchApp.fetch(SERVI_BASE + '/cancel-order', {
     method: 'post',
     contentType: 'application/json',
     payload: JSON.stringify({
       orderId,
-      reason
+      reason,
     }),
     headers: adminHeaders_(),
-    muteHttpExceptions: true
+    muteHttpExceptions: true,
   });
 
   const code = resp.getResponseCode();
@@ -2314,7 +2372,9 @@ function cancelOrderFromSidebar(payload) {
     throw new Error(msg);
   }
 
-  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAMES.ORDERS);
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(
+    SHEET_NAMES.ORDERS
+  );
   if (sh && row >= 2) {
     if (out.status) {
       sh.getRange(row, ORD_COL.STATUS).setValue(out.status);
@@ -2355,10 +2415,10 @@ function captureOrderFromSidebar(payload) {
     contentType: 'application/json',
     payload: JSON.stringify({
       orderId,
-      amount: amountCents || undefined
+      amount: amountCents || undefined,
     }),
     headers: adminHeaders_(),
-    muteHttpExceptions: true
+    muteHttpExceptions: true,
   });
 
   const code = resp.getResponseCode();
@@ -2367,13 +2427,17 @@ function captureOrderFromSidebar(payload) {
     out = JSON.parse(resp.getContentText() || '{}');
   } catch (_) {}
   if (code < 200 || code >= 300) {
-    const msg = out.error || out.message || resp.getContentText() || 'Captura fallida.';
+    const msg =
+      out.error || out.message || resp.getContentText() || 'Captura fallida.';
     throw new Error(msg);
   }
 
-  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAMES.ORDERS);
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(
+    SHEET_NAMES.ORDERS
+  );
   if (sh && row >= 2) {
-    const statusLabel = out.status === 'succeeded' ? 'Captured' : (out.status || 'Captured');
+    const statusLabel =
+      out.status === 'succeeded' ? 'Captured' : out.status || 'Captured';
     sh.getRange(row, ORD_COL.STATUS).setValue(statusLabel);
     if (typeof out.captured === 'number' && !isNaN(out.captured)) {
       // Total Paid is the captured-before-refunds amount; set once on capture.
@@ -2403,7 +2467,9 @@ function refundOrderFromSidebar(payload) {
     }
     amountCents = Math.round(val * 100);
   }
-  const reason = String(p.reason || '').trim().slice(0, 200);
+  const reason = String(p.reason || '')
+    .trim()
+    .slice(0, 200);
 
   const resp = UrlFetchApp.fetch(SERVI_BASE + '/refund-order', {
     method: 'post',
@@ -2411,10 +2477,10 @@ function refundOrderFromSidebar(payload) {
     payload: JSON.stringify({
       orderId,
       amountCents: amountCents || undefined,
-      reason
+      reason,
     }),
     headers: adminHeaders_(),
-    muteHttpExceptions: true
+    muteHttpExceptions: true,
   });
 
   const code = resp.getResponseCode();
@@ -2427,7 +2493,9 @@ function refundOrderFromSidebar(payload) {
     throw new Error(msg);
   }
 
-  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAMES.ORDERS);
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(
+    SHEET_NAMES.ORDERS
+  );
   if (sh && row >= 2) {
     if (out.status) {
       sh.getRange(row, ORD_COL.STATUS).setValue(out.status);
@@ -2437,13 +2505,17 @@ function refundOrderFromSidebar(payload) {
       typeof out.remainingAmountCents === 'number' &&
       !isNaN(out.remainingAmountCents)
     ) {
-      sh.getRange(row, ORD_COL.FINAL_CAPTURED).setValue(out.remainingAmountCents / 100);
+      sh.getRange(row, ORD_COL.FINAL_CAPTURED).setValue(
+        out.remainingAmountCents / 100
+      );
     }
     const noteParts = [];
     if (reason) noteParts.push('Motivo: ' + reason);
     if (out.message) noteParts.push(out.message);
     if (out.refundedAmountCents) {
-      noteParts.push('Reembolsado: $' + (out.refundedAmountCents / 100).toFixed(2));
+      noteParts.push(
+        'Reembolsado: $' + (out.refundedAmountCents / 100).toFixed(2)
+      );
     }
     const noteText = noteParts.join('\n');
     if (noteText) {

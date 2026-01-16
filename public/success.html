@@ -127,6 +127,10 @@
         <div class="label">Dirección</div>
         <div class="value" id="address">—</div>
       </div>
+      <div class="row" id="date-row" style="display:none;">
+        <div class="label">Fecha del servicio</div>
+        <div class="value" id="date-value">—</div>
+      </div>
       <div class="row" id="reason-row" style="display:none">
         <div class="label">Motivo del ajuste</div>
         <div class="value" id="reason">—</div>
@@ -171,6 +175,8 @@
     const emailRow = document.getElementById('email-row');
     const emailValueEl = document.getElementById('email-value');
     const vatNoteEl = document.getElementById('vat-note');
+    const dateRow = document.getElementById('date-row');
+    const dateValueEl = document.getElementById('date-value');
     const summaryBox = document.querySelector('.summary-box');
 
     const PREVIEW_KEY = 'serviSuccessPreview';
@@ -199,6 +205,30 @@
       return Number.isFinite(n) ? n : 0;
     }
 
+    function formatServiceDateTime(rawDateTime, rawDateOnly) {
+      try {
+        let d = null;
+        if (rawDateTime) {
+          d = new Date(rawDateTime);
+        } else if (rawDateOnly) {
+          d = new Date(`${rawDateOnly}T12:00:00`);
+        }
+        if (!d || Number.isNaN(d.getTime())) return null;
+        const fmt = new Intl.DateTimeFormat('es-MX', {
+          weekday: 'long',
+          day: 'numeric',
+          month: 'long',
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true,
+          timeZone: 'America/Mexico_City'
+        });
+        return fmt.format(d);
+      } catch {
+        return null;
+      }
+    }
+
     function buildPreviewFromOrder(order) {
       return {
         orderId: order.id || null,
@@ -212,6 +242,8 @@
         kind: String(order.kind || ''),
         reason: String(order.adjustment_reason || ''),
         serviceAddress: order.service_address || '',
+        serviceDate: order.service_date || null,
+        serviceDateTime: order.service_datetime || null,
         bookingType: order.booking_type || null
       };
     }
@@ -273,9 +305,17 @@
       const vatCents = toNumber(order.vat_amount ?? totals.vatCents ?? order.pricing?.vat_amount);
       const serviceCents = providerCents + bookingCents + vatCents;
       const bookingTypeKey = normalizeBookingType(order.booking_type || totals.bookingType);
+      const hideBreakdownForVisit = bookingTypeKey === 'visita';
+      const serviceDateDisplay = formatServiceDateTime(
+        order.service_datetime ?? totals.serviceDateTime,
+        order.service_date ?? totals.serviceDate
+      );
 
       amountEl.textContent = fmtAmount(totalCents);
-      if (serviceCents > 0) {
+      if (hideBreakdownForVisit) {
+        servicePriceRow.style.display = 'none';
+        processingRow.style.display = 'none';
+      } else if (serviceCents > 0) {
         servicePriceEl.textContent = fmtAmount(serviceCents);
         servicePriceRow.style.display = 'flex';
         if (servicePriceLabel) {
@@ -291,7 +331,14 @@
         servicePriceRow.style.display = 'none';
       }
 
-      if (processingCents > 0) {
+      if (serviceDateDisplay) {
+        dateValueEl.textContent = serviceDateDisplay;
+        dateRow.style.display = 'flex';
+      } else {
+        dateRow.style.display = 'none';
+      }
+
+      if (!hideBreakdownForVisit && processingCents > 0) {
         processingEl.textContent = fmtAmount(processingCents);
         processingRow.style.display = 'flex';
       } else {
@@ -383,6 +430,8 @@
             kind: previewSnapshot.kind,
             adjustment_reason: previewSnapshot.reason,
             service_address: previewSnapshot.serviceAddress,
+            service_date: previewSnapshot.serviceDate,
+            service_datetime: previewSnapshot.serviceDateTime,
             status: 'Confirmed'
           };
           renderOrder(pseudoOrder, {
