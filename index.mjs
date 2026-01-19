@@ -2738,6 +2738,7 @@ app.post('/refund-order', requireAdminAuth, async (req, res) => {
     // refund (gross) and subtract the fee once.
     const requested = Number(amountCents);
     const baseRequested = Number.isInteger(requested) && requested > 0 ? Math.min(requested, received) : received;
+    const userRequestedFullRefund = baseRequested >= received;
     let amountToRefund = Math.max(0, baseRequested - nonRefundableFee);
     if (amountToRefund > maxRefundable) amountToRefund = maxRefundable;
 
@@ -2758,7 +2759,9 @@ app.post('/refund-order', requireAdminAuth, async (req, res) => {
     const refundedAmountCents = refundObj.amount || amountToRefund;
     const remainingAmountCents = Math.max(0, received - refundedAmountCents);
     const newStatus =
-      refundedAmountCents >= received ? 'Refunded' : 'Captured (partial refund)';
+      userRequestedFullRefund || refundedAmountCents >= received
+        ? 'Refunded'
+        : 'Captured (partial refund)';
 
     await pool.query('UPDATE all_bookings SET status=$1, final_captured_amount=$2 WHERE id=$3', [
       newStatus,
@@ -2773,8 +2776,8 @@ app.post('/refund-order', requireAdminAuth, async (req, res) => {
       finalCapturedAmount: remainingAmountCents,
       refundId: refundObj.id,
       message:
-        refundedAmountCents >= received
-          ? 'Reembolso total realizado.'
+        userRequestedFullRefund || refundedAmountCents >= received
+          ? 'Reembolso total solicitado; la comisión de procesamiento no es reembolsable.'
           : 'Reembolso parcial realizado.'
     });
   } catch (err) {
