@@ -2168,11 +2168,13 @@ app.post('/orders/:id/consent', async (req, res) => {
         INSERT INTO saved_servi_users (
           customer_id, customer_name, customer_email, customer_phone,
           latest_payment_method_id, latest_text_hash, latest_version,
+          first_text_hash, first_version,
           first_checked_at, last_checked_at,
           first_order_id, last_order_id,
+          first_ip, first_user_agent, first_locale, first_tz,
           ip, user_agent, locale, tz
         )
-        VALUES ($1,$2,$3,$4,$5,$6,$7, NOW(), NOW(), $8, $9, $10,$11,$12,$13)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, NOW(), NOW(), $10, $11, $12,$13,$14,$15, $16,$17,$18,$19)
         ON CONFLICT (customer_id) DO UPDATE SET
           customer_name            = COALESCE(EXCLUDED.customer_name, saved_servi_users.customer_name),
           customer_email           = COALESCE(EXCLUDED.customer_email, saved_servi_users.customer_email),
@@ -2180,8 +2182,14 @@ app.post('/orders/:id/consent', async (req, res) => {
           latest_payment_method_id = COALESCE(EXCLUDED.latest_payment_method_id, saved_servi_users.latest_payment_method_id),
           latest_text_hash         = COALESCE(EXCLUDED.latest_text_hash, saved_servi_users.latest_text_hash),
           latest_version           = COALESCE(EXCLUDED.latest_version, saved_servi_users.latest_version),
+          first_text_hash          = COALESCE(saved_servi_users.first_text_hash, EXCLUDED.first_text_hash),
+          first_version            = COALESCE(saved_servi_users.first_version, EXCLUDED.first_version),
           first_checked_at         = COALESCE(saved_servi_users.first_checked_at, EXCLUDED.first_checked_at),
           first_order_id           = COALESCE(saved_servi_users.first_order_id,   EXCLUDED.first_order_id),
+          first_ip                 = COALESCE(saved_servi_users.first_ip, EXCLUDED.first_ip),
+          first_user_agent         = COALESCE(saved_servi_users.first_user_agent, EXCLUDED.first_user_agent),
+          first_locale             = COALESCE(saved_servi_users.first_locale, EXCLUDED.first_locale),
+          first_tz                 = COALESCE(saved_servi_users.first_tz, EXCLUDED.first_tz),
           last_checked_at          = EXCLUDED.last_checked_at,
           last_order_id            = EXCLUDED.last_order_id,
           ip                       = EXCLUDED.ip,
@@ -2196,8 +2204,14 @@ app.post('/orders/:id/consent', async (req, res) => {
         row.saved_payment_method_id || null,
         serverHash,
         version || '1.0',
+        serverHash,
+        version || '1.0',
         parentOrderId, // first_order_id
         row.id, // last_order_id
+        ip, // first_ip
+        ua, // first_user_agent
+        locale || null, // first_locale
+        tz || null, // first_tz
         ip,
         ua,
         locale || null,
@@ -2954,10 +2968,16 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
               latest_payment_method_id,
               latest_text_hash,
               latest_version,
+              first_text_hash,
+              first_version,
               first_checked_at,
               last_checked_at,
               first_order_id,
               last_order_id,
+              first_ip,
+              first_user_agent,
+              first_locale,
+              first_tz,
               ip,
               user_agent,
               locale,
@@ -2965,8 +2985,11 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
             )
             VALUES (
               $1,$2,$3,$4,$5,
-              $6,$7,$8,NOW(),
-              $9,$9,$10,$11,$12,$13
+              $6,$7,$8,$9,
+              $10,NOW(),
+              $11,$11,
+              $12,$13,$14,$15,
+              $16,$17,$18,$19
             )
             ON CONFLICT (customer_id) DO UPDATE SET
               customer_name            = COALESCE($2, saved_servi_users.customer_name),
@@ -2975,14 +2998,20 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
               latest_payment_method_id = COALESCE($5, saved_servi_users.latest_payment_method_id),
               latest_text_hash         = COALESCE($6, saved_servi_users.latest_text_hash),
               latest_version           = COALESCE($7, saved_servi_users.latest_version),
-              first_checked_at         = COALESCE(saved_servi_users.first_checked_at, $8),
+              first_text_hash          = COALESCE(saved_servi_users.first_text_hash, $8),
+              first_version            = COALESCE(saved_servi_users.first_version, $9),
+              first_checked_at         = COALESCE(saved_servi_users.first_checked_at, $10),
               last_checked_at          = NOW(),
-              first_order_id           = COALESCE(saved_servi_users.first_order_id, $9),
-              last_order_id            = $9,
-              ip                       = COALESCE($10, saved_servi_users.ip),
-              user_agent               = COALESCE($11, saved_servi_users.user_agent),
-              locale                   = COALESCE($12, saved_servi_users.locale),
-              tz                       = COALESCE($13, saved_servi_users.tz)
+              first_order_id           = COALESCE(saved_servi_users.first_order_id, $11),
+              last_order_id            = $11,
+              first_ip                 = COALESCE(saved_servi_users.first_ip, $12),
+              first_user_agent         = COALESCE(saved_servi_users.first_user_agent, $13),
+              first_locale             = COALESCE(saved_servi_users.first_locale, $14),
+              first_tz                 = COALESCE(saved_servi_users.first_tz, $15),
+              ip                       = COALESCE($16, saved_servi_users.ip),
+              user_agent               = COALESCE($17, saved_servi_users.user_agent),
+              locale                   = COALESCE($18, saved_servi_users.locale),
+              tz                       = COALESCE($19, saved_servi_users.tz)
           `, [
             cust,
             customerName,
@@ -2991,8 +3020,14 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
             pmId || null,
             consentMeta.text_hash || null,
             consentMeta.version || null,
+            consentMeta.text_hash || null,
+            consentMeta.version || null,
             consentMeta.checked_at || null,
             consentMeta.order_id || parentForCustomer,
+            consentMeta.ip || null,
+            consentMeta.user_agent || null,
+            consentMeta.locale || null,
+            consentMeta.tz || null,
             consentMeta.ip || null,
             consentMeta.user_agent || null,
             consentMeta.locale || null,

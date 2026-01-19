@@ -132,6 +132,20 @@ export async function initDb() {
     ALTER TABLE consented_offsession_bookings
       ADD COLUMN IF NOT EXISTS customer_name TEXT;
 
+    COMMENT ON TABLE consented_offsession_bookings IS 'Per-order consent audit from pay/book checkbox (one row per order)';
+    COMMENT ON COLUMN consented_offsession_bookings.order_id IS 'Order id that captured the consent checkbox';
+    COMMENT ON COLUMN consented_offsession_bookings.customer_id IS 'Stripe customer id at time of consent (may be null)';
+    COMMENT ON COLUMN consented_offsession_bookings.customer_name IS 'Name on the order when consent was given';
+    COMMENT ON COLUMN consented_offsession_bookings.payment_method_id IS 'Saved payment method tied to the order when known';
+    COMMENT ON COLUMN consented_offsession_bookings.version IS 'Consent copy version string shown to the user';
+    COMMENT ON COLUMN consented_offsession_bookings.consent_text IS 'Full consent text presented to the user';
+    COMMENT ON COLUMN consented_offsession_bookings.text_hash IS 'SHA-256 hash of consent_text (server computed to verify)';
+    COMMENT ON COLUMN consented_offsession_bookings.checked_at IS 'Server timestamp when the checkbox submit was received';
+    COMMENT ON COLUMN consented_offsession_bookings.ip IS 'IP address from the consent request';
+    COMMENT ON COLUMN consented_offsession_bookings.user_agent IS 'Browser user agent from the consent request';
+    COMMENT ON COLUMN consented_offsession_bookings.locale IS 'Browser locale sent in the consent payload';
+    COMMENT ON COLUMN consented_offsession_bookings.tz IS 'Client time zone (IANA string) sent in the consent payload';
+
     -- 1-row-per-customer consent registry
     CREATE TABLE IF NOT EXISTS saved_servi_users (
       customer_id              TEXT PRIMARY KEY,
@@ -141,10 +155,16 @@ export async function initDb() {
       latest_payment_method_id TEXT,
       latest_text_hash         TEXT,
       latest_version           TEXT,
+      first_text_hash          TEXT,
+      first_version            TEXT,
       first_checked_at         TIMESTAMPTZ,
       last_checked_at          TIMESTAMPTZ,
       first_order_id           TEXT,   -- "parent" order: first consent
       last_order_id            TEXT,   -- most recent order that touched consent
+      first_ip                 TEXT,
+      first_user_agent         TEXT,
+      first_locale             TEXT,
+      first_tz                 TEXT,
       ip                       TEXT,
       user_agent               TEXT,
       locale                   TEXT,
@@ -155,6 +175,41 @@ export async function initDb() {
         ADD COLUMN IF NOT EXISTS customer_phone TEXT;
       ALTER TABLE saved_servi_users
         ADD COLUMN IF NOT EXISTS customer_email TEXT;
+      ALTER TABLE saved_servi_users
+        ADD COLUMN IF NOT EXISTS first_text_hash TEXT;
+      ALTER TABLE saved_servi_users
+        ADD COLUMN IF NOT EXISTS first_version TEXT;
+      ALTER TABLE saved_servi_users
+        ADD COLUMN IF NOT EXISTS first_ip TEXT;
+      ALTER TABLE saved_servi_users
+        ADD COLUMN IF NOT EXISTS first_user_agent TEXT;
+      ALTER TABLE saved_servi_users
+        ADD COLUMN IF NOT EXISTS first_locale TEXT;
+      ALTER TABLE saved_servi_users
+        ADD COLUMN IF NOT EXISTS first_tz TEXT;
+
+    COMMENT ON TABLE saved_servi_users IS 'Per-customer registry of saved payment method and consent first/last metadata';
+    COMMENT ON COLUMN saved_servi_users.customer_id IS 'Stripe customer id (primary key)';
+    COMMENT ON COLUMN saved_servi_users.customer_name IS 'Latest known customer name';
+    COMMENT ON COLUMN saved_servi_users.customer_email IS 'Latest known customer email';
+    COMMENT ON COLUMN saved_servi_users.customer_phone IS 'Latest known customer phone';
+    COMMENT ON COLUMN saved_servi_users.latest_payment_method_id IS 'Most recent saved payment method id';
+    COMMENT ON COLUMN saved_servi_users.latest_text_hash IS 'Hash of the most recent consent text seen for this customer';
+    COMMENT ON COLUMN saved_servi_users.latest_version IS 'Version of the most recent consent text seen for this customer';
+    COMMENT ON COLUMN saved_servi_users.first_text_hash IS 'Hash of the first consent text seen for this customer';
+    COMMENT ON COLUMN saved_servi_users.first_version IS 'Version of the first consent text seen for this customer';
+    COMMENT ON COLUMN saved_servi_users.first_checked_at IS 'Timestamp when this customer first recorded consent';
+    COMMENT ON COLUMN saved_servi_users.last_checked_at IS 'Timestamp of the most recent consent update';
+    COMMENT ON COLUMN saved_servi_users.first_order_id IS 'Order id that first recorded consent for this customer';
+    COMMENT ON COLUMN saved_servi_users.last_order_id IS 'Most recent order id that touched consent for this customer';
+    COMMENT ON COLUMN saved_servi_users.first_ip IS 'IP address from the first consent capture';
+    COMMENT ON COLUMN saved_servi_users.first_user_agent IS 'Browser user agent from the first consent capture';
+    COMMENT ON COLUMN saved_servi_users.first_locale IS 'Browser locale from the first consent capture';
+    COMMENT ON COLUMN saved_servi_users.first_tz IS 'Client time zone from the first consent capture';
+    COMMENT ON COLUMN saved_servi_users.ip IS 'IP address from the latest consent capture';
+    COMMENT ON COLUMN saved_servi_users.user_agent IS 'Browser user agent from the latest consent capture';
+    COMMENT ON COLUMN saved_servi_users.locale IS 'Browser locale from the latest consent capture';
+    COMMENT ON COLUMN saved_servi_users.tz IS 'Client time zone from the latest consent capture';
 
 
     ALTER INDEX IF EXISTS idx_customer_consents_last_checked_at RENAME TO idx_saved_servi_users_last_checked_at;
@@ -167,3 +222,35 @@ export async function initDb() {
       ON saved_servi_users (latest_payment_method_id);
   `);
 }
+
+/*
+Backfill helper (run manually once columns are deployed):
+
+WITH first_consent AS (
+  SELECT DISTINCT ON (c.customer_id)
+    c.customer_id,
+    c.order_id,
+    c.text_hash,
+    c.version,
+    c.checked_at,
+    c.ip,
+    c.user_agent,
+    c.locale,
+    c.tz
+  FROM consented_offsession_bookings c
+  WHERE c.customer_id IS NOT NULL
+  ORDER BY c.customer_id, c.checked_at ASC
+)
+UPDATE saved_servi_users s
+SET first_text_hash  = fc.text_hash,
+    first_version    = fc.version,
+    first_checked_at = COALESCE(s.first_checked_at, fc.checked_at),
+    first_order_id   = COALESCE(s.first_order_id, fc.order_id),
+    first_ip         = fc.ip,
+    first_user_agent = fc.user_agent,
+    first_locale     = fc.locale,
+    first_tz         = fc.tz
+FROM first_consent fc
+WHERE s.customer_id = fc.customer_id
+  AND s.first_text_hash IS NULL;
+*/
