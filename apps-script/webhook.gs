@@ -421,6 +421,7 @@ function buildReceiptMessage(sheet, row, statusOpt) {
   ).trim();
 
   const blank = (x) => (x && String(x).trim() ? String(x).trim() : '________');
+  const firstName = name ? name.split(/\s+/)[0] : '';
 
   let orderCode = '________';
   const m = linkVal.match(/\/o\/([A-Za-z0-9]+)/);
@@ -498,7 +499,7 @@ function buildReceiptMessage(sheet, row, statusOpt) {
   const details = [
     `Orden: ${orderCode}`,
     `Servicio: ${blank(service)}`,
-    name ? `Cliente: ${blank(name)}` : '',
+    firstName ? `Cliente: ${blank(firstName)}` : '',
     `Fecha y hora: ${whenLine}`,
     `Dirección: ${address || '_____'}`
   ].filter(Boolean);

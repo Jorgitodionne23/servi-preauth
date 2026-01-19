@@ -2,6 +2,7 @@
 const SHEET_NAMES = {
   ORDERS: 'SERVI Orders',
   ADJUSTMENTS: 'SERVI Adjustments',
+  CHANGES: 'SERVI Changes',
 };
 
 const ORDER_HEADER_ALIASES = {
@@ -74,6 +75,30 @@ const ADJ_OPTIONAL_COLUMNS = {
   FINAL_PRICE: true,
 };
 
+const CHANGE_HEADER_ALIASES = {
+  CHANGE_ID: ['Change ID'],
+  ORDER_ID: ['Parent Order ID', 'Order ID'],
+  TYPE: ['Change Type'],
+  ORIGINAL_DATE: ['Original Date'],
+  ORIGINAL_TIME: ['Original Time'],
+  ORIGINAL_ADDRESS: ['Original Address'],
+  ORIGINAL_STATUS: ['Original Status'],
+  REQUESTED_DATE: ['Requested Date'],
+  REQUESTED_TIME: ['Requested Time'],
+  REQUESTED_ADDRESS: ['Requested Address'],
+  REQUESTED_BY: ['Requested By'],
+  STATUS: ['Status'],
+  APPLIED_NOTE: ['Applied Note'],
+  NOTES: ['Notes'],
+  CREATED_AT: ['Created At'],
+  PROCESSED_AT: ['Processed At'],
+};
+
+const CHANGE_OPTIONAL_COLUMNS = {
+  REQUESTED_ADDRESS: true,
+  REQUESTED_TIME: true,
+};
+
 const PREAUTH_WINDOW_HOURS = 24;
 const EARLY_PREAUTH_THRESHOLD_HOURS = 72;
 
@@ -81,6 +106,7 @@ const HEADER_CACHE = Object.create(null);
 const CACHE_KEY_TO_SHEET = {
   orders: SHEET_NAMES.ORDERS,
   adjustments: SHEET_NAMES.ADJUSTMENTS,
+  changes: SHEET_NAMES.CHANGES,
 };
 
 function normalizeHeader_(value) {
@@ -202,6 +228,15 @@ function adjustmentsColumnMap_(sheetOpt) {
     ADJ_OPTIONAL_COLUMNS
   );
 }
+function changesColumnMap_(sheetOpt) {
+  return getColumnMap_(
+    'changes',
+    SHEET_NAMES.CHANGES,
+    CHANGE_HEADER_ALIASES,
+    sheetOpt,
+    CHANGE_OPTIONAL_COLUMNS
+  );
+}
 
 function createColumnProxy_(cacheKey, sheetName, aliasMap, optionalKeys) {
   return new Proxy(
@@ -241,6 +276,12 @@ const ADJ_COL = createColumnProxy_(
   'adjustments',
   SHEET_NAMES.ADJUSTMENTS,
   ADJ_HEADER_ALIASES
+);
+const CHG_COL = createColumnProxy_(
+  'changes',
+  SHEET_NAMES.CHANGES,
+  CHANGE_HEADER_ALIASES,
+  CHANGE_OPTIONAL_COLUMNS
 );
 
 const BOOKING_TYPE_LABELS = {
@@ -283,6 +324,7 @@ function onOpen() {
       )
       .addItem('Open Order Actions Sidebar', 'openOrderActionsSidebar')
       .addItem('Re-sync Selected Row', 'resyncSelectedRow')
+      .addItem('Process Pending Order Changes', 'processPendingOrderChanges_')
       .addSeparator()
       .addItem('Install Auto-Preauth (hourly)', 'installAutoPreauthTrigger_')
       .addItem('Remove Auto-Preauth', 'removeAutoPreauthTrigger_')
@@ -326,6 +368,7 @@ function onOpen() {
     }
 
     ensureAdjustmentsSheet();
+    ensureChangesSheet_();
   } catch (e) {
     Logger.log('UI not available in this context: ' + e.message);
   }
@@ -648,6 +691,84 @@ function ensureAdjustmentsSheet() {
   sh.getRange(2, cols.REASON, Math.max(rows - 1, 1), 1).setDataValidation(
     adjTypeRule
   );
+}
+
+function ensureChangesSheet_() {
+  const ss = getSpreadsheet_();
+  let sh = ss.getSheetByName(SHEET_NAMES.CHANGES);
+
+  const headers = [
+    'Change ID',
+    'Parent Order ID',
+    'Change Type',
+    'Original Date',
+    'Original Time',
+    'Original Address',
+    'Original Status',
+    'Requested Date',
+    'Requested Time',
+    'Requested Address',
+    'Requested By',
+    'Status',
+    'Applied Note',
+    'Notes',
+    'Created At',
+    'Processed At',
+  ];
+
+  if (!sh) {
+    sh = ss.insertSheet(SHEET_NAMES.CHANGES);
+    sh.setFrozenRows(1);
+  }
+
+  const firstRow = sh.getRange(1, 1, 1, headers.length).getValues()[0];
+  if (firstRow.filter(Boolean).length !== headers.length) {
+    sh.getRange(1, 1, 1, headers.length).setValues([headers]);
+  } else {
+    headers.forEach(function (label, idx) {
+      if (String(firstRow[idx] || '') !== label) {
+        sh.getRange(1, idx + 1).setValue(label);
+      }
+    });
+  }
+
+  clearColumnCache_('changes', sh);
+
+  const cols = changesColumnMap_(sh);
+  const rows = Math.max(sh.getMaxRows(), 1);
+  [cols.REQUESTED_ADDRESS, cols.ORIGINAL_ADDRESS, cols.NOTES, cols.APPLIED_NOTE].forEach(function (colIdx) {
+    if (!colIdx) return;
+    sh.getRange(1, colIdx, rows, 1).setWrap(true);
+  });
+  if (cols.CREATED_AT) {
+    sh.getRange(2, cols.CREATED_AT, Math.max(rows - 1, 1), 1).setNumberFormat(
+      'yyyy-mm-dd hh:mm:ss'
+    );
+  }
+  if (cols.PROCESSED_AT) {
+    sh
+      .getRange(2, cols.PROCESSED_AT, Math.max(rows - 1, 1), 1)
+      .setNumberFormat('yyyy-mm-dd hh:mm:ss');
+  }
+  if (cols.REQUESTED_DATE) {
+    sh.getRange(2, cols.REQUESTED_DATE, Math.max(rows - 1, 1), 1).setNumberFormat(
+      'yyyy-mm-dd'
+    );
+  }
+  if (cols.ORIGINAL_DATE) {
+    sh.getRange(2, cols.ORIGINAL_DATE, Math.max(rows - 1, 1), 1).setNumberFormat(
+      'yyyy-mm-dd'
+    );
+  }
+  const typeRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(['Reschedule', 'Cancel', 'Address update'], true)
+    .setAllowInvalid(true)
+    .build();
+  sh
+    .getRange(2, cols.TYPE, Math.max(rows - 1, 1), 1)
+    .setDataValidation(typeRule);
+
+  sh.autoResizeColumns(1, headers.length);
 }
 
 // === SERVI server base URL ===
@@ -2104,6 +2225,7 @@ const ORDER_ACTIONS_SIDEBAR_HTML = `
       .section h4 { margin: 0 0 6px; font-size: 13px; }
       label { display: block; font-size: 12px; color: #555; margin: 8px 0 4px; }
       textarea, input[type="number"] { width: 100%; box-sizing: border-box; padding: 6px; }
+      input[type="date"], input[type="time"], select { width: 100%; box-sizing: border-box; padding: 6px; }
       textarea { min-height: 60px; }
       .pill { display: inline-block; padding: 4px 8px; background: #eef2ff; color: #111; border-radius: 999px; font-size: 12px; }
       .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
@@ -2124,6 +2246,7 @@ const ORDER_ACTIONS_SIDEBAR_HTML = `
     </div>
     <div class="muted" id="service-date"></div>
     <div class="muted" id="pi-label"></div>
+    <div id="msg" class="msg"></div>
 
     <div class="section" id="capture-section">
       <h4>Capturar pago</h4>
@@ -2138,6 +2261,32 @@ const ORDER_ACTIONS_SIDEBAR_HTML = `
       <label for="cancel-reason">Motivo (opcional)</label>
       <textarea id="cancel-reason" placeholder="Ej. Cliente canceló, reprogramar, etc."></textarea>
       <button id="cancel-btn">Cancelar orden</button>
+    </div>
+
+    <div class="section" id="change-section">
+      <h4>Solicitud de cambio</h4>
+      <label for="change-type">Tipo de cambio</label>
+      <select id="change-type">
+        <option value="reschedule">Reprogramar fecha/hora</option>
+        <option value="cancel">Cancelar</option>
+        <option value="address">Actualizar dirección</option>
+      </select>
+      <div class="row">
+        <div style="flex: 1;">
+          <label for="change-date">Nueva fecha</label>
+          <input type="date" id="change-date">
+        </div>
+        <div style="flex: 1;">
+          <label for="change-time">Nueva hora</label>
+          <input type="time" id="change-time" step="300">
+        </div>
+      </div>
+      <label for="change-address">Nueva dirección (opcional)</label>
+      <textarea id="change-address" placeholder="Calle, número, colonia..."></textarea>
+      <label for="change-notes">Notas (opcional)</label>
+      <textarea id="change-notes" placeholder="Detalles del cambio o contexto."></textarea>
+      <button id="change-btn">Registrar cambio</button>
+      <div class="muted">Solo registra la solicitud en la pestaña SERVI Changes.</div>
     </div>
 
     <div class="section" id="refund-section">
@@ -2156,8 +2305,6 @@ const ORDER_ACTIONS_SIDEBAR_HTML = `
       <button id="refund-btn">Reembolsar</button>
     </div>
 
-    <div id="msg" class="msg"></div>
-
     <script>
       const data = <?!= JSON.stringify(data) ?>;
 
@@ -2165,6 +2312,9 @@ const ORDER_ACTIONS_SIDEBAR_HTML = `
         const el = document.getElementById('msg');
         el.textContent = text || '';
         el.className = 'msg ' + (kind || '');
+        if (text) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
       }
 
       function setButton(btnId, stateText) {
@@ -2178,6 +2328,7 @@ const ORDER_ACTIONS_SIDEBAR_HTML = `
           if (btnId === 'capture-btn') btn.textContent = 'Capturar';
           if (btnId === 'cancel-btn') btn.textContent = 'Cancelar orden';
           if (btnId === 'refund-btn') btn.textContent = 'Reembolsar';
+          if (btnId === 'change-btn') btn.textContent = 'Registrar cambio';
         }
       }
 
@@ -2201,8 +2352,14 @@ const ORDER_ACTIONS_SIDEBAR_HTML = `
 
         document.getElementById('capture-btn').addEventListener('click', captureOrder);
         document.getElementById('cancel-btn').addEventListener('click', cancelOrder);
+        document.getElementById('change-btn').addEventListener('click', submitChangeRequest);
+        document.getElementById('change-type').addEventListener('change', applyChangeVisibility);
         document.getElementById('refund-btn').addEventListener('click', refundOrder);
 
+        if (data.serviceDateIso) document.getElementById('change-date').value = data.serviceDateIso;
+        if (data.serviceTimeIso) document.getElementById('change-time').value = data.serviceTimeIso;
+
+        applyChangeVisibility();
         applyEligibility();
       }
 
@@ -2221,6 +2378,58 @@ const ORDER_ACTIONS_SIDEBAR_HTML = `
         if (!captureAllowed) document.getElementById('capture-section').style.opacity = 0.6;
         if (!cancelAllowed) document.getElementById('cancel-section').style.opacity = 0.6;
         if (!refundAllowed) document.getElementById('refund-section').style.opacity = 0.6;
+      }
+
+      function applyChangeVisibility() {
+        const type = document.getElementById('change-type').value;
+        const disableDateTime = type === 'cancel' || type === 'address';
+        const disableAddress = type === 'reschedule' || type === 'cancel';
+        document.getElementById('change-date').disabled = disableDateTime;
+        document.getElementById('change-time').disabled = disableDateTime;
+        document.getElementById('change-address').disabled = disableAddress;
+      }
+
+      function submitChangeRequest() {
+        setMsg('', '');
+        const type = document.getElementById('change-type').value || '';
+        const requestedDate = document.getElementById('change-date').value || '';
+        const requestedTime = document.getElementById('change-time').value || '';
+        const requestedAddress = document.getElementById('change-address').value || '';
+        const notes = document.getElementById('change-notes').value || '';
+
+        if (type === 'reschedule' && !requestedDate) {
+          setMsg('Ingresa la nueva fecha.', 'error');
+          return;
+        }
+        if (type === 'address' && !requestedAddress.trim()) {
+          setMsg('Ingresa la nueva dirección.', 'error');
+          return;
+        }
+
+        setButton('change-btn', 'Registrando…');
+        google.script.run
+          .withSuccessHandler(function (out) {
+            setButton('change-btn', null);
+            if (!out) {
+              setMsg('Sin respuesta del servidor.', 'error');
+              return;
+            }
+            setMsg(out.message || ('Cambio registrado: ' + (out.changeId || '')), 'success');
+          })
+          .withFailureHandler(function (err) {
+            setButton('change-btn', null);
+            const msg = (err && err.message) || 'No se pudo registrar el cambio.';
+            setMsg(msg, 'error');
+          })
+          .submitOrderChangeFromSidebar({
+            orderId: data.orderId,
+            row: data.row,
+            changeType: type,
+            requestedDate,
+            requestedTime,
+            requestedAddress,
+            notes,
+          });
       }
 
       function captureOrder() {
@@ -2356,6 +2565,21 @@ function openOrderActionsSidebar() {
   const amountValue = Number(
     sh.getRange(row, ORD_COL.TOTAL_PAID).getValue() || 0
   );
+  const serviceDateValue = sh.getRange(row, ORD_COL.SERVICE_DT).getValue();
+  let serviceDateIso = '';
+  let serviceTimeIso = '';
+  if (serviceDateValue instanceof Date && !isNaN(serviceDateValue)) {
+    serviceDateIso = Utilities.formatDate(
+      serviceDateValue,
+      'America/Mexico_City',
+      'yyyy-MM-dd'
+    );
+    serviceTimeIso = Utilities.formatDate(
+      serviceDateValue,
+      'America/Mexico_City',
+      'HH:mm'
+    );
+  }
   const data = {
     row,
     orderId,
@@ -2369,6 +2593,8 @@ function openOrderActionsSidebar() {
     serviceDate: String(
       sh.getRange(row, ORD_COL.SERVICE_DT).getDisplayValue() || ''
     ).trim(),
+    serviceDateIso,
+    serviceTimeIso,
     clientName: String(
       sh.getRange(row, ORD_COL.CLIENT_NAME).getDisplayValue() || ''
     ).trim(),
@@ -2572,6 +2798,383 @@ function refundOrderFromSidebar(payload) {
   }
 
   return out;
+}
+
+function generateChangeId_() {
+  const now = new Date();
+  const stamp = Utilities.formatDate(
+    now,
+    'America/Mexico_City',
+    'yyyyMMddHHmmss'
+  );
+  const rand = Math.floor(Math.random() * 1e6)
+    .toString()
+    .padStart(6, '0');
+  return 'CHG-' + stamp + '-' + rand;
+}
+
+function normalizeChangeTypeLabel_(raw) {
+  const val = String(raw || '')
+    .toLowerCase()
+    .trim();
+  if (!val) return '';
+  if (val.indexOf('resched') !== -1 || val.indexOf('reprog') !== -1) {
+    return 'Reschedule';
+  }
+  if (val.indexOf('cancel') !== -1) return 'Cancel';
+  if (val.indexOf('address') !== -1 || val.indexOf('direc') !== -1) {
+    return 'Address update';
+  }
+  return '';
+}
+
+function parseRequestedDateTime_(dateStr, timeStr) {
+  const m = String(dateStr || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  const year = Number(m[1]);
+  const month = Number(m[2]) - 1;
+  const day = Number(m[3]);
+  let hour = 0;
+  let minute = 0;
+  const t = String(timeStr || '').trim();
+  if (t) {
+    const tm = t.match(/^(\d{1,2}):(\d{2})/);
+    if (tm) {
+      hour = Number(tm[1]);
+      minute = Number(tm[2]);
+    }
+  }
+  if (
+    !Number.isFinite(year) ||
+    !Number.isFinite(month) ||
+    !Number.isFinite(day)
+  ) {
+    return null;
+  }
+  return new Date(year, month, day, hour, minute, 0, 0);
+}
+
+function appendNote_(range, text) {
+  if (!range || !text) return;
+  const existing = String(range.getNote() || '');
+  const next = existing ? existing + '\n' + text : text;
+  range.setNote(next);
+}
+
+function buildBeforeAfterNote_(changeId, beforeVal, afterVal) {
+  const before = String(beforeVal || '').trim();
+  const after = String(afterVal || '').trim();
+  const from = before ? before : '—';
+  const to = after ? after : '—';
+  let note = (changeId ? changeId + ': ' : '') + from + ' → ' + to;
+  if (note.length > 200) {
+    note = note.slice(0, 197) + '…';
+  }
+  return note;
+}
+
+function recordOrderChangeRequest_(payload) {
+  const data = payload || {};
+  ensureChangesSheet_();
+  const sh = getSheet_(SHEET_NAMES.CHANGES);
+  if (!sh) throw new Error('No se encontró la hoja de cambios.');
+  const cols = changesColumnMap_(sh);
+  const ordersSheet = getSheet_(SHEET_NAMES.ORDERS);
+  const orderCols = ordersSheet ? ordersColumnMap_(ordersSheet) : null;
+  let originalDate = '';
+  let originalTime = '';
+  let originalAddress = '';
+  let originalStatus = '';
+
+  if (ordersSheet && orderCols && data.orderId) {
+    const row = findRowByOrderId_(
+      ordersSheet,
+      orderCols.ORDER_ID,
+      data.orderId
+    );
+    if (row) {
+      const svcCell = ordersSheet.getRange(row, orderCols.SERVICE_DT);
+      const svcVal = svcCell.getValue();
+      const svcDisp = String(svcCell.getDisplayValue() || '').trim();
+      if (svcVal instanceof Date && !isNaN(svcVal)) {
+        originalDate = Utilities.formatDate(
+          svcVal,
+          'America/Mexico_City',
+          'yyyy-MM-dd'
+        );
+        const hhmm = Utilities.formatDate(
+          svcVal,
+          'America/Mexico_City',
+          'HH:mm'
+        );
+        // Only record time if it has a non-midnight component
+        if (
+          svcVal.getHours() !== 0 ||
+          svcVal.getMinutes() !== 0 ||
+          svcVal.getSeconds() !== 0
+        ) {
+          originalTime = hhmm;
+        }
+      } else if (svcDisp) {
+        // fallback: try to split display into date/time
+        const m = svcDisp.match(
+          /^(\d{4}-\d{2}-\d{2})[ T]?(\d{1,2}:\d{2})?/
+        );
+        if (m) {
+          originalDate = m[1] || '';
+          if (m[2]) originalTime = m[2];
+        } else {
+          originalDate = svcDisp;
+        }
+      }
+
+      originalAddress = String(
+        ordersSheet.getRange(row, orderCols.ADDRESS).getDisplayValue() || ''
+      ).trim();
+      originalStatus = String(
+        ordersSheet.getRange(row, orderCols.STATUS).getDisplayValue() || ''
+      ).trim();
+    }
+  }
+
+  const row = sh.getLastRow() + 1;
+  const createdAt = new Date();
+  const changeId = generateChangeId_();
+
+  const rowValues = new Array(sh.getLastColumn()).fill('');
+  rowValues[cols.CHANGE_ID - 1] = changeId;
+  rowValues[cols.ORDER_ID - 1] = data.orderId || '';
+  rowValues[cols.TYPE - 1] = data.changeType || '';
+  if (cols.ORIGINAL_DATE) {
+    rowValues[cols.ORIGINAL_DATE - 1] = originalDate;
+  }
+  if (cols.ORIGINAL_TIME) {
+    rowValues[cols.ORIGINAL_TIME - 1] = originalTime;
+  }
+  if (cols.ORIGINAL_ADDRESS) {
+    rowValues[cols.ORIGINAL_ADDRESS - 1] = originalAddress;
+  }
+  if (cols.ORIGINAL_STATUS) {
+    rowValues[cols.ORIGINAL_STATUS - 1] = originalStatus;
+  }
+  if (cols.REQUESTED_DATE) {
+    rowValues[cols.REQUESTED_DATE - 1] = data.requestedDate || '';
+  }
+  if (cols.REQUESTED_TIME) {
+    rowValues[cols.REQUESTED_TIME - 1] = data.requestedTime || '';
+  }
+  if (cols.REQUESTED_ADDRESS) {
+    rowValues[cols.REQUESTED_ADDRESS - 1] = data.requestedAddress || '';
+  }
+  if (cols.REQUESTED_BY) {
+    rowValues[cols.REQUESTED_BY - 1] = data.requestedBy || '';
+  }
+  rowValues[cols.STATUS - 1] = 'Pending';
+  if (cols.NOTES) {
+    rowValues[cols.NOTES - 1] = data.notes || '';
+  }
+  if (cols.APPLIED_NOTE) {
+    rowValues[cols.APPLIED_NOTE - 1] = '';
+  }
+  if (cols.CREATED_AT) {
+    rowValues[cols.CREATED_AT - 1] = createdAt;
+  }
+
+  sh.getRange(row, 1, 1, rowValues.length).setValues([rowValues]);
+  return { changeId, row };
+}
+
+function submitOrderChangeFromSidebar(payload) {
+  const p = payload || {};
+  const orderId = String(p.orderId || '').trim();
+  if (!orderId) throw new Error('Order ID requerido.');
+  const changeType = normalizeChangeTypeLabel_(p.changeType);
+  if (!changeType) throw new Error('Selecciona un tipo de cambio válido.');
+  const requestedDate = String(p.requestedDate || '').trim();
+  const requestedTime = String(p.requestedTime || '').trim();
+  const requestedAddress = String(p.requestedAddress || '').trim();
+  const notes = String(p.notes || '').trim();
+
+  if (changeType === 'Reschedule' && !requestedDate) {
+    throw new Error('Ingresa la nueva fecha para reprogramar.');
+  }
+  if (changeType === 'Address update' && !requestedAddress) {
+    throw new Error('Ingresa la nueva dirección.');
+  }
+
+  let requestedBy = '';
+  try {
+    requestedBy = Session.getActiveUser().getEmail() || '';
+  } catch (_) {}
+  if (!requestedBy) {
+    requestedBy = String(p.requestedBy || '').trim();
+  }
+
+  const record = recordOrderChangeRequest_({
+    orderId,
+    changeType,
+    requestedDate,
+    requestedTime,
+    requestedAddress,
+    requestedBy,
+    notes,
+  });
+
+  return {
+    ok: true,
+    changeId: record.changeId,
+    status: 'Pending',
+    message: 'Cambio registrado en la hoja SERVI Changes.',
+  };
+}
+
+function processPendingOrderChanges_() {
+  const ss = getSpreadsheet_();
+  const changesSheet = ss.getSheetByName(SHEET_NAMES.CHANGES);
+  const ordersSheet = ss.getSheetByName(SHEET_NAMES.ORDERS);
+  if (!changesSheet || !ordersSheet) return 0;
+
+  const changeCols = changesColumnMap_(changesSheet);
+  const orderCols = ordersColumnMap_(ordersSheet);
+  const last = changesSheet.getLastRow();
+  if (last < 2) return 0;
+
+  let processed = 0;
+  for (let r = 2; r <= last; r++) {
+    const statusVal = String(
+      changesSheet.getRange(r, changeCols.STATUS).getDisplayValue() || ''
+    )
+      .trim()
+      .toLowerCase();
+    if (statusVal && statusVal !== 'pending') continue;
+
+    const changeId = String(
+      changesSheet.getRange(r, changeCols.CHANGE_ID).getDisplayValue() || ''
+    ).trim();
+    const orderId = String(
+      changesSheet.getRange(r, changeCols.ORDER_ID).getDisplayValue() || ''
+    ).trim();
+    const typeRaw = String(
+      changesSheet.getRange(r, changeCols.TYPE).getDisplayValue() || ''
+    ).trim();
+    const changeType = normalizeChangeTypeLabel_(typeRaw);
+
+    if (!orderId || !changeType) {
+      if (changeCols.STATUS) changesSheet.getRange(r, changeCols.STATUS).setValue('Failed');
+      if (changeCols.NOTES)
+        changesSheet.getRange(r, changeCols.NOTES).setValue('Falta Order ID o tipo de cambio.');
+      if (changeCols.PROCESSED_AT)
+        changesSheet.getRange(r, changeCols.PROCESSED_AT).setValue(new Date());
+      continue;
+    }
+
+    const orderRow = findRowByOrderId_(
+      ordersSheet,
+      orderCols.ORDER_ID,
+      orderId
+    );
+    if (!orderRow) {
+      if (changeCols.STATUS) changesSheet.getRange(r, changeCols.STATUS).setValue('Failed');
+      if (changeCols.NOTES)
+        changesSheet.getRange(r, changeCols.NOTES).setValue('Order no encontrada en SERVI Orders.');
+      if (changeCols.PROCESSED_AT)
+        changesSheet.getRange(r, changeCols.PROCESSED_AT).setValue(new Date());
+      continue;
+    }
+
+    let applied = false;
+    let note = '';
+    let appliedNote = '';
+
+    if (changeType === 'Reschedule') {
+      const reqDate = String(
+        changesSheet.getRange(r, changeCols.REQUESTED_DATE).getDisplayValue() ||
+          ''
+      ).trim();
+      const reqTime =
+        changeCols.REQUESTED_TIME && changeCols.REQUESTED_TIME > 0
+          ? String(
+              changesSheet.getRange(r, changeCols.REQUESTED_TIME).getDisplayValue() ||
+                ''
+            ).trim()
+          : '';
+      const dt = parseRequestedDateTime_(reqDate, reqTime);
+      if (dt && !isNaN(dt)) {
+        const beforeDisp = String(
+          ordersSheet.getRange(orderRow, orderCols.SERVICE_DT).getDisplayValue() ||
+            ''
+        ).trim();
+        ordersSheet.getRange(orderRow, orderCols.SERVICE_DT).setValue(dt);
+        const stamp = Utilities.formatDate(
+          dt,
+          'America/Mexico_City',
+          'yyyy-MM-dd HH:mm'
+        );
+        note = 'Reprogramado a ' + stamp;
+        appliedNote = buildBeforeAfterNote_(changeId, beforeDisp, stamp);
+        const targetCell = ordersSheet.getRange(orderRow, orderCols.SERVICE_DT);
+        appendNote_(targetCell, appliedNote);
+        applied = true;
+      } else {
+        note = 'Fecha u hora inválida.';
+      }
+    } else if (changeType === 'Cancel') {
+      const statusCell = ordersSheet.getRange(orderRow, orderCols.STATUS);
+      const before = String(statusCell.getDisplayValue() || '').trim();
+      writeStatusSafelyWebhook_(
+        ordersSheet,
+        orderRow,
+        orderCols.STATUS,
+        'Canceled (change request)'
+      );
+      const after = String(statusCell.getDisplayValue() || '').trim();
+      if (after && after !== before) {
+        applied = true;
+        note = 'Estado actualizado a ' + after;
+        appliedNote = buildBeforeAfterNote_(changeId, before, after);
+        appendNote_(statusCell, appliedNote);
+      } else {
+        note = 'Estado sin cambio (posible Captured).';
+      }
+    } else if (changeType === 'Address update') {
+      const addr =
+        changeCols.REQUESTED_ADDRESS && changeCols.REQUESTED_ADDRESS > 0
+          ? String(
+              changesSheet.getRange(r, changeCols.REQUESTED_ADDRESS).getDisplayValue() ||
+                ''
+            ).trim()
+          : '';
+      if (addr) {
+        const beforeAddr = String(
+          ordersSheet.getRange(orderRow, orderCols.ADDRESS).getDisplayValue() ||
+            ''
+        ).trim();
+        ordersSheet.getRange(orderRow, orderCols.ADDRESS).setValue(addr);
+        note = 'Dirección actualizada.';
+        appliedNote = buildBeforeAfterNote_(changeId, beforeAddr, addr);
+        appendNote_(ordersSheet.getRange(orderRow, orderCols.ADDRESS), appliedNote);
+        applied = true;
+      } else {
+        note = 'No se especificó dirección.';
+      }
+    }
+
+    if (applied) {
+      if (changeCols.STATUS) changesSheet.getRange(r, changeCols.STATUS).setValue('Done');
+      if (changeCols.APPLIED_NOTE) changesSheet.getRange(r, changeCols.APPLIED_NOTE).setValue(appliedNote || note);
+      if (changeCols.NOTES) changesSheet.getRange(r, changeCols.NOTES).setValue(note);
+      if (changeCols.PROCESSED_AT)
+        changesSheet.getRange(r, changeCols.PROCESSED_AT).setValue(new Date());
+      processed++;
+    } else {
+      if (changeCols.STATUS) changesSheet.getRange(r, changeCols.STATUS).setValue('Failed');
+      if (changeCols.APPLIED_NOTE) changesSheet.getRange(r, changeCols.APPLIED_NOTE).setValue(appliedNote || note);
+      if (changeCols.NOTES) changesSheet.getRange(r, changeCols.NOTES).setValue(note || 'No se aplicó.');
+      if (changeCols.PROCESSED_AT)
+        changesSheet.getRange(r, changeCols.PROCESSED_AT).setValue(new Date());
+    }
+  }
+  return processed;
 }
 
 function keepAlive_() {
