@@ -2,7 +2,7 @@
 // to point the UI at the correct backend and Stripe publishable key.
 (function bootstrapConfig() {
   const placeholderApi = 'https://servi-preauth.onrender.com';
-  const placeholderPk = 'pk_test_51QzK6tG7utWo2rQvhFzSBxh59IMDentv5zN7jfKWtf5vkFiGkcuEENhumOpKGjkf33tGqrL3b3o05tp0DDvcJn4r00pQcvaQXR';
+  const placeholderPk = '__STRIPE_PUBLISHABLE_KEY__';
 
   const explicit = window.CONFIG || {};
   const rawApi =
@@ -17,7 +17,7 @@
     explicit.STRIPE_PUBLISHABLE_KEY ||
     window.CONFIG_STRIPE_PUBLISHABLE_KEY ||
     window.STRIPE_PUBLISHABLE_KEY ||
-    (placeholderPk !== 'pk_test_51QzK6tG7utWo2rQvhFzSBxh59IMDentv5zN7jfKWtf5vkFiGkcuEENhumOpKGjkf33tGqrL3b3o05tp0DDvcJn4r00pQcvaQXR' ? placeholderPk : '') ||
+    placeholderPk ||
     '';
 
   window.CONFIG = {
