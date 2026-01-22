@@ -7,6 +7,7 @@
 
   <!-- Stripe.js so we can read the PI description for adjustment reason -->
   <script src="https://js.stripe.com/v3/"></script>
+  <script src="./config.js"></script>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -156,8 +157,14 @@
   </div>
 
   <script>
+    const CONFIG = window.CONFIG || {};
+    const API_BASE = (CONFIG.API_BASE || '').replace(/\/+$/, '') || window.location.origin;
+    const STRIPE_PUBLISHABLE_KEY = CONFIG.STRIPE_PUBLISHABLE_KEY || '';
+
     const qs = new URLSearchParams(location.search);
-    let orderId = qs.get('orderId') || localStorage.getItem('orderId');
+    let orderId = qs.get('order') || qs.get('orderId') || localStorage.getItem('orderId');
+    const retryToken = qs.get('rt') || '';
+    const allowExpired = qs.get('allowExpired') === '1';
 
     const targetOrderId = document.getElementById('order-id');
     const amountEl = document.getElementById('amount');
@@ -182,17 +189,24 @@
     const PREVIEW_KEY = 'serviSuccessPreview';
     const PREVIEW_CACHE_PREFIX = `${PREVIEW_KEY}:`;
     const PREVENT_BACK_KEY = 'serviPreventBack';
+    const currencyCache = {};
 
-    function fmtAmount(cents) {
-      try { return (Number(cents || 0) / 100).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' }); }
-      catch { return '—'; }
+    function fmtAmount(cents, currency = 'MXN') {
+      try {
+        const cur = (currency || 'MXN').toUpperCase();
+        if (!currencyCache[cur]) {
+          currencyCache[cur] = new Intl.NumberFormat('es-MX', { style: 'currency', currency: cur });
+        }
+        return currencyCache[cur].format(Number(cents || 0) / 100);
+      } catch {
+        return '—';
+      }
     }
 
     function friendlyCode(order) {
-      return (order.public_code
-        ? String(order.public_code)
-        : String(order.id).replace(/-/g, '').slice(-8)
-      ).toUpperCase();
+      const code = order.public_code || order.publicCode || order.public_code;
+      const base = code || order.id || order.orderId || '';
+      return String(base).replace(/-/g, '').slice(-8).toUpperCase();
     }
 
     function extractReason(desc) {
@@ -231,20 +245,20 @@
 
     function buildPreviewFromOrder(order) {
       return {
-        orderId: order.id || null,
-        publicCode: order.public_code || null,
-        email: order.client_email || null,
+        orderId: order.id || order.orderId || null,
+        publicCode: order.public_code || order.publicCode || null,
+        email: order.client_email || order.email || null,
         totalCents: toNumber(order.amount ?? order.pricing?.total_amount),
-        providerCents: toNumber(order.provider_amount ?? order.pricing?.provider_amount),
-        bookingCents: toNumber(order.booking_fee_amount ?? order.pricing?.booking_fee_amount),
-        processingCents: toNumber(order.processing_fee_amount ?? order.pricing?.processing_fee_amount),
-        vatCents: toNumber(order.vat_amount ?? order.pricing?.vat_amount),
+        providerCents: toNumber(order.provider_amount ?? order.pricing?.provider_amount ?? order.providerAmount),
+        bookingCents: toNumber(order.booking_fee_amount ?? order.pricing?.booking_fee_amount ?? order.bookingFeeAmount),
+        processingCents: toNumber(order.processing_fee_amount ?? order.pricing?.processing_fee_amount ?? order.processingFeeAmount),
+        vatCents: toNumber(order.vat_amount ?? order.pricing?.vat_amount ?? order.vatAmount),
         kind: String(order.kind || ''),
-        reason: String(order.adjustment_reason || ''),
-        serviceAddress: order.service_address || '',
-        serviceDate: order.service_date || null,
-        serviceDateTime: order.service_datetime || null,
-        bookingType: order.booking_type || null
+        reason: String(order.adjustment_reason || order.adjustmentReason || ''),
+        serviceAddress: order.service_address || order.serviceAddress || '',
+        serviceDate: order.service_date || order.serviceDate || null,
+        serviceDateTime: order.service_datetime || order.serviceDateTime || null,
+        bookingType: order.booking_type || order.bookingType || null
       };
     }
 
@@ -311,12 +325,12 @@
         order.service_date ?? totals.serviceDate
       );
 
-      amountEl.textContent = fmtAmount(totalCents);
+      amountEl.textContent = fmtAmount(totalCents, order.currency || 'MXN');
       if (hideBreakdownForVisit) {
         servicePriceRow.style.display = 'none';
         processingRow.style.display = 'none';
       } else if (serviceCents > 0) {
-        servicePriceEl.textContent = fmtAmount(serviceCents);
+        servicePriceEl.textContent = fmtAmount(serviceCents, order.currency || 'MXN');
         servicePriceRow.style.display = 'flex';
         if (servicePriceLabel) {
           const labelText =
@@ -339,7 +353,7 @@
       }
 
       if (!hideBreakdownForVisit && processingCents > 0) {
-        processingEl.textContent = fmtAmount(processingCents);
+        processingEl.textContent = fmtAmount(processingCents, order.currency || 'MXN');
         processingRow.style.display = 'flex';
       } else {
         processingRow.style.display = 'none';
@@ -350,15 +364,15 @@
         summaryBox.insertBefore(vatNoteEl, servicePriceRow);
       }
 
-      addressEl.textContent = order.service_address || totals.serviceAddress || '—';
-      const emailValue = (order.client_email || totals.email || '').trim();
+      addressEl.textContent = order.service_address || order.serviceAddress || totals.serviceAddress || '—';
+      const emailValue = (order.client_email || order.email || totals.email || '').trim();
       if (emailValue) {
         emailValueEl.textContent = emailValue;
         emailRow.style.display = 'flex';
       } else {
         emailRow.style.display = 'none';
       }
-      statusEl.textContent = order.status || '—';
+      if (statusEl) statusEl.textContent = order.status || '—';
 
       const isAdjustment = String(order.kind || totals.kind || '').toLowerCase() === 'adjustment';
       if (isAdjustment) {
@@ -370,7 +384,7 @@
       }
 
       const fallbackReason = reasonOverride || totals.reason || '';
-      let displayReason = String(order.adjustment_reason || '').trim() || fallbackReason;
+      let displayReason = String(order.adjustment_reason || order.adjustmentReason || '').trim() || fallbackReason;
       if (isAdjustment && displayReason) {
         reasonEl.textContent = displayReason;
         reasonRow.style.display = 'flex';
@@ -379,15 +393,10 @@
       }
 
       // If adjustment and no reason yet, try Stripe metadata unless skipped
-      if (isAdjustment && !displayReason && !skipStripeReason && order.client_secret) {
-        fetch('/config/stripe')
-          .then(r => r.json())
-          .then(cfg => {
-            if (!cfg || !cfg.pk) return null;
-            const stripe = Stripe(cfg.pk);
-            return stripe.retrievePaymentIntent(order.client_secret);
-          })
-          .then(result => {
+      if (isAdjustment && !displayReason && !skipStripeReason && STRIPE_PUBLISHABLE_KEY && (order.client_secret || order.clientSecret)) {
+        Stripe(STRIPE_PUBLISHABLE_KEY)
+          .retrievePaymentIntent(order.client_secret || order.clientSecret)
+          .then((result) => {
             const reason = extractReason(result?.paymentIntent?.description);
             if (reason) {
               reasonEl.textContent = reason;
@@ -410,7 +419,11 @@
       const previewSnapshot = getPreview(orderId);
 
       try {
-        const res = await fetch(`/order/${encodeURIComponent(orderId)}?allowExpired=1`);
+        const url = new URL(`${API_BASE}/order/${encodeURIComponent(orderId)}`);
+        url.searchParams.set('allowExpired', '1');
+        if (retryToken) url.searchParams.set('rt', retryToken);
+        if (allowExpired) url.searchParams.set('allowExpired', '1');
+        const res = await fetch(url.toString(), { credentials: 'include' });
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const order = await res.json();
 

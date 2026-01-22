@@ -17,4 +17,4 @@ COPY . .
 EXPOSE 3000
 
 # Command to run your app
-CMD [ "node", "index.mjs" ]
+CMD [ "node", "backend/index.mjs" ]

@@ -462,6 +462,7 @@ await initDb(); // run before defining routes
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+const FRONTEND_DIR = path.join(__dirname, '..', 'frontend');
 
 const app = express();
 const stripe = new StripePackage(process.env.STRIPE_SECRET_KEY);
@@ -473,6 +474,45 @@ if (!endpointSecret) {
   console.error('Missing STRIPE_WEBHOOK_SECRET environment variable; webhook verification will fail.');
   throw new Error('STRIPE_WEBHOOK_SECRET must be configured before starting the server');
 }
+
+const normalizeOrigin = (value) => String(value || '').replace(/\/+$/, '');
+const devOrigins = [
+  'http://localhost:3000',
+  'http://localhost:4242',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:4242'
+];
+const rawAllowedOrigins = (process.env.CORS_ALLOWLIST || process.env.FRONTEND_ORIGINS || '')
+  .split(',')
+  .map((v) => normalizeOrigin(v))
+  .filter(Boolean);
+const CORS_ALLOWLIST = Array.from(
+  new Set([
+    ...rawAllowedOrigins,
+    ...(process.env.NODE_ENV === 'production' ? [] : devOrigins.map((o) => normalizeOrigin(o)))
+  ])
+);
+
+function applyCorsHeaders(req, res) {
+  const origin = normalizeOrigin(req.headers.origin || '');
+  if (!origin) return false;
+  if (!CORS_ALLOWLIST.includes(origin)) return false;
+  res.header('Access-Control-Allow-Origin', req.headers.origin);
+  res.header('Vary', 'Origin');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Servi-Admin-Token');
+  res.header('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  return true;
+}
+
+app.use((req, res, next) => {
+  const allowed = applyCorsHeaders(req, res);
+  if (req.method === 'OPTIONS') {
+    if (allowed) return res.sendStatus(204);
+    return res.sendStatus(404);
+  }
+  return next();
+});
 
 function constantTimeEquals(a, b) {
   if (!a || !b) return false;
@@ -980,7 +1020,7 @@ app.get('/success.html', (req, res) => {
   return res.redirect(302, '/');
 });
 
-app.use(express.static('public'));
+app.use(express.static(FRONTEND_DIR));
 
 // 🎯 Create PaymentIntent (save card for later off-session charges)
 app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
@@ -1364,11 +1404,11 @@ app.get('/pay', async (req, res) => {
   } catch (e) {
     console.error('pay route guard error:', e?.message || e);
   }
-  res.sendFile(path.join(__dirname, 'public', 'pay.html'));
+  res.sendFile(path.join(FRONTEND_DIR, 'pay.html'));
 });
 
 app.get('/save', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'save.html'));
+  res.sendFile(path.join(FRONTEND_DIR, 'save.html'));
 });
 
 
@@ -1410,15 +1450,12 @@ app.get('/admin/contact-lookup', requireAdminAuth, async (req, res) => {
   }
 });
 
+async function getOrderPayload(orderId, { allowExpiredQuery = false, retryTokenRaw = '' } = {}) {
+  const wantsOverride = allowExpiredQuery || !!retryTokenRaw;
+  const retryTokenParam = wantsOverride ? retryTokenRaw : '';
 
-app.get('/order/:orderId', async (req, res) => {
-  try {
-    const { orderId } = req.params;
-    const tokenParamRaw = getRetryTokenFromQuery(req.query);
-    const wantsOverride = String(req.query.allowExpired || '') === '1' || !!tokenParamRaw;
-    const retryTokenParam = wantsOverride ? tokenParamRaw : '';
-
-    const { rows } = await pool.query(`
+  const { rows } = await pool.query(
+    `
       SELECT id, payment_intent_id, amount, provider_amount, booking_fee_amount, processing_fee_amount,
         vat_amount, pricing_total_amount, vat_rate, stripe_percent_fee, stripe_fixed_fee,
         stripe_fee_tax_rate, processing_fee_type, urgency_multiplier, alpha_value,
@@ -1428,81 +1465,60 @@ app.get('/order/:orderId', async (req, res) => {
         retry_token, retry_token_created_at
       FROM all_bookings
       WHERE id = $1
-    `, [orderId]);
+    `,
+    [orderId]
+  );
 
-    const row = rows[0];
-    if (!row) return res.status(404).send({ error: 'Order not found' });
-    const { usingRetryToken, createdAtOverride } = resolveRetryTokenContext(row, retryTokenParam);
-    const allowExpired = wantsOverride && !usingRetryToken;
-    const linkSource = createdAtOverride ? { ...row, created_at: createdAtOverride } : row;
-    const linkInfo = assertOrderLinkActive(linkSource, { allowExpired });
-    const linkExpired = linkInfo.expired;
+  const row = rows[0];
+  if (!row) throw makeError('order_not_found', 'Order not found', 404);
 
-    let pi = null;
-    let intentType = null;       // 'payment' | 'setup' | null
-    let consentRequired = false; // true when kind='setup_required' and no consent recorded
+  const { usingRetryToken, createdAtOverride } = resolveRetryTokenContext(row, retryTokenParam);
+  const allowExpired = wantsOverride && !usingRetryToken;
+  const linkSource = createdAtOverride ? { ...row, created_at: createdAtOverride } : row;
+  const linkInfo = assertOrderLinkActive(linkSource, { allowExpired });
+  const linkExpired = linkInfo.expired;
 
-    // helper: check if we already recorded consent for this order
-    async function hasConsent(orderId) {
-      const c = await pool.query('SELECT 1 FROM consented_offsession_bookings WHERE order_id=$1', [orderId]);
-      return !!c.rows.length;
-    }
+  let pi = null;
+  let intentType = null; // 'payment' | 'setup' | null
+  let consentRequired = false; // true when kind='setup_required' and no consent recorded
 
-    if (!linkExpired && !row.payment_intent_id) {
-      let kind = String(row.kind || '').toLowerCase();
+  // helper: check if we already recorded consent for this order
+  async function hasConsent(orderIdForCheck) {
+    const c = await pool.query('SELECT 1 FROM consented_offsession_bookings WHERE order_id=$1', [orderIdForCheck]);
+    return !!c.rows.length;
+  }
 
-      if (kind === 'setup_required') {
-        // OPTIONAL: if this customer already has global consent, skip re-consent for this order
-        if (row.customer_id) {
-          const cc = await pool.query('SELECT 1 FROM saved_servi_users WHERE customer_id = $1', [row.customer_id]);
-          if (cc.rows.length) {
-            // If they already have a saved card, move straight to 'book'; otherwise create a SetupIntent
-            const alreadySaved = await hasSavedCard(row.customer_id, stripe);
-            if (alreadySaved) {
-              await pool.query('UPDATE all_bookings SET kind=$1 WHERE id=$2', ['book', row.id]);
-              pi = null;           // book flow has no client_secret
-              intentType = null;
-            } else {
-              const customerId = await ensureCustomerForOrder(stripe, row);
-              await pool.query('UPDATE all_bookings SET kind=$1 WHERE id=$2', ['setup', row.id]);
-              const si = await stripe.setupIntents.create({
-                customer: customerId,
-                automatic_payment_methods: { enabled: true },
-                usage: 'off_session',
-                metadata: { kind: 'setup', order_id: row.id }
-              });
-              await pool.query('UPDATE all_bookings SET payment_intent_id=$1 WHERE id=$2', [si.id, row.id]);
-              pi = si;
-              intentType = 'setup';
-            }
+  if (!linkExpired && !row.payment_intent_id) {
+    let kind = String(row.kind || '').toLowerCase();
+
+    if (kind === 'setup_required') {
+      if (row.customer_id) {
+        const cc = await pool.query('SELECT 1 FROM saved_servi_users WHERE customer_id = $1', [row.customer_id]);
+        if (cc.rows.length) {
+          const alreadySaved = await hasSavedCard(row.customer_id, stripe);
+          if (alreadySaved) {
+            await pool.query('UPDATE all_bookings SET kind=$1 WHERE id=$2', ['book', row.id]);
+            pi = null;
+            intentType = null;
           } else {
-            // No global consent → fall back to per-order consent requirement
-            const c = await pool.query('SELECT 1 FROM consented_offsession_bookings WHERE order_id=$1', [row.id]);
-            if (!c.rows.length) {
-              consentRequired = true;
-              pi = null;
-              intentType = null; // no client_secret returned
-            } else {
-              const customerId = await ensureCustomerForOrder(stripe, row);
-              await pool.query('UPDATE all_bookings SET kind=$1 WHERE id=$2', ['setup', row.id]);
-              const si = await stripe.setupIntents.create({
-                customer: customerId,
-                automatic_payment_methods: { enabled: true },
-                usage: 'off_session',
-                metadata: { kind: 'setup', order_id: row.id }
-              });
-              await pool.query('UPDATE all_bookings SET payment_intent_id=$1 WHERE id=$2', [si.id, row.id]);
-              pi = si;
-              intentType = 'setup';
-            }
+            const customerId = await ensureCustomerForOrder(stripe, row);
+            await pool.query('UPDATE all_bookings SET kind=$1 WHERE id=$2', ['setup', row.id]);
+            const si = await stripe.setupIntents.create({
+              customer: customerId,
+              automatic_payment_methods: { enabled: true },
+              usage: 'off_session',
+              metadata: { kind: 'setup', order_id: row.id }
+            });
+            await pool.query('UPDATE all_bookings SET payment_intent_id=$1 WHERE id=$2', [si.id, row.id]);
+            pi = si;
+            intentType = 'setup';
           }
         } else {
-          // No customer yet → original per-order logic
           const c = await pool.query('SELECT 1 FROM consented_offsession_bookings WHERE order_id=$1', [row.id]);
           if (!c.rows.length) {
             consentRequired = true;
             pi = null;
-            intentType = null; // no client_secret returned
+            intentType = null;
           } else {
             const customerId = await ensureCustomerForOrder(stripe, row);
             await pool.query('UPDATE all_bookings SET kind=$1 WHERE id=$2', ['setup', row.id]);
@@ -1517,123 +1533,70 @@ app.get('/order/:orderId', async (req, res) => {
             intentType = 'setup';
           }
         }
-      }
-
-      
-      else if (kind === 'setup') {
-        // Lazily create the Customer if this order doesn't have one yet
-        const customerId = await ensureCustomerForOrder(stripe, row);
-
-        const si = await stripe.setupIntents.create({
-          customer: customerId,
-          automatic_payment_methods: { enabled: true },
-          usage: 'off_session',
-          metadata: { kind: 'setup', order_id: row.id }
-        });
-
-        await pool.query('UPDATE all_bookings SET payment_intent_id=$1 WHERE id=$2', [si.id, row.id]);
-        pi = si;
-        intentType = 'setup';
-
-
-      } else if (kind === 'book') {
-        let hasSavedCardForBook = Boolean(row.saved_payment_method_id);
-        if (!hasSavedCardForBook && row.customer_id) {
-          hasSavedCardForBook = await hasSavedCard(row.customer_id, stripe);
-        }
-
-        if (hasSavedCardForBook) {
-          // Saved-card booking: never create a PI here.
-          // The /confirm-with-saved route decides when to create/confirm (≤72h window).
+      } else {
+        const c = await pool.query('SELECT 1 FROM consented_offsession_bookings WHERE order_id=$1', [row.id]);
+        if (!c.rows.length) {
+          consentRequired = true;
           pi = null;
           intentType = null;
         } else {
-          const hoursAhead = hoursUntilService(row);
-          const LONG_LEAD_HOURS = 5 * 24;
-
-          if (hoursAhead > LONG_LEAD_HOURS) {
-            consentRequired = true;
-            await pool.query(
-              `UPDATE all_bookings
-                  SET kind = 'setup_required',
-                      payment_intent_id = NULL
-                WHERE id = $1`,
-              [row.id]
-            );
-            row.kind = 'setup_required';
-            row.payment_intent_id = null;
-            kind = 'setup_required';
-            pi = null;
-            intentType = null;
-          } else {
-            const capturePref = String(row.capture_method || '').toLowerCase();
-            const captureMethod = capturePref === 'automatic' ? 'automatic' : 'manual';
-            const adjustmentDescription = String(row.adjustment_reason || '').trim()
-              ? `SERVI ajuste: ${row.adjustment_reason || 'SERVI adjustment'}`
-              : null;
-
-            const created = await stripe.paymentIntents.create({
-              amount: row.amount,
-              currency: 'mxn',
-              payment_method_types: ['card'],
-              capture_method: captureMethod,
-              customer: row.customer_id || undefined,
-              ...(adjustmentDescription ? { description: adjustmentDescription } : {}),
-              metadata: {
-                order_id: row.id,
-                kind: 'primary',
-                parent_order_id: row.parent_id_of_adjustment || ''
-              }
-            });
-
-            await pool.query(
-              `UPDATE all_bookings
-                  SET payment_intent_id = $1,
-                      kind = 'primary'
-                WHERE id = $2`,
-              [created.id, row.id]
-            );
-            row.kind = 'primary';
-            row.payment_intent_id = created.id;
-            kind = 'primary';
-            pi = created;
-            intentType = 'payment';
-          }
+          const customerId = await ensureCustomerForOrder(stripe, row);
+          await pool.query('UPDATE all_bookings SET kind=$1 WHERE id=$2', ['setup', row.id]);
+          const si = await stripe.setupIntents.create({
+            customer: customerId,
+            automatic_payment_methods: { enabled: true },
+            usage: 'off_session',
+            metadata: { kind: 'setup', order_id: row.id }
+          });
+          await pool.query('UPDATE all_bookings SET payment_intent_id=$1 WHERE id=$2', [si.id, row.id]);
+          pi = si;
+          intentType = 'setup';
         }
+      }
+    } else if (kind === 'setup') {
+      const customerId = await ensureCustomerForOrder(stripe, row);
 
+      const si = await stripe.setupIntents.create({
+        customer: customerId,
+        automatic_payment_methods: { enabled: true },
+        usage: 'off_session',
+        metadata: { kind: 'setup', order_id: row.id }
+      });
+
+      await pool.query('UPDATE all_bookings SET payment_intent_id=$1 WHERE id=$2', [si.id, row.id]);
+      pi = si;
+      intentType = 'setup';
+    } else if (kind === 'book') {
+      let hasSavedCardForBook = Boolean(row.saved_payment_method_id);
+      if (!hasSavedCardForBook && row.customer_id) {
+        hasSavedCardForBook = await hasSavedCard(row.customer_id, stripe);
+      }
+
+      if (hasSavedCardForBook) {
+        pi = null;
+        intentType = null;
       } else {
-        // Default (legacy primary/adjustments) — but DON'T create a PI early for saved + >24h
-        const hours_ahead = hoursUntilService(row);
+        const hoursAhead = hoursUntilService(row);
+        const LONG_LEAD_HOURS = 5 * 24;
 
-        let alreadySaved = false;
-        if (row.customer_id) {
-          alreadySaved = await hasSavedCard(row.customer_id, stripe);
-        }
-
-        if (alreadySaved && hours_ahead > EARLY_PREAUTH_THRESHOLD_HOURS) {
-          // Convert legacy "primary" into "book" lazily, with no PI on read; clear PI so it re-creates inside 24h
+        if (hoursAhead > LONG_LEAD_HOURS) {
+          consentRequired = true;
           await pool.query(
-            `
-              UPDATE all_bookings
-                 SET kind = 'book',
-                     payment_intent_id = NULL,
-                     status = CASE
-                       WHEN status IN ('Confirmed','Captured') THEN status
-                       ELSE 'Scheduled'
-                     END
-               WHERE id = $1
-            `,
+            `UPDATE all_bookings
+                SET kind = 'setup_required',
+                    payment_intent_id = NULL
+              WHERE id = $1`,
             [row.id]
           );
-          row.kind = 'book';
+          row.kind = 'setup_required';
           row.payment_intent_id = null;
-          row.status = row.status === 'Confirmed' || row.status === 'Captured' ? row.status : 'Scheduled';
+          kind = 'setup_required';
           pi = null;
           intentType = null;
         } else {
           const capturePref = String(row.capture_method || '').toLowerCase();
           const captureMethod = capturePref === 'automatic' ? 'automatic' : 'manual';
-          const adjustmentDescription = String(row.kind || '').toLowerCase() === 'adjustment'
+          const adjustmentDescription = String(row.adjustment_reason || '').trim()
             ? `SERVI ajuste: ${row.adjustment_reason || 'SERVI adjustment'}`
             : null;
 
@@ -1646,85 +1609,143 @@ app.get('/order/:orderId', async (req, res) => {
             ...(adjustmentDescription ? { description: adjustmentDescription } : {}),
             metadata: {
               order_id: row.id,
-              kind: row.kind || 'primary',
+              kind: 'primary',
               parent_order_id: row.parent_id_of_adjustment || ''
             }
           });
-          await pool.query('UPDATE all_bookings SET payment_intent_id=$1 WHERE id=$2', [created.id, row.id]);
+
+          await pool.query(
+            `UPDATE all_bookings
+                SET payment_intent_id = $1,
+                    kind = 'primary'
+              WHERE id = $2`,
+            [created.id, row.id]
+          );
+          row.kind = 'primary';
+          row.payment_intent_id = created.id;
+          kind = 'primary';
           pi = created;
           intentType = 'payment';
         }
       }
+    } else {
+      const hours_ahead = hoursUntilService(row);
 
+      let alreadySaved = false;
+      if (row.customer_id) {
+        alreadySaved = await hasSavedCard(row.customer_id, stripe);
+      }
 
-    } else if (!linkExpired) {
-      // Retrieve existing Intent
-      const id = row.payment_intent_id;
-      if (id) {
-        const isSetup = id.startsWith('seti_');
-        try {
-          pi = isSetup
-            ? await stripe.setupIntents.retrieve(id)
-            : await stripe.paymentIntents.retrieve(id);
-        } catch (retrieveErr) {
-          console.warn('retrieve intent failed', id, retrieveErr?.message || retrieveErr);
-          pi = null;
-        }
-        intentType = isSetup ? 'setup' : 'payment';
-      } else {
+      if (alreadySaved && hours_ahead > EARLY_PREAUTH_THRESHOLD_HOURS) {
+        await pool.query(
+          `
+            UPDATE all_bookings
+               SET kind = 'book',
+                   payment_intent_id = NULL,
+                   status = CASE
+                     WHEN status IN ('Confirmed','Captured') THEN status
+                     ELSE 'Scheduled'
+                   END
+             WHERE id = $1
+          `,
+          [row.id]
+        );
+        row.kind = 'book';
+        row.payment_intent_id = null;
+        row.status = row.status === 'Confirmed' || row.status === 'Captured' ? row.status : 'Scheduled';
         pi = null;
         intentType = null;
-      }
-    }
+      } else {
+        const capturePref = String(row.capture_method || '').toLowerCase();
+        const captureMethod = capturePref === 'automatic' ? 'automatic' : 'manual';
+        const adjustmentDescription =
+          String(row.kind || '').toLowerCase() === 'adjustment'
+            ? `SERVI ajuste: ${row.adjustment_reason || 'SERVI adjustment'}`
+            : null;
 
-
-    // saved-card summary (unchanged)
-    let saved_card = null;
-    if (!linkExpired && row.customer_id) {
-      try {
-        const pmList = await stripe.paymentMethods.list({
-          customer: row.customer_id,
-          type: 'card',
-          limit: 1
+        const created = await stripe.paymentIntents.create({
+          amount: row.amount,
+          currency: 'mxn',
+          payment_method_types: ['card'],
+          capture_method: captureMethod,
+          customer: row.customer_id || undefined,
+          ...(adjustmentDescription ? { description: adjustmentDescription } : {}),
+          metadata: {
+            order_id: row.id,
+            kind: row.kind || 'primary',
+            parent_order_id: row.parent_id_of_adjustment || ''
+          }
         });
-        if (pmList.data.length) {
-          const pm = pmList.data[0];
-          saved_card = {
-            id: pm.id,
-            brand: pm.card?.brand || '',
-            last4: pm.card?.last4 || '',
-            exp_month: pm.card?.exp_month || null,
-            exp_year: pm.card?.exp_year || null
-          };
-        }
-      } catch (pmErr) {
-        console.warn('saved-card lookup failed', pmErr?.message || pmErr);
+        await pool.query('UPDATE all_bookings SET payment_intent_id=$1 WHERE id=$2', [created.id, row.id]);
+        pi = created;
+        intentType = 'payment';
       }
     }
+  } else if (!linkExpired) {
+    const id = row.payment_intent_id;
+    if (id) {
+      const isSetup = id.startsWith('seti_');
+      try {
+        pi = isSetup ? await stripe.setupIntents.retrieve(id) : await stripe.paymentIntents.retrieve(id);
+      } catch (retrieveErr) {
+        console.warn('retrieve intent failed', id, retrieveErr?.message || retrieveErr);
+        pi = null;
+      }
+      intentType = isSetup ? 'setup' : 'payment';
+    } else {
+      pi = null;
+      intentType = null;
+    }
+  }
 
-    const service_display = displayEsMX(row.service_datetime, row.service_date, 'America/Mexico_City');
-    const hours_ahead = hoursUntilService(row);
-    const preauth_window_open = hours_ahead <= PREAUTH_WINDOW_HOURS && hours_ahead >= 0;
-    const days_ahead = Math.ceil(Math.max(0, hours_ahead) / 24);
+  let saved_card = null;
+  if (!linkExpired && row.customer_id) {
+    try {
+      const pmList = await stripe.paymentMethods.list({
+        customer: row.customer_id,
+        type: 'card',
+        limit: 1
+      });
+      if (pmList.data.length) {
+        const pm = pmList.data[0];
+        saved_card = {
+          id: pm.id,
+          brand: pm.card?.brand || '',
+          last4: pm.card?.last4 || '',
+          exp_month: pm.card?.exp_month || null,
+          exp_year: pm.card?.exp_year || null
+        };
+      }
+    } catch (pmErr) {
+      console.warn('saved-card lookup failed', pmErr?.message || pmErr);
+    }
+  }
 
-    res.set('Cache-Control', 'no-store');
-    const pricing = {
-      provider_amount: row.provider_amount ?? null,
-      booking_fee_amount: row.booking_fee_amount ?? null,
-      processing_fee_amount: row.processing_fee_amount ?? null,
-      vat_amount: row.vat_amount ?? null,
-      total_amount: row.amount ?? null,
-      vat_rate: row.vat_rate ?? null,
-      stripe_percent_fee: row.stripe_percent_fee ?? null,
-      stripe_fixed_fee: row.stripe_fixed_fee ?? null,
-      stripe_fee_tax_rate: row.stripe_fee_tax_rate ?? null,
-      processing_fee_type: row.processing_fee_type ?? null,
-      urgency_multiplier: row.urgency_multiplier ?? null,
-      alpha_value: row.alpha_value ?? null
-    };
-    const { retry_token, retry_token_created_at, ...rowForResponse } = row;
+  const service_display = displayEsMX(row.service_datetime, row.service_date, 'America/Mexico_City');
+  const hours_ahead = hoursUntilService(row);
+  const preauth_window_open = hours_ahead <= PREAUTH_WINDOW_HOURS && hours_ahead >= 0;
+  const days_ahead = Math.ceil(Math.max(0, hours_ahead) / 24);
 
-    return res.json({
+  const pricing = {
+    provider_amount: row.provider_amount ?? null,
+    booking_fee_amount: row.booking_fee_amount ?? null,
+    processing_fee_amount: row.processing_fee_amount ?? null,
+    vat_amount: row.vat_amount ?? null,
+    total_amount: row.amount ?? null,
+    vat_rate: row.vat_rate ?? null,
+    stripe_percent_fee: row.stripe_percent_fee ?? null,
+    stripe_fixed_fee: row.stripe_fixed_fee ?? null,
+    stripe_fee_tax_rate: row.stripe_fee_tax_rate ?? null,
+    processing_fee_type: row.processing_fee_type ?? null,
+    urgency_multiplier: row.urgency_multiplier ?? null,
+    alpha_value: row.alpha_value ?? null
+  };
+  const { retry_token, retry_token_created_at, ...rowForResponse } = row;
+
+  return {
+    linkInfo,
+    linkExpired,
+    payload: {
       ...rowForResponse,
       pricing,
       client_secret: pi?.client_secret || null,
@@ -1737,9 +1758,22 @@ app.get('/order/:orderId', async (req, res) => {
       preauth_window_open,
       link_expired: linkExpired,
       link_expires_at: linkInfo.expiresAtIso || null
+    }
+  };
+}
+
+
+app.get('/order/:orderId', async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const tokenParamRaw = getRetryTokenFromQuery(req.query);
+    const allowExpiredQuery = String(req.query.allowExpired || '') === '1';
+    const { payload } = await getOrderPayload(orderId, {
+      allowExpiredQuery,
+      retryTokenRaw: tokenParamRaw
     });
-
-
+    res.set('Cache-Control', 'no-store');
+    return res.json(payload);
   } catch (err) {
     const status = err.status || 500;
     if (status >= 500) {
@@ -1747,6 +1781,58 @@ app.get('/order/:orderId', async (req, res) => {
     }
     res.status(status).send({
       error: err.code || 'order_fetch_failed',
+      message: err.message || 'Internal server error',
+      linkExpired: err.code === 'link_expired',
+      linkExpiresAt: err.linkExpiresAt || null
+    });
+  }
+});
+
+app.get('/api/payment-intent', async (req, res) => {
+  try {
+    const orderId = String(req.query.order || req.query.orderId || '').trim();
+    if (!orderId) {
+      return res.status(400).json({ error: 'order_required', message: 'order is required' });
+    }
+    const allowExpiredQuery = String(req.query.allowExpired || '') === '1';
+    const retryTokenRaw = getRetryTokenFromQuery(req.query);
+    const { payload } = await getOrderPayload(orderId, { allowExpiredQuery, retryTokenRaw });
+
+    const pricing = payload.pricing || {};
+    const response = {
+      orderId: payload.id,
+      amount: payload.amount,
+      currency: 'mxn',
+      clientSecret: payload.client_secret,
+      client_secret: payload.client_secret,
+      customerName: payload.client_name || null,
+      email: payload.client_email || null,
+      bookingType: payload.booking_type || null,
+      serviceDescription: payload.service_description || null,
+      serviceDate: payload.service_date || null,
+      serviceDateTime: payload.service_datetime || null,
+      publicCode: payload.public_code || null,
+      intentType: payload.intentType || null,
+      consentRequired: payload.consent_required || false,
+      savedPaymentMethodId: payload.saved_payment_method_id || payload.saved_card?.id || null,
+      saved_card: payload.saved_card || null,
+      status: payload.status || null,
+      pricing,
+      providerAmount: pricing.provider_amount ?? null,
+      bookingFeeAmount: pricing.booking_fee_amount ?? null,
+      processingFeeAmount: pricing.processing_fee_amount ?? null,
+      vatAmount: pricing.vat_amount ?? null
+    };
+
+    res.set('Cache-Control', 'no-store');
+    return res.json(response);
+  } catch (err) {
+    const status = err.status || 500;
+    if (status >= 500) {
+      console.error('payment-intent fetch error:', err);
+    }
+    return res.status(status).json({
+      error: err.code || 'payment_intent_fetch_failed',
       message: err.message || 'Internal server error',
       linkExpired: err.code === 'link_expired',
       linkExpiresAt: err.linkExpiresAt || null
@@ -1847,7 +1933,7 @@ app.get('/o/:code', async (req, res) => {
       if (err?.code === 'link_expired') {
         return res
           .status(410)
-          .sendFile(path.join(__dirname, 'public', 'link-expired.html'));
+          .sendFile(path.join(FRONTEND_DIR, 'link-expired.html'));
       }
       throw err;
     }
@@ -2441,7 +2527,7 @@ app.get('/book', async (req, res) => {
   } catch (e) {
     console.error('book route guard error:', e?.message || e);
   }
-  res.sendFile(path.join(__dirname, 'public', 'book.html'));
+  res.sendFile(path.join(FRONTEND_DIR, 'book.html'));
 });
 
 // Create an adjustment child order; saved clients now confirm via book.html and guests via pay.html.
@@ -3873,7 +3959,7 @@ app.get('/success', async (req, res) => {
           }).catch(()=>{});
         }
 
-        return res.sendFile(path.join(__dirname, 'public', 'success.html'));
+        return res.sendFile(path.join(FRONTEND_DIR, 'success.html'));
       }
     }
 
@@ -3886,12 +3972,12 @@ app.get('/success', async (req, res) => {
           // SetupIntent path (usually not used for /success in book flow, but safe)
           const si = await stripe.setupIntents.retrieve(id);
           if (si && si.status === 'succeeded') {
-            return res.sendFile(path.join(__dirname, 'public', 'success.html'));
+            return res.sendFile(path.join(FRONTEND_DIR, 'success.html'));
           }
         } else {
           const pi = await stripe.paymentIntents.retrieve(id);
           if (pi && (pi.status === 'succeeded' || pi.status === 'requires_capture')) {
-            return res.sendFile(path.join(__dirname, 'public', 'success.html'));
+            return res.sendFile(path.join(FRONTEND_DIR, 'success.html'));
           }
         }
       } catch (retrieveErr) {
@@ -3901,7 +3987,7 @@ app.get('/success', async (req, res) => {
 
     const statusLabel = String(row.status || '').trim();
     if (BOOK_SUCCESS_STATUSES.has(statusLabel) || PAY_SUCCESS_STATUSES.has(statusLabel)) {
-      return res.sendFile(path.join(__dirname, 'public', 'success.html'));
+      return res.sendFile(path.join(FRONTEND_DIR, 'success.html'));
     }
 
     // Otherwise bounce back to the appropriate page

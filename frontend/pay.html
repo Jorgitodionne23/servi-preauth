@@ -1,0 +1,921 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pago - SERVI</title>
+
+  <script src="https://js.stripe.com/v3/"></script>
+  <script src="./config.js"></script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <style>
+      * { box-sizing: border-box; }
+
+      body {
+        background-color: #000;
+        color: #fff;
+        font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        min-height: 80vh;
+        line-height: 1.6;
+      }
+
+      .page {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        padding: 20px;
+      }
+
+      .logo {
+        max-width: 150px;
+        margin-bottom: 6px;
+      }
+
+      .container {
+        max-width: 400px;
+        width: 100%;
+        background: #111;
+        padding: 15px 24px;
+        border-radius: 12px;
+        box-shadow: 0 0 20px rgba(255, 255, 255, 0.1);
+        display: flex;
+        flex-direction: column;
+        gap: 30px;
+      }
+
+      .container h2 {
+        text-align: center;
+        margin: 0;
+        font-weight: 600;
+        font-size: 22px;
+        letter-spacing: .2px;
+      }
+      .container > .summary-box {
+        margin-top: -12px;
+      }
+
+      form {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        margin-top: -15px;
+      }
+
+      .checkbox-group {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin: 6px 0 10px;
+      }
+
+      .form-row {
+        display: flex;
+        flex-direction: column;
+        padding-top: 5px;
+      }
+
+      .form-label {
+        font-size: 13px;
+        font-weight: 500;
+        color: #d1d5db;
+        margin-bottom: 6px;
+      }
+
+      .card-fieldset {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .card-row {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      .card-row .card-control {
+        flex: 1 1 0%;
+        min-width: 140px;
+      }
+
+      .card-control {
+        flex: 1;
+        background-color: #222;
+        border: 1px solid #444;
+        border-radius: 6px;
+        padding: 12px;
+        min-height: 48px;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        display: flex;
+        align-items: center;
+        cursor: text;
+      }
+
+      .card-control > .__PrivateStripeElement,
+      .card-control > .StripeElement,
+      .card-control iframe {
+        flex: 1 !important;
+        width: 100% !important;
+      }
+
+      .card-control:hover {
+        border-color: #666;
+      }
+
+      .card-control.is-focused {
+        border-color: #888;
+        box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.1);
+      }
+
+      .card-control.has-error {
+        border-color: #ef4444;
+      }
+
+      button {
+        background-color: #fff;
+        color: #000;
+        border: none;
+        padding: 11px;
+        border-radius: 6px;
+        font-size: 17px;
+        font-weight: 700;
+        cursor: pointer;
+        margin-bottom: 10px;
+      }
+
+      .form-row.checkbox-centered {
+        flex-direction: row;
+        justify-content: center;
+        align-items: flex-start;
+      }
+
+      .terms-checkbox-wrapper {
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+        text-align: left;
+        gap: 8px;
+        max-width: 320px;
+      }
+
+      .terms-checkbox-wrapper.consent-wrapper {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 2px;
+      }
+
+      .consent-checkbox-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+      }
+
+      .terms-label {
+        font-size: 13px;
+        color: #ccc;
+        line-height: 1.4;
+        word-break: break-word;
+      }
+
+      .consent-lead {
+        display: block;
+        color: #e5e7eb;
+        margin: 0;
+        font-weight: 600;
+        font-size: 13.5px;
+      }
+
+      .terms-checkbox-wrapper input[type="checkbox"] {
+        transform: scale(1.15);
+        margin: 5px 0 0 0;
+        flex-shrink: 0;
+      }
+
+      .consent-checkbox-row input[type="checkbox"] {
+        margin-top: 5px;
+      }
+
+      .terms-label a {
+        color: rgb(255, 255, 255);
+        text-decoration: underline;
+      }
+
+      .consent-details {
+        font-size: 10.5px;
+        color: #aaa;
+        line-height: 1.5;
+      }
+
+      .support {
+        font-size: 12px;
+        color: #ccc;
+        text-align: center;
+        margin-top: 16px;
+      }
+
+      .support a {
+        color: rgb(255, 255, 255);
+        text-decoration: none;
+      }
+
+      .footer {
+        margin-top: -8px;
+        text-align: center;
+        color: #aaa;
+        padding: 15px ;
+      }
+
+      .footer img {
+        height: 32px;
+        max-width: 100%;
+        object-fit: contain;
+      }
+
+    .input-text {
+      background-color: #222;
+      border: 1px solid #444;
+      border-radius: 6px;
+      padding: 12px;  /* ← CHANGED from "12px 12px 12px 43px" */
+      color: #fff;  /* ← CHANGED from #9ca3af to match card element */
+      font-size: 16px;
+      width: 100%;
+      font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      line-height: 24px;
+      height: 48px;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .input-text:hover {
+      border-color: #666;
+    }
+
+    .input-text:focus {
+      outline: none;
+      border-color: #888;
+      box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.1);
+    }
+
+    .input-text::placeholder {
+      color: #9ca3af;
+      font-size: 16px;
+      font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+
+    .summary-box {
+      background-color: #1a1a1a;
+      padding: 15px;
+      border-radius: 10px;
+      margin-bottom: -4px;
+      box-shadow: 0 0 10px rgba(255, 255, 255, 0.05);
+      font-size: 16px;
+      }
+
+    #service-summary {
+      margin: 0;
+      line-height: 1.5;
+      font-size: 15px;
+      }
+
+
+    .summary-box h3 {
+      margin-top: 0;
+      margin-bottom: 10px;
+      font-size: 18px;
+      color: #fff;
+      font-weight: 600;
+      letter-spacing: .2px;
+      }
+
+    .summary-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      margin: 6px 0;
+      font-size: 14px;
+      color: #9ca3af;
+    }
+
+    .summary-row span:last-child {
+      color: #fff;
+      font-weight: 500;
+    }
+
+    .summary-row.total {
+      margin-top: 12px;
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .summary-row.total span:first-child {
+      color: #fff;
+    }
+
+    .summary-note {
+      margin-top: 6px;
+      font-size: 12px;
+      color: #9ca3af;
+    }
+    .booking-note {
+      margin-top: 8px;
+      font-size: 13px;
+      color: #cbd5e1;
+      line-height: 1.5;
+    }
+    .notice {
+      background-color: #1a1a1a;
+      border: 1px solid #f87171;
+      border-radius: 10px;
+      padding: 14px;
+      font-size: 14px;
+      text-align: center;
+      color: #fff;
+    }
+    .notice strong {
+      display: block;
+      font-size: 15px;
+      margin-bottom: 4px;
+    }
+    .notice small {
+      display: block;
+      margin-top: 6px;
+      font-size: 12px;
+      color: #fca5a5;
+    }
+
+    #spinner {
+    display: none;
+    text-align: center;
+    margin-top: 10px;
+    font-size: 14px;
+    color: #fff;
+  }
+
+  .spinner-circle {
+    border: 3px solid rgba(255, 255, 255, 0.2);
+    border-top: 3px solid #fff;
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    animation: spin 1s linear infinite;
+    margin: 0 auto;
+  }
+
+  @keyframes spin {
+    0% {
+      transform: rotate(0deg);
+    }
+    100% {
+      transform: rotate(360deg);
+    }
+  }
+  </style>
+
+</head>
+<body>
+  <div class="page">
+    <a href="https://serviservices.my.canva.site/servi" target="_blank" rel="noopener">
+      <img src="logo-servi-white.png" alt="SERVI Logo" class="logo" />
+    </a>
+
+    <div class="container">
+      <h2>Confirmar método de pago</h2>
+      
+      <div class="summary-box">
+        <h3>Detalles de tu reserva</h3>
+        <p id="service-summary">Cargando…</p>
+        <div class="summary-row total" id="total-row" style="display:none;">
+          <span>Total a pagar</span>
+          <span id="summary-total">—</span>
+        </div>
+        <div class="summary-note" id="summary-note" style="display:none;">*IVA incluido</div>
+        <div class="booking-note" id="booking-note" style="display:none;"></div>
+        <div class="summary-row" id="adjustment-reason-row" style="display:none;">
+          <span>Motivo del ajuste</span>
+          <span id="adjustment-reason">—</span>
+        </div>
+      </div>
+      <div id="link-expired" class="notice" style="display:none;">
+        <strong>Enlace expirado</strong>
+        <span>Solicita un nuevo enlace.</span>
+        <small id="link-expired-date" style="display:none;"></small>
+      </div>
+
+      <!-- Setup (save-card) UI mounts here when intentType === 'setup' -->
+      <div id="payment-element" style="display:none;"></div>
+
+      <div id="express-pay-container" style="display:none;">
+        <div id="express-pay-button"></div>
+      </div>
+
+      <form id="payment-form">
+        <div class="form-row">
+          <label for="card-element" class="form-label">Información de la tarjeta</label>
+          <div class="card-fieldset">
+            <div class="card-control" id="card-element"></div>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <label for="cardholder-name" class="form-label">Nombre del titular</label>
+          <input 
+              type="text" 
+              id="cardholder-name" 
+              name="cardholder-name" 
+              placeholder="Nombre del titular"
+              class="input-text"
+              autocomplete="cc-name"
+              required
+          />
+        </div>
+
+        <div class="checkbox-group">
+          <div class="form-row checkbox-centered">
+            <div class="terms-checkbox-wrapper consent-wrapper">
+              <span class="consent-lead">Haz tus próximas reservas en un solo paso.</span>
+              <div class="consent-checkbox-row">
+                <input type="checkbox" id="consent-checkbox" />
+                <label for="consent-checkbox" class="terms-label">
+                  Añadir tarjeta para próximos pagos rápidos.
+                  <a href="#" id="consent-more">Ver&nbsp;detalles</a>
+                  <span id="consent-details" class="consent-details" style="display:none"><br>
+                    Autorizas a SERVI a guardar tu tarjeta de forma segura en Stripe. Los datos de tu tarjeta se almacenan cifrados en Stripe y solo se utilizarán para cargos relacionados con tus servicios, nunca sin tu confirmación previa.
+                  </span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-row checkbox-centered">
+            <div class="terms-checkbox-wrapper">
+              <input type="checkbox" id="terms-checkbox" />
+              <label for="terms-checkbox" class="terms-label">
+                Al realizar tu pedido, aceptas nuestros
+                <a href="https://serviservices.my.canva.site/helpcenter/#términos-y-condiciones" target="_blank">Términos y Condiciones</a>
+                y nuestro
+                <a href="https://serviservices.my.canva.site/helpcenter/#aviso-de-privacidad" target="_blank">Aviso de Privacidad</a>.
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <button id="submit">Reservar servicio</button>
+        
+        <div id="spinner" style="display: none;">
+          <div class="spinner-circle"></div>
+        </div>
+      </form>
+    </div>
+
+    <div class="support">
+      ¿Necesitas ayuda?
+      <a href="https://serviservices.my.canva.site/helpcenter/#reportar" target="_blank">Centro de ayuda</a>
+      o
+      <a href="https://wa.me/525525112588" target="_blank">WhatsApp</a>
+    </div>
+  </div>
+
+  <div class="footer">
+    <a href="https://stripe.com" target="_blank" rel="noopener">
+      <img src="poweredbystripe.png" alt="Powered by Stripe" />
+    </a>
+  </div>
+
+  <script>
+    const CONFIG = window.CONFIG || {};
+    const API_BASE = (CONFIG.API_BASE || '').replace(/\/+$/, '') || window.location.origin;
+    const STRIPE_PUBLISHABLE_KEY = CONFIG.STRIPE_PUBLISHABLE_KEY || '';
+    const qs = new URLSearchParams(window.location.search);
+    const orderParam = qs.get('order') || qs.get('orderId');
+    const retryToken = qs.get('rt') || '';
+    const allowExpired = qs.get('allowExpired') === '1';
+
+    const PREVIEW_KEY = 'serviSuccessPreview';
+    const PREVIEW_CACHE_PREFIX = `${PREVIEW_KEY}:`;
+    const PREVENT_BACK_KEY = 'serviPreventBack';
+    const MERIDIEM_REGEX = /\b([ap])\.\s*m\.?/gi;
+    const COMPLETED_STATUSES = new Set(['scheduled', 'confirmed', 'captured']);
+
+    const form = document.getElementById('payment-form');
+    const submitBtn = document.getElementById('submit');
+    const spinner = document.getElementById('spinner');
+    const cardholderInput = document.getElementById('cardholder-name');
+    const summaryEl = document.getElementById('service-summary');
+    const totalRow = document.getElementById('total-row');
+    const totalEl = document.getElementById('summary-total');
+    const noteEl = document.getElementById('summary-note');
+    const bookingNoteEl = document.getElementById('booking-note');
+    const reasonRow = document.getElementById('adjustment-reason-row');
+    const reasonValueEl = document.getElementById('adjustment-reason');
+    const expiredBox = document.getElementById('link-expired');
+    const expiredDateEl = document.getElementById('link-expired-date');
+
+    const mxnFormatter = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' });
+    const currencyCache = {};
+
+    let stripe;
+    let elements;
+    let card;
+    let clientSecret = '';
+    let currentOrder = null;
+
+    const formatMoney = (cents, currency = 'MXN') => {
+      const cur = (currency || 'MXN').toUpperCase();
+      if (cur === 'MXN') return mxnFormatter.format(Number(cents || 0) / 100);
+      if (!currencyCache[cur]) {
+        currencyCache[cur] = new Intl.NumberFormat('es-MX', { style: 'currency', currency: cur });
+      }
+      return currencyCache[cur].format(Number(cents || 0) / 100);
+    };
+
+    const enforceUpperMeridiem = (value) => {
+      if (typeof value !== 'string') return value;
+      return value.replace(MERIDIEM_REGEX, (_, meridiem) => `${meridiem.toUpperCase()}.M.`);
+    };
+
+    const formatFechaEs = (dateOnly, dateTime) => {
+      const raw = dateTime || dateOnly;
+      if (!raw) return '—';
+      const d = new Date(raw);
+      if (Number.isNaN(d.getTime())) return String(raw);
+      const fecha = d.toLocaleDateString('es-MX', { weekday: 'long', day: '2-digit', month: 'long' });
+      const hora = dateTime
+        ? d.toLocaleTimeString('es-MX', { hour: 'numeric', minute: '2-digit', hour12: true })
+        : '';
+      return dateTime ? `${fecha}, a las ${enforceUpperMeridiem(hora)}` : fecha;
+    };
+
+    const formatExpirationDate = (iso) => {
+      if (!iso) return null;
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return null;
+      const formatted = d.toLocaleString('es-MX', {
+        weekday: 'long',
+        day: '2-digit',
+        month: 'long',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+      return enforceUpperMeridiem(formatted);
+    };
+
+    const showLinkExpired = (expiresAtIso) => {
+      if (form) form.style.display = 'none';
+      const summaryBox = document.querySelector('.summary-box');
+      if (summaryBox) summaryBox.style.display = 'none';
+      if (expiredBox) expiredBox.style.display = 'block';
+      if (expiredDateEl) {
+        const formatted = formatExpirationDate(expiresAtIso);
+        expiredDateEl.textContent = formatted ? `Venció el ${formatted}.` : '';
+        expiredDateEl.style.display = formatted ? 'block' : 'none';
+      }
+    };
+
+    const alertLinkExpiredAndRedirect = () => {
+      alert('link_expired\n\nSolicita un nuevo enlace y continua con tu reserva.');
+      window.location.href = 'link-expired.html';
+    };
+
+    const handleLinkExpiredError = (err) => {
+      if (!err) return false;
+      const code = String(err.code || '').toLowerCase();
+      const message = String(err.message || '').toLowerCase();
+      if (code === 'link_expired' || message === 'link_expired') {
+        alertLinkExpiredAndRedirect();
+        return true;
+      }
+      return false;
+    };
+
+    const storeSuccessPreview = (snapshot) => {
+      if (!snapshot) return;
+      try {
+        sessionStorage.setItem(PREVIEW_KEY, JSON.stringify(snapshot));
+      } catch (_) {}
+      try {
+        if (snapshot.orderId) {
+          localStorage.setItem(`${PREVIEW_CACHE_PREFIX}${snapshot.orderId}`, JSON.stringify(snapshot));
+        }
+      } catch (_) {}
+    };
+
+    const buildPreviewFromOrder = (data) => ({
+      orderId: data.orderId || data.id || null,
+      publicCode: data.publicCode || data.public_code || null,
+      email: data.email || data.client_email || data.clientEmail || '',
+      totalCents: Number(data.amount || 0),
+      providerCents: Number(data.providerAmount || data.provider_amount || 0),
+      bookingCents: Number(data.bookingFeeAmount || data.booking_fee_amount || 0),
+      processingCents: Number(data.processingFeeAmount || data.processing_fee_amount || 0),
+      vatCents: Number(data.vatAmount || data.vat_amount || 0),
+      kind: data.kind || '',
+      reason: data.adjustmentReason || data.adjustment_reason || '',
+      serviceAddress: data.serviceAddress || data.service_address || '',
+      serviceDate: data.serviceDate || data.service_date || null,
+      serviceDateTime: data.serviceDateTime || data.service_datetime || null,
+      bookingType: data.bookingType || data.booking_type || null
+    });
+
+    const setPreventBackLock = (orderId) => {
+      if (!orderId) return;
+      try {
+        sessionStorage.setItem(PREVENT_BACK_KEY, String(orderId));
+      } catch (_) {}
+    };
+
+    const redirectToSuccess = (orderId) => {
+      if (!orderId) return;
+      setPreventBackLock(orderId);
+      window.location.replace(`success.html?order=${encodeURIComponent(orderId)}`);
+    };
+
+    const mountCardElement = () => {
+      if (card) return card;
+      stripe = stripe || Stripe(STRIPE_PUBLISHABLE_KEY, { locale: 'es' });
+      elements = elements || stripe.elements({ locale: 'es' });
+      card = elements.create('card', {
+        style: {
+          base: {
+            fontFamily: '"Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+            fontSize: '16px',
+            color: '#ffffff',
+            backgroundColor: '#222222',
+            iconColor: '#9ca3af',
+            caretColor: '#ffffff',
+            '::placeholder': { color: '#9ca3af', fontSize: '16px' }
+          },
+          invalid: { color: '#ef4444' }
+        },
+        hidePostalCode: true,
+        iconStyle: 'solid'
+      });
+      card.mount('#card-element');
+      const wrapper = document.querySelector('#card-element');
+      if (wrapper) {
+        card.on('focus', () => wrapper.classList.add('is-focused'));
+        card.on('blur', () => wrapper.classList.remove('is-focused'));
+        card.on('change', (event) => wrapper.classList.toggle('has-error', !!event.error));
+      }
+      return card;
+    };
+
+    const normalizeBookingType = (raw) => {
+      const text = String(raw || '').trim();
+      if (!text) return 'rango';
+      const norm = text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      if (norm.includes('visita')) return 'visita';
+      if (norm.includes('anticipo')) return 'anticipo';
+      return 'rango';
+    };
+
+    const needsConsentForBooking = (order) => {
+      if (!order) return false;
+      const bookingKey = normalizeBookingType(order.bookingType || order.booking_type);
+      const requiresByType = bookingKey === 'visita' || bookingKey === 'anticipo';
+      const hasSavedCard = !!order.saved_card || !!order.saved_payment_method_id || !!order.savedPaymentMethodId;
+      return requiresByType && !hasSavedCard;
+    };
+
+    const showSummary = (order) => {
+      const isAdjustment = String(order.kind || '').toLowerCase() === 'adjustment';
+      const headerEl = document.querySelector('.container h2');
+      const summaryTitleEl = document.querySelector('.summary-box h3');
+      if (isAdjustment && headerEl) headerEl.textContent = 'Confirmar ajuste';
+      if (isAdjustment && summaryTitleEl) summaryTitleEl.textContent = 'Detalles del ajuste';
+
+      const servicio = (order.serviceDescription || order.service_description || 'servicio').trim();
+      const fechaTexto = formatFechaEs(order.service_date || order.serviceDate, order.service_datetime || order.serviceDateTime);
+      summaryEl.textContent = isAdjustment
+        ? [servicio ? `Ajuste para ${servicio}` : '', fechaTexto ? `Servicio: ${fechaTexto}` : '']
+            .filter(Boolean)
+            .join('. ')
+        : `${servicio}${fechaTexto ? ` el ${fechaTexto}` : ''}.`;
+
+      const totalCents = Number(order.amount || 0);
+      const vatCents = Number(order.vatAmount || order.vat_amount || 0);
+      if (totalCents > 0) {
+        totalEl.textContent = formatMoney(totalCents, order.currency || 'MXN');
+        totalRow.style.display = 'flex';
+        noteEl.style.display = vatCents > 0 ? 'block' : 'none';
+      }
+
+      const bookingTypeKey = normalizeBookingType(order.bookingType || order.booking_type);
+      const bookingNoteCopy =
+        bookingTypeKey === 'visita'
+          ? 'Pago de visita para cotizar; se abonará al total final.'
+          : bookingTypeKey === 'anticipo'
+            ? 'Anticipo para iniciar tu servicio. Podría requerir un cobro final.'
+            : '';
+      if (bookingNoteCopy) {
+        bookingNoteEl.textContent = bookingNoteCopy;
+        bookingNoteEl.style.display = 'block';
+      }
+
+      if (isAdjustment && reasonRow) {
+        reasonRow.style.display = 'flex';
+        reasonValueEl.textContent = order.adjustmentReason || order.adjustment_reason || 'SERVI adjustment';
+      } else if (reasonRow) {
+        reasonRow.style.display = 'none';
+      }
+    };
+
+    const syncProcessingFee = async (orderId, paymentIntentId, paymentMethodId, extras = {}) => {
+      if (!orderId || (!paymentIntentId && !paymentMethodId)) return;
+      try {
+        const payload = {};
+        if (extras && typeof extras === 'object' && extras.billingEmail) {
+          payload.billingEmail = extras.billingEmail;
+        }
+        if (paymentIntentId) payload.paymentIntentId = paymentIntentId;
+        if (paymentMethodId) payload.paymentMethodId = paymentMethodId;
+        await fetch(`${API_BASE}/orders/${encodeURIComponent(orderId)}/refresh-fees`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      } catch (err) {
+        console.warn('No se pudo actualizar la comisión real de Stripe:', err);
+      }
+    };
+
+    const applyConsentToCurrentPI = async (orderId) => {
+      await fetch(`${API_BASE}/orders/${encodeURIComponent(orderId)}/apply-consent-to-current-pi`, { method: 'POST' });
+    };
+
+    const recordConsent = async (orderId, extras = {}) => {
+      const CONSENT_VERSION = '1.0';
+      const text =
+        'Autorizo a SERVI a guardar esta tarjeta y realizar cargos adicionales relacionados con mi servicio, previa confirmación por WhatsApp. Si mi banco exige verificación, se me pedirá confirmarlo (3-D Secure). Puedo solicitar la eliminación de mi método de pago en cualquier momento.';
+      const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+      const bytes = new Uint8Array(buf);
+      const hash = Array.from(bytes)
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('');
+      const payload = {
+        version: CONSENT_VERSION,
+        text,
+        hash,
+        locale: navigator.language || 'es-MX',
+        tz: Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Mexico_City'
+      };
+      if (extras && typeof extras === 'object' && extras.billingEmail) {
+        payload.billingEmail = extras.billingEmail;
+      }
+      await fetch(`${API_BASE}/orders/${orderId}/consent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    };
+
+    const fetchPaymentIntent = async () => {
+      const url = new URL(`${API_BASE}/api/payment-intent`);
+      url.searchParams.set('order', orderParam || '');
+      if (retryToken) url.searchParams.set('rt', retryToken);
+      if (allowExpired) url.searchParams.set('allowExpired', '1');
+
+      const response = await fetch(url.toString(), { credentials: 'include' });
+      const payload = await response.json().catch(() => ({}));
+
+      if (response.status === 410 || payload.error === 'link_expired') {
+        showLinkExpired(payload.linkExpiresAt || payload.link_expires_at || null);
+        return null;
+      }
+      if (!response.ok) {
+        const message = payload.message || 'No se pudo cargar la orden.';
+        alert(message);
+        return null;
+      }
+      return payload;
+    };
+
+    (function guardCompletedOrderAccess() {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const currentOrderId = params.get('order') || params.get('orderId');
+        const lockedOrderId = sessionStorage.getItem(PREVENT_BACK_KEY);
+        if (currentOrderId && lockedOrderId && currentOrderId === lockedOrderId) {
+          redirectToSuccess(currentOrderId);
+        }
+      } catch (guardErr) {
+        console.warn('Back-navigation guard failed', guardErr);
+      }
+    })();
+
+    const init = async () => {
+      if (!orderParam) {
+        alert('Link inválido o incompleto. Por favor contacta a soporte.');
+        return;
+      }
+      if (!STRIPE_PUBLISHABLE_KEY) {
+        alert('Configura STRIPE_PUBLISHABLE_KEY en frontend/config.js antes de continuar.');
+        return;
+      }
+      stripe = Stripe(STRIPE_PUBLISHABLE_KEY, { locale: 'es' });
+
+      const order = await fetchPaymentIntent();
+      if (!order || !order.clientSecret) return;
+
+      currentOrder = order;
+      clientSecret = order.clientSecret;
+
+      if (cardholderInput && order.customerName) {
+        cardholderInput.value = order.customerName;
+      }
+
+      showSummary(order);
+      storeSuccessPreview(buildPreviewFromOrder(order));
+      mountCardElement();
+    };
+
+    document.getElementById('consent-more').addEventListener('click', (e) => {
+      e.preventDefault();
+      const box = document.getElementById('consent-details');
+      box.style.display = box.style.display === 'none' ? 'inline' : 'none';
+    });
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (!currentOrder || !clientSecret) {
+        alert('No se pudo inicializar el flujo de pago. Contacta a soporte.');
+        return;
+      }
+
+      const termsChecked = document.getElementById('terms-checkbox').checked;
+      const consentChecked = document.getElementById('consent-checkbox').checked;
+      const cardholder = (cardholderInput?.value || '').trim();
+      const email = (currentOrder.email || currentOrder.client_email || '').trim();
+      const requireConsentForBooking = needsConsentForBooking(currentOrder);
+
+      const missingAlerts = [];
+      if (!termsChecked) {
+        missingAlerts.push('Debes aceptar los Términos y Condiciones y el Aviso de Privacidad para continuar.');
+      }
+      if (requireConsentForBooking && !consentChecked) {
+        missingAlerts.push('Para este tipo de servicio necesitamos guardar tu método de pago.');
+      }
+      if (missingAlerts.length) {
+        alert(missingAlerts.join('\n\n'));
+        return;
+      }
+
+      submitBtn.disabled = true;
+      spinner.style.display = 'block';
+
+      try {
+        if (consentChecked) {
+          await recordConsent(currentOrder.orderId || currentOrder.id, { billingEmail: email });
+          await applyConsentToCurrentPI(currentOrder.orderId || currentOrder.id);
+        }
+
+        const result = await stripe.confirmCardPayment(clientSecret, {
+          payment_method: {
+            card,
+            billing_details: {
+              ...(cardholder ? { name: cardholder } : {}),
+              ...(email ? { email } : {})
+            }
+          }
+        });
+
+        if (result.error) {
+          if (handleLinkExpiredError(result.error)) return;
+          alert(result.error.message || 'No se pudo confirmar el pago.');
+          return;
+        }
+
+        const status = (result.paymentIntent?.status || '').toLowerCase();
+        const piId = result.paymentIntent?.id || null;
+        if (piId) {
+          await syncProcessingFee(currentOrder.orderId || currentOrder.id, piId, null, { billingEmail: email });
+        }
+
+        const orderId = currentOrder.orderId || currentOrder.id;
+        if (COMPLETED_STATUSES.has(status) || status === 'requires_capture' || status === 'succeeded') {
+          localStorage.setItem('orderId', String(orderId));
+          redirectToSuccess(orderId);
+          return;
+        }
+
+        alert('No se pudo completar la operación.');
+      } finally {
+        spinner.style.display = 'none';
+        submitBtn.disabled = false;
+      }
+    });
+
+    init();
+  </script>
+</body>
+</html>
