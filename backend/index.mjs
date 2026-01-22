@@ -469,6 +469,7 @@ const stripe = new StripePackage(process.env.STRIPE_SECRET_KEY);
 const GOOGLE_SCRIPT_WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbweLYI8-4Z-kW_wahnkHw-Kgmc1GfjI9-YR6z9enOCO98oTXsd9DgTzN_Cm87Drcycb/exec'
 const ADMIN_API_TOKEN = process.env.ADMIN_API_TOKEN || '';
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET || '';
+const FRONTEND_BASE_URL = (process.env.FRONTEND_BASE_URL || process.env.PUBLIC_BASE_URL || 'https://servi-preauth.pages.dev').replace(/\/+$/, '');
 
 if (!endpointSecret) {
   console.error('Missing STRIPE_WEBHOOK_SECRET environment variable; webhook verification will fail.');
@@ -486,9 +487,11 @@ const rawAllowedOrigins = (process.env.CORS_ALLOWLIST || process.env.FRONTEND_OR
   .split(',')
   .map((v) => normalizeOrigin(v))
   .filter(Boolean);
+const frontendOrigin = normalizeOrigin(FRONTEND_BASE_URL);
 const CORS_ALLOWLIST = Array.from(
   new Set([
     ...rawAllowedOrigins,
+    ...(frontendOrigin ? [frontendOrigin] : []),
     ...(process.env.NODE_ENV === 'production' ? [] : devOrigins.map((o) => normalizeOrigin(o)))
   ])
 );
@@ -503,6 +506,28 @@ function applyCorsHeaders(req, res) {
   res.header('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
   res.header('Access-Control-Allow-Credentials', 'true');
   return true;
+}
+
+function buildFrontendUrl(pathname, params = {}) {
+  if (!FRONTEND_BASE_URL) return '';
+  const pathPart = pathname.startsWith('/') ? pathname : `/${pathname}`;
+  const url = new URL(`${FRONTEND_BASE_URL}${pathPart}`);
+  if (params && typeof params === 'object') {
+    for (const [key, value] of Object.entries(params)) {
+      if (value === undefined || value === null) continue;
+      url.searchParams.set(key, String(value));
+    }
+  }
+  return url.toString();
+}
+
+function buildFrontendLinks(orderId) {
+  const safeId = orderId || '';
+  return {
+    payUrl: buildFrontendUrl('/pay.html', { order: safeId }),
+    successUrl: buildFrontendUrl('/success.html', { order: safeId }),
+    bookUrl: buildFrontendUrl('/book.html', { orderId: safeId })
+  };
 }
 
 app.use((req, res, next) => {
@@ -599,10 +624,10 @@ async function createBillingPortalPrompt(orderRow, { failureReason } = {}) {
       orderRow.customer_id = ensured;
     }
     if (!orderRow.customer_id) return null;
-    const baseUrl = process.env.PUBLIC_BASE_URL || 'https://servi-preauth.onrender.com';
+    const returnUrl = buildFrontendUrl('/book.html', { orderId: orderRow.id });
     const session = await stripe.billingPortal.sessions.create({
       customer: orderRow.customer_id,
-      return_url: `${baseUrl}/book?orderId=${encodeURIComponent(orderRow.id)}`
+      return_url: returnUrl || undefined
     });
     const firstName = String(orderRow.client_name || '')
       .trim()
@@ -640,23 +665,13 @@ async function createBookRetryPrompt(orderRow, { failureReason } = {}) {
       [token, orderRow.id]
     );
     const issuedAt = update.rows[0]?.retry_token_created_at || new Date().toISOString();
-    const publicCode =
-      update.rows[0]?.public_code ||
-      orderRow.public_code ||
-      '';
-    const normalizedCode = String(publicCode || '')
-      .trim()
-      .toUpperCase();
-    const baseUrl = process.env.PUBLIC_BASE_URL || 'https://servi-preauth.onrender.com';
-    const bookParams = new URLSearchParams();
-    bookParams.set('orderId', orderRow.id);
-    bookParams.set('rt', token);
-    let url = `${baseUrl}/book?${bookParams.toString()}`;
-    if (normalizedCode) {
-      const params = new URLSearchParams();
-      params.set('rt', token);
-      url = `${baseUrl}/o/${normalizedCode}?${params.toString()}`;
+    const links = buildFrontendLinks(orderRow.id);
+    const bookUrl = links.bookUrl || buildFrontendUrl('/book.html', { orderId: orderRow.id });
+    const urlObj = bookUrl ? new URL(bookUrl) : null;
+    if (urlObj) {
+      urlObj.searchParams.set('rt', token);
     }
+    const url = urlObj ? urlObj.toString() : '';
 
     const firstName = String(orderRow.client_name || '')
       .trim()
@@ -1178,6 +1193,13 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
     // Create the order row (allow NULL customer_id for now)
     const orderId = randomUUID();
     const publicCode = await generateUniqueCode();
+    const links = buildFrontendLinks(orderId);
+    const linkPayload = {
+      payUrl: links.payUrl,
+      successUrl: links.successUrl,
+      bookUrl: links.bookUrl
+    };
+    const baseResponse = { orderId, publicCode, ...linkPayload };
     const stripeFixedFeeCents = Math.round(Number(stripeFixedPesos || 0) * 100);
     await pool.query(
       `INSERT INTO all_bookings (
@@ -1273,10 +1295,9 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
       return res.status(403).send({
         error: 'account_required',
         message: 'Las visitas para cotizar requieren una cuenta con método guardado.',
-        orderId,
-        publicCode,
         amount: totalAmountCents,
-        clientEmail: clientEmailNormalized
+        clientEmail: clientEmailNormalized,
+        ...baseResponse
       });
     }
 
@@ -1289,22 +1310,32 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
           return res.status(403).send({
             error: 'account_required',
             message: 'Solo usuarios con cuenta pueden reservar con 5 días o mas de anticipación.',
-            orderId,
-            publicCode,
             amount: totalAmountCents,
-            clientEmail: clientEmailNormalized
+            clientEmail: clientEmailNormalized,
+            ...baseResponse
           });
         }
 
         if (!saved) {
           // we have consent but no saved card: we'll create a Customer later when we start SetupIntent
           await pool.query('UPDATE all_bookings SET kind=$1 WHERE id=$2', ['setup', orderId]);
-          return res.send({ orderId, publicCode, requiresSetup: true, hasSavedCard: false, amount: totalAmountCents, clientEmail: clientEmailNormalized });
+          return res.send({
+            ...baseResponse,
+            requiresSetup: true,
+            hasSavedCard: false,
+            amount: totalAmountCents,
+            clientEmail: clientEmailNormalized
+          });
         }
 
         // already saved (because existingCustomer had PMs) → book flow, no PI yet
         await pool.query('UPDATE all_bookings SET kind=$1 WHERE id=$2', ['book', orderId]);
-        return res.send({ orderId, publicCode, hasSavedCard: true, amount: totalAmountCents, clientEmail: clientEmailNormalized });
+        return res.send({
+          ...baseResponse,
+          hasSavedCard: true,
+          amount: totalAmountCents,
+          clientEmail: clientEmailNormalized
+        });
       }
 
     // Short-lead (≤5d)
@@ -1314,8 +1345,7 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
           if (hasConsent) {
             await pool.query('UPDATE all_bookings SET kind=$1 WHERE id=$2', ['book', orderId]);
             return res.send({
-              orderId,
-              publicCode,
+              ...baseResponse,
               hasSavedCard: true,
               paymentIntentId: null,   // no PI yet
               amount: totalAmountCents,
@@ -1325,8 +1355,7 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
             // Saved card found but no consent recorded → collect consent with Setup flow
             await pool.query('UPDATE all_bookings SET kind=$1 WHERE id=$2', ['setup', orderId]);
             return res.send({
-              orderId,
-              publicCode,
+              ...baseResponse,
               requiresSetup: true,    // Sheet should NOT set "Scheduled"
               hasSavedCard: true,
               amount: totalAmountCents,
@@ -1367,8 +1396,7 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
       return res.send({
         clientSecret: paymentIntent.client_secret,
         paymentIntentId: paymentIntent.id,
-        orderId,
-        publicCode,
+        ...baseResponse,
         hasSavedCard: saved,
         amount: totalAmountCents,
         clientEmail: clientEmailNormalized
@@ -2049,10 +2077,10 @@ app.post('/billing-portal-standalone', async (req, res) => {
     const { customerId, returnUrl } = req.body || {};
     if (!customerId) return res.status(400).json({ error: 'customerId required' });
 
-    const base = process.env.PUBLIC_BASE_URL || 'https://servi-preauth.onrender.com';
+    const base = buildFrontendUrl('/save.html');
     const session = await stripe.billingPortal.sessions.create({
       customer: customerId,
-      return_url: returnUrl || `${base}/save`
+      return_url: returnUrl || base
     });
 
     return res.json({ url: session.url });
@@ -2696,6 +2724,7 @@ app.post('/create-adjustment', requireAdminAuth, async (req, res) => {
       visitCreditCents: creditAppliedCents
     });
 
+    const links = buildFrontendLinks(childId);
     return res.send({
       childOrderId: childId,
       publicCode,
@@ -2712,7 +2741,10 @@ app.post('/create-adjustment', requireAdminAuth, async (req, res) => {
       bookingFeeAmountCents,
       processingFeeAmountCents,
       vatAmountCents,
-      adjustmentReason: reason
+      adjustmentReason: reason,
+      payUrl: links.payUrl,
+      successUrl: links.successUrl,
+      bookUrl: links.bookUrl
     });
   } catch (err) {
     console.error('[create-adjustment] error:', err);
@@ -3896,10 +3928,10 @@ app.post('/billing-portal', async (req, res) => {
     }
 
     // Where to return after portal (book page fits the saved-card flow)
-    const base = process.env.PUBLIC_BASE_URL || 'https://servi-preauth.onrender.com';
+    const bookUrl = buildFrontendUrl('/book.html', { orderId });
     const session = await stripe.billingPortal.sessions.create({
       customer: row.customer_id,
-      return_url: returnUrl || `${base}/book?orderId=${encodeURIComponent(orderId)}`
+      return_url: returnUrl || bookUrl
     });
 
     return res.json({ url: session.url });

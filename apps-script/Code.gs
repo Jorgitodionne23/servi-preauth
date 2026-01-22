@@ -774,6 +774,31 @@ function ensureChangesSheet_() {
 // === SERVI server base URL ===
 // If you change environments, change only this line.
 const SERVI_BASE = 'https://servi-preauth.onrender.com';
+const FRONTEND_BASE = (function resolveFrontendBase_() {
+  const raw =
+    (typeof FRONTEND_BASE_URL === 'string' && FRONTEND_BASE_URL) ||
+    'https://servi-preauth.pages.dev';
+  return String(raw).replace(/\/+$/, '');
+})();
+
+function buildPayLink_(orderId) {
+  if (!orderId) return '';
+  return FRONTEND_BASE + '/pay.html?order=' + encodeURIComponent(orderId);
+}
+
+function buildBookLink_(orderId, retryToken) {
+  if (!orderId) return '';
+  var url = FRONTEND_BASE + '/book.html?orderId=' + encodeURIComponent(orderId);
+  if (retryToken) {
+    url += '&rt=' + encodeURIComponent(retryToken);
+  }
+  return url;
+}
+
+function buildSuccessLink_(orderId) {
+  if (!orderId) return '';
+  return FRONTEND_BASE + '/success.html?order=' + encodeURIComponent(orderId);
+}
 
 function warmupServer_(base) {
   try {
@@ -909,12 +934,7 @@ function InitiatePaymentIntentForScheduledOrder() {
       }
 
       if (code2 === 402 && out2.clientSecret) {
-        const short = String(
-          sh.getRange(row, ORD_COL.SHORT_CODE).getDisplayValue() || ''
-        ).trim();
-        const link = short
-          ? SERVI_BASE + '/o/' + short
-          : SERVI_BASE + '/book?orderId=' + encodeURIComponent(orderId);
+        const link = buildBookLink_(orderId);
         const msg2 = [
           'Tu banco pide verificación 3D Secure.',
           'Pide al cliente que abra este enlace y confirme:',
@@ -938,12 +958,7 @@ function InitiatePaymentIntentForScheduledOrder() {
 
   if (code === 402 && out.clientSecret) {
     // 3DS required — send the customer back to /book to finish auth
-    const short = String(
-      sh.getRange(row, ORD_COL.SHORT_CODE).getDisplayValue() || ''
-    ).trim();
-    const link = short
-      ? SERVI_BASE + '/o/' + short
-      : SERVI_BASE + '/book?orderId=' + encodeURIComponent(orderId);
+    const link = buildBookLink_(orderId);
     const msg = [
       'Tu banco pide verificación 3D Secure.',
       'Pide al cliente que abra este enlace y confirme:',
@@ -1427,7 +1442,10 @@ function generatePaymentLink() {
           return;
         }
         if (code === 403 && dataErr && dataErr.error === 'account_required') {
-          const paymentLink = SERVI_BASE + '/o/' + dataErr.publicCode;
+          const payOrderId = dataErr.orderId || '';
+          const paymentLink =
+            dataErr.payUrl ||
+            buildPayLink_(payOrderId);
           const paymentText = buildBookingLinkMessage_(
             bookingType,
             paymentLink
@@ -1534,7 +1552,10 @@ function generatePaymentLink() {
       emailCell.setValue(data.clientEmail);
     }
 
-    const paymentLink = SERVI_BASE + '/o/' + data.publicCode;
+    const payOrderId = data.orderId || '';
+    const paymentLink =
+      data.payUrl ||
+      buildPayLink_(payOrderId);
     const paymentText = buildBookingLinkMessage_(bookingType, paymentLink);
 
     sheet.getRange(editedRow, orderIdCol).setValue(String(data.orderId));
@@ -1695,7 +1716,13 @@ function generateAdjustment() {
   }
 
   const out = JSON.parse(resp.getContentText());
-  const shortLink = SERVI_BASE + '/o/' + out.publicCode;
+  const flow = String(out.flow || out.mode || '').toLowerCase();
+  const linkFromApi = out.payUrl || (flow === 'book' ? out.bookUrl : null);
+  const fallbackLink =
+    flow === 'book'
+      ? buildBookLink_(out.childOrderId)
+      : buildPayLink_(out.childOrderId);
+  const paymentLink = linkFromApi || fallbackLink;
 
   sh.getRange(row, COL.ADJUSTMENT_ORDER_ID).setValue(out.childOrderId || '');
   sh.getRange(row, COL.SHORT_CODE).setValue(out.publicCode || '');
@@ -1720,7 +1747,6 @@ function generateAdjustment() {
     finalCell.setNumberFormat('$#,##0.00');
   }
 
-  const flow = String(out.flow || out.mode || '').toLowerCase();
   const linkLabel = flow === 'book' ? 'Link (cliente)' : 'Link (invitado)';
   sh.getRange(row, COL.REQ3DS).setValue(linkLabel);
   sh.getRange(row, COL.STATUS).setValue('Pending');
@@ -1752,30 +1778,30 @@ function generateAdjustment() {
       return [
         'Este enlace es para pagar el resto de tu servicio. Se desconto lo que pagaste inicialmente!',
         amountLine,
-        shortLink,
+        paymentLink,
       ];
     }
     if (reason.indexOf('deposit') !== -1 || reason.indexOf('anticipo') !== -1) {
       return [
         'Usa este enlace para pagar el anticipo de tu servicio. Este monto se descuenta del total y el resto se cobrará al finalizar el trabajo.',
         amountLine,
-        shortLink,
+        paymentLink,
       ];
     }
     if (reason.indexOf('surcharge') !== -1) {
-      return ['Confirma aquí el cargo extra de tu servicio.', amountLine, shortLink];
+      return ['Confirma aquí el cargo extra de tu servicio.', amountLine, paymentLink];
     }
     if (reason.indexOf('billing error') !== -1 || reason.indexOf('billing') !== -1) {
       return [
         'Detectamos un error en el cobro de tu servicio. Usa este enlace para corregir el pago; el monto ya está ajustado según lo correcto.',
         amountLine,
-        shortLink,
+        paymentLink,
       ];
     }
     return [
       effectiveReason ? 'Motivo: ' + effectiveReason : 'Confirma el ajuste de tu servicio.',
       amountLine,
-      shortLink,
+      paymentLink,
     ];
   }
 
@@ -1783,7 +1809,7 @@ function generateAdjustment() {
   if (visitCreditLine) {
     messageLines.splice(1, 0, visitCreditLine);
   }
-  setCellRichTextWithLink_(messageCell, messageLines.filter(Boolean).join('\n'), shortLink);
+  setCellRichTextWithLink_(messageCell, messageLines.filter(Boolean).join('\n'), paymentLink);
 }
 
 function captureCompletedService() {

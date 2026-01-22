@@ -7,6 +7,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Reservar - SERVI</title>
 
+  <script src="./config.js"></script>
   <script src="https://js.stripe.com/v3/"></script>
 
   <!-- Same font as pay.html -->
@@ -468,6 +469,9 @@
     const PREVIEW_CACHE_PREFIX = `${PREVIEW_KEY}:`;
     const PREVENT_BACK_KEY = 'serviPreventBack';
     const COMPLETED_STATUSES = new Set(['scheduled', 'confirmed', 'captured']);
+    const CONFIG = window.CONFIG || {};
+    const API_BASE = (CONFIG.API_BASE || '').replace(/\/+$/, '') || window.location.origin;
+    const STRIPE_PUBLISHABLE_KEY = CONFIG.STRIPE_PUBLISHABLE_KEY || '';
     const expiredBox = document.getElementById('link-expired');
     const expiredDateEl = document.getElementById('link-expired-date');
     const CARD_BRAND_ICONS = {
@@ -564,7 +568,7 @@
       if (btn) btn.disabled = true;
       showPhoneLockError('');
       try {
-        const resp = await fetch(`/orders/${encodeURIComponent(phoneLockState.orderId)}/verify-phone-last4`, {
+        const resp = await fetch(`${API_BASE}/orders/${encodeURIComponent(phoneLockState.orderId)}/verify-phone-last4`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ last4: digits })
@@ -730,7 +734,7 @@
     function redirectToSuccess(orderId) {
       if (!orderId) return;
       setPreventBackLock(orderId);
-      window.location.replace(`/success?orderId=${encodeURIComponent(orderId)}`);
+      window.location.replace(`/success.html?order=${encodeURIComponent(orderId)}`);
     }
 
     function redirectIfCompleted(order) {
@@ -811,7 +815,7 @@
         if (paymentIntentId) payload.paymentIntentId = paymentIntentId;
         if (paymentMethodId) payload.paymentMethodId = paymentMethodId;
         if (retryToken) payload.retryToken = retryToken;
-        await fetch(`/orders/${encodeURIComponent(orderId)}/refresh-fees`, {
+        await fetch(`${API_BASE}/orders/${encodeURIComponent(orderId)}/refresh-fees`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
@@ -823,7 +827,7 @@
 
     async function initBookPage() {
       const params = new URLSearchParams(location.search);
-      const orderId = params.get('orderId');
+      const orderId = params.get('orderId') || params.get('order');
       if (!orderId) {
         alert('Falta el parámetro orderId.');
         throw new Error('missing_order_id');
@@ -853,15 +857,19 @@
         return hash ? `${combined}#${hash}` : combined;
       }
 
-      const stripeResp = await fetch('/config/stripe');
-      const { pk } = await stripeResp.json().catch(() => ({}));
+      let pk = STRIPE_PUBLISHABLE_KEY;
+      if (!pk) {
+        const stripeResp = await fetch(`${API_BASE}/config/stripe`);
+        const respBody = await stripeResp.json().catch(() => ({}));
+        pk = respBody?.pk || '';
+      }
       if (!pk) {
         alert('Stripe no está configurado.');
         throw new Error('missing_stripe_pk');
       }
       const stripe = Stripe(pk);
 
-      const orderEndpoint = withOverrideParams(`/order/${encodeURIComponent(orderId)}`);
+      const orderEndpoint = withOverrideParams(`${API_BASE}/order/${encodeURIComponent(orderId)}`);
       const res = await fetch(orderEndpoint);
       if (res.status === 410) {
         const payload = await res.json().catch(() => ({}));
@@ -877,7 +885,7 @@
       if (redirectIfCompleted(order)) return;
 
       if (!order?.saved_card) {
-        location.href = withOverrideParams(`/pay?orderId=${encodeURIComponent(orderId)}`);
+        location.href = withOverrideParams(`/pay.html?order=${encodeURIComponent(orderId)}`);
         return;
       }
 
@@ -1017,7 +1025,7 @@
           const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
           const bytes = new Uint8Array(buf);
           const hash = Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
-          await fetch(`/orders/${encodeURIComponent(orderId)}/consent`, {
+          await fetch(`${API_BASE}/orders/${encodeURIComponent(orderId)}/consent`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1049,7 +1057,7 @@
 
         await recordConsent();
 
-        const r = await fetch('/confirm-with-saved', {
+        const r = await fetch(`${API_BASE}/confirm-with-saved`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1074,15 +1082,22 @@
               retryToken || null
             );
           }
-          location.href = `/success?orderId=${encodeURIComponent(orderId)}`;
+          location.href = `/success.html?order=${encodeURIComponent(orderId)}`;
           return;
         }
 
         if (r.status === 409) {
           if (payload?.error === 'no_saved_card') {
             alert(payload?.message || 'Necesitamos que actualices tu método de pago para continuar.');
-            const fallback = withOverrideParams(`/pay?orderId=${encodeURIComponent(orderId)}`);
-            const redirectUrl = payload?.redirect ? withOverrideParams(payload.redirect) : fallback;
+            const fallback = withOverrideParams(`/pay.html?order=${encodeURIComponent(orderId)}`);
+            const redirectPathRaw = payload?.redirect || '';
+            const normalizedRedirect = redirectPathRaw
+              ? redirectPathRaw
+                  .replace(/^\/pay\b/, '/pay.html')
+                  .replace(/^\/book\b/, '/book.html')
+                  .replace(/^\/success\b/, '/success.html')
+              : '';
+            const redirectUrl = normalizedRedirect ? withOverrideParams(normalizedRedirect) : fallback;
             location.href = redirectUrl;
             return;
           }
@@ -1098,7 +1113,7 @@
             ? 'Tu ajuste quedó programado. Realizaremos la preautorización 24 horas antes de la fecha.'
             : 'Tu servicio quedó programado. Realizaremos la preautorización 24 horas antes de la fecha.';
           alert(payload?.message || scheduledMsg);
-          location.href = `/success?orderId=${encodeURIComponent(orderId)}`;
+          location.href = `/success.html?order=${encodeURIComponent(orderId)}`;
           return;
         }
 
@@ -1115,7 +1130,7 @@
             if (piId || pmId) {
               await syncProcessingFee(orderId, piId, pmId, retryToken || null);
             }
-            location.href = `/success?orderId=${encodeURIComponent(orderId)}`;
+            location.href = `/success.html?order=${encodeURIComponent(orderId)}`;
           }
           return;
         }
@@ -1131,7 +1146,7 @@
         btnManage.disabled = true;
 
         try {
-          const r = await fetch('/billing-portal', {
+          const r = await fetch(`${API_BASE}/billing-portal`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ orderId, returnUrl: location.href })
