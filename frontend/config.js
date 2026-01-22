@@ -1,8 +1,8 @@
 // Runtime config for the static frontend. Edit this file (or set window.CONFIG before it loads)
 // to point the UI at the correct backend and Stripe publishable key.
 (function bootstrapConfig() {
-  const placeholderApi = '__API_BASE__';
-  const placeholderPk = '__STRIPE_PUBLISHABLE_KEY__';
+  const placeholderApi = 'https://servi-preauth.onrender.com';
+  const placeholderPk = 'pk_live_51QzK6tG7utWo2rQv6la6tTL3pXXWiw2cUXUfnPeMtNEzywIa7AmQiRZgFFFxSmSTYdHoaD8Mel6gTQBHi5c7oINm00Tu5bdEHo';
 
   const explicit = window.CONFIG || {};
   const rawApi =
@@ -17,7 +17,7 @@
     explicit.STRIPE_PUBLISHABLE_KEY ||
     window.CONFIG_STRIPE_PUBLISHABLE_KEY ||
     window.STRIPE_PUBLISHABLE_KEY ||
-    (placeholderPk !== '__STRIPE_PUBLISHABLE_KEY__' ? placeholderPk : '') ||
+    (placeholderPk !== 'pk_live_51QzK6tG7utWo2rQv6la6tTL3pXXWiw2cUXUfnPeMtNEzywIa7AmQiRZgFFFxSmSTYdHoaD8Mel6gTQBHi5c7oINm00Tu5bdEHo' ? placeholderPk : '') ||
     '';
 
   window.CONFIG = {
