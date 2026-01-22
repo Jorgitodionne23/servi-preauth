@@ -1027,13 +1027,7 @@ app.use((req, res, next) => {
 });
 
 // 🚫 Block direct access to the static success.html; force gated route instead
-app.get('/success.html', (req, res) => {
-  const orderId = req.query.orderId;
-  if (orderId) {
-    return res.redirect(302, `/success?orderId=${encodeURIComponent(orderId)}`);
-  }
-  return res.redirect(302, '/');
-});
+app.get('/success.html', successGate);
 
 app.use(express.static(FRONTEND_DIR));
 
@@ -1426,7 +1420,7 @@ app.get('/pay', async (req, res) => {
       const r = await pool.query('SELECT status FROM all_bookings WHERE id = $1', [orderId]);
       const status = r.rows[0]?.status || '';
       if (PAY_SUCCESS_STATUSES.has(status)) {
-        return res.redirect(302, `/success?orderId=${encodeURIComponent(orderId)}`);
+        return res.redirect(302, `/success.html?orderId=${encodeURIComponent(orderId)}`);
       }
     }
   } catch (e) {
@@ -1979,7 +1973,7 @@ app.get('/o/:code', async (req, res) => {
       return `${basePath}?${params.toString()}`;
     };
     if (BOOK_SUCCESS_STATUSES.has(rowStatus) || PAY_SUCCESS_STATUSES.has(rowStatus)) {
-      return res.redirect(302, buildOrderUrl('/success'));
+      return res.redirect(302, buildOrderUrl('/success.html'));
     }
 
     // 2) Explicit routing by kind
@@ -2549,7 +2543,7 @@ app.get('/book', async (req, res) => {
       const r = await pool.query('SELECT status FROM all_bookings WHERE id = $1', [orderId]);
       const status = r.rows[0]?.status || '';
       if (BOOK_SUCCESS_STATUSES.has(status)) {
-        return res.redirect(302, `/success?orderId=${encodeURIComponent(orderId)}`);
+        return res.redirect(302, `/success.html?orderId=${encodeURIComponent(orderId)}`);
       }
     }
   } catch (e) {
@@ -3945,9 +3939,14 @@ app.post('/billing-portal', async (req, res) => {
   }
 });
 
-app.get('/success', async (req, res) => {
+app.get('/success', (req, res) => {
+  const query = req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?')) : '';
+  return res.redirect(302, `/success.html${query}`);
+});
+
+async function successGate(req, res) {
+  const orderId = String(req.query.orderId || req.query.order || '').trim();
   try {
-    const { orderId } = req.query;
     if (!orderId) return res.redirect(302, '/');
 
     const { rows } = await pool.query(
@@ -4032,10 +4031,9 @@ app.get('/success', async (req, res) => {
     return res.redirect(302, `${redirectTarget}?orderId=${encodeURIComponent(orderId)}`);
   } catch (e) {
     console.error('success gate error:', e);
-    const orderId = req.query.orderId || '';
     return res.redirect(302, `/pay?orderId=${encodeURIComponent(orderId)}`);
   }
-});
+}
 
 // 🚀 Start server
 const PORT = process.env.PORT || 4242;
