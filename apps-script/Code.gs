@@ -322,6 +322,7 @@ function onOpen() {
         'Initiate Payment Intent for Scheduled Order',
         'InitiatePaymentIntentForScheduledOrder'
       )
+      .addItem('Create test LIVE payment link', 'createLiveTestPaymentLink')
       .addItem('Open Order Actions Sidebar', 'openOrderActionsSidebar')
       .addItem('Re-sync Selected Row', 'resyncSelectedRow')
       .addItem('Process Pending Order Changes', 'processPendingOrderChanges_')
@@ -780,6 +781,7 @@ const FRONTEND_BASE = (function resolveFrontendBase_() {
     'https://servi-preauth.pages.dev';
   return String(raw).replace(/\/+$/, '');
 })();
+const LIVE_TEST_AMOUNT_MXN = 10;
 
 function buildPayLink_(orderId) {
   if (!orderId) return '';
@@ -1097,6 +1099,157 @@ function buildBookingLinkMessage_(bookingType, paymentLink) {
     'Enlace seguro con Stripe:',
     paymentLink,
   ].join('\n');
+}
+
+function createLiveTestPaymentLink() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  const ui = SpreadsheetApp.getUi();
+  if (sheet.getName() !== SHEET_NAMES.ORDERS) {
+    ui.alert('Use this on the "SERVI Orders" sheet.');
+    return;
+  }
+  const row = sheet.getActiveRange().getRow();
+  if (row < 2) {
+    ui.alert('Selecciona una fila de datos (fila 2 o abajo).');
+    return;
+  }
+
+  const COL = ordersColumnMap_(sheet);
+  const linkCell = sheet.getRange(row, COL.LINK_MSG);
+  const statusCell = sheet.getRange(row, COL.STATUS);
+  const amountCell = sheet.getRange(row, COL.AMOUNT);
+  const shortCodeCell = sheet.getRange(row, COL.SHORT_CODE);
+  const piCell = sheet.getRange(row, COL.PI_ID);
+  const orderIdCell = sheet.getRange(row, COL.ORDER_ID);
+  const totalPaidCell = sheet.getRange(row, COL.TOTAL_PAID);
+  const emailCell = sheet.getRange(row, COL.EMAIL);
+
+  const clientName = sheet.getRange(row, COL.CLIENT_NAME).getValue();
+  const serviceDescription = sheet.getRange(row, COL.SERVICE_DESC).getValue();
+  const serviceAddress = String(
+    sheet.getRange(row, COL.ADDRESS).getDisplayValue() || ''
+  ).trim();
+  const serviceDate = sheet.getRange(row, COL.SERVICE_DT).getDisplayValue();
+  const bookingTypeRaw = sheet.getRange(row, COL.BOOKING_TYPE).getDisplayValue();
+  const bookingType = normalizeBookingType_(bookingTypeRaw);
+  if (!bookingTypeRaw) {
+    sheet.getRange(row, COL.BOOKING_TYPE).setValue(bookingType);
+  }
+
+  const captureChoice = COL.CAPTURE_TYPE
+    ? String(sheet.getRange(row, COL.CAPTURE_TYPE).getDisplayValue() || '').trim()
+    : '';
+  const captureMethod = /^automatic$/i.test(captureChoice) ? 'automatic' : 'manual';
+
+  const rawPhone = sheet.getRange(row, COL.PHONE).getDisplayValue();
+  const clientPhone = normalizePhoneToE164(rawPhone);
+  const phoneDigits = String(clientPhone || '').replace(/\D+/g, '');
+  if (!clientPhone || !phoneDigits) {
+    const msg = '⚠️ Falta teléfono del cliente.';
+    linkCell.setValue(msg);
+    statusCell.setValue('Missing phone');
+    try { ui.alert(msg); } catch (_) {}
+    return;
+  }
+
+  let clientEmail = normalizeEmail_(emailCell.getDisplayValue());
+  if (!clientEmail) {
+    const lookup = lookupEmailForPhone_(clientPhone);
+    if (lookup && lookup.email) {
+      clientEmail = lookup.email;
+      emailCell.setValue(clientEmail);
+      if (lookup.customerId && COL.CLIENT_ID) {
+        const existing = sheet.getRange(row, COL.CLIENT_ID).getDisplayValue();
+        if (!existing) {
+          sheet.getRange(row, COL.CLIENT_ID).setValue(String(lookup.customerId));
+        }
+      }
+    }
+  }
+  if (!clientEmail) {
+    const msg =
+      '⚠️ Falta email. Coloca el correo en la columna "Email" antes de generar el enlace.';
+    linkCell.setValue(msg);
+    statusCell.setValue('Missing email');
+    try { ui.alert(msg); } catch (_) {}
+    return;
+  }
+
+  amountCell.setValue(LIVE_TEST_AMOUNT_MXN);
+
+  const payload = {
+    amount: LIVE_TEST_AMOUNT_MXN,
+    clientName,
+    serviceDescription,
+    serviceDate,
+    clientPhone,
+    clientEmail,
+    serviceAddress,
+    bookingType,
+    capture: captureMethod,
+    hasTimeComponent: false,
+    microTest: true,
+    pricingMode: 'micro_test'
+  };
+
+  warmupServer_(SERVI_BASE);
+  waitForServerReady_(SERVI_BASE);
+
+  let resp;
+  try {
+    resp = fetchWithRetry_(SERVI_BASE + '/create-payment-intent?ts=' + Date.now(), {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify(payload),
+      headers: adminHeaders_(),
+      muteHttpExceptions: true,
+    }, 4);
+  } catch (err) {
+    const msg = '⚠️ No se pudo generar el enlace de prueba.';
+    linkCell.setValue(msg);
+    statusCell.setValue('Error (TEST)');
+    try { ui.alert(msg); } catch (_) {}
+    return;
+  }
+
+  const code = resp.getResponseCode();
+  const body = resp.getContentText();
+  let data = {};
+  try {
+    data = JSON.parse(body || '{}');
+  } catch (_) {}
+
+  if (code < 200 || code >= 300) {
+    const errMsg = data.message || body || 'Error inesperado';
+    linkCell.setValue('⚠️ ' + errMsg);
+    statusCell.setValue('Error (TEST)');
+    return;
+  }
+
+  const payOrderId = data.orderId || '';
+  const paymentLink = data.payUrl || buildPayLink_(payOrderId);
+  const message = ['TEST LIVE (MXN 10) — NO USAR CON CLIENTES', paymentLink].join(
+    '\n'
+  );
+
+  orderIdCell.setValue(String(payOrderId || ''));
+  piCell.setValue(String(data.paymentIntentId || ''));
+  shortCodeCell.setValue(String(data.publicCode || ''));
+  setCellRichTextWithLink_(linkCell, message, paymentLink);
+  statusCell.setValue('Pending (TEST)');
+  totalPaidCell.setValue(LIVE_TEST_AMOUNT_MXN);
+
+  try {
+    const headerMap = getSheetHeaderMap_(sheet);
+    const candidates = ['mode', 'type', 'notes'];
+    for (var i = 0; i < candidates.length; i++) {
+      const norm = normalizeHeader_(candidates[i]);
+      if (headerMap[norm]) {
+        sheet.getRange(row, headerMap[norm]).setValue('LIVE_TEST_10MXN');
+        break;
+      }
+    }
+  } catch (_) {}
 }
 
 function generatePaymentLink() {

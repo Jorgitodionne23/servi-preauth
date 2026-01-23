@@ -248,6 +248,7 @@ const LINK_EXPIRATION_MS = LINK_EXPIRATION_HOURS * 60 * 60 * 1000;
 const PREAUTH_WINDOW_HOURS = 24;
 const PREAUTH_WINDOW_MS = PREAUTH_WINDOW_HOURS * 60 * 60 * 1000;
 const EARLY_PREAUTH_THRESHOLD_HOURS = 72;
+const MICRO_TEST_AMOUNT_PESOS = 10; // Stripe MXN minimum is 10; keep flat for test links
 
 function getLinkExpirationInfo(createdAt) {
   const createdMs = createdAt ? new Date(createdAt).getTime() : null;
@@ -897,6 +898,20 @@ async function refreshOrderFees(orderId, { paymentIntentId, paymentMethodId, ret
   if (!order) {
     throw makeError('order_not_found', 'order not found', 404);
   }
+  if (String(order.processing_fee_type || '').toLowerCase() === 'micro_test') {
+    return {
+      processing_fee_amount: order.processing_fee_amount ?? 0,
+      booking_fee_amount: order.booking_fee_amount ?? 0,
+      vat_amount: order.vat_amount ?? 0,
+      stripe_percent_fee: order.stripe_percent_fee ?? 0,
+      stripe_fixed_fee: order.stripe_fixed_fee ?? 0,
+      stripe_fee_tax_rate: order.stripe_fee_tax_rate ?? 0,
+      payment_method_id: paymentMethodId || order.saved_payment_method_id || null,
+      processing_fee_type: 'micro_test',
+      card_country: null,
+      currency: 'mxn'
+    };
+  }
   const { createdAtOverride } = resolveRetryTokenContext(order, retryToken);
   const linkRow = createdAtOverride ? { ...order, created_at: createdAtOverride } : order;
   assertOrderLinkActive(linkRow);
@@ -1045,12 +1060,19 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
     serviceAddress,
     bookingType: bookingTypeRaw,
     hasTimeComponent,
-    capture
+    capture,
+    microTest,
+    micro_test,
+    pricingMode
   } = req.body;
+  const microTestFlag =
+    Boolean(microTest) ||
+    Boolean(micro_test) ||
+    String(pricingMode || '').toLowerCase() === 'micro_test';
   const bookingType = normalizeBookingType(bookingTypeRaw);
   const bookingKey = bookingTypeKey(bookingType);
-  let providerPricePesos = Number(amount);
-  if (bookingKey === 'visita') {
+  let providerPricePesos = microTestFlag ? MICRO_TEST_AMOUNT_PESOS : Number(amount);
+  if (!microTestFlag && bookingKey === 'visita') {
     providerPricePesos =
       Number.isFinite(providerPricePesos) && providerPricePesos > 0
         ? providerPricePesos
@@ -1118,7 +1140,7 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
 
     // Compute policy early
     const daysAhead = daysAheadFromYMD(serviceDate);
-    const longLead = daysAhead >= 5;
+    const longLead = microTestFlag ? false : daysAhead >= 5;
 
     // Precise fractional hours ahead for consistent comparisons everywhere
     const hoursAhead = hoursUntilService({
@@ -1136,30 +1158,58 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
         hoursAhead
       });
     }
-    const {
-      providerAmountCents,
-      bookingFeeAmountCents,
-      processingFeeAmountCents,
-      vatAmountCents,
-      totalAmountCents,
-      components: {
-        alphaValue,
-        urgencyMultiplier,
-        vatRate,
-        stripePercent,
-        stripeFixed: stripeFixedPesos,
-        stripeFeeVatRate
-      }
-    } =
-      bookingKey === 'visita'
-        ? computeVisitPreauthPricing({
-            totalPesos: VISIT_PREAUTH_TOTAL_PESOS,
-            providerPesos: VISIT_PREAUTH_PROVIDER_PESOS
-          })
-        : computePricing({
-            providerPricePesos,
-            leadTimeHours: hoursAhead
-          });
+    let providerAmountCents;
+    let bookingFeeAmountCents;
+    let processingFeeAmountCents;
+    let vatAmountCents;
+    let totalAmountCents;
+    let alphaValue;
+    let urgencyMultiplier;
+    let vatRate;
+    let stripePercent;
+    let stripeFixedPesos;
+    let stripeFeeVatRate;
+
+    if (microTestFlag) {
+      const microCents = Math.max(1000, Math.round(Number(MICRO_TEST_AMOUNT_PESOS) * 100));
+      providerAmountCents = microCents;
+      bookingFeeAmountCents = 0;
+      processingFeeAmountCents = 0;
+      vatAmountCents = 0;
+      totalAmountCents = microCents;
+      alphaValue = null;
+      urgencyMultiplier = null;
+      vatRate = 0;
+      stripePercent = 0;
+      stripeFixedPesos = 0;
+      stripeFeeVatRate = 0;
+    } else {
+      const pricingResult =
+        bookingKey === 'visita'
+          ? computeVisitPreauthPricing({
+              totalPesos: VISIT_PREAUTH_TOTAL_PESOS,
+              providerPesos: VISIT_PREAUTH_PROVIDER_PESOS
+            })
+          : computePricing({
+              providerPricePesos,
+              leadTimeHours: hoursAhead
+            });
+      ({
+        providerAmountCents,
+        bookingFeeAmountCents,
+        processingFeeAmountCents,
+        vatAmountCents,
+        totalAmountCents,
+        components: {
+          alphaValue,
+          urgencyMultiplier,
+          vatRate,
+          stripePercent,
+          stripeFixed: stripeFixedPesos,
+          stripeFeeVatRate
+        }
+      } = pricingResult);
+    }
     // If long lead and NO consent, do not create a new customer yet
     // We can still check for saved card if an existing customer was found
     let saved = false;
@@ -1195,6 +1245,7 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
     };
     const baseResponse = { orderId, publicCode, ...linkPayload };
     const stripeFixedFeeCents = Math.round(Number(stripeFixedPesos || 0) * 100);
+    const processingFeeType = microTestFlag ? 'micro_test' : 'standard';
     await pool.query(
       `INSERT INTO all_bookings (
         id,
@@ -1253,7 +1304,7 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
         stripePercent,
         stripeFixedFeeCents,
         stripeFeeVatRate,
-        'standard',
+        processingFeeType,
         urgencyMultiplier,
         alphaValue
       ]
@@ -1272,6 +1323,45 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
         orderId
       ]
     );
+
+    if (microTestFlag) {
+      const customer = existingCustomer || await stripe.customers.create({
+        name: clientName || undefined,
+        email: clientEmailNormalized || undefined,
+        phone: clientPhone || undefined
+      });
+
+      await pool.query('UPDATE all_bookings SET customer_id=$1 WHERE id=$2', [customer.id, orderId]);
+      await upsertSavedServiUserContact({
+        customerId: customer.id,
+        name: clientName || null,
+        email: clientEmailNormalized || null,
+        phone: clientPhone || null,
+        lastOrderId: orderId
+      });
+
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: totalAmountCents,
+        currency: 'mxn',
+        capture_method: captureMethod,
+        payment_method_types: ['card'],
+        customer: customer.id,
+        metadata: { order_id: orderId, kind: 'primary', micro_test: 'true' }
+      });
+
+      await pool.query('UPDATE all_bookings SET payment_intent_id=$1 WHERE id=$2', [paymentIntent.id, orderId]);
+
+      return res.send({
+        clientSecret: paymentIntent.client_secret,
+        paymentIntentId: paymentIntent.id,
+        ...baseResponse,
+        hasSavedCard: false,
+        amount: totalAmountCents,
+        clientEmail: clientEmailNormalized,
+        microTest: true
+      });
+    }
+
     // --- NEW: determine if we already have consent (customer-level or order-level) ---
     let hasConsent = false;
     if (existingCustomer?.id) {
