@@ -248,7 +248,7 @@ const LINK_EXPIRATION_MS = LINK_EXPIRATION_HOURS * 60 * 60 * 1000;
 const PREAUTH_WINDOW_HOURS = 24;
 const PREAUTH_WINDOW_MS = PREAUTH_WINDOW_HOURS * 60 * 60 * 1000;
 const EARLY_PREAUTH_THRESHOLD_HOURS = 72;
-const MICRO_TEST_AMOUNT_PESOS = 10; // Stripe MXN minimum is 10; keep flat for test links
+const MICRO_TEST_AMOUNT_PESOS = 40; // Safer floor to avoid issuer rejections
 
 function getLinkExpirationInfo(createdAt) {
   const createdMs = createdAt ? new Date(createdAt).getTime() : null;

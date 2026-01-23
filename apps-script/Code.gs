@@ -781,7 +781,7 @@ const FRONTEND_BASE = (function resolveFrontendBase_() {
     'https://servi-preauth.pages.dev';
   return String(raw).replace(/\/+$/, '');
 })();
-const LIVE_TEST_AMOUNT_MXN = 10;
+const LIVE_TEST_AMOUNT_MXN = 40;
 
 function buildPayLink_(orderId) {
   if (!orderId) return '';
