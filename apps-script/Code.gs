@@ -737,7 +737,12 @@ function ensureChangesSheet_() {
 
   const cols = changesColumnMap_(sh);
   const rows = Math.max(sh.getMaxRows(), 1);
-  [cols.REQUESTED_ADDRESS, cols.ORIGINAL_ADDRESS, cols.NOTES, cols.APPLIED_NOTE].forEach(function (colIdx) {
+  [
+    cols.REQUESTED_ADDRESS,
+    cols.ORIGINAL_ADDRESS,
+    cols.NOTES,
+    cols.APPLIED_NOTE,
+  ].forEach(function (colIdx) {
     if (!colIdx) return;
     sh.getRange(1, colIdx, rows, 1).setWrap(true);
   });
@@ -747,27 +752,33 @@ function ensureChangesSheet_() {
     );
   }
   if (cols.PROCESSED_AT) {
-    sh
-      .getRange(2, cols.PROCESSED_AT, Math.max(rows - 1, 1), 1)
-      .setNumberFormat('yyyy-mm-dd hh:mm:ss');
+    sh.getRange(2, cols.PROCESSED_AT, Math.max(rows - 1, 1), 1).setNumberFormat(
+      'yyyy-mm-dd hh:mm:ss'
+    );
   }
   if (cols.REQUESTED_DATE) {
-    sh.getRange(2, cols.REQUESTED_DATE, Math.max(rows - 1, 1), 1).setNumberFormat(
-      'yyyy-mm-dd'
-    );
+    sh.getRange(
+      2,
+      cols.REQUESTED_DATE,
+      Math.max(rows - 1, 1),
+      1
+    ).setNumberFormat('yyyy-mm-dd');
   }
   if (cols.ORIGINAL_DATE) {
-    sh.getRange(2, cols.ORIGINAL_DATE, Math.max(rows - 1, 1), 1).setNumberFormat(
-      'yyyy-mm-dd'
-    );
+    sh.getRange(
+      2,
+      cols.ORIGINAL_DATE,
+      Math.max(rows - 1, 1),
+      1
+    ).setNumberFormat('yyyy-mm-dd');
   }
   const typeRule = SpreadsheetApp.newDataValidation()
     .requireValueInList(['Reschedule', 'Cancel', 'Address update'], true)
     .setAllowInvalid(true)
     .build();
-  sh
-    .getRange(2, cols.TYPE, Math.max(rows - 1, 1), 1)
-    .setDataValidation(typeRule);
+  sh.getRange(2, cols.TYPE, Math.max(rows - 1, 1), 1).setDataValidation(
+    typeRule
+  );
 
   sh.autoResizeColumns(1, headers.length);
 }
@@ -781,7 +792,7 @@ const FRONTEND_BASE = (function resolveFrontendBase_() {
     'https://servi-preauth.pages.dev';
   return String(raw).replace(/\/+$/, '');
 })();
-const LIVE_TEST_AMOUNT_MXN = 40;
+const LIVE_TEST_AMOUNT_MXN = 10;
 
 function buildPayLink_(orderId) {
   if (!orderId) return '';
@@ -1130,16 +1141,22 @@ function createLiveTestPaymentLink() {
     sheet.getRange(row, COL.ADDRESS).getDisplayValue() || ''
   ).trim();
   const serviceDate = sheet.getRange(row, COL.SERVICE_DT).getDisplayValue();
-  const bookingTypeRaw = sheet.getRange(row, COL.BOOKING_TYPE).getDisplayValue();
+  const bookingTypeRaw = sheet
+    .getRange(row, COL.BOOKING_TYPE)
+    .getDisplayValue();
   const bookingType = normalizeBookingType_(bookingTypeRaw);
   if (!bookingTypeRaw) {
     sheet.getRange(row, COL.BOOKING_TYPE).setValue(bookingType);
   }
 
   const captureChoice = COL.CAPTURE_TYPE
-    ? String(sheet.getRange(row, COL.CAPTURE_TYPE).getDisplayValue() || '').trim()
+    ? String(
+        sheet.getRange(row, COL.CAPTURE_TYPE).getDisplayValue() || ''
+      ).trim()
     : '';
-  const captureMethod = /^automatic$/i.test(captureChoice) ? 'automatic' : 'manual';
+  const captureMethod = /^automatic$/i.test(captureChoice)
+    ? 'automatic'
+    : 'manual';
 
   const rawPhone = sheet.getRange(row, COL.PHONE).getDisplayValue();
   const clientPhone = normalizePhoneToE164(rawPhone);
@@ -1148,7 +1165,9 @@ function createLiveTestPaymentLink() {
     const msg = '⚠️ Falta teléfono del cliente.';
     linkCell.setValue(msg);
     statusCell.setValue('Missing phone');
-    try { ui.alert(msg); } catch (_) {}
+    try {
+      ui.alert(msg);
+    } catch (_) {}
     return;
   }
 
@@ -1161,7 +1180,9 @@ function createLiveTestPaymentLink() {
       if (lookup.customerId && COL.CLIENT_ID) {
         const existing = sheet.getRange(row, COL.CLIENT_ID).getDisplayValue();
         if (!existing) {
-          sheet.getRange(row, COL.CLIENT_ID).setValue(String(lookup.customerId));
+          sheet
+            .getRange(row, COL.CLIENT_ID)
+            .setValue(String(lookup.customerId));
         }
       }
     }
@@ -1171,7 +1192,9 @@ function createLiveTestPaymentLink() {
       '⚠️ Falta email. Coloca el correo en la columna "Email" antes de generar el enlace.';
     linkCell.setValue(msg);
     statusCell.setValue('Missing email');
-    try { ui.alert(msg); } catch (_) {}
+    try {
+      ui.alert(msg);
+    } catch (_) {}
     return;
   }
 
@@ -1189,7 +1212,7 @@ function createLiveTestPaymentLink() {
     capture: captureMethod,
     hasTimeComponent: false,
     microTest: true,
-    pricingMode: 'micro_test'
+    pricingMode: 'micro_test',
   };
 
   warmupServer_(SERVI_BASE);
@@ -1197,18 +1220,24 @@ function createLiveTestPaymentLink() {
 
   let resp;
   try {
-    resp = fetchWithRetry_(SERVI_BASE + '/create-payment-intent?ts=' + Date.now(), {
-      method: 'post',
-      contentType: 'application/json',
-      payload: JSON.stringify(payload),
-      headers: adminHeaders_(),
-      muteHttpExceptions: true,
-    }, 4);
+    resp = fetchWithRetry_(
+      SERVI_BASE + '/create-payment-intent?ts=' + Date.now(),
+      {
+        method: 'post',
+        contentType: 'application/json',
+        payload: JSON.stringify(payload),
+        headers: adminHeaders_(),
+        muteHttpExceptions: true,
+      },
+      4
+    );
   } catch (err) {
     const msg = '⚠️ No se pudo generar el enlace de prueba.';
     linkCell.setValue(msg);
     statusCell.setValue('Error (TEST)');
-    try { ui.alert(msg); } catch (_) {}
+    try {
+      ui.alert(msg);
+    } catch (_) {}
     return;
   }
 
@@ -1228,9 +1257,10 @@ function createLiveTestPaymentLink() {
 
   const payOrderId = data.orderId || '';
   const paymentLink = data.payUrl || buildPayLink_(payOrderId);
-  const message = ['TEST LIVE (MXN 10) — NO USAR CON CLIENTES', paymentLink].join(
-    '\n'
-  );
+  const message = [
+    'TEST LIVE (MXN 10) — NO USAR CON CLIENTES',
+    paymentLink,
+  ].join('\n');
 
   orderIdCell.setValue(String(payOrderId || ''));
   piCell.setValue(String(data.paymentIntentId || ''));
@@ -1245,7 +1275,7 @@ function createLiveTestPaymentLink() {
     for (var i = 0; i < candidates.length; i++) {
       const norm = normalizeHeader_(candidates[i]);
       if (headerMap[norm]) {
-        sheet.getRange(row, headerMap[norm]).setValue('LIVE_TEST_10MXN');
+        sheet.getRange(row, headerMap[norm]).setValue('LIVE_TEST_40MXN');
         break;
       }
     }
@@ -1596,9 +1626,7 @@ function generatePaymentLink() {
         }
         if (code === 403 && dataErr && dataErr.error === 'account_required') {
           const payOrderId = dataErr.orderId || '';
-          const paymentLink =
-            dataErr.payUrl ||
-            buildPayLink_(payOrderId);
+          const paymentLink = dataErr.payUrl || buildPayLink_(payOrderId);
           const paymentText = buildBookingLinkMessage_(
             bookingType,
             paymentLink
@@ -1706,9 +1734,7 @@ function generatePaymentLink() {
     }
 
     const payOrderId = data.orderId || '';
-    const paymentLink =
-      data.payUrl ||
-      buildPayLink_(payOrderId);
+    const paymentLink = data.payUrl || buildPayLink_(payOrderId);
     const paymentText = buildBookingLinkMessage_(bookingType, paymentLink);
 
     sheet.getRange(editedRow, orderIdCol).setValue(String(data.orderId));
@@ -1942,9 +1968,16 @@ function generateAdjustment() {
       ];
     }
     if (reason.indexOf('surcharge') !== -1) {
-      return ['Confirma aquí el cargo extra de tu servicio.', amountLine, paymentLink];
+      return [
+        'Confirma aquí el cargo extra de tu servicio.',
+        amountLine,
+        paymentLink,
+      ];
     }
-    if (reason.indexOf('billing error') !== -1 || reason.indexOf('billing') !== -1) {
+    if (
+      reason.indexOf('billing error') !== -1 ||
+      reason.indexOf('billing') !== -1
+    ) {
       return [
         'Detectamos un error en el cobro de tu servicio. Usa este enlace para corregir el pago; el monto ya está ajustado según lo correcto.',
         amountLine,
@@ -1952,17 +1985,25 @@ function generateAdjustment() {
       ];
     }
     return [
-      effectiveReason ? 'Motivo: ' + effectiveReason : 'Confirma el ajuste de tu servicio.',
+      effectiveReason
+        ? 'Motivo: ' + effectiveReason
+        : 'Confirma el ajuste de tu servicio.',
       amountLine,
       paymentLink,
     ];
   }
 
-  const messageLines = buildAdjustmentLinkMessage_(effectiveReason || adjustmentType);
+  const messageLines = buildAdjustmentLinkMessage_(
+    effectiveReason || adjustmentType
+  );
   if (visitCreditLine) {
     messageLines.splice(1, 0, visitCreditLine);
   }
-  setCellRichTextWithLink_(messageCell, messageLines.filter(Boolean).join('\n'), paymentLink);
+  setCellRichTextWithLink_(
+    messageCell,
+    messageLines.filter(Boolean).join('\n'),
+    paymentLink
+  );
 }
 
 function captureCompletedService() {
@@ -3008,7 +3049,9 @@ function normalizeChangeTypeLabel_(raw) {
 }
 
 function parseRequestedDateTime_(dateStr, timeStr) {
-  const m = String(dateStr || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const m = String(dateStr || '')
+    .trim()
+    .match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!m) return null;
   const year = Number(m[1]);
   const month = Number(m[2]) - 1;
@@ -3096,9 +3139,7 @@ function recordOrderChangeRequest_(payload) {
         }
       } else if (svcDisp) {
         // fallback: try to split display into date/time
-        const m = svcDisp.match(
-          /^(\d{4}-\d{2}-\d{2})[ T]?(\d{1,2}:\d{2})?/
-        );
+        const m = svcDisp.match(/^(\d{4}-\d{2}-\d{2})[ T]?(\d{1,2}:\d{2})?/);
         if (m) {
           originalDate = m[1] || '';
           if (m[2]) originalTime = m[2];
@@ -3239,9 +3280,12 @@ function processPendingOrderChanges_() {
     const changeType = normalizeChangeTypeLabel_(typeRaw);
 
     if (!orderId || !changeType) {
-      if (changeCols.STATUS) changesSheet.getRange(r, changeCols.STATUS).setValue('Failed');
+      if (changeCols.STATUS)
+        changesSheet.getRange(r, changeCols.STATUS).setValue('Failed');
       if (changeCols.NOTES)
-        changesSheet.getRange(r, changeCols.NOTES).setValue('Falta Order ID o tipo de cambio.');
+        changesSheet
+          .getRange(r, changeCols.NOTES)
+          .setValue('Falta Order ID o tipo de cambio.');
       if (changeCols.PROCESSED_AT)
         changesSheet.getRange(r, changeCols.PROCESSED_AT).setValue(new Date());
       continue;
@@ -3253,9 +3297,12 @@ function processPendingOrderChanges_() {
       orderId
     );
     if (!orderRow) {
-      if (changeCols.STATUS) changesSheet.getRange(r, changeCols.STATUS).setValue('Failed');
+      if (changeCols.STATUS)
+        changesSheet.getRange(r, changeCols.STATUS).setValue('Failed');
       if (changeCols.NOTES)
-        changesSheet.getRange(r, changeCols.NOTES).setValue('Order no encontrada en SERVI Orders.');
+        changesSheet
+          .getRange(r, changeCols.NOTES)
+          .setValue('Order no encontrada en SERVI Orders.');
       if (changeCols.PROCESSED_AT)
         changesSheet.getRange(r, changeCols.PROCESSED_AT).setValue(new Date());
       continue;
@@ -3273,15 +3320,17 @@ function processPendingOrderChanges_() {
       const reqTime =
         changeCols.REQUESTED_TIME && changeCols.REQUESTED_TIME > 0
           ? String(
-              changesSheet.getRange(r, changeCols.REQUESTED_TIME).getDisplayValue() ||
-                ''
+              changesSheet
+                .getRange(r, changeCols.REQUESTED_TIME)
+                .getDisplayValue() || ''
             ).trim()
           : '';
       const dt = parseRequestedDateTime_(reqDate, reqTime);
       if (dt && !isNaN(dt)) {
         const beforeDisp = String(
-          ordersSheet.getRange(orderRow, orderCols.SERVICE_DT).getDisplayValue() ||
-            ''
+          ordersSheet
+            .getRange(orderRow, orderCols.SERVICE_DT)
+            .getDisplayValue() || ''
         ).trim();
         ordersSheet.getRange(orderRow, orderCols.SERVICE_DT).setValue(dt);
         const stamp = Utilities.formatDate(
@@ -3319,8 +3368,9 @@ function processPendingOrderChanges_() {
       const addr =
         changeCols.REQUESTED_ADDRESS && changeCols.REQUESTED_ADDRESS > 0
           ? String(
-              changesSheet.getRange(r, changeCols.REQUESTED_ADDRESS).getDisplayValue() ||
-                ''
+              changesSheet
+                .getRange(r, changeCols.REQUESTED_ADDRESS)
+                .getDisplayValue() || ''
             ).trim()
           : '';
       if (addr) {
@@ -3331,7 +3381,10 @@ function processPendingOrderChanges_() {
         ordersSheet.getRange(orderRow, orderCols.ADDRESS).setValue(addr);
         note = 'Dirección actualizada.';
         appliedNote = buildBeforeAfterNote_(changeId, beforeAddr, addr);
-        appendNote_(ordersSheet.getRange(orderRow, orderCols.ADDRESS), appliedNote);
+        appendNote_(
+          ordersSheet.getRange(orderRow, orderCols.ADDRESS),
+          appliedNote
+        );
         applied = true;
       } else {
         note = 'No se especificó dirección.';
@@ -3339,16 +3392,28 @@ function processPendingOrderChanges_() {
     }
 
     if (applied) {
-      if (changeCols.STATUS) changesSheet.getRange(r, changeCols.STATUS).setValue('Done');
-      if (changeCols.APPLIED_NOTE) changesSheet.getRange(r, changeCols.APPLIED_NOTE).setValue(appliedNote || note);
-      if (changeCols.NOTES) changesSheet.getRange(r, changeCols.NOTES).setValue(note);
+      if (changeCols.STATUS)
+        changesSheet.getRange(r, changeCols.STATUS).setValue('Done');
+      if (changeCols.APPLIED_NOTE)
+        changesSheet
+          .getRange(r, changeCols.APPLIED_NOTE)
+          .setValue(appliedNote || note);
+      if (changeCols.NOTES)
+        changesSheet.getRange(r, changeCols.NOTES).setValue(note);
       if (changeCols.PROCESSED_AT)
         changesSheet.getRange(r, changeCols.PROCESSED_AT).setValue(new Date());
       processed++;
     } else {
-      if (changeCols.STATUS) changesSheet.getRange(r, changeCols.STATUS).setValue('Failed');
-      if (changeCols.APPLIED_NOTE) changesSheet.getRange(r, changeCols.APPLIED_NOTE).setValue(appliedNote || note);
-      if (changeCols.NOTES) changesSheet.getRange(r, changeCols.NOTES).setValue(note || 'No se aplicó.');
+      if (changeCols.STATUS)
+        changesSheet.getRange(r, changeCols.STATUS).setValue('Failed');
+      if (changeCols.APPLIED_NOTE)
+        changesSheet
+          .getRange(r, changeCols.APPLIED_NOTE)
+          .setValue(appliedNote || note);
+      if (changeCols.NOTES)
+        changesSheet
+          .getRange(r, changeCols.NOTES)
+          .setValue(note || 'No se aplicó.');
       if (changeCols.PROCESSED_AT)
         changesSheet.getRange(r, changeCols.PROCESSED_AT).setValue(new Date());
     }
