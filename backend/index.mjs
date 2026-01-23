@@ -1346,6 +1346,7 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
         capture_method: captureMethod,
         payment_method_types: ['card'],
         customer: customer.id,
+        receipt_email: clientEmailNormalized || undefined,
         metadata: { order_id: orderId, kind: 'primary', micro_test: 'true' }
       });
 
@@ -1471,6 +1472,7 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
         capture_method: captureMethod,
         payment_method_types: ['card'],
         customer: customer.id,
+        receipt_email: clientEmailNormalized || undefined,
         ...(consent ? { setup_future_usage: 'off_session' } : {}),
         metadata: { order_id: orderId, kind: 'primary' }
       });
@@ -1583,6 +1585,7 @@ async function getOrderPayload(orderId, { allowExpiredQuery = false, retryTokenR
 
   const row = rows[0];
   if (!row) throw makeError('order_not_found', 'Order not found', 404);
+  const receiptEmail = normalizeEmail(row.client_email);
 
   const { usingRetryToken, createdAtOverride } = resolveRetryTokenContext(row, retryTokenParam);
   const allowExpired = wantsOverride && !usingRetryToken;
@@ -1718,6 +1721,7 @@ async function getOrderPayload(orderId, { allowExpiredQuery = false, retryTokenR
             payment_method_types: ['card'],
             capture_method: captureMethod,
             customer: row.customer_id || undefined,
+            receipt_email: receiptEmail || undefined,
             ...(adjustmentDescription ? { description: adjustmentDescription } : {}),
             metadata: {
               order_id: row.id,
@@ -1781,6 +1785,7 @@ async function getOrderPayload(orderId, { allowExpiredQuery = false, retryTokenR
           payment_method_types: ['card'],
           capture_method: captureMethod,
           customer: row.customer_id || undefined,
+          receipt_email: receiptEmail || undefined,
           ...(adjustmentDescription ? { description: adjustmentDescription } : {}),
           metadata: {
             order_id: row.id,
@@ -2231,6 +2236,7 @@ app.post('/tasks/preauth-due', async (req, res) => {
     const results = [];
     for (const row of rows) {
       try {
+        const receiptEmail = normalizeEmail(row.client_email);
         // Create MANUAL-CAPTURE PI and CONFRIM it off-session with the saved PM.
         // This places the authorization hold; webhook will set status=Confirmed.
         const pi = await stripe.paymentIntents.create({
@@ -2239,6 +2245,7 @@ app.post('/tasks/preauth-due', async (req, res) => {
           capture_method: 'manual',
           customer: row.customer_id,
           payment_method: row.saved_payment_method_id,
+          receipt_email: receiptEmail || undefined,
           confirm: true,              // off-session auth
           off_session: true,
           metadata: { kind: row.kind || 'primary', parent_order_id: row.parent_id_of_adjustment || '' }
@@ -2313,6 +2320,7 @@ app.post('/orders/:id/consent', async (req, res) => {
     const linkRow = createdAtOverride ? { ...row, created_at: createdAtOverride } : row;
     assertOrderLinkActive(linkRow);
     const parentOrderId = row.parent_id_of_adjustment || row.id;
+    const receiptEmail = normalizeEmail(billingEmail) || normalizeEmail(row.client_email);
 
     if (billingEmail) {
       try {
@@ -2337,7 +2345,8 @@ app.post('/orders/:id/consent', async (req, res) => {
     if (customerId && row.payment_intent_id) {
       try {
         await stripe.paymentIntents.update(row.payment_intent_id, {
-          customer: customerId
+          customer: customerId,
+          receipt_email: receiptEmail || undefined
         });
       } catch (errPi) {
         console.warn('PI update for consent failed', errPi?.message || errPi);
@@ -3666,6 +3675,7 @@ app.post('/confirm-with-saved', async (req, res) => {
     );
     const row = rows[0];
     if (!row) return res.status(404).send({ error: 'order not found' });
+    const receiptEmail = normalizeEmail(row.client_email);
     const { createdAtOverride } = resolveRetryTokenContext(row, retryToken);
     const linkRow = createdAtOverride ? { ...row, created_at: createdAtOverride } : row;
     const adminRequest = isAdminRequest(req);
@@ -3754,6 +3764,7 @@ app.post('/confirm-with-saved', async (req, res) => {
             payment_method_types: ['card'],
             capture_method: captureMethod,
             customer: row.customer_id || undefined,
+            receipt_email: receiptEmail || undefined,
             ...(adjustmentDescription ? { description: adjustmentDescription } : {}),
             metadata: {
               order_id: row.id,
@@ -3809,6 +3820,7 @@ app.post('/confirm-with-saved', async (req, res) => {
           payment_method_types: ['card'],
           capture_method: captureMethod,
           customer: row.customer_id || undefined,
+          receipt_email: receiptEmail || undefined,
           ...(adjustmentDescription ? { description: adjustmentDescription } : {}),
           metadata: {
             order_id: row.id,
@@ -3851,6 +3863,7 @@ app.post('/confirm-with-saved', async (req, res) => {
         payment_method_types: ['card'],
         capture_method: captureMethod,
         customer: row.customer_id || undefined,
+        receipt_email: receiptEmail || undefined,
         ...(adjustmentDescription ? { description: adjustmentDescription } : {}),
         metadata: {
           order_id: row.id,
@@ -3871,6 +3884,7 @@ app.post('/confirm-with-saved', async (req, res) => {
     await stripe.paymentIntents.update(piId, {
       payment_method: pm.id,
       ...(adjustmentDescription ? { description: adjustmentDescription } : {}),
+      receipt_email: receiptEmail || undefined,
       metadata: {
         order_id: row.id,
         kind: row.kind || 'primary',
@@ -3972,16 +3986,18 @@ app.post('/confirm-with-saved', async (req, res) => {
 app.post('/orders/:id/apply-consent-to-current-pi', async (req, res) => {
   try {
     const { id } = req.params;
-    const r = await pool.query('SELECT payment_intent_id, created_at FROM all_bookings WHERE id=$1', [id]);
+    const r = await pool.query('SELECT payment_intent_id, created_at, client_email FROM all_bookings WHERE id=$1', [id]);
     const row = r.rows[0];
     if (!row || !row.payment_intent_id) {
       return res.status(400).json({ error: 'no_pi' });
     }
     assertOrderLinkActive(row);
+    const receiptEmail = normalizeEmail(row.client_email);
 
     // Important: update BEFORE confirmCardPayment happens on the client
     const updated = await stripe.paymentIntents.update(row.payment_intent_id, {
-      setup_future_usage: 'off_session'
+      setup_future_usage: 'off_session',
+      receipt_email: receiptEmail || undefined
     });
 
     res.json({ ok: true, payment_intent_id: updated.id, setup_future_usage: updated.setup_future_usage });
