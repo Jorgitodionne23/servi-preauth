@@ -12,6 +12,11 @@ const ORDER_HEADER_ALIASES = {
   SERVICE_DESC: ['Service Description'],
   BOOKING_TYPE: ['Booking type', 'Booking Type'],
   CAPTURE_TYPE: ['Capture Type'],
+  ASSIGNED_PROVIDER_ID: [
+    'Assigned Provider ID',
+    'Provider ID (Assigned)',
+    'Provider ID',
+  ],
   AMOUNT: ['Amount (MXN)', 'Amount'],
   FINAL_CAPTURED: [
     'Final Captured Amount',
@@ -47,6 +52,7 @@ const OPTIONAL_ORDER_COLUMNS = {
   FINAL_CAPTURED: true,
   EMAIL: true, // new column; keep optional to avoid breaking older sheets, but enforce in UI
   CAPTURE_TYPE: true,
+  ASSIGNED_PROVIDER_ID: true,
 };
 
 const ADJ_HEADER_ALIASES = {

@@ -218,6 +218,33 @@ export async function initDb() {
     CREATE INDEX IF NOT EXISTS idx_saved_servi_users_last_checked_at
       ON saved_servi_users (last_checked_at DESC);
 
+    -- Providers (verified providers registry)
+    CREATE TABLE IF NOT EXISTS providers (
+      provider_id TEXT PRIMARY KEY,
+      status TEXT NOT NULL DEFAULT 'verified',
+      name TEXT,
+      phone TEXT,
+      email TEXT,
+      specialty TEXT,
+      city TEXT,
+      connect_account_id TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    ALTER TABLE providers ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'verified';
+    ALTER TABLE providers ADD COLUMN IF NOT EXISTS name TEXT;
+    ALTER TABLE providers ADD COLUMN IF NOT EXISTS phone TEXT;
+    ALTER TABLE providers ADD COLUMN IF NOT EXISTS email TEXT;
+    ALTER TABLE providers ADD COLUMN IF NOT EXISTS specialty TEXT;
+    ALTER TABLE providers ADD COLUMN IF NOT EXISTS city TEXT;
+    ALTER TABLE providers ADD COLUMN IF NOT EXISTS connect_account_id TEXT;
+    ALTER TABLE providers ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+    ALTER TABLE providers ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+    CREATE INDEX IF NOT EXISTS idx_providers_connect_account
+      ON providers(connect_account_id);
+
     CREATE INDEX IF NOT EXISTS idx_saved_servi_users_latest_pm
       ON saved_servi_users (latest_payment_method_id);
   `);
