@@ -1163,6 +1163,12 @@ function createLiveTestPaymentLink() {
   const captureMethod = /^automatic$/i.test(captureChoice)
     ? 'automatic'
     : 'manual';
+  const providerId =
+    COL.ASSIGNED_PROVIDER_ID && COL.ASSIGNED_PROVIDER_ID > 0
+      ? String(
+          sheet.getRange(row, COL.ASSIGNED_PROVIDER_ID).getDisplayValue() || ''
+        ).trim()
+      : '';
 
   const rawPhone = sheet.getRange(row, COL.PHONE).getDisplayValue();
   const clientPhone = normalizePhoneToE164(rawPhone);
@@ -1217,6 +1223,7 @@ function createLiveTestPaymentLink() {
     bookingType,
     capture: captureMethod,
     hasTimeComponent: false,
+    providerId: providerId || undefined,
     microTest: true,
     pricingMode: 'micro_test',
   };
@@ -1334,6 +1341,7 @@ function generatePaymentLink() {
   const shortCodeCol = ORD_COL.SHORT_CODE;
   const clientIdCol = ORD_COL.CLIENT_ID;
   const clientTypeCol = ORD_COL.CLIENT_TYPE;
+  const assignedProviderIdCol = ORD_COL.ASSIGNED_PROVIDER_ID;
   const linkCell = sheet.getRange(editedRow, linkCol);
   const bookingTypeCell = sheet.getRange(editedRow, bookingTypeCol);
   if (!emailCol) {
@@ -1554,6 +1562,11 @@ function generatePaymentLink() {
 
   const amount = Math.round(providerPrice * 100) / 100; // keep value in MXN (two decimals)
 
+  const providerId =
+    assignedProviderIdCol && assignedProviderIdCol > 0
+      ? String(sheet.getRange(editedRow, assignedProviderIdCol).getDisplayValue() || '').trim()
+      : '';
+
   const options = {
     method: 'post',
     contentType: 'application/json',
@@ -1569,6 +1582,7 @@ function generatePaymentLink() {
       bookingType,
       capture: captureMethod,
       hasTimeComponent: hasServiceTime,
+      providerId: providerId || undefined,
     }),
     headers: adminHeaders_(),
     muteHttpExceptions: true,

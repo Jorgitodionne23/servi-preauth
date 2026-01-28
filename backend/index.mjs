@@ -1047,11 +1047,11 @@ app.get('/success.html', successGate);
 app.use(express.static(FRONTEND_DIR));
 
 // 🎯 Create PaymentIntent (save card for later off-session charges)
-app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
-  const {
-    amount,
-    clientName,
-    serviceDescription,
+  app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
+    const {
+      amount,
+      clientName,
+      serviceDescription,
     serviceDate,
     serviceDateTime,
     clientEmail,
@@ -1060,11 +1060,15 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
     serviceAddress,
     bookingType: bookingTypeRaw,
     hasTimeComponent,
-    capture,
-    microTest,
-    micro_test,
-    pricingMode
-  } = req.body;
+      capture,
+      microTest,
+      micro_test,
+      pricingMode,
+      providerId: providerIdBody,
+      provider_id: providerIdSnake
+    } = req.body;
+    const providerIdInput = providerIdBody ?? providerIdSnake;
+    const providerId = providerIdInput != null ? String(providerIdInput).trim() || null : null;
   const microTestFlag =
     Boolean(microTest) ||
     Boolean(micro_test) ||
@@ -1259,6 +1263,7 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
         service_description,
         client_phone,
         client_email,
+        provider_id,
         service_date,
         service_address,
         booking_type,
@@ -1277,9 +1282,9 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
       )
       VALUES (
         $1,$2,$3,$4,$5,$6,$7,
-        $8,$9,$10,$11,$12,$13,$14,
-        $15,'pending',$16,'primary',$17,
-        $18,$19,$20,$21,$22,$23,$24
+        $8,$9,$10,$11,$12,$13,$14,$15,
+        $16,'pending',$17,'primary',$18,
+        $19,$20,$21,$22,$23,$24,$25
       )
       ON CONFLICT (id) DO NOTHING`,
       [
@@ -1294,6 +1299,7 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
         serviceDescription || null,
         clientPhone || null,
         clientEmailNormalized || null,
+        providerId,
         serviceDate || null,
         serviceAddress || null,
         bookingType || null,
@@ -1311,18 +1317,19 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
     );
 
     // also persist service_date/service_datetime (you already do)
-    await pool.query(
-      'UPDATE all_bookings SET service_date=$1, service_datetime=$2, client_phone=$3, client_email=$4, service_address=$5, booking_type=$6 WHERE id=$7',
-      [
-        serviceDate || null,
-        serviceDateTime || null,
-        clientPhone || null,
-        clientEmailNormalized || null,
-        serviceAddress || null,
-        bookingType || null,
-        orderId
-      ]
-    );
+  await pool.query(
+    'UPDATE all_bookings SET service_date=$1, service_datetime=$2, client_phone=$3, client_email=$4, service_address=$5, booking_type=$6, provider_id=$7 WHERE id=$8',
+    [
+      serviceDate || null,
+      serviceDateTime || null,
+      clientPhone || null,
+      clientEmailNormalized || null,
+      serviceAddress || null,
+      bookingType || null,
+      providerId || null,
+      orderId
+    ]
+  );
 
     if (microTestFlag) {
       const customer = existingCustomer || await stripe.customers.create({
@@ -1347,7 +1354,12 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
         payment_method_types: ['card'],
         customer: customer.id,
         receipt_email: clientEmailNormalized || undefined,
-        metadata: { order_id: orderId, kind: 'primary', micro_test: 'true' }
+        metadata: {
+          order_id: orderId,
+          kind: 'primary',
+          micro_test: 'true',
+          ...(providerId ? { provider_id: providerId } : {})
+        }
       });
 
       await pool.query('UPDATE all_bookings SET payment_intent_id=$1 WHERE id=$2', [paymentIntent.id, orderId]);
@@ -1474,7 +1486,11 @@ app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
         customer: customer.id,
         receipt_email: clientEmailNormalized || undefined,
         ...(consent ? { setup_future_usage: 'off_session' } : {}),
-        metadata: { order_id: orderId, kind: 'primary' }
+        metadata: {
+          order_id: orderId,
+          kind: 'primary',
+          ...(providerId ? { provider_id: providerId } : {})
+        }
       });
 
       await pool.query('UPDATE all_bookings SET payment_intent_id=$1 WHERE id=$2', [paymentIntent.id, orderId]);
@@ -1573,7 +1589,7 @@ async function getOrderPayload(orderId, { allowExpiredQuery = false, retryTokenR
       SELECT id, payment_intent_id, amount, provider_amount, booking_fee_amount, processing_fee_amount,
         vat_amount, pricing_total_amount, vat_rate, stripe_percent_fee, stripe_fixed_fee,
         stripe_fee_tax_rate, processing_fee_type, urgency_multiplier, alpha_value,
-        client_name, client_phone, client_email,
+        client_name, client_phone, client_email, provider_id,
         service_description, service_date, service_datetime, service_address, booking_type, status, created_at,
         public_code, kind, parent_id_of_adjustment, customer_id, saved_payment_method_id, capture_method, adjustment_reason,
         retry_token, retry_token_created_at
@@ -1586,6 +1602,7 @@ async function getOrderPayload(orderId, { allowExpiredQuery = false, retryTokenR
   const row = rows[0];
   if (!row) throw makeError('order_not_found', 'Order not found', 404);
   const receiptEmail = normalizeEmail(row.client_email);
+  const providerMeta = row.provider_id ? { provider_id: row.provider_id } : {};
 
   const { usingRetryToken, createdAtOverride } = resolveRetryTokenContext(row, retryTokenParam);
   const allowExpired = wantsOverride && !usingRetryToken;
@@ -1618,12 +1635,12 @@ async function getOrderPayload(orderId, { allowExpiredQuery = false, retryTokenR
           } else {
             const customerId = await ensureCustomerForOrder(stripe, row);
             await pool.query('UPDATE all_bookings SET kind=$1 WHERE id=$2', ['setup', row.id]);
-            const si = await stripe.setupIntents.create({
-              customer: customerId,
-              automatic_payment_methods: { enabled: true },
-              usage: 'off_session',
-              metadata: { kind: 'setup', order_id: row.id }
-            });
+              const si = await stripe.setupIntents.create({
+                customer: customerId,
+                automatic_payment_methods: { enabled: true },
+                usage: 'off_session',
+                metadata: { kind: 'setup', order_id: row.id, ...providerMeta }
+              });
             await pool.query('UPDATE all_bookings SET payment_intent_id=$1 WHERE id=$2', [si.id, row.id]);
             pi = si;
             intentType = 'setup';
@@ -1637,12 +1654,12 @@ async function getOrderPayload(orderId, { allowExpiredQuery = false, retryTokenR
           } else {
             const customerId = await ensureCustomerForOrder(stripe, row);
             await pool.query('UPDATE all_bookings SET kind=$1 WHERE id=$2', ['setup', row.id]);
-            const si = await stripe.setupIntents.create({
-              customer: customerId,
-              automatic_payment_methods: { enabled: true },
-              usage: 'off_session',
-              metadata: { kind: 'setup', order_id: row.id }
-            });
+              const si = await stripe.setupIntents.create({
+                customer: customerId,
+                automatic_payment_methods: { enabled: true },
+                usage: 'off_session',
+                metadata: { kind: 'setup', order_id: row.id, ...providerMeta }
+              });
             await pool.query('UPDATE all_bookings SET payment_intent_id=$1 WHERE id=$2', [si.id, row.id]);
             pi = si;
             intentType = 'setup';
@@ -1661,7 +1678,7 @@ async function getOrderPayload(orderId, { allowExpiredQuery = false, retryTokenR
             customer: customerId,
             automatic_payment_methods: { enabled: true },
             usage: 'off_session',
-            metadata: { kind: 'setup', order_id: row.id }
+            metadata: { kind: 'setup', order_id: row.id, ...providerMeta }
           });
           await pool.query('UPDATE all_bookings SET payment_intent_id=$1 WHERE id=$2', [si.id, row.id]);
           pi = si;
@@ -1675,7 +1692,7 @@ async function getOrderPayload(orderId, { allowExpiredQuery = false, retryTokenR
         customer: customerId,
         automatic_payment_methods: { enabled: true },
         usage: 'off_session',
-        metadata: { kind: 'setup', order_id: row.id }
+        metadata: { kind: 'setup', order_id: row.id, ...providerMeta }
       });
 
       await pool.query('UPDATE all_bookings SET payment_intent_id=$1 WHERE id=$2', [si.id, row.id]);
@@ -1726,7 +1743,8 @@ async function getOrderPayload(orderId, { allowExpiredQuery = false, retryTokenR
             metadata: {
               order_id: row.id,
               kind: 'primary',
-              parent_order_id: row.parent_id_of_adjustment || ''
+              parent_order_id: row.parent_id_of_adjustment || '',
+              ...providerMeta
             }
           });
 
@@ -1790,7 +1808,8 @@ async function getOrderPayload(orderId, { allowExpiredQuery = false, retryTokenR
           metadata: {
             order_id: row.id,
             kind: row.kind || 'primary',
-            parent_order_id: row.parent_id_of_adjustment || ''
+            parent_order_id: row.parent_id_of_adjustment || '',
+            ...providerMeta
           }
         });
         await pool.query('UPDATE all_bookings SET payment_intent_id=$1 WHERE id=$2', [created.id, row.id]);
@@ -2209,6 +2228,7 @@ app.post('/tasks/preauth-due', async (req, res) => {
           saved_payment_method_id,
           parent_id_of_adjustment,
           kind,
+          provider_id,
           client_name,
           client_email,
           service_date,
@@ -2224,7 +2244,7 @@ app.post('/tasks/preauth-due', async (req, res) => {
           AND saved_payment_method_id IS NOT NULL
           AND payment_intent_id IS NULL
       )
-      SELECT id, amount, customer_id, saved_payment_method_id, parent_id_of_adjustment, kind, client_name, client_email, service_date, service_datetime
+      SELECT id, amount, customer_id, saved_payment_method_id, parent_id_of_adjustment, kind, provider_id, client_name, client_email, service_date, service_datetime
       FROM service_ts
       WHERE svc_at >= NOW()
         AND svc_at <  NOW() + INTERVAL '24 hours'
@@ -2234,22 +2254,27 @@ app.post('/tasks/preauth-due', async (req, res) => {
 
 
     const results = [];
-    for (const row of rows) {
-      try {
-        const receiptEmail = normalizeEmail(row.client_email);
-        // Create MANUAL-CAPTURE PI and CONFRIM it off-session with the saved PM.
-        // This places the authorization hold; webhook will set status=Confirmed.
-        const pi = await stripe.paymentIntents.create({
-          amount: row.amount,
-          currency: 'mxn',
+      for (const row of rows) {
+        try {
+          const receiptEmail = normalizeEmail(row.client_email);
+          const providerMeta = row.provider_id ? { provider_id: row.provider_id } : {};
+          // Create MANUAL-CAPTURE PI and CONFRIM it off-session with the saved PM.
+          // This places the authorization hold; webhook will set status=Confirmed.
+          const pi = await stripe.paymentIntents.create({
+            amount: row.amount,
+            currency: 'mxn',
           capture_method: 'manual',
           customer: row.customer_id,
-          payment_method: row.saved_payment_method_id,
-          receipt_email: receiptEmail || undefined,
-          confirm: true,              // off-session auth
-          off_session: true,
-          metadata: { kind: row.kind || 'primary', parent_order_id: row.parent_id_of_adjustment || '' }
-        });
+            payment_method: row.saved_payment_method_id,
+            receipt_email: receiptEmail || undefined,
+            confirm: true,              // off-session auth
+            off_session: true,
+            metadata: {
+              kind: row.kind || 'primary',
+              parent_order_id: row.parent_id_of_adjustment || '',
+              ...providerMeta
+            }
+          });
 
         await pool.query(
           'UPDATE all_bookings SET payment_intent_id=$1 WHERE id=$2',
@@ -2675,6 +2700,7 @@ app.post('/create-adjustment', requireAdminAuth, async (req, res) => {
               service_datetime,
               service_address,
               provider_amount,
+              provider_id,
               booking_type
          FROM all_bookings
         WHERE id = $1`,
@@ -2748,6 +2774,7 @@ app.post('/create-adjustment', requireAdminAuth, async (req, res) => {
           client_name,
           client_phone,
           client_email,
+          provider_id,
           service_description,
           service_date,
           service_datetime,
@@ -2770,9 +2797,9 @@ app.post('/create-adjustment', requireAdminAuth, async (req, res) => {
         )
         VALUES (
           $1,$2,$3,$4,$5,$6,$7,$8,
-          $9,$10,$11,$12,$13,$14,$15,$16,
-          'Pending',$17,'adjustment',$18,$19,$20,
-          $21,$22,$23,$24,$25,$26,$27,$28
+          $9,$10,$11,$12,$13,$14,$15,$16,$17,
+          'Pending',$18,'adjustment',$19,$20,$21,
+          $22,$23,$24,$25,$26,$27,$28,$29
         )
       `,
       [
@@ -2787,6 +2814,7 @@ app.post('/create-adjustment', requireAdminAuth, async (req, res) => {
         parentOrder.client_name || null,
         parentOrder.client_phone || null,
         parentOrder.client_email || null,
+        parentOrder.provider_id || null,
         parentOrder.service_description || null,
         parentOrder.service_date || null,
         parentOrder.service_datetime || null,
@@ -3668,13 +3696,15 @@ app.post('/confirm-with-saved', async (req, res) => {
               adjustment_reason,
               created_at,
               retry_token,
-              retry_token_created_at
+              retry_token_created_at,
+              provider_id
          FROM all_bookings
         WHERE id = $1`,
       [orderId]
     );
     const row = rows[0];
     if (!row) return res.status(404).send({ error: 'order not found' });
+    const providerMeta = row.provider_id ? { provider_id: row.provider_id } : {};
     const receiptEmail = normalizeEmail(row.client_email);
     const { createdAtOverride } = resolveRetryTokenContext(row, retryToken);
     const linkRow = createdAtOverride ? { ...row, created_at: createdAtOverride } : row;
@@ -3769,7 +3799,8 @@ app.post('/confirm-with-saved', async (req, res) => {
             metadata: {
               order_id: row.id,
               kind: row.kind || 'primary',
-              parent_order_id: row.parent_id_of_adjustment || ''
+              parent_order_id: row.parent_id_of_adjustment || '',
+              ...providerMeta
             }
           });
           await pool.query('UPDATE all_bookings SET payment_intent_id=$1 WHERE id=$2', [pi.id, row.id]);
@@ -3825,7 +3856,8 @@ app.post('/confirm-with-saved', async (req, res) => {
           metadata: {
             order_id: row.id,
             kind: row.kind || 'primary',
-            parent_order_id: row.parent_id_of_adjustment || ''
+            parent_order_id: row.parent_id_of_adjustment || '',
+            ...providerMeta
           }
         });
         await pool.query('UPDATE all_bookings SET payment_intent_id=$1 WHERE id=$2', [pi.id, row.id]);
@@ -3868,7 +3900,8 @@ app.post('/confirm-with-saved', async (req, res) => {
         metadata: {
           order_id: row.id,
           kind: row.kind || 'primary',
-          parent_order_id: row.parent_id_of_adjustment || ''
+          parent_order_id: row.parent_id_of_adjustment || '',
+          ...providerMeta
         }
       });
       await pool.query('UPDATE all_bookings SET payment_intent_id=$1 WHERE id=$2', [pi.id, row.id]);
@@ -3881,16 +3914,17 @@ app.post('/confirm-with-saved', async (req, res) => {
     if (!pm) return res.status(409).send({ error: 'no_saved_card' });
 
     // Attach and confirm (off-session if possible)
-    await stripe.paymentIntents.update(piId, {
-      payment_method: pm.id,
-      ...(adjustmentDescription ? { description: adjustmentDescription } : {}),
-      receipt_email: receiptEmail || undefined,
-      metadata: {
-        order_id: row.id,
-        kind: row.kind || 'primary',
-        parent_order_id: row.parent_id_of_adjustment || ''
-      }
-    });
+      await stripe.paymentIntents.update(piId, {
+        payment_method: pm.id,
+        ...(adjustmentDescription ? { description: adjustmentDescription } : {}),
+        receipt_email: receiptEmail || undefined,
+        metadata: {
+          order_id: row.id,
+          kind: row.kind || 'primary',
+          parent_order_id: row.parent_id_of_adjustment || '',
+          ...providerMeta
+        }
+      });
     try {
       const confirmed = await stripe.paymentIntents.confirm(piId, { off_session: true });
       if (confirmed.status === 'requires_action') {

@@ -36,6 +36,7 @@ export async function initDb() {
       client_name TEXT,
       client_phone TEXT,
       client_email TEXT,
+      provider_id TEXT,
       service_description TEXT,
       service_date TEXT,              -- date-only (YYYY-MM-DD) for >7d rule
       service_address TEXT,
@@ -58,6 +59,7 @@ export async function initDb() {
 
     ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS client_phone TEXT;
     ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS client_email TEXT;
+    ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS provider_id TEXT;
 
     -- NEW: store full timestamp (ISO with tz) for display/use in UI
     ALTER TABLE all_bookings
@@ -109,6 +111,7 @@ export async function initDb() {
     CREATE INDEX IF NOT EXISTS idx_all_bookings_parent ON all_bookings(parent_id_of_adjustment);
     -- (optional but handy for queries by date)
     CREATE INDEX IF NOT EXISTS idx_all_bookings_service_date ON all_bookings(service_date);
+    CREATE INDEX IF NOT EXISTS idx_all_bookings_provider ON all_bookings(provider_id);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_all_bookings_retry_token
       ON all_bookings(retry_token)
       WHERE retry_token IS NOT NULL;

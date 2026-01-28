@@ -7,6 +7,7 @@ const PROVIDER_SHEET_NAME = ''; // e.g., 'Provider Recruitment'
 // Header labels (accept any of these; add your localized variants)
 const PROVIDER_ID_HEADERS = ['Provider ID', 'ID Proveedor', 'Proveedor ID'];
 const STATUS_HEADERS = ['Status', 'Estatus', 'Estado'];
+const ADDED_AT_HEADERS = ['Date/Time Added', 'Date Added', 'Added At'];
 const VERIFIED_VALUES = ['Verified', 'Verificado'];
 const VERIFIED_WRITE_VALUE = 'Verified'; // what we write when issuing an ID
 const VERIFIED_FILL_COLOR = '#b7e1cd'; // light green
@@ -78,6 +79,18 @@ function generateProviderId() {
   if (headerInfo.statusCol) {
     sh.getRange(row, headerInfo.statusCol).setValue(VERIFIED_WRITE_VALUE);
     sh.getRange(row, headerInfo.statusCol).setBackground(VERIFIED_FILL_COLOR);
+  }
+
+  // Stamp Date/Time Added (if the column exists) the moment the ID is created.
+  if (headerInfo.addedCol) {
+    const addedCell = sh.getRange(row, headerInfo.addedCol);
+    const existing = String(addedCell.getDisplayValue() || '').trim();
+    if (!existing) {
+      const ts = new Date();
+      addedCell.setValue(ts);
+      addedCell.setNumberFormat('yyyy-mm-dd hh:mm:ss');
+      addedCell.setNote('Auto-filled when Provider ID was generated.');
+    }
   }
 
   SpreadsheetApp.getUi().alert('Created Provider ID: ' + newId);
@@ -167,8 +180,9 @@ function findHeaderRow_(sh) {
     const headers = sh.getRange(r, 1, 1, lastCol).getDisplayValues()[0].map(normalize_);
     const idCol = findColumnAny_(headers, PROVIDER_ID_HEADERS);
     const statusCol = findColumnAny_(headers, STATUS_HEADERS);
+    const addedCol = findColumnAny_(headers, ADDED_AT_HEADERS);
     if (idCol && statusCol) {
-      return { headerRow: r, headers: headers, idCol: idCol, statusCol: statusCol };
+      return { headerRow: r, headers: headers, idCol: idCol, statusCol: statusCol, addedCol: addedCol };
     }
   }
   return null;
