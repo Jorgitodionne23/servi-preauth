@@ -3477,12 +3477,23 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
       console.log(`🚫 ${label}:`, paymentIntentId);
 
+      const cashRow = await pool.query(
+        'SELECT cash_selected, status FROM all_bookings WHERE payment_intent_id = $1 LIMIT 1',
+        [paymentIntentId]
+      );
+      const isCashPending =
+        cashRow.rows.length &&
+        cashRow.rows[0].cash_selected === true &&
+        String(cashRow.rows[0].status || '').toLowerCase().startsWith('pending cash');
+
+      const nextStatus = isCashPending ? 'Pending Cash' : label;
+
       await pool.query('UPDATE all_bookings SET status = $1 WHERE payment_intent_id = $2',
-                      [label, paymentIntentId]);
+                      [nextStatus, paymentIntentId]);
 
       fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ paymentIntentId, status: label })
+        body: JSON.stringify({ paymentIntentId, status: nextStatus })
       }).catch(()=>{});
       break;
     }
