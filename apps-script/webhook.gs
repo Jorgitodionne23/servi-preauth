@@ -291,6 +291,12 @@ function writeStatusSafelyWebhook_(sheet, row, statusColIndex, newStatusRaw) {
   }
   if (currentLower === 'captured') return;
 
+  // Always allow cash statuses to land
+  if (nxtLower === 'pending cash' || nxtLower === 'cash booked') {
+    sheet.getRange(row, statusColIndex).setValue(nxt);
+    return;
+  }
+
   if (
     nxtLower === 'canceled' ||
     nxtLower === 'failed' ||
@@ -316,6 +322,8 @@ function writeStatusSafelyWebhook_(sheet, row, statusColIndex, newStatusRaw) {
       'setup required',
       'setup created',
       'pending (3ds)',
+      'pending cash',
+      'cash booked',
       'scheduled',
       'confirmed',
       'captured',
@@ -324,10 +332,14 @@ function writeStatusSafelyWebhook_(sheet, row, statusColIndex, newStatusRaw) {
       'setup required',
       'setup created',
       'pending (3ds)',
+      'pending cash',
+      'cash booked',
       'scheduled',
       'confirmed',
       'captured',
     ],
+    'pending cash': ['cash booked', 'captured'],
+    'cash booked': ['captured'],
     'setup required': [
       'setup created',
       'pending (3ds)',

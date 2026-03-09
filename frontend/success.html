@@ -125,7 +125,7 @@
         <div class="value" id="email-value">—</div>
       </div>
       <div class="row" id="provider-row" style="display:none;">
-        <div class="label">Profesional</div>
+        <div class="label">Profesional asignado</div>
         <div class="value" id="provider-value">—</div>
       </div>
       <div class="row">
@@ -338,30 +338,38 @@
       const vatCents = toNumber(order.vat_amount ?? totals.vatCents ?? order.pricing?.vat_amount);
       const serviceCents = providerCents + bookingCents + vatCents;
       const bookingTypeKey = normalizeBookingType(order.booking_type || totals.bookingType);
+      const isCash = Boolean(order.cash_selected || order.cashSelected || totals.cashSelected);
       const hideBreakdownForVisit = bookingTypeKey === 'visita';
       const serviceDateDisplay = formatServiceDateTime(
         order.service_datetime ?? totals.serviceDateTime,
         order.service_date ?? totals.serviceDate
       );
 
-      amountEl.textContent = fmtAmount(totalCents, order.currency || 'MXN');
-      if (hideBreakdownForVisit) {
+      if (isCash) {
+        amountEl.textContent = '—';
         servicePriceRow.style.display = 'none';
         processingRow.style.display = 'none';
-      } else if (serviceCents > 0) {
-        servicePriceEl.textContent = fmtAmount(serviceCents, order.currency || 'MXN');
-        servicePriceRow.style.display = 'flex';
-        if (servicePriceLabel) {
-          const labelText =
-            bookingTypeKey === 'visita'
-              ? 'Costo de visita'
-              : bookingTypeKey === 'anticipo'
-                ? 'Monto del anticipo'
-                : 'Precio del servicio';
-          servicePriceLabel.textContent = labelText;
-        }
+        vatNoteEl.style.display = 'none';
       } else {
-        servicePriceRow.style.display = 'none';
+        amountEl.textContent = fmtAmount(totalCents, order.currency || 'MXN');
+        if (hideBreakdownForVisit) {
+          servicePriceRow.style.display = 'none';
+          processingRow.style.display = 'none';
+        } else if (serviceCents > 0) {
+          servicePriceEl.textContent = fmtAmount(serviceCents, order.currency || 'MXN');
+          servicePriceRow.style.display = 'flex';
+          if (servicePriceLabel) {
+            const labelText =
+              bookingTypeKey === 'visita'
+                ? 'Costo de visita'
+                : bookingTypeKey === 'anticipo'
+                  ? 'Monto del anticipo'
+                  : 'Precio del servicio';
+            servicePriceLabel.textContent = labelText;
+          }
+        } else {
+          servicePriceRow.style.display = 'none';
+        }
       }
 
       if (serviceDateDisplay) {
@@ -378,8 +386,8 @@
         processingRow.style.display = 'none';
       }
 
-      vatNoteEl.style.display = vatCents > 0 ? 'block' : 'none';
-      if (summaryBox && vatNoteEl && servicePriceRow) {
+      vatNoteEl.style.display = isCash ? 'none' : vatCents > 0 ? 'block' : 'none';
+      if (!isCash && summaryBox && vatNoteEl && servicePriceRow) {
         summaryBox.insertBefore(vatNoteEl, servicePriceRow);
       }
 

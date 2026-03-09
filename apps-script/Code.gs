@@ -2367,6 +2367,12 @@ function resyncSelectedRow() {
     if (!next || next === current) return;
     if (current === 'Captured') return;
 
+    // Always allow cash flow statuses to land
+    if (next === 'Pending Cash' || next === 'Cash Booked') {
+      sh.getRange(row, COL.STATUS).setValue(next);
+      return;
+    }
+
     if (
       next === 'Canceled' ||
       next === 'Failed' ||
@@ -2391,6 +2397,7 @@ function resyncSelectedRow() {
         'Pending',
         'Setup required',
         'Pending (3DS)',
+        'Pending Cash',
         'Scheduled',
         'Confirmed',
         'Captured',
@@ -2398,10 +2405,13 @@ function resyncSelectedRow() {
       Pending: [
         'Setup required',
         'Pending (3DS)',
+        'Pending Cash',
         'Scheduled',
         'Confirmed',
         'Captured',
       ],
+      'Pending Cash': ['Cash Booked', 'Captured'],
+      'Cash Booked': ['Captured'],
       'Setup required': ['Pending (3DS)', 'Scheduled', 'Confirmed', 'Captured'],
       'Pending (3DS)': ['Scheduled', 'Confirmed', 'Captured'],
       Scheduled: ['Confirmed', 'Captured'],
@@ -2416,6 +2426,7 @@ function resyncSelectedRow() {
   const savedCard = !!data.saved_card;
   const kind = String(data.kind || '').toLowerCase();
   const statusDb = String(data.status || '').trim();
+  const cashSelected = !!data.cash_selected;
   const piId = String(data.payment_intent_id || '').trim();
   const hoursAhead =
     typeof data.hours_ahead === 'number' ? data.hours_ahead : null;
@@ -2455,7 +2466,8 @@ function resyncSelectedRow() {
     return;
   }
 
-  if (statusDb) writeStatusSafely(statusDb);
+  const targetStatus = cashSelected ? 'Cash Booked' : statusDb;
+  if (targetStatus) writeStatusSafely(targetStatus);
 
   SpreadsheetApp.getUi().alert('Fila re-sincronizada.');
 }
