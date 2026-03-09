@@ -489,14 +489,14 @@
         </div>
 
         <div id="card-section">
-        <div class="form-row">
+        <div class="form-row" id="card-row">
           <label for="card-element" class="form-label">Información de la tarjeta</label>
           <div class="card-fieldset">
             <div class="card-control" id="card-element"></div>
           </div>
         </div>
 
-        <div class="form-row">
+        <div class="form-row" id="cardholder-row">
           <label for="cardholder-name" class="form-label">Nombre del titular</label>
           <input 
               type="text" 
@@ -527,7 +527,7 @@
           </div>
 
           <div class="form-row checkbox-centered">
-            <div class="terms-checkbox-wrapper">
+            <div class="terms-checkbox-wrapper" id="terms-row">
               <input type="checkbox" id="terms-checkbox" />
               <label for="terms-checkbox" class="terms-label">
                 Al realizar tu pedido, aceptas nuestros
@@ -595,6 +595,9 @@
     const cashNote = document.getElementById('cash-note');
     const cardSection = document.getElementById('card-section');
     const consentRow = document.getElementById('consent-row');
+    const cardRow = document.getElementById('card-row');
+    const cardholderRow = document.getElementById('cardholder-row');
+    const termsRow = document.getElementById('terms-row');
     const expiredBox = document.getElementById('link-expired');
     const expiredDateEl = document.getElementById('link-expired-date');
 
@@ -778,14 +781,18 @@
       });
 
       if (paymentMode === 'cash') {
-        if (cardSection) cardSection.style.display = 'none';
-        if (cashNote) cashNote.style.display = 'block';
+        if (cardRow) cardRow.style.display = 'none';
+        if (cardholderRow) cardholderRow.style.display = 'none';
         if (consentRow) consentRow.style.display = 'none';
+        if (termsRow) termsRow.style.display = 'flex';
+        if (cashNote) cashNote.style.display = 'block';
         submitBtn.textContent = 'Reservar y pagar en efectivo';
       } else {
-        if (cardSection) cardSection.style.display = 'block';
-        if (cashNote) cashNote.style.display = 'none';
+        if (cardRow) cardRow.style.display = 'block';
+        if (cardholderRow) cardholderRow.style.display = 'block';
         if (consentRow) consentRow.style.display = 'flex';
+        if (termsRow) termsRow.style.display = 'flex';
+        if (cashNote) cashNote.style.display = 'none';
         submitBtn.textContent = 'Reservar servicio';
       }
     };
