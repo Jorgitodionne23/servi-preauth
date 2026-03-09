@@ -38,6 +38,9 @@ export async function initDb() {
       client_email TEXT,
       provider_id TEXT,
       provider_name TEXT,
+      cash_exception_allowed BOOLEAN DEFAULT FALSE,
+      cash_selected BOOLEAN DEFAULT FALSE,
+      provider_name TEXT,
       service_description TEXT,
       service_date TEXT,              -- date-only (YYYY-MM-DD) for >7d rule
       service_address TEXT,
@@ -62,6 +65,8 @@ export async function initDb() {
     ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS client_email TEXT;
     ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS provider_id TEXT;
     ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS provider_name TEXT;
+    ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS cash_exception_allowed BOOLEAN DEFAULT FALSE;
+    ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS cash_selected BOOLEAN DEFAULT FALSE;
 
     -- NEW: store full timestamp (ISO with tz) for display/use in UI
     ALTER TABLE all_bookings

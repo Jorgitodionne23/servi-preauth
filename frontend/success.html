@@ -276,7 +276,8 @@
         serviceDate: order.service_date || order.serviceDate || null,
         serviceDateTime: order.service_datetime || order.serviceDateTime || null,
         bookingType: order.booking_type || order.bookingType || null,
-        providerName: order.provider_name || order.providerName || null
+        providerName: order.provider_name || order.providerName || null,
+        cashSelected: order.cash_selected || order.cashSelected || false
       };
     }
 
@@ -406,12 +407,15 @@
       if (statusEl) statusEl.textContent = order.status || '—';
 
       const isAdjustment = String(order.kind || totals.kind || '').toLowerCase() === 'adjustment';
+      const isCash = Boolean(order.cash_selected || order.cashSelected || totals.cashSelected);
       if (isAdjustment) {
         titleEl.textContent = '¡Ajuste confirmado!';
         subtitleEl.textContent = 'Gracias, hemos recibido tu pago adicional.';
       } else {
         titleEl.textContent = '¡Tu servicio ha sido reservado!';
-        subtitleEl.textContent = 'Estás reservando el tiempo del profesional; pagarás al finalizar el servicio.';
+        subtitleEl.textContent = isCash
+          ? 'Pagarás en efectivo al finalizar. No se hará ningún cargo ahora.'
+          : 'Estás reservando el tiempo del profesional; pagarás al finalizar el servicio.';
       }
 
       const fallbackReason = reasonOverride || totals.reason || '';
@@ -477,6 +481,7 @@
             service_date: previewSnapshot.serviceDate,
             service_datetime: previewSnapshot.serviceDateTime,
             provider_name: previewSnapshot.providerName,
+            cash_selected: previewSnapshot.cashSelected,
             status: 'Confirmed'
           };
           renderOrder(pseudoOrder, {

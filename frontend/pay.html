@@ -243,6 +243,52 @@
         object-fit: contain;
       }
 
+    .payment-options {
+      display: none;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: -6px;
+    }
+
+    .payment-option {
+      display: flex;
+      gap: 10px;
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      border-radius: 10px;
+      padding: 12px;
+      cursor: pointer;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    .payment-option input {
+      margin-top: 4px;
+    }
+    .payment-option:hover, .payment-option.selected {
+      border-color: #fff;
+      box-shadow: 0 0 0 1px #fff;
+    }
+    .payment-option .label {
+      font-weight: 600;
+      color: #fff;
+      font-size: 15px;
+    }
+    .payment-option .desc {
+      color: #ccc;
+      font-size: 13px;
+      margin-top: 2px;
+      line-height: 1.4;
+    }
+    .cash-note {
+      display: none;
+      background: #1a1a1a;
+      border: 1px dashed #5eead4;
+      color: #e0f2fe;
+      padding: 10px 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
     .input-text {
       background-color: #222;
       border: 1px solid #444;
@@ -421,6 +467,28 @@
       </div>
 
       <form id="payment-form">
+        <div id="payment-options" class="payment-options">
+          <label class="payment-option selected">
+            <input type="radio" name="payment-mode" value="card" checked />
+            <div>
+              <div class="label">Tarjeta (recomendado)</div>
+              <div class="desc">Reservas el servicio ahora y se captura al finalizar.</div>
+            </div>
+          </label>
+          <label class="payment-option" id="cash-option">
+            <input type="radio" name="payment-mode" value="cash" />
+            <div>
+              <div class="label">Efectivo al terminar</div>
+              <div class="desc">Opción única para clientes nuevos que prefieren pagar al finalizar.</div>
+            </div>
+          </label>
+        </div>
+
+        <div id="cash-note" class="cash-note">
+          Reservas tu servicio sin tarjeta. Pagarás en efectivo al finalizar. Esta opción es solo para tu primera reserva.
+        </div>
+
+        <div id="card-section">
         <div class="form-row">
           <label for="card-element" class="form-label">Información de la tarjeta</label>
           <div class="card-fieldset">
@@ -441,9 +509,9 @@
           />
         </div>
 
-        <div class="checkbox-group">
-          <div class="form-row checkbox-centered">
-            <div class="terms-checkbox-wrapper consent-wrapper">
+          <div class="checkbox-group">
+            <div class="form-row checkbox-centered">
+            <div class="terms-checkbox-wrapper consent-wrapper" id="consent-row">
               <span class="consent-lead">Haz tus próximas reservas en un solo paso.</span>
               <div class="consent-checkbox-row">
                 <input type="checkbox" id="consent-checkbox" />
@@ -470,6 +538,7 @@
             </div>
           </div>
         </div>
+        </div> <!-- /card-section -->
 
         <button id="submit">Reservar servicio</button>
         
@@ -507,6 +576,8 @@
     const PREVENT_BACK_KEY = 'serviPreventBack';
     const MERIDIEM_REGEX = /\b([ap])\.\s*m\.?/gi;
     const COMPLETED_STATUSES = new Set(['scheduled', 'confirmed', 'captured']);
+    let paymentMode = 'card';
+    let cashAllowed = false;
 
     const form = document.getElementById('payment-form');
     const submitBtn = document.getElementById('submit');
@@ -519,6 +590,11 @@
     const bookingNoteEl = document.getElementById('booking-note');
     const reasonRow = document.getElementById('adjustment-reason-row');
     const reasonValueEl = document.getElementById('adjustment-reason');
+    const paymentOptions = document.getElementById('payment-options');
+    const cashOption = document.getElementById('cash-option');
+    const cashNote = document.getElementById('cash-note');
+    const cardSection = document.getElementById('card-section');
+    const consentRow = document.getElementById('consent-row');
     const expiredBox = document.getElementById('link-expired');
     const expiredDateEl = document.getElementById('link-expired-date');
 
@@ -625,7 +701,9 @@
       serviceAddress: data.serviceAddress || data.service_address || '',
       serviceDate: data.serviceDate || data.service_date || null,
       serviceDateTime: data.serviceDateTime || data.service_datetime || null,
-      bookingType: data.bookingType || data.booking_type || null
+      bookingType: data.bookingType || data.booking_type || null,
+      cashExceptionAllowed: data.cashExceptionAllowed || data.cash_exception_allowed || false,
+      cashSelected: data.cashSelected || data.cash_selected || false
     });
 
     const setPreventBackLock = (orderId) => {
@@ -688,6 +766,30 @@
       return requiresByType && !hasSavedCard;
     };
 
+    const setPaymentMode = (mode) => {
+      paymentMode = mode === 'cash' ? 'cash' : 'card';
+      const options = document.querySelectorAll('input[name=\"payment-mode\"]');
+      options.forEach((opt) => {
+        const wrapper = opt.closest('.payment-option');
+        if (!wrapper) return;
+        const selected = opt.value === paymentMode;
+        wrapper.classList.toggle('selected', selected);
+        opt.checked = selected;
+      });
+
+      if (paymentMode === 'cash') {
+        if (cardSection) cardSection.style.display = 'none';
+        if (cashNote) cashNote.style.display = 'block';
+        if (consentRow) consentRow.style.display = 'none';
+        submitBtn.textContent = 'Reservar y pagar en efectivo';
+      } else {
+        if (cardSection) cardSection.style.display = 'block';
+        if (cashNote) cashNote.style.display = 'none';
+        if (consentRow) consentRow.style.display = 'flex';
+        submitBtn.textContent = 'Reservar servicio';
+      }
+    };
+
     const showSummary = (order) => {
       const isAdjustment = String(order.kind || '').toLowerCase() === 'adjustment';
       const headerEl = document.querySelector('.container h2');
@@ -717,11 +819,9 @@
           ? 'Pago de visita para cotizar; se abonará al total final.'
           : bookingTypeKey === 'anticipo'
             ? 'Anticipo para iniciar tu servicio. Podría requerir un cobro final.'
-            : '';
-      if (bookingNoteCopy) {
-        bookingNoteEl.textContent = bookingNoteCopy;
-        bookingNoteEl.style.display = 'block';
-      }
+            : 'Reservas tu servicio; el cargo se procesa al finalizar.';
+      bookingNoteEl.textContent = bookingNoteCopy;
+      bookingNoteEl.style.display = 'block';
 
       if (isAdjustment && reasonRow) {
         reasonRow.style.display = 'flex';
@@ -826,10 +926,21 @@
       stripe = Stripe(STRIPE_PUBLISHABLE_KEY, { locale: 'es' });
 
       const order = await fetchPaymentIntent();
-      if (!order || !order.clientSecret) return;
+      if (!order) return;
+      if (order.cashSelected) {
+        storeSuccessPreview(buildPreviewFromOrder(order));
+        redirectToSuccess(order.orderId || order.id);
+        return;
+      }
+      if (!order.clientSecret) return;
 
       currentOrder = order;
       clientSecret = order.clientSecret;
+      cashAllowed = !!order.cashExceptionAllowed;
+      if (cashAllowed && paymentOptions) {
+        paymentOptions.style.display = 'flex';
+      }
+      setPaymentMode('card');
 
       if (cardholderInput && order.customerName) {
         cardholderInput.value = order.customerName;
@@ -846,12 +957,31 @@
       box.style.display = box.style.display === 'none' ? 'inline' : 'none';
     });
 
+    if (paymentOptions) {
+      paymentOptions.addEventListener('change', (e) => {
+        if (e.target && e.target.name === 'payment-mode') {
+          setPaymentMode(e.target.value);
+        }
+      });
+      // Also allow clicking the whole label
+      const opts = paymentOptions.querySelectorAll('.payment-option');
+      opts.forEach((opt) => {
+        opt.addEventListener('click', () => {
+          const input = opt.querySelector('input[name=\"payment-mode\"]');
+          if (input) {
+            setPaymentMode(input.value);
+          }
+        });
+      });
+    }
+
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
-      if (!currentOrder || !clientSecret) {
+      if (!currentOrder) {
         alert('No se pudo inicializar el flujo de pago. Contacta a soporte.');
         return;
       }
+      const orderId = currentOrder.orderId || currentOrder.id;
 
       const termsChecked = document.getElementById('terms-checkbox').checked;
       const consentChecked = document.getElementById('consent-checkbox').checked;
@@ -863,7 +993,7 @@
       if (!termsChecked) {
         missingAlerts.push('Debes aceptar los Términos y Condiciones y el Aviso de Privacidad para continuar.');
       }
-      if (requireConsentForBooking && !consentChecked) {
+      if (paymentMode === 'card' && requireConsentForBooking && !consentChecked) {
         missingAlerts.push('Para este tipo de servicio necesitamos guardar tu método de pago.');
       }
       if (missingAlerts.length) {
@@ -875,9 +1005,39 @@
       spinner.style.display = 'block';
 
       try {
+        if (paymentMode === 'cash') {
+          const chooseUrl = new URL(`${API_BASE}/orders/${encodeURIComponent(orderId)}/choose-cash`);
+          if (allowExpired) chooseUrl.searchParams.set('allowExpired', '1');
+          const res = await fetch(chooseUrl.toString(), { method: 'POST' });
+          const body = await res.json().catch(() => ({}));
+          if (res.status === 410 || body.error === 'link_expired') {
+            showLinkExpired(body.linkExpiresAt || body.link_expires_at || null);
+            return;
+          }
+          if (!res.ok) {
+            alert(body.message || 'No se pudo seleccionar pago en efectivo.');
+            return;
+          }
+          storeSuccessPreview(
+            buildPreviewFromOrder({
+              ...currentOrder,
+              cashSelected: true,
+              status: body.status || 'Pending Cash'
+            })
+          );
+          localStorage.setItem('orderId', String(orderId));
+          redirectToSuccess(orderId);
+          return;
+        }
+
+        if (!clientSecret) {
+          alert('No se pudo inicializar el flujo de pago. Contacta a soporte.');
+          return;
+        }
+
         if (consentChecked) {
-          await recordConsent(currentOrder.orderId || currentOrder.id, { billingEmail: email });
-          await applyConsentToCurrentPI(currentOrder.orderId || currentOrder.id);
+          await recordConsent(orderId, { billingEmail: email });
+          await applyConsentToCurrentPI(orderId);
         }
 
         const result = await stripe.confirmCardPayment(clientSecret, {
@@ -899,10 +1059,9 @@
         const status = (result.paymentIntent?.status || '').toLowerCase();
         const piId = result.paymentIntent?.id || null;
         if (piId) {
-          await syncProcessingFee(currentOrder.orderId || currentOrder.id, piId, null, { billingEmail: email });
+          await syncProcessingFee(orderId, piId, null, { billingEmail: email });
         }
 
-        const orderId = currentOrder.orderId || currentOrder.id;
         if (COMPLETED_STATUSES.has(status) || status === 'requires_capture' || status === 'succeeded') {
           localStorage.setItem('orderId', String(orderId));
           redirectToSuccess(orderId);

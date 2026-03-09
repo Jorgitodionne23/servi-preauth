@@ -195,6 +195,30 @@ async function findExistingEmailOwner(email) {
   };
 }
 
+async function isFirstTimeClient({ phoneDigits, emailNormalized }) {
+  const phone = phoneDigits || null;
+  const email = emailNormalized || null;
+  if (!phone && !email) return false;
+  const conditions = [];
+  const params = [];
+  if (phone) {
+    params.push(phone);
+    conditions.push(
+      `regexp_replace(COALESCE(client_phone, ''), '[^0-9]', '', 'g') = $${params.length}`
+    );
+  }
+  if (email) {
+    params.push(email);
+    conditions.push(`LOWER(client_email) = LOWER($${params.length})`);
+  }
+  const where = conditions.length ? conditions.join(' OR ') : 'FALSE';
+  const { rows } = await pool.query(
+    `SELECT 1 FROM all_bookings WHERE ${where} LIMIT 1`,
+    params
+  );
+  return rows.length === 0;
+}
+
 async function lookupContactByPhoneDigits(digits) {
   if (!digits) return null;
   const found = await findLatestEmailByPhoneDigits(digits);
@@ -1067,7 +1091,9 @@ app.use(express.static(FRONTEND_DIR));
       providerId: providerIdBody,
       provider_id: providerIdSnake,
       providerName: providerNameBody,
-      provider_name: providerNameSnake
+      provider_name: providerNameSnake,
+      allowCashOnce,
+      allow_cash_once
     } = req.body;
     const providerIdInput = providerIdBody ?? providerIdSnake;
     const providerId = providerIdInput != null ? String(providerIdInput).trim() || null : null;
@@ -1102,6 +1128,19 @@ app.use(express.static(FRONTEND_DIR));
       message: 'Agrega el WhatsApp del cliente antes de generar el enlace.'
     });
   }
+  const isFirstTimer = await isFirstTimeClient({
+    phoneDigits,
+    emailNormalized: clientEmailNormalized
+  });
+  const allowCashFlag =
+    allowCashOnce === undefined && allow_cash_once === undefined
+      ? true // default: offer to first-time users
+      : allowCashOnce === true ||
+        allow_cash_once === true ||
+        String(allowCashOnce || allow_cash_once || '').toLowerCase() === 'true' ||
+        allowCashOnce === '1' ||
+        allow_cash_once === '1';
+  const cashExceptionAllowed = allowCashFlag && isFirstTimer;
   try {
     const captureMethod = String(capture).toLowerCase() === 'automatic' ? 'automatic' : 'manual';
     const savedPhoneRecord = phoneDigits ? await findSavedClientByPhoneDigits(phoneDigits) : null;
@@ -1269,6 +1308,8 @@ app.use(express.static(FRONTEND_DIR));
         client_email,
         provider_id,
         provider_name,
+        cash_exception_allowed,
+        cash_selected,
         service_date,
         service_address,
         booking_type,
@@ -1287,9 +1328,9 @@ app.use(express.static(FRONTEND_DIR));
       )
       VALUES (
         $1,$2,$3,$4,$5,$6,$7,
-        $8,$9,$10,$11,$12,$13,$14,$15,$16,
-        $17,'pending',$18,'primary',
-        $19,$20,$21,$22,$23,$24,$25,$26
+        $8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
+        $19,'pending',$20,'primary',
+        $21,$22,$23,$24,$25,$26,$27,$28
       )
       ON CONFLICT (id) DO NOTHING`,
       [
@@ -1306,6 +1347,8 @@ app.use(express.static(FRONTEND_DIR));
         clientEmailNormalized || null,
         providerId,
         providerName || null,
+        cashExceptionAllowed,
+        false,
         serviceDate || null,
         serviceAddress || null,
         bookingType || null,
@@ -1598,6 +1641,7 @@ async function getOrderPayload(orderId, { allowExpiredQuery = false, retryTokenR
         vat_amount, pricing_total_amount, vat_rate, stripe_percent_fee, stripe_fixed_fee,
         stripe_fee_tax_rate, processing_fee_type, urgency_multiplier, alpha_value,
         client_name, client_phone, client_email, provider_id, provider_name,
+        cash_exception_allowed, cash_selected,
         service_description, service_date, service_datetime, service_address, booking_type, status, created_at,
         public_code, kind, parent_id_of_adjustment, customer_id, saved_payment_method_id, capture_method, adjustment_reason,
         retry_token, retry_token_created_at
@@ -1954,11 +1998,11 @@ app.get('/api/payment-intent', async (req, res) => {
         customerName: payload.client_name || null,
         email: payload.client_email || null,
         providerName: payload.provider_name || null,
-        bookingType: payload.booking_type || null,
-        serviceDescription: payload.service_description || null,
-        serviceDate: payload.service_date || null,
-        serviceDateTime: payload.service_datetime || null,
-        publicCode: payload.public_code || null,
+      bookingType: payload.booking_type || null,
+      serviceDescription: payload.service_description || null,
+      serviceDate: payload.service_date || null,
+      serviceDateTime: payload.service_datetime || null,
+      publicCode: payload.public_code || null,
       intentType: payload.intentType || null,
       consentRequired: payload.consent_required || false,
       savedPaymentMethodId: payload.saved_payment_method_id || payload.saved_card?.id || null,
@@ -1968,7 +2012,9 @@ app.get('/api/payment-intent', async (req, res) => {
       providerAmount: pricing.provider_amount ?? null,
       bookingFeeAmount: pricing.booking_fee_amount ?? null,
       processingFeeAmount: pricing.processing_fee_amount ?? null,
-      vatAmount: pricing.vat_amount ?? null
+      vatAmount: pricing.vat_amount ?? null,
+      cashExceptionAllowed: payload.cash_exception_allowed || false,
+      cashSelected: payload.cash_selected || false
     };
 
     res.set('Cache-Control', 'no-store');
@@ -1984,6 +2030,58 @@ app.get('/api/payment-intent', async (req, res) => {
       linkExpired: err.code === 'link_expired',
       linkExpiresAt: err.linkExpiresAt || null
     });
+  }
+});
+
+// Allow client to opt into cash exception (first-time only)
+app.post('/orders/:orderId/choose-cash', async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const allowExpiredQuery = String(req.query.allowExpired || '') === '1';
+    const { rows } = await pool.query(
+      `SELECT id, payment_intent_id, cash_exception_allowed, cash_selected, status, client_email
+         FROM all_bookings
+        WHERE id = $1`,
+      [orderId]
+    );
+    const row = rows[0];
+    if (!row) return res.status(404).json({ error: 'not_found' });
+    if (!row.cash_exception_allowed) {
+      return res.status(403).json({ error: 'cash_not_allowed' });
+    }
+    if (row.cash_selected) {
+      return res.json({ ok: true, status: row.status || 'Pending Cash' });
+    }
+
+    // Optional: honor expired links? keep consistent with frontend param
+    const { linkExpired } = await getOrderPayload(orderId, { allowExpiredQuery });
+    if (linkExpired) {
+      return res.status(410).json({ error: 'link_expired' });
+    }
+
+    // Cancel existing PI if present and cancelable
+    if (row.payment_intent_id) {
+      try {
+        await stripe.paymentIntents.cancel(row.payment_intent_id, { cancellation_reason: 'requested_by_customer' });
+      } catch (cancelErr) {
+        console.warn('choose-cash: cancel PI failed', cancelErr?.message || cancelErr);
+      }
+    }
+
+    await pool.query(
+      `UPDATE all_bookings
+          SET cash_selected = TRUE,
+              status = 'Pending Cash',
+              payment_intent_id = NULL
+        WHERE id = $1`,
+      [orderId]
+    );
+
+    return res.json({ ok: true, status: 'Pending Cash' });
+  } catch (err) {
+    const status = err.status || 500;
+    console.error('choose-cash error:', err);
+    return res.status(status).json({ error: err.code || 'choose_cash_failed', message: err.message || 'Internal error' });
   }
 });
 
@@ -2254,8 +2352,9 @@ app.post('/tasks/preauth-due', async (req, res) => {
           AND customer_id IS NOT NULL
           AND saved_payment_method_id IS NOT NULL
           AND payment_intent_id IS NULL
+          AND COALESCE(cash_selected, FALSE) = FALSE
       )
-          SELECT id, amount, customer_id, saved_payment_method_id, parent_id_of_adjustment, kind, provider_id, provider_name, client_name, client_email, service_date, service_datetime
+      SELECT id, amount, customer_id, saved_payment_method_id, parent_id_of_adjustment, kind, provider_id, provider_name, client_name, client_email, service_date, service_datetime
       FROM service_ts
       WHERE svc_at >= NOW()
         AND svc_at <  NOW() + INTERVAL '24 hours'
