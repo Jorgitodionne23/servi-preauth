@@ -2085,15 +2085,24 @@ app.post('/orders/:orderId/choose-cash', async (req, res) => {
   }
 });
 
-app.post('/orders/:orderId/refresh-fees', async (req, res) => {
-  try {
-    const { orderId } = req.params;
-    const { paymentIntentId, paymentMethodId, billingEmail, retryToken } = req.body || {};
-    if (billingEmail) {
-      try {
-        await syncOrderEmail(orderId, billingEmail);
-      } catch (emailErr) {
-        console.warn('refresh-fees: failed to persist billing email', orderId, emailErr?.message || emailErr);
+  app.post('/orders/:orderId/refresh-fees', async (req, res) => {
+    try {
+      const { orderId } = req.params;
+      const { paymentIntentId, paymentMethodId, billingEmail, retryToken } = req.body || {};
+
+      const cashCheck = await pool.query(
+        'SELECT cash_selected FROM all_bookings WHERE id = $1 LIMIT 1',
+        [orderId]
+      );
+      if (cashCheck.rows.length && cashCheck.rows[0].cash_selected) {
+        return res.json({ ok: true, skipped: true, reason: 'cash_order' });
+      }
+
+      if (billingEmail) {
+        try {
+          await syncOrderEmail(orderId, billingEmail);
+        } catch (emailErr) {
+          console.warn('refresh-fees: failed to persist billing email', orderId, emailErr?.message || emailErr);
       }
     }
     const result = await refreshOrderFees(orderId, { paymentIntentId, paymentMethodId, retryToken });
@@ -3477,21 +3486,42 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
       console.log(`🚫 ${label}:`, paymentIntentId);
 
-      const cashRow = await pool.query(
-        'SELECT cash_selected FROM all_bookings WHERE payment_intent_id = $1 LIMIT 1',
+      // Try to map the PI back to the order either by PI lookup or metadata.order_id
+      let isCash = false;
+      let orderIdForWebhook = null;
+      const byPi = await pool.query(
+        'SELECT id, cash_selected FROM all_bookings WHERE payment_intent_id = $1 LIMIT 1',
         [paymentIntentId]
       );
-      const isCash = cashRow.rows.length && cashRow.rows[0].cash_selected === true;
+      if (byPi.rows.length) {
+        isCash = byPi.rows[0].cash_selected === true;
+        orderIdForWebhook = byPi.rows[0].id;
+      } else if (pi?.metadata?.order_id) {
+        const byMeta = await pool.query(
+          'SELECT id, cash_selected FROM all_bookings WHERE id = $1 LIMIT 1',
+          [pi.metadata.order_id]
+        );
+        if (byMeta.rows.length) {
+          isCash = byMeta.rows[0].cash_selected === true;
+          orderIdForWebhook = byMeta.rows[0].id;
+        }
+      }
 
       const nextStatus = isCash ? 'Pending Cash' : label;
 
-      await pool.query('UPDATE all_bookings SET status = $1 WHERE payment_intent_id = $2',
-                      [nextStatus, paymentIntentId]);
+      if (orderIdForWebhook) {
+        await pool.query('UPDATE all_bookings SET status = $1 WHERE id = $2', [nextStatus, orderIdForWebhook]);
+      } else {
+        await pool.query('UPDATE all_bookings SET status = $1 WHERE payment_intent_id = $2', [nextStatus, paymentIntentId]);
+      }
 
-      fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ paymentIntentId, status: nextStatus })
-      }).catch(()=>{});
+      // Only notify Sheets/webhook when it is a real cancellation; for cash we keep Pending Cash
+      if (GOOGLE_SCRIPT_WEBHOOK_URL) {
+        fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ paymentIntentId, status: nextStatus })
+        }).catch(()=>{});
+      }
       break;
     }
 
@@ -3804,30 +3834,34 @@ app.post('/confirm-with-saved', async (req, res) => {
     const { orderId, force, retryToken, allowExpired, createOnly } = req.body || {};
     if (!orderId) return res.status(400).send({ error: 'orderId required' });
 
-    const { rows } = await pool.query(
-      `SELECT id,
-              payment_intent_id,
-              customer_id,
-              amount,
-              kind,
-              parent_id_of_adjustment,
-              service_date,
-              service_datetime,
-              status,
-              saved_payment_method_id,
-              capture_method,
-              adjustment_reason,
-              created_at,
-              retry_token,
-              retry_token_created_at,
-              provider_id,
-              provider_name
-         FROM all_bookings
-        WHERE id = $1`,
-      [orderId]
-    );
-    const row = rows[0];
-    if (!row) return res.status(404).send({ error: 'order not found' });
+      const { rows } = await pool.query(
+        `SELECT id,
+                payment_intent_id,
+                customer_id,
+                amount,
+                kind,
+                parent_id_of_adjustment,
+                service_date,
+                service_datetime,
+                status,
+                saved_payment_method_id,
+                capture_method,
+                adjustment_reason,
+                created_at,
+                retry_token,
+                retry_token_created_at,
+                provider_id,
+                provider_name,
+                cash_selected
+           FROM all_bookings
+          WHERE id = $1`,
+        [orderId]
+      );
+      const row = rows[0];
+      if (!row) return res.status(404).send({ error: 'order not found' });
+      if (row.cash_selected) {
+        return res.status(409).send({ error: 'cash_order', message: 'Orden marcada como pago en efectivo' });
+      }
     const providerMeta = {};
     if (row.provider_id) providerMeta.provider_id = row.provider_id;
     if (row.provider_name) providerMeta.provider_name = row.provider_name;
