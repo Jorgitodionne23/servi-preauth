@@ -243,40 +243,23 @@
         object-fit: contain;
       }
 
-    .payment-options {
+    .cash-cta {
       display: none;
-      flex-direction: column;
-      gap: 10px;
-      margin-top: -6px;
+      margin-top: -4px;
     }
-
-    .payment-option {
-      display: flex;
-      gap: 10px;
-      background: #1a1a1a;
-      border: 1px solid #2a2a2a;
-      border-radius: 10px;
-      padding: 12px;
-      cursor: pointer;
-      transition: border-color 0.2s ease, box-shadow 0.2s ease;
-    }
-    .payment-option input {
-      margin-top: 4px;
-    }
-    .payment-option:hover, .payment-option.selected {
-      border-color: #fff;
-      box-shadow: 0 0 0 1px #fff;
-    }
-    .payment-option .label {
-      font-weight: 600;
+    .cash-cta button {
+      width: 100%;
+      background: #111;
+      border: 1px solid #3b3b3b;
       color: #fff;
-      font-size: 15px;
+      padding: 12px;
+      border-radius: 10px;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 14px;
     }
-    .payment-option .desc {
-      color: #ccc;
-      font-size: 13px;
-      margin-top: 2px;
-      line-height: 1.4;
+    .cash-cta button:hover {
+      border-color: #fff;
     }
     .cash-note {
       display: none;
@@ -287,6 +270,14 @@
       border-radius: 8px;
       font-size: 13px;
       line-height: 1.5;
+    }
+    .cash-note .back-card {
+      margin-top: 8px;
+      display: inline-block;
+      color: #fff;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: underline;
     }
 
     .input-text {
@@ -467,25 +458,13 @@
       </div>
 
       <form id="payment-form">
-        <div id="payment-options" class="payment-options">
-          <label class="payment-option selected">
-            <input type="radio" name="payment-mode" value="card" checked />
-            <div>
-              <div class="label">Tarjeta (recomendado)</div>
-              <div class="desc">Reservas el servicio ahora y se captura al finalizar.</div>
-            </div>
-          </label>
-          <label class="payment-option" id="cash-option">
-            <input type="radio" name="payment-mode" value="cash" />
-            <div>
-              <div class="label">Efectivo al terminar</div>
-              <div class="desc">Opción única para clientes nuevos que prefieren pagar al finalizar.</div>
-            </div>
-          </label>
+        <div class="cash-cta" id="cash-cta">
+          <button type="button" id="cash-button">¿No tienes tarjeta? Solicitar pagar en efectivo (excepción)</button>
         </div>
 
         <div id="cash-note" class="cash-note">
           Reservas tu servicio sin tarjeta. Pagarás en efectivo al finalizar. Esta opción es solo para tu primera reserva.
+          <div class="back-card" id="back-to-card">Volver a tarjeta</div>
         </div>
 
         <div id="card-section">
@@ -590,9 +569,10 @@
     const bookingNoteEl = document.getElementById('booking-note');
     const reasonRow = document.getElementById('adjustment-reason-row');
     const reasonValueEl = document.getElementById('adjustment-reason');
-    const paymentOptions = document.getElementById('payment-options');
-    const cashOption = document.getElementById('cash-option');
+    const cashCta = document.getElementById('cash-cta');
+    const cashButton = document.getElementById('cash-button');
     const cashNote = document.getElementById('cash-note');
+    const backToCard = document.getElementById('back-to-card');
     const cardSection = document.getElementById('card-section');
     const consentRow = document.getElementById('consent-row');
     const cardRow = document.getElementById('card-row');
@@ -771,14 +751,6 @@
 
     const setPaymentMode = (mode) => {
       paymentMode = mode === 'cash' ? 'cash' : 'card';
-      const options = document.querySelectorAll('input[name=\"payment-mode\"]');
-      options.forEach((opt) => {
-        const wrapper = opt.closest('.payment-option');
-        if (!wrapper) return;
-        const selected = opt.value === paymentMode;
-        wrapper.classList.toggle('selected', selected);
-        opt.checked = selected;
-      });
 
       if (paymentMode === 'cash') {
         if (cardRow) cardRow.style.display = 'none';
@@ -786,6 +758,7 @@
         if (consentRow) consentRow.style.display = 'none';
         if (termsRow) termsRow.style.display = 'flex';
         if (cashNote) cashNote.style.display = 'block';
+        if (cashCta) cashCta.style.display = 'none';
         submitBtn.textContent = 'Reservar y pagar en efectivo';
       } else {
         if (cardRow) cardRow.style.display = 'block';
@@ -793,6 +766,7 @@
         if (consentRow) consentRow.style.display = 'flex';
         if (termsRow) termsRow.style.display = 'flex';
         if (cashNote) cashNote.style.display = 'none';
+        if (cashAllowed && cashCta) cashCta.style.display = 'block';
         submitBtn.textContent = 'Reservar servicio';
       }
     };
@@ -944,8 +918,10 @@
       currentOrder = order;
       clientSecret = order.clientSecret;
       cashAllowed = !!order.cashExceptionAllowed;
-      if (cashAllowed && paymentOptions) {
-        paymentOptions.style.display = 'flex';
+      if (cashAllowed && cashCta) {
+        cashCta.style.display = 'block';
+      } else if (cashCta) {
+        cashCta.style.display = 'none';
       }
       setPaymentMode('card');
 
@@ -964,22 +940,11 @@
       box.style.display = box.style.display === 'none' ? 'inline' : 'none';
     });
 
-    if (paymentOptions) {
-      paymentOptions.addEventListener('change', (e) => {
-        if (e.target && e.target.name === 'payment-mode') {
-          setPaymentMode(e.target.value);
-        }
-      });
-      // Also allow clicking the whole label
-      const opts = paymentOptions.querySelectorAll('.payment-option');
-      opts.forEach((opt) => {
-        opt.addEventListener('click', () => {
-          const input = opt.querySelector('input[name=\"payment-mode\"]');
-          if (input) {
-            setPaymentMode(input.value);
-          }
-        });
-      });
+    if (cashButton) {
+      cashButton.addEventListener('click', () => setPaymentMode('cash'));
+    }
+    if (backToCard) {
+      backToCard.addEventListener('click', () => setPaymentMode('card'));
     }
 
     form.addEventListener('submit', async (event) => {
