@@ -37,6 +37,7 @@ export async function initDb() {
       client_phone TEXT,
       client_email TEXT,
       provider_id TEXT,
+      provider_name TEXT,
       service_description TEXT,
       service_date TEXT,              -- date-only (YYYY-MM-DD) for >7d rule
       service_address TEXT,
@@ -60,6 +61,7 @@ export async function initDb() {
     ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS client_phone TEXT;
     ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS client_email TEXT;
     ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS provider_id TEXT;
+    ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS provider_name TEXT;
 
     -- NEW: store full timestamp (ISO with tz) for display/use in UI
     ALTER TABLE all_bookings

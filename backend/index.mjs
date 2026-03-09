@@ -1065,10 +1065,14 @@ app.use(express.static(FRONTEND_DIR));
       micro_test,
       pricingMode,
       providerId: providerIdBody,
-      provider_id: providerIdSnake
+      provider_id: providerIdSnake,
+      providerName: providerNameBody,
+      provider_name: providerNameSnake
     } = req.body;
     const providerIdInput = providerIdBody ?? providerIdSnake;
     const providerId = providerIdInput != null ? String(providerIdInput).trim() || null : null;
+    const providerNameInput = providerNameBody ?? providerNameSnake;
+    const providerName = providerNameInput != null ? String(providerNameInput).trim() || null : null;
   const microTestFlag =
     Boolean(microTest) ||
     Boolean(micro_test) ||
@@ -1264,6 +1268,7 @@ app.use(express.static(FRONTEND_DIR));
         client_phone,
         client_email,
         provider_id,
+        provider_name,
         service_date,
         service_address,
         booking_type,
@@ -1282,9 +1287,9 @@ app.use(express.static(FRONTEND_DIR));
       )
       VALUES (
         $1,$2,$3,$4,$5,$6,$7,
-        $8,$9,$10,$11,$12,$13,$14,$15,
-        $16,'pending',$17,'primary',$18,
-        $19,$20,$21,$22,$23,$24,$25
+        $8,$9,$10,$11,$12,$13,$14,$15,$16,
+        $17,'pending',$18,'primary',
+        $19,$20,$21,$22,$23,$24,$25,$26
       )
       ON CONFLICT (id) DO NOTHING`,
       [
@@ -1300,6 +1305,7 @@ app.use(express.static(FRONTEND_DIR));
         clientPhone || null,
         clientEmailNormalized || null,
         providerId,
+        providerName || null,
         serviceDate || null,
         serviceAddress || null,
         bookingType || null,
@@ -1318,7 +1324,7 @@ app.use(express.static(FRONTEND_DIR));
 
     // also persist service_date/service_datetime (you already do)
   await pool.query(
-    'UPDATE all_bookings SET service_date=$1, service_datetime=$2, client_phone=$3, client_email=$4, service_address=$5, booking_type=$6, provider_id=$7 WHERE id=$8',
+    'UPDATE all_bookings SET service_date=$1, service_datetime=$2, client_phone=$3, client_email=$4, service_address=$5, booking_type=$6, provider_id=$7, provider_name=$8 WHERE id=$9',
     [
       serviceDate || null,
       serviceDateTime || null,
@@ -1327,6 +1333,7 @@ app.use(express.static(FRONTEND_DIR));
       serviceAddress || null,
       bookingType || null,
       providerId || null,
+      providerName || null,
       orderId
     ]
   );
@@ -1489,7 +1496,8 @@ app.use(express.static(FRONTEND_DIR));
         metadata: {
           order_id: orderId,
           kind: 'primary',
-          ...(providerId ? { provider_id: providerId } : {})
+          ...(providerId ? { provider_id: providerId } : {}),
+          ...(providerName ? { provider_name: providerName } : {})
         }
       });
 
@@ -1589,7 +1597,7 @@ async function getOrderPayload(orderId, { allowExpiredQuery = false, retryTokenR
       SELECT id, payment_intent_id, amount, provider_amount, booking_fee_amount, processing_fee_amount,
         vat_amount, pricing_total_amount, vat_rate, stripe_percent_fee, stripe_fixed_fee,
         stripe_fee_tax_rate, processing_fee_type, urgency_multiplier, alpha_value,
-        client_name, client_phone, client_email, provider_id,
+        client_name, client_phone, client_email, provider_id, provider_name,
         service_description, service_date, service_datetime, service_address, booking_type, status, created_at,
         public_code, kind, parent_id_of_adjustment, customer_id, saved_payment_method_id, capture_method, adjustment_reason,
         retry_token, retry_token_created_at
@@ -1602,7 +1610,9 @@ async function getOrderPayload(orderId, { allowExpiredQuery = false, retryTokenR
   const row = rows[0];
   if (!row) throw makeError('order_not_found', 'Order not found', 404);
   const receiptEmail = normalizeEmail(row.client_email);
-  const providerMeta = row.provider_id ? { provider_id: row.provider_id } : {};
+  const providerMeta = {};
+  if (row.provider_id) providerMeta.provider_id = row.provider_id;
+  if (row.provider_name) providerMeta.provider_name = row.provider_name;
 
   const { usingRetryToken, createdAtOverride } = resolveRetryTokenContext(row, retryTokenParam);
   const allowExpired = wantsOverride && !usingRetryToken;
@@ -1935,19 +1945,20 @@ app.get('/api/payment-intent', async (req, res) => {
     const { payload } = await getOrderPayload(orderId, { allowExpiredQuery, retryTokenRaw });
 
     const pricing = payload.pricing || {};
-    const response = {
-      orderId: payload.id,
-      amount: payload.amount,
-      currency: 'mxn',
-      clientSecret: payload.client_secret,
-      client_secret: payload.client_secret,
-      customerName: payload.client_name || null,
-      email: payload.client_email || null,
-      bookingType: payload.booking_type || null,
-      serviceDescription: payload.service_description || null,
-      serviceDate: payload.service_date || null,
-      serviceDateTime: payload.service_datetime || null,
-      publicCode: payload.public_code || null,
+      const response = {
+        orderId: payload.id,
+        amount: payload.amount,
+        currency: 'mxn',
+        clientSecret: payload.client_secret,
+        client_secret: payload.client_secret,
+        customerName: payload.client_name || null,
+        email: payload.client_email || null,
+        providerName: payload.provider_name || null,
+        bookingType: payload.booking_type || null,
+        serviceDescription: payload.service_description || null,
+        serviceDate: payload.service_date || null,
+        serviceDateTime: payload.service_datetime || null,
+        publicCode: payload.public_code || null,
       intentType: payload.intentType || null,
       consentRequired: payload.consent_required || false,
       savedPaymentMethodId: payload.saved_payment_method_id || payload.saved_card?.id || null,
@@ -2244,7 +2255,7 @@ app.post('/tasks/preauth-due', async (req, res) => {
           AND saved_payment_method_id IS NOT NULL
           AND payment_intent_id IS NULL
       )
-      SELECT id, amount, customer_id, saved_payment_method_id, parent_id_of_adjustment, kind, provider_id, client_name, client_email, service_date, service_datetime
+          SELECT id, amount, customer_id, saved_payment_method_id, parent_id_of_adjustment, kind, provider_id, provider_name, client_name, client_email, service_date, service_datetime
       FROM service_ts
       WHERE svc_at >= NOW()
         AND svc_at <  NOW() + INTERVAL '24 hours'
@@ -2257,7 +2268,9 @@ app.post('/tasks/preauth-due', async (req, res) => {
       for (const row of rows) {
         try {
           const receiptEmail = normalizeEmail(row.client_email);
-          const providerMeta = row.provider_id ? { provider_id: row.provider_id } : {};
+          const providerMeta = {};
+          if (row.provider_id) providerMeta.provider_id = row.provider_id;
+          if (row.provider_name) providerMeta.provider_name = row.provider_name;
           // Create MANUAL-CAPTURE PI and CONFRIM it off-session with the saved PM.
           // This places the authorization hold; webhook will set status=Confirmed.
           const pi = await stripe.paymentIntents.create({
@@ -2701,6 +2714,7 @@ app.post('/create-adjustment', requireAdminAuth, async (req, res) => {
               service_address,
               provider_amount,
               provider_id,
+              provider_name,
               booking_type
          FROM all_bookings
         WHERE id = $1`,
@@ -2775,6 +2789,7 @@ app.post('/create-adjustment', requireAdminAuth, async (req, res) => {
           client_phone,
           client_email,
           provider_id,
+          provider_name,
           service_description,
           service_date,
           service_datetime,
@@ -2797,9 +2812,9 @@ app.post('/create-adjustment', requireAdminAuth, async (req, res) => {
         )
         VALUES (
           $1,$2,$3,$4,$5,$6,$7,$8,
-          $9,$10,$11,$12,$13,$14,$15,$16,$17,
-          'Pending',$18,'adjustment',$19,$20,$21,
-          $22,$23,$24,$25,$26,$27,$28,$29
+          $9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
+          'Pending',$19,'adjustment',$20,$21,$22,
+          $23,$24,$25,$26,$27,$28,$29,$30
         )
       `,
       [
@@ -2815,6 +2830,7 @@ app.post('/create-adjustment', requireAdminAuth, async (req, res) => {
         parentOrder.client_phone || null,
         parentOrder.client_email || null,
         parentOrder.provider_id || null,
+        parentOrder.provider_name || null,
         parentOrder.service_description || null,
         parentOrder.service_date || null,
         parentOrder.service_datetime || null,
@@ -3697,14 +3713,17 @@ app.post('/confirm-with-saved', async (req, res) => {
               created_at,
               retry_token,
               retry_token_created_at,
-              provider_id
+              provider_id,
+              provider_name
          FROM all_bookings
         WHERE id = $1`,
       [orderId]
     );
     const row = rows[0];
     if (!row) return res.status(404).send({ error: 'order not found' });
-    const providerMeta = row.provider_id ? { provider_id: row.provider_id } : {};
+    const providerMeta = {};
+    if (row.provider_id) providerMeta.provider_id = row.provider_id;
+    if (row.provider_name) providerMeta.provider_name = row.provider_name;
     const receiptEmail = normalizeEmail(row.client_email);
     const { createdAtOverride } = resolveRetryTokenContext(row, retryToken);
     const linkRow = createdAtOverride ? { ...row, created_at: createdAtOverride } : row;

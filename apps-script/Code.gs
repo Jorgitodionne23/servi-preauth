@@ -12,7 +12,13 @@ const ORDER_HEADER_ALIASES = {
   SERVICE_DESC: ['Service Description'],
   BOOKING_TYPE: ['Booking type', 'Booking Type'],
   CAPTURE_TYPE: ['Capture Type'],
+  // Provider name entered by admin (used to display to client). Kept aliases for backward compatibility.
   ASSIGNED_PROVIDER_ID: [
+    'Assigned Provider Name',
+    'Provider Name',
+    'Nombre del Proveedor',
+    'Proveedor Asignado',
+    'Assigned Provider',
     'Assigned Provider ID',
     'Provider ID (Assigned)',
     'Provider ID',
@@ -1163,12 +1169,13 @@ function createLiveTestPaymentLink() {
   const captureMethod = /^automatic$/i.test(captureChoice)
     ? 'automatic'
     : 'manual';
-  const providerId =
+  const providerNameRaw =
     COL.ASSIGNED_PROVIDER_ID && COL.ASSIGNED_PROVIDER_ID > 0
       ? String(
           sheet.getRange(row, COL.ASSIGNED_PROVIDER_ID).getDisplayValue() || ''
         ).trim()
       : '';
+  const providerName = providerNameRaw || '';
 
   const rawPhone = sheet.getRange(row, COL.PHONE).getDisplayValue();
   const clientPhone = normalizePhoneToE164(rawPhone);
@@ -1223,7 +1230,7 @@ function createLiveTestPaymentLink() {
     bookingType,
     capture: captureMethod,
     hasTimeComponent: false,
-    providerId: providerId || undefined,
+    providerName: providerName || undefined,
     microTest: true,
     pricingMode: 'micro_test',
   };
@@ -1562,10 +1569,11 @@ function generatePaymentLink() {
 
   const amount = Math.round(providerPrice * 100) / 100; // keep value in MXN (two decimals)
 
-  const providerId =
+  const providerNameRaw =
     assignedProviderIdCol && assignedProviderIdCol > 0
       ? String(sheet.getRange(editedRow, assignedProviderIdCol).getDisplayValue() || '').trim()
       : '';
+  const providerName = providerNameRaw || '';
 
   const options = {
     method: 'post',
@@ -1582,7 +1590,7 @@ function generatePaymentLink() {
       bookingType,
       capture: captureMethod,
       hasTimeComponent: hasServiceTime,
-      providerId: providerId || undefined,
+      providerName: providerName || undefined,
     }),
     headers: adminHeaders_(),
     muteHttpExceptions: true,

@@ -97,7 +97,7 @@
     <!-- Confirmation message -->
     <h1 id="title" style="margin-bottom: 0.5em;">¡Tu servicio ha sido reservado!</h1>
     <p id="subtitle" style="margin-top: -1em; color: #ccc; font-size: 15px;">
-      Te mandaremos un mensaje recordatorio antes de tu servicio.
+      Estás reservando el tiempo del profesional; pagarás al finalizar el servicio.
     </p>
 
     <!-- Real order code from server -->
@@ -123,6 +123,10 @@
       <div class="row" id="email-row" style="display:none;">
         <div class="label">Correo</div>
         <div class="value" id="email-value">—</div>
+      </div>
+      <div class="row" id="provider-row" style="display:none;">
+        <div class="label">Profesional</div>
+        <div class="value" id="provider-value">—</div>
       </div>
       <div class="row">
         <div class="label">Dirección</div>
@@ -181,6 +185,8 @@
     const processingEl = document.getElementById('processing-fee');
     const emailRow = document.getElementById('email-row');
     const emailValueEl = document.getElementById('email-value');
+    const providerRow = document.getElementById('provider-row');
+    const providerValueEl = document.getElementById('provider-value');
     const vatNoteEl = document.getElementById('vat-note');
     const dateRow = document.getElementById('date-row');
     const dateValueEl = document.getElementById('date-value');
@@ -243,6 +249,17 @@
       }
     }
 
+    function maskProviderName(raw) {
+      const name = String(raw || '').trim();
+      if (!name) return null;
+      const parts = name.split(/\s+/).filter(Boolean);
+      if (!parts.length) return null;
+      const first = parts[0];
+      const last = parts.length > 1 ? parts[parts.length - 1] : '';
+      const lastInitial = last ? `${last[0].toUpperCase()}.` : '';
+      return [first, lastInitial].filter(Boolean).join(' ');
+    }
+
     function buildPreviewFromOrder(order) {
       return {
         orderId: order.id || order.orderId || null,
@@ -258,7 +275,8 @@
         serviceAddress: order.service_address || order.serviceAddress || '',
         serviceDate: order.service_date || order.serviceDate || null,
         serviceDateTime: order.service_datetime || order.serviceDateTime || null,
-        bookingType: order.booking_type || order.bookingType || null
+        bookingType: order.booking_type || order.bookingType || null,
+        providerName: order.provider_name || order.providerName || null
       };
     }
 
@@ -364,6 +382,19 @@
         summaryBox.insertBefore(vatNoteEl, servicePriceRow);
       }
 
+      const providerRaw =
+        order.provider_name ||
+        order.providerName ||
+        totals.providerName ||
+        null;
+      const providerDisplay = maskProviderName(providerRaw);
+      if (providerDisplay) {
+        providerValueEl.textContent = providerDisplay;
+        providerRow.style.display = 'flex';
+      } else {
+        providerRow.style.display = 'none';
+      }
+
       addressEl.textContent = order.service_address || order.serviceAddress || totals.serviceAddress || '—';
       const emailValue = (order.client_email || order.email || totals.email || '').trim();
       if (emailValue) {
@@ -380,7 +411,7 @@
         subtitleEl.textContent = 'Gracias, hemos recibido tu pago adicional.';
       } else {
         titleEl.textContent = '¡Tu servicio ha sido reservado!';
-        subtitleEl.textContent = 'Te mandaremos un mensaje recordatorio antes de tu servicio.';
+        subtitleEl.textContent = 'Estás reservando el tiempo del profesional; pagarás al finalizar el servicio.';
       }
 
       const fallbackReason = reasonOverride || totals.reason || '';
@@ -445,6 +476,7 @@
             service_address: previewSnapshot.serviceAddress,
             service_date: previewSnapshot.serviceDate,
             service_datetime: previewSnapshot.serviceDateTime,
+            provider_name: previewSnapshot.providerName,
             status: 'Confirmed'
           };
           renderOrder(pseudoOrder, {
