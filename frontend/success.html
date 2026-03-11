@@ -212,7 +212,7 @@
     function friendlyCode(order) {
       const code = order.public_code || order.publicCode || order.public_code;
       const base = code || order.id || order.orderId || '';
-      return String(base).replace(/-/g, '').slice(-8).toUpperCase();
+      return String(base).replace(/-/g, '').toUpperCase();
     }
 
     function extractReason(desc) {
