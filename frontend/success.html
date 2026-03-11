@@ -415,7 +415,6 @@
       if (statusEl) statusEl.textContent = order.status || '—';
 
       const isAdjustment = String(order.kind || totals.kind || '').toLowerCase() === 'adjustment';
-      const isCash = Boolean(order.cash_selected || order.cashSelected || totals.cashSelected);
       if (isAdjustment) {
         titleEl.textContent = '¡Ajuste confirmado!';
         subtitleEl.textContent = 'Gracias, hemos recibido tu pago adicional.';
