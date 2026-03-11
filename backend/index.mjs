@@ -15,6 +15,7 @@ import { fileURLToPath, URLSearchParams } from 'url';
 import { dirname } from 'path';
 import fetch from 'node-fetch';
 import { randomUUID, randomBytes, createHash, timingSafeEqual } from 'crypto';
+import { rateLimit } from 'express-rate-limit';
 
 // --- helpers (add) ---
 const MS_PER_DAY = 86_400_000;
@@ -490,12 +491,29 @@ const __dirname = dirname(__filename);
 const FRONTEND_DIR = path.join(__dirname, '..', 'frontend');
 
 const app = express();
+
+const adminRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  limit: 200,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'too_many_requests' },
+});
 const stripe = new StripePackage(process.env.STRIPE_SECRET_KEY);
 const GOOGLE_SCRIPT_WEBHOOK_URL = process.env.SHEETS_WEBHOOK_URL || '';
 const ADMIN_API_TOKEN = process.env.ADMIN_API_TOKEN || '';
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET || '';
 const FRONTEND_BASE_URL = (process.env.FRONTEND_BASE_URL || process.env.PUBLIC_BASE_URL || 'https://servi-preauth.pages.dev').replace(/\/+$/, '');
 
+if (!process.env.STRIPE_SECRET_KEY) {
+  throw new Error('STRIPE_SECRET_KEY must be configured before starting the server');
+}
+if (!ADMIN_API_TOKEN) {
+  throw new Error('ADMIN_API_TOKEN must be configured before starting the server');
+}
+if (!process.env.DATABASE_URL) {
+  throw new Error('DATABASE_URL must be configured before starting the server');
+}
 if (!endpointSecret) {
   console.error('Missing STRIPE_WEBHOOK_SECRET environment variable; webhook verification will fail.');
   throw new Error('STRIPE_WEBHOOK_SECRET must be configured before starting the server');
@@ -1081,7 +1099,7 @@ app.get('/success.html', successGate);
 app.use(express.static(FRONTEND_DIR));
 
 // 🎯 Create PaymentIntent (save card for later off-session charges)
-  app.post('/create-payment-intent', requireAdminAuth, async (req, res) => {
+  app.post('/create-payment-intent', adminRateLimit, requireAdminAuth, async (req, res) => {
     const {
       amount,
       clientName,
@@ -1420,7 +1438,7 @@ app.use(express.static(FRONTEND_DIR));
           micro_test: 'true',
           ...(providerId ? { provider_id: providerId } : {})
         }
-      });
+      }, { idempotencyKey: `pi-create-${orderId}` });
 
       await pool.query('UPDATE all_bookings SET payment_intent_id=$1 WHERE id=$2', [paymentIntent.id, orderId]);
 
@@ -1552,7 +1570,7 @@ app.use(express.static(FRONTEND_DIR));
           ...(providerId ? { provider_id: providerId } : {}),
           ...(providerName ? { provider_name: providerName } : {})
         }
-      });
+      }, { idempotencyKey: `pi-create-${orderId}` });
 
       await pool.query('UPDATE all_bookings SET payment_intent_id=$1 WHERE id=$2', [paymentIntent.id, orderId]);
 
@@ -1608,7 +1626,7 @@ app.get('/config/stripe', (_req, res) => {
   res.send({ pk: process.env.STRIPE_PUBLISHABLE_KEY || '' });
 });
 
-app.get('/admin/contact-lookup', requireAdminAuth, async (req, res) => {
+app.get('/admin/contact-lookup', adminRateLimit, requireAdminAuth, async (req, res) => {
   try {
     const phoneDigits = normalizePhoneDigits(req.query.phone);
     const emailNormalized = normalizeEmail(req.query.email);
@@ -1810,7 +1828,7 @@ async function getOrderPayload(orderId, { allowExpiredQuery = false, retryTokenR
               parent_order_id: row.parent_id_of_adjustment || '',
               ...providerMeta
             }
-          });
+          }, { idempotencyKey: `pi-adj-${row.id}` });
 
           await pool.query(
             `UPDATE all_bookings
@@ -1875,7 +1893,7 @@ async function getOrderPayload(orderId, { allowExpiredQuery = false, retryTokenR
             parent_order_id: row.parent_id_of_adjustment || '',
             ...providerMeta
           }
-        });
+        }, { idempotencyKey: `pi-confirm-${row.id}` });
         await pool.query('UPDATE all_bookings SET payment_intent_id=$1 WHERE id=$2', [created.id, row.id]);
         pi = created;
         intentType = 'payment';
@@ -2342,9 +2360,8 @@ app.post('/create-standalone-setup', async (req, res) => {
   }
 });
 
-// 📡 Stripe Webhook handler ex
 
-app.post('/tasks/preauth-due', async (req, res) => {
+app.post('/tasks/preauth-due', adminRateLimit, requireAdminAuth, async (req, res) => {
   try {
     const { rows } = await pool.query(`
       /* Pick saved-card "book" orders that are entering the 24h preauth window */
@@ -2405,7 +2422,7 @@ app.post('/tasks/preauth-due', async (req, res) => {
               parent_order_id: row.parent_id_of_adjustment || '',
               ...providerMeta
             }
-          });
+          }, { idempotencyKey: `pi-preauth-${row.id}` });
 
         await pool.query(
           'UPDATE all_bookings SET payment_intent_id=$1 WHERE id=$2',
@@ -2809,7 +2826,7 @@ app.get('/book', async (req, res) => {
 
 // Create an adjustment child order; saved clients now confirm via book.html and guests via pay.html.
 // HONORS Sheets "Capture Type" via req.body.capture = 'automatic' | 'manual'
-app.post('/create-adjustment', requireAdminAuth, async (req, res) => {
+app.post('/create-adjustment', adminRateLimit, requireAdminAuth, async (req, res) => {
   try {
     const { parentOrderId, amount, note, capture } = req.body || {};
     if (!parentOrderId) return res.status(400).send({ error: 'missing_parent', message: 'parentOrderId required' });
@@ -3008,7 +3025,7 @@ app.post('/create-adjustment', requireAdminAuth, async (req, res) => {
 });
 
 // 🚫 Cancel order (no refund; captured orders not cancelable)
-app.post('/cancel-order', requireAdminAuth, async (req, res) => {
+app.post('/cancel-order', adminRateLimit, requireAdminAuth, async (req, res) => {
   try {
     const { orderId, reason } = req.body || {};
     if (!orderId) {
@@ -3084,7 +3101,7 @@ app.post('/cancel-order', requireAdminAuth, async (req, res) => {
 });
 
 // 💸 Refund a captured order (full or partial)
-app.post('/refund-order', requireAdminAuth, async (req, res) => {
+app.post('/refund-order', adminRateLimit, requireAdminAuth, async (req, res) => {
   try {
     const { orderId, amountCents, reason } = req.body || {};
     if (!orderId) {
@@ -3179,7 +3196,7 @@ app.post('/refund-order', requireAdminAuth, async (req, res) => {
 
 // Capture an authorized manual-capture PaymentIntent (optionally partial).
 // Body: { orderId?: string, paymentIntentId?: string, amount?: number }  // amount in CENTS
-app.post('/capture-order', requireAdminAuth, async (req, res) => {
+app.post('/capture-order', adminRateLimit, requireAdminAuth, async (req, res) => {
   try {
     const { orderId, paymentIntentId, amount } = req.body || {};
     let piId = paymentIntentId;
@@ -3891,7 +3908,7 @@ app.post('/confirm-with-saved', async (req, res) => {
               parent_order_id: row.parent_id_of_adjustment || '',
               ...providerMeta
             }
-          });
+          }, { idempotencyKey: `pi-confirm-${row.id}` });
           await pool.query('UPDATE all_bookings SET payment_intent_id=$1 WHERE id=$2', [pi.id, row.id]);
           piId = pi.id;
         }
@@ -3948,7 +3965,7 @@ app.post('/confirm-with-saved', async (req, res) => {
             parent_order_id: row.parent_id_of_adjustment || '',
             ...providerMeta
           }
-        });
+        }, { idempotencyKey: `pi-confirm-${row.id}` });
         await pool.query('UPDATE all_bookings SET payment_intent_id=$1 WHERE id=$2', [pi.id, row.id]);
         piId = pi.id;
       }
@@ -3992,7 +4009,7 @@ app.post('/confirm-with-saved', async (req, res) => {
           parent_order_id: row.parent_id_of_adjustment || '',
           ...providerMeta
         }
-      });
+      }, { idempotencyKey: `pi-confirm-${row.id}` });
       await pool.query('UPDATE all_bookings SET payment_intent_id=$1 WHERE id=$2', [pi.id, row.id]);
       piId = pi.id;
     }
