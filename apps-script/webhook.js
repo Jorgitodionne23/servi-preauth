@@ -11,8 +11,6 @@ function doPost(e) {
     }
 
     const payloadText = e.postData.contents;
-    Logger.log('RAW BODY: %s', payloadText);
-
     const data = JSON.parse(payloadText);
     const customerIdPayload = String(data.customerId || '').trim();
 
