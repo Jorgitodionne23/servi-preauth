@@ -3266,7 +3266,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
       await pool.query('UPDATE all_bookings SET status = $1 WHERE payment_intent_id = $2', ['Captured', paymentIntentId]);
 
-      postToGoogleWebhook({ paymentIntentId, status: 'Captured', orderId: row.id || '', customerId: row.customer_id || '' });
+      postToGoogleWebhook({ type: 'order.status', paymentIntentId, status: 'Captured', orderId: row.id || '', customerId: row.customer_id || '' });
       break;
     }
 
@@ -3511,7 +3511,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
         console.log('[PI capturable] order:', row.id, 'pi:', obj.id, 'status → Confirmed'); // <— add
 
-        postToGoogleWebhook({ paymentIntentId: obj.id, status: 'Confirmed', orderId: row.id || '', customerId: row.customer_id || '', parentOrderId: row.parent_id_of_adjustment || '' });
+        postToGoogleWebhook({ type: 'order.status', paymentIntentId: obj.id, status: 'Confirmed', orderId: row.id || '', customerId: row.customer_id || '', parentOrderId: row.parent_id_of_adjustment || '' });
       }
       break;
     }
