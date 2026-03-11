@@ -1,4 +1,4 @@
-// Local mirror of Google Apps Script project for editing only; changes must be pasted back into Apps Script.
+// Synced via clasp. Use "clasp push" to deploy changes to the live Apps Script.
 const SHEET_NAME = SHEET_NAMES.ORDERS;
 const ADJ_SHEET_NAME = SHEET_NAMES.ADJUSTMENTS;
 
