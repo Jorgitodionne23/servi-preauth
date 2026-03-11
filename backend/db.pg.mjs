@@ -4,6 +4,10 @@ const { Pool } = pg;
 
 const allowInsecure = String(process.env.ALLOW_INSECURE_DB_TLS || '').toLowerCase() === 'true';
 
+if (allowInsecure && process.env.NODE_ENV === 'production') {
+  throw new Error('ALLOW_INSECURE_DB_TLS=true is not permitted in production (NODE_ENV=production). Remove this flag before deploying.');
+}
+
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ...(process.env.DATABASE_URL?.startsWith('postgres://') || process.env.DATABASE_URL?.startsWith('postgresql://')

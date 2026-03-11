@@ -491,7 +491,7 @@ const FRONTEND_DIR = path.join(__dirname, '..', 'frontend');
 
 const app = express();
 const stripe = new StripePackage(process.env.STRIPE_SECRET_KEY);
-const GOOGLE_SCRIPT_WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbweLYI8-4Z-kW_wahnkHw-Kgmc1GfjI9-YR6z9enOCO98oTXsd9DgTzN_Cm87Drcycb/exec'
+const GOOGLE_SCRIPT_WEBHOOK_URL = process.env.SHEETS_WEBHOOK_URL || '';
 const ADMIN_API_TOKEN = process.env.ADMIN_API_TOKEN || '';
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET || '';
 const FRONTEND_BASE_URL = (process.env.FRONTEND_BASE_URL || process.env.PUBLIC_BASE_URL || 'https://servi-preauth.pages.dev').replace(/\/+$/, '');
@@ -499,6 +499,10 @@ const FRONTEND_BASE_URL = (process.env.FRONTEND_BASE_URL || process.env.PUBLIC_B
 if (!endpointSecret) {
   console.error('Missing STRIPE_WEBHOOK_SECRET environment variable; webhook verification will fail.');
   throw new Error('STRIPE_WEBHOOK_SECRET must be configured before starting the server');
+}
+
+if (!GOOGLE_SCRIPT_WEBHOOK_URL) {
+  console.warn('[startup] GOOGLE_SCRIPT_WEBHOOK_URL is not set — Google Sheets sync will be skipped');
 }
 
 const normalizeOrigin = (value) => String(value || '').replace(/\/+$/, '');
@@ -611,13 +615,23 @@ function requireAdminAuth(req, res, next) {
   return next();
 }
 
-function postToGoogleWebhook(payload) {
+async function postToGoogleWebhook(payload, { maxAttempts = 3, delayMs = 1000 } = {}) {
   if (!GOOGLE_SCRIPT_WEBHOOK_URL) return;
-  fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  }).catch(() => {});
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const res = await fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text().catch(() => '')}`);
+      return;
+    } catch (err) {
+      console.error(`[webhook] attempt ${attempt}/${maxAttempts} failed (type=${payload?.type}):`, err.message);
+      if (attempt < maxAttempts) await new Promise(r => setTimeout(r, delayMs * attempt));
+    }
+  }
+  console.error('[webhook] all retry attempts exhausted for payload:', JSON.stringify(payload));
 }
 
 function notifyConsentChange({
@@ -753,11 +767,7 @@ async function handlePreauthFailure(orderRow, { error, failure } = {}) {
     }
     if (retryPrompt?.message) payload.billingPortalMessage = retryPrompt.message;
     if (retryPrompt?.url) payload.billingPortalUrl = retryPrompt.url;
-    fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    }).catch(() => {});
+    postToGoogleWebhook(payload);
   }
 
   if (error) {
@@ -3256,17 +3266,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
       await pool.query('UPDATE all_bookings SET status = $1 WHERE payment_intent_id = $2', ['Captured', paymentIntentId]);
 
-      fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          paymentIntentId,
-          status: 'Captured',
-          orderId: row.id || '',
-          customerId: row.customer_id || ''
-        })
-      }).then(async r => console.log('Sheets captured:', r.status, await r.text()))
-        .catch(e => console.error('Sheets captured failed:', e));
+      postToGoogleWebhook({ paymentIntentId, status: 'Captured', orderId: row.id || '', customerId: row.customer_id || '' });
       break;
     }
 
@@ -3407,35 +3407,14 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
           });
         }
 
-        if (GOOGLE_SCRIPT_WEBHOOK_URL) {
-          fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              type: 'order.status',
-              orderId,
-              status: statusLabel,
-              customerId: cust || '',
-              parentOrderId: parentForCustomer || orderId
-            })
-          }).catch(()=>{});
-        }
+        postToGoogleWebhook({ type: 'order.status', orderId, status: statusLabel, customerId: cust || '', parentOrderId: parentForCustomer || orderId });
       }
 
       // Optional: keep a Clients sheet in sync
       if (cust) {
         try {
           const c = await stripe.customers.retrieve(cust);
-          if (GOOGLE_SCRIPT_WEBHOOK_URL) {
-            fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                type: 'customer.updated',
-                id: c.id, name: c.name || '', email: c.email || '', phone: c.phone || ''
-              })
-            }).catch(()=>{});
-          }
+          postToGoogleWebhook({ type: 'customer.updated', id: c.id, name: c.name || '', email: c.email || '', phone: c.phone || '' });
         } catch {}
       }
       break;
@@ -3447,10 +3426,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
       console.log('❌ Failed (charge.failed):', paymentIntentId);
       await pool.query('UPDATE all_bookings SET status = $1 WHERE payment_intent_id = $2',
                       ['Failed', paymentIntentId]);
-      fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ paymentIntentId, status: 'Failed' })
-      }).catch(()=>{});
+      postToGoogleWebhook({ paymentIntentId, status: 'Failed' });
       break;
     }
 
@@ -3459,10 +3435,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
       console.log('⛔ Declined (payment_intent.payment_failed):', paymentIntentId);
       await pool.query('UPDATE all_bookings SET status = $1 WHERE payment_intent_id = $2',
                       ['Declined', paymentIntentId]); // <-- not "Failed"
-      fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ paymentIntentId, status: 'Declined' })
-      }).catch(()=>{});
+      postToGoogleWebhook({ paymentIntentId, status: 'Declined' });
       break;
     }
 
@@ -3471,10 +3444,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
       console.log('🕒 Canceled (expired) via charge.expired:', paymentIntentId);
       await pool.query('UPDATE all_bookings SET status = $1 WHERE payment_intent_id = $2',
                       ['Canceled (expired)', paymentIntentId]);
-      fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ paymentIntentId, status: 'Canceled (expired)' })
-      }).catch(()=>{});
+      postToGoogleWebhook({ paymentIntentId, status: 'Canceled (expired)' });
       break;
     }
 
@@ -3516,12 +3486,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
       }
 
       // Only notify Sheets/webhook when it is a real cancellation; for cash we keep Pending Cash
-      if (GOOGLE_SCRIPT_WEBHOOK_URL) {
-        fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
-          method:'POST', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({ paymentIntentId, status: nextStatus })
-        }).catch(()=>{});
-      }
+      postToGoogleWebhook({ paymentIntentId, status: nextStatus });
       break;
     }
 
@@ -3546,19 +3511,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
         console.log('[PI capturable] order:', row.id, 'pi:', obj.id, 'status → Confirmed'); // <— add
 
-        if (GOOGLE_SCRIPT_WEBHOOK_URL) {
-          fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              paymentIntentId: obj.id,
-              status: 'Confirmed',
-              orderId: row.id || '',
-              customerId: row.customer_id || '',
-              parentOrderId: row.parent_id_of_adjustment || ''
-            })
-          }).catch(() => {});
-        }
+        postToGoogleWebhook({ paymentIntentId: obj.id, status: 'Confirmed', orderId: row.id || '', customerId: row.customer_id || '', parentOrderId: row.parent_id_of_adjustment || '' });
       }
       break;
     }
@@ -3645,19 +3598,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
         [c.id, c.name || null, c.email || null, c.phone || null, primaryPaymentMethodId]
       );
 
-      if (GOOGLE_SCRIPT_WEBHOOK_URL) {
-        await fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            type: 'customer.updated',
-            id: c.id,
-            name: c.name || '',
-            email: c.email || '',
-            phone: c.phone || ''
-          })
-        }).catch(()=>{});
-      }
+      postToGoogleWebhook({ type: 'customer.updated', id: c.id, name: c.name || '', email: c.email || '', phone: c.phone || '' });
 
       break;
     }
@@ -3927,19 +3868,7 @@ app.post('/confirm-with-saved', async (req, res) => {
         }
       }
 
-      if (GOOGLE_SCRIPT_WEBHOOK_URL) {
-        fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            type: 'order.status',
-            orderId: row.id,
-            status: statusLabel,
-            customerId: row.customer_id || '',
-            parentOrderId: row.parent_id_of_adjustment || ''
-          })
-        }).catch(() => {});
-      }
+      postToGoogleWebhook({ type: 'order.status', orderId: row.id, status: statusLabel, customerId: row.customer_id || '', parentOrderId: row.parent_id_of_adjustment || '' });
 
       const serviceMs = row.service_datetime
         ? new Date(row.service_datetime).getTime()
@@ -4113,21 +4042,7 @@ app.post('/confirm-with-saved', async (req, res) => {
       } catch (statusErr) {
         console.warn('confirm-with-saved status update failed', statusErr?.message || statusErr);
       }
-      if (GOOGLE_SCRIPT_WEBHOOK_URL) {
-        fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            type: 'order.status',
-            orderId: row.id,
-            status: statusLabel,
-            customerId: row.customer_id || '',
-            paymentIntentId: confirmed.id,
-            amount: confirmed.amount || null,
-            parentOrderId: row.parent_id_of_adjustment || ''
-          })
-        }).catch(() => {});
-      }
+      postToGoogleWebhook({ type: 'order.status', orderId: row.id, status: statusLabel, customerId: row.customer_id || '', paymentIntentId: confirmed.id, amount: confirmed.amount || null, parentOrderId: row.parent_id_of_adjustment || '' });
       return res.send({ ok: true, status: confirmed.status, paymentIntentId: confirmed.id, paymentMethodId: pm.id });
     } catch (e) {
       const pi = e?.raw?.payment_intent || e?.payment_intent;
@@ -4276,19 +4191,7 @@ async function successGate(req, res) {
           [row.id]
         );
         // …and notify the Sheet
-        if (GOOGLE_SCRIPT_WEBHOOK_URL) {
-          fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              type: 'order.status',
-              orderId: row.id,
-              status: 'Scheduled',
-              customerId: row.customer_id || '',
-              parentOrderId: row.parent_id_of_adjustment || row.id
-            })
-          }).catch(()=>{});
-        }
+        postToGoogleWebhook({ type: 'order.status', orderId: row.id, status: 'Scheduled', customerId: row.customer_id || '', parentOrderId: row.parent_id_of_adjustment || row.id });
 
         return res.sendFile(path.join(FRONTEND_DIR, 'success.html'));
       }

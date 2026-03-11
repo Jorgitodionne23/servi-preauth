@@ -20,8 +20,13 @@
     placeholderPk ||
     '';
 
+  // Single source of truth for the WhatsApp support number.
+  // Update here when the number changes; then update the href values in each HTML file.
+  const WHATSAPP_NUMBER = '525525112588';
+
   window.CONFIG = {
     API_BASE: normalizedApi,
-    STRIPE_PUBLISHABLE_KEY: rawPk
+    STRIPE_PUBLISHABLE_KEY: rawPk,
+    WHATSAPP_NUMBER
   };
 })();
