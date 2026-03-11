@@ -1286,7 +1286,7 @@ function createLiveTestPaymentLink() {
   piCell.setValue(String(data.paymentIntentId || ''));
   shortCodeCell.setValue(String(data.publicCode || ''));
   setCellRichTextWithLink_(linkCell, message, paymentLink);
-  statusCell.setValue('Pending (TEST)');
+  statusCell.setValue('Pending');
   totalPaidCell.setValue(LIVE_TEST_AMOUNT_MXN);
 
   try {
