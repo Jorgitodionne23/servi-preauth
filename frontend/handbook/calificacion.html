@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SERVI — ¿Cómo se calcula tu calificación?</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,700&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/shared/shared-styles.css">
+  <style>
+    .rating-card { background:#fff; border:1px solid #e8e8e8; border-radius:16px; padding:28px 24px; margin-bottom:20px; }
+    .formula-box { background:#f8f8f8; border-radius:12px; padding:20px 24px; text-align:center; margin:20px 0; font-family:'Syne',sans-serif; font-weight:700; font-size:15px; display:flex; align-items:center; justify-content:center; gap:12px; flex-wrap:wrap; }
+    .formula-tag { background:#0a0a0a; color:#fff; border-radius:8px; padding:8px 16px; font-size:13px; }
+    .formula-tag.accent { background:#10b981; }
+    .tip-item { display:flex; gap:14px; align-items:flex-start; padding:14px 0; border-bottom:1px solid #f0f0f0; }
+    .tip-item:last-child { border-bottom:none; }
+    .tip-num { min-width:28px;height:28px;border-radius:50%;background:#f0fdf4;color:#10b981;display:flex;align-items:center;justify-content:center;font-family:'Syne',sans-serif;font-weight:700;font-size:13px; }
+  </style>
+</head>
+<body>
+<script>window.__navType = 'partners';</script>
+<script src="/shared/i18n.js"></script>
+<div id="navbar"></div>
+<script src="/shared/shared-nav.js"></script>
+
+<section style="padding-top:120px;padding-bottom:60px">
+  <div class="container" style="max-width:800px">
+    <a href="/handbook.html" class="nav-link" style="display:inline-flex;align-items:center;gap:6px;margin-bottom:24px">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+      Partners Handbook
+    </a>
+
+    <h1 class="heading-lg" style="margin-bottom:12px">¿Cómo se calcula tu calificación?</h1>
+    <p class="text-body" style="margin-bottom:40px;color:#666">Entiende cómo funciona tu reputación dentro de SERVI.</p>
+
+    <p class="text-body" style="margin-bottom:32px">Tu calificación es tu carta de presentación dentro de SERVI. Una buena reputación te da acceso a más solicitudes, mejores clientes y mayores ingresos. Cada servicio que completas contribuye a construir tu perfil profesional.</p>
+
+    <div class="rating-card">
+      <h2 class="heading-md" style="margin-bottom:12px">¿Cómo se calcula por servicio?</h2>
+      <p class="text-body" style="margin-bottom:16px">Cada servicio genera una calificación compuesta por dos partes:</p>
+      <div class="formula-box">
+        <span class="formula-tag">Calificación SERVI</span>
+        <span style="font-size:20px">+</span>
+        <span class="formula-tag accent">Calificación del cliente</span>
+        <span style="font-size:20px">=</span>
+        <span class="formula-tag">Calificación final</span>
+      </div>
+      <p class="text-body" style="margin-top:16px"><strong>Calificación SERVI</strong> evalúa puntualidad, profesionalismo y calidad del trabajo.</p>
+      <p class="text-body" style="margin-top:8px"><strong>Calificación del cliente</strong> es la valoración directa que el cliente da sobre su experiencia.</p>
+    </div>
+
+    <div class="rating-card">
+      <h2 class="heading-md" style="margin-bottom:12px">¿Cómo se calcula en general?</h2>
+      <p class="text-body">Tu calificación general es el promedio de todas tus calificaciones de servicios completados. Cada nuevo servicio actualiza tu promedio, por lo que mantener la consistencia es clave.</p>
+    </div>
+
+    <div class="rating-card">
+      <h2 class="heading-md" style="margin-bottom:16px">¿Cómo mejorar?</h2>
+      <div class="tip-item">
+        <div class="tip-num">1</div>
+        <p class="text-body">Llega puntual a cada cita</p>
+      </div>
+      <div class="tip-item">
+        <div class="tip-num">2</div>
+        <p class="text-body">Comunícate de forma clara y profesional</p>
+      </div>
+      <div class="tip-item">
+        <div class="tip-num">3</div>
+        <p class="text-body">Cumple con lo acordado</p>
+      </div>
+      <div class="tip-item">
+        <div class="tip-num">4</div>
+        <p class="text-body">Pide feedback al finalizar</p>
+      </div>
+      <div class="tip-item">
+        <div class="tip-num">5</div>
+        <p class="text-body">Responde rápido a las solicitudes</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section style="padding:0 0 80px">
+  <div class="container" style="max-width:800px">
+    <h3 class="heading-md" style="margin-bottom:24px">Más del Handbook</h3>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px">
+      <a href="/handbook/guia-comunitaria.html" style="background:#fff;border:1px solid #e8e8e8;border-radius:12px;padding:20px;text-decoration:none;color:inherit;transition:all 0.2s;display:block">
+        <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:15px">Guía Comunitaria</div>
+      </a>
+      <a href="/handbook/prepararte-cita.html" style="background:#fff;border:1px solid #e8e8e8;border-radius:12px;padding:20px;text-decoration:none;color:inherit;transition:all 0.2s;display:block">
+        <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:15px">¿Cómo prepararte para tu cita?</div>
+      </a>
+      <a href="/handbook/video-demostrativo.html" style="background:#fff;border:1px solid #e8e8e8;border-radius:12px;padding:20px;text-decoration:none;color:inherit;transition:all 0.2s;display:block">
+        <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:15px">Video demostrativo</div>
+      </a>
+      <a href="/handbook/cambio-precios.html" style="background:#fff;border:1px solid #e8e8e8;border-radius:12px;padding:20px;text-decoration:none;color:inherit;transition:all 0.2s;display:block">
+        <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:15px">Los tipos de cambios en precio</div>
+      </a>
+      <a href="/handbook/pagos.html" style="background:#fff;border:1px solid #e8e8e8;border-radius:12px;padding:20px;text-decoration:none;color:inherit;transition:all 0.2s;display:block">
+        <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:15px">¿Cómo funcionan los pagos?</div>
+      </a>
+    </div>
+  </div>
+</section>
+
+<div id="footer"></div>
+<script src="/shared/shared-footer.js"></script>
+</body>
+</html>

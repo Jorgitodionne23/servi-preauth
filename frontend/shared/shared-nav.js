@@ -1,0 +1,143 @@
+// ─── SERVI Shared Navbar ────────────────────────────────────────────────────
+// Injects a sticky navbar into the page. Include after i18n.js.
+// Usage: <div id="navbar"></div> then this script auto-renders.
+//
+// Config (set before this script loads):
+//   window.__navType = 'main' | 'helpcenter' | 'partners'  (default: 'main')
+
+(function () {
+  const type = window.__navType || 'main';
+
+  function getLinks(t) {
+    if (type === 'helpcenter') {
+      return [
+        { label: t.nav.helpCenter, href: '/helpcenter.html' },
+        { label: t.hero.cta, href: '/index.html#services' },
+        { label: t.nav.partners, href: '/partners.html' },
+      ];
+    }
+    if (type === 'partners') {
+      return [
+        { label: '¿Qué?', href: '/partners.html#what', i18n: { es: '¿Qué?', en: 'What?' } },
+        { label: '¿Cómo?', href: '/partners.html#how', i18n: { es: '¿Cómo?', en: 'How?' } },
+        { label: 'Handbook', href: '/handbook.html' },
+      ];
+    }
+    // main
+    return [
+      { label: t.nav.services, anchor: 'services' },
+      { label: t.nav.howItWorks, anchor: 'how' },
+      { label: t.nav.testimonials, anchor: 'testimonials' },
+      { label: t.nav.partners, href: '/partners.html' },
+      { label: t.nav.helpCenter, href: '/helpcenter.html' },
+    ];
+  }
+
+  function buildNav() {
+    const t = window.__t;
+    const lang = window.__lang;
+    const links = getLinks(t);
+
+    const logoSuffix = type === 'partners'
+      ? ' <span style="color:#888;font-weight:400;font-size:16px;margin-left:4px">| Partner</span>'
+      : '';
+
+    const linksHTML = links.map(l => {
+      if (l.anchor) {
+        return `<a class="nav-link" onclick="document.getElementById('${l.anchor}')?.scrollIntoView({behavior:'smooth'})">${l.label}</a>`;
+      }
+      const label = l.i18n ? l.i18n[lang] : l.label;
+      return `<a class="nav-link" href="${l.href}">${label}</a>`;
+    }).join('');
+
+    return `
+    <nav class="navbar" id="site-navbar">
+      <div class="navbar__inner">
+        <a href="/index.html" class="logo" style="text-decoration:none">SERVI<span class="logo-dot">.</span>${logoSuffix}</a>
+
+        <div class="desktop-nav" style="display:flex;align-items:center;gap:32px">
+          ${linksHTML}
+        </div>
+
+        <div style="display:flex;align-items:center;gap:12px">
+          <div class="lang-toggle">
+            <button class="lang-btn ${lang === 'es' ? 'lang-active' : 'lang-inactive'}" data-lang="es" onclick="setLang('es');document.getElementById('navbar').innerHTML='';buildNavbar()">ES</button>
+            <button class="lang-btn ${lang === 'en' ? 'lang-active' : 'lang-inactive'}" data-lang="en" onclick="setLang('en');document.getElementById('navbar').innerHTML='';buildNavbar()">EN</button>
+          </div>
+
+          <div class="desktop-nav" style="display:flex;align-items:center;gap:8px">
+            <button class="nav-login-btn" onclick="openAuthModal && openAuthModal('login')">${t.nav.login}</button>
+            <button class="nav-signup-btn" onclick="openAuthModal && openAuthModal('signup')">${t.nav.signup}</button>
+          </div>
+
+          <button class="hamburger" onclick="toggleMobileMenu(true)" aria-label="Menu">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0a0a0a" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+          </button>
+        </div>
+      </div>
+    </nav>
+
+    <!-- Mobile menu -->
+    <div id="mobile-overlay" class="mobile-overlay" style="display:none" onclick="toggleMobileMenu(false)"></div>
+    <div id="mobile-menu" class="mobile-menu" style="display:none">
+      <div style="display:flex;justify-content:flex-end;margin-bottom:32px">
+        <button onclick="toggleMobileMenu(false)" style="background:none;border:none;cursor:pointer;padding:4px">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0a0a0a" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:20px">
+        ${links.map(l => {
+          if (l.anchor) return `<a onclick="document.getElementById('${l.anchor}')?.scrollIntoView({behavior:'smooth'});toggleMobileMenu(false)" style="font-size:18px;font-weight:500;color:#0a0a0a;cursor:pointer">${l.label}</a>`;
+          const label = l.i18n ? l.i18n[lang] : l.label;
+          return `<a href="${l.href}" style="font-size:18px;font-weight:500;color:#0a0a0a;text-decoration:none">${label}</a>`;
+        }).join('')}
+        <div style="height:1px;background:#eee;margin:8px 0"></div>
+        <button onclick="toggleMobileMenu(false);openAuthModal && openAuthModal('login')" style="background:none;border:none;font-size:16px;font-weight:600;cursor:pointer;text-align:left;font-family:'DM Sans',sans-serif">${t.nav.login}</button>
+        <button class="btn-primary" onclick="toggleMobileMenu(false);openAuthModal && openAuthModal('signup')" style="justify-content:center">${t.nav.signup}</button>
+      </div>
+    </div>`;
+  }
+
+  // Expose globally so i18n can re-render
+  window.buildNavbar = function () {
+    const el = document.getElementById('navbar');
+    if (el) el.innerHTML = buildNav();
+  };
+
+  window.toggleMobileMenu = function (show) {
+    const overlay = document.getElementById('mobile-overlay');
+    const menu = document.getElementById('mobile-menu');
+    if (overlay) overlay.style.display = show ? 'block' : 'none';
+    if (menu) menu.style.display = show ? 'block' : 'none';
+    document.body.style.overflow = show ? 'hidden' : '';
+  };
+
+  // Scroll-aware navbar
+  function initScrollWatcher() {
+    let ticking = false;
+    window.addEventListener('scroll', () => {
+      if (!ticking) {
+        requestAnimationFrame(() => {
+          const nav = document.getElementById('site-navbar');
+          if (nav) {
+            if (window.scrollY > 40) nav.classList.add('navbar--scrolled');
+            else nav.classList.remove('navbar--scrolled');
+          }
+          ticking = false;
+        });
+        ticking = true;
+      }
+    });
+  }
+
+  // Auto-init
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => { window.buildNavbar(); initScrollWatcher(); });
+  } else {
+    window.buildNavbar();
+    initScrollWatcher();
+  }
+
+  // Re-render on language change
+  window.addEventListener('langchange', () => { window.buildNavbar(); });
+})();

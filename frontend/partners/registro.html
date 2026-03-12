@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SERVI — Registro de Partner</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,700&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/shared/shared-styles.css">
+</head>
+<body>
+<script>window.__navType = 'partners';</script>
+<script src="/shared/i18n.js"></script>
+<div id="navbar"></div>
+<script src="/shared/shared-nav.js"></script>
+
+<section style="padding-top:120px;padding-bottom:80px">
+  <div class="container" style="max-width:640px">
+    <a href="/partners.html" class="nav-link" style="display:inline-flex;align-items:center;gap:6px;margin-bottom:24px">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+      Partners
+    </a>
+    <h1 class="heading-lg" style="margin-bottom:8px">Registro de Partner</h1>
+    <p class="text-body" style="margin-bottom:32px">Completa tu aplicación para unirte a la comunidad SERVI.</p>
+
+    <form id="partner-form" style="display:flex;flex-direction:column;gap:16px">
+      <div>
+        <label style="display:block;font-weight:600;font-size:14px;margin-bottom:6px">Nombre completo *</label>
+        <input class="input-field" name="name" required>
+      </div>
+      <div>
+        <label style="display:block;font-weight:600;font-size:14px;margin-bottom:6px">Teléfono (WhatsApp) *</label>
+        <input class="input-field" name="phone" type="tel" required>
+      </div>
+      <div>
+        <label style="display:block;font-weight:600;font-size:14px;margin-bottom:6px">Correo electrónico</label>
+        <input class="input-field" name="email" type="email">
+      </div>
+      <div>
+        <label style="display:block;font-weight:600;font-size:14px;margin-bottom:6px">Especialidad / Categoría *</label>
+        <select class="input-field" name="specialty" required>
+          <option value="">Selecciona...</option>
+          <option value="cleaning">Limpieza</option>
+          <option value="repair">Reparación y Mantenimiento</option>
+          <option value="wellness">Bienestar y Cuidado Personal</option>
+          <option value="maintenance">Mantenimiento</option>
+          <option value="supply">Abastecimiento y Compras</option>
+          <option value="other">Otro</option>
+        </select>
+      </div>
+      <div>
+        <label style="display:block;font-weight:600;font-size:14px;margin-bottom:6px">Ciudad</label>
+        <input class="input-field" name="city" placeholder="Ej: Ciudad de México">
+      </div>
+      <div>
+        <label style="display:block;font-weight:600;font-size:14px;margin-bottom:6px">Describe tu experiencia</label>
+        <textarea class="input-field" name="experience" rows="4" placeholder="Cuéntanos sobre tu experiencia y especialidad..."></textarea>
+      </div>
+      <button type="submit" class="btn-primary" style="width:100%;justify-content:center;margin-top:8px" id="submit-btn">Enviar aplicación</button>
+      <div id="form-msg" style="text-align:center;display:none"></div>
+    </form>
+  </div>
+</section>
+
+<div id="footer"></div>
+<script src="/shared/shared-footer.js"></script>
+<script src="/config.js"></script>
+<script>
+document.getElementById('partner-form').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const btn = document.getElementById('submit-btn');
+  const msg = document.getElementById('form-msg');
+  const fd = new FormData(this);
+  btn.disabled = true; btn.textContent = '...';
+  try {
+    const API = window.CONFIG?.API_BASE || '';
+    const res = await fetch(API + '/api/partner-applications', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: fd.get('name'), phone: fd.get('phone'), email: fd.get('email'), specialty: fd.get('specialty'), city: fd.get('city'), experience: fd.get('experience') }),
+    });
+    if (!res.ok) throw new Error(res.status);
+    this.style.display = 'none';
+    msg.style.display = 'block';
+    msg.innerHTML = '<div style="padding:32px 0"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg><h3 class="heading-md" style="margin:16px 0 8px">Aplicación enviada</h3><p class="text-body">Gracias por tu interés. Te contactaremos pronto.</p></div>';
+  } catch (err) {
+    btn.disabled = false; btn.textContent = 'Enviar aplicación';
+    alert('Error al enviar. Inténtalo de nuevo.');
+  }
+});
+</script>
+</body>
+</html>

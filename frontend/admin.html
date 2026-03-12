@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SERVI — Admin Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:'Inter',sans-serif; background:#111; color:#eee; min-height:100vh; }
+    a { color:#10b981; text-decoration:none; }
+    .admin-container { max-width:1400px; margin:0 auto; padding:0 24px; }
+
+    /* Auth gate */
+    .auth-gate { display:flex; align-items:center; justify-content:center; min-height:100vh; }
+    .auth-box { background:#1a1a1a; border:1px solid #333; border-radius:16px; padding:40px; width:400px; max-width:92%; }
+    .auth-box h1 { font-size:24px; font-weight:700; margin-bottom:24px; }
+    .auth-input { width:100%; padding:12px 14px; background:#222; border:1px solid #444; border-radius:10px; color:#eee; font-size:15px; font-family:inherit; outline:none; }
+    .auth-input:focus { border-color:#10b981; }
+    .auth-btn { width:100%; padding:12px; background:#10b981; color:#fff; border:none; border-radius:10px; font-size:15px; font-weight:600; cursor:pointer; margin-top:12px; font-family:inherit; }
+    .auth-btn:hover { background:#059669; }
+    .auth-error { color:#ef4444; font-size:13px; margin-top:8px; display:none; }
+
+    /* Header */
+    .admin-header { padding:16px 0; border-bottom:1px solid #222; display:flex; align-items:center; justify-content:space-between; margin-bottom:24px; }
+    .admin-logo { font-size:20px; font-weight:700; }
+    .admin-logo span { color:#10b981; }
+    .admin-logout { background:#222; border:1px solid #333; border-radius:8px; padding:8px 16px; color:#aaa; font-size:13px; cursor:pointer; font-family:inherit; }
+    .admin-logout:hover { color:#eee; border-color:#555; }
+
+    /* Stats */
+    .stats-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin-bottom:24px; }
+    .stat-card { background:#1a1a1a; border:1px solid #222; border-radius:12px; padding:20px; }
+    .stat-card .num { font-size:28px; font-weight:700; color:#fff; }
+    .stat-card .label { font-size:12px; color:#888; margin-top:4px; }
+
+    /* Tabs */
+    .admin-tabs { display:flex; gap:4px; margin-bottom:20px; border-bottom:1px solid #222; padding-bottom:12px; flex-wrap:wrap; }
+    .admin-tab { padding:8px 16px; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; border:none; background:transparent; color:#888; font-family:inherit; transition:all 0.2s; }
+    .admin-tab:hover { color:#eee; }
+    .admin-tab--active { background:#222; color:#fff; }
+
+    /* Filters */
+    .filter-row { display:flex; gap:10px; margin-bottom:16px; flex-wrap:wrap; align-items:center; }
+    .filter-select, .filter-input { padding:8px 12px; background:#1a1a1a; border:1px solid #333; border-radius:8px; color:#eee; font-size:13px; font-family:inherit; outline:none; }
+    .filter-select:focus, .filter-input:focus { border-color:#10b981; }
+
+    /* Table */
+    .admin-table { width:100%; border-collapse:collapse; font-size:13px; }
+    .admin-table th { text-align:left; padding:10px 12px; color:#888; font-weight:600; border-bottom:1px solid #222; font-size:12px; text-transform:uppercase; letter-spacing:0.05em; }
+    .admin-table td { padding:10px 12px; border-bottom:1px solid #1a1a1a; vertical-align:top; }
+    .admin-table tr:hover td { background:#1a1a1a; }
+
+    /* Badges */
+    .badge { display:inline-block; padding:3px 10px; border-radius:6px; font-size:11px; font-weight:600; }
+    .badge-pending { background:#422006; color:#f59e0b; }
+    .badge-new { background:#042f2e; color:#14b8a6; }
+    .badge-confirmed { background:#052e16; color:#22c55e; }
+    .badge-captured { background:#172554; color:#60a5fa; }
+    .badge-canceled { background:#1c1917; color:#a8a29e; }
+    .badge-contacted { background:#1e1b4b; color:#818cf8; }
+    .badge-verified { background:#052e16; color:#22c55e; }
+    .badge-rejected { background:#450a0a; color:#f87171; }
+    .badge-reviewed { background:#1e1b4b; color:#818cf8; }
+    .badge-resolved { background:#052e16; color:#22c55e; }
+
+    /* Panel */
+    .panel-section { display:none; }
+    .panel-section--active { display:block; }
+
+    /* Pagination */
+    .pagination { display:flex; gap:8px; margin-top:16px; justify-content:center; align-items:center; }
+    .pagination button { padding:6px 14px; border-radius:6px; border:1px solid #333; background:#1a1a1a; color:#eee; font-size:12px; cursor:pointer; font-family:inherit; }
+    .pagination button:disabled { opacity:0.3; cursor:default; }
+    .pagination button:not(:disabled):hover { border-color:#10b981; }
+    .pagination .page-info { font-size:12px; color:#888; }
+
+    .empty-state { text-align:center; padding:48px 0; color:#666; }
+
+    /* Responsive */
+    .table-scroll { overflow-x:auto; }
+  </style>
+</head>
+<body>
+
+<!-- Auth Gate -->
+<div id="auth-gate" class="auth-gate">
+  <div class="auth-box">
+    <h1>SERVI<span style="color:#10b981">.</span> Admin</h1>
+    <input class="auth-input" id="token-input" type="password" placeholder="Admin token">
+    <button class="auth-btn" onclick="doLogin()">Acceder</button>
+    <div class="auth-error" id="auth-error">Token inválido</div>
+  </div>
+</div>
+
+<!-- Dashboard (hidden until auth) -->
+<div id="dashboard" style="display:none">
+  <div class="admin-container">
+    <div class="admin-header">
+      <div class="admin-logo">SERVI<span>.</span> Admin</div>
+      <button class="admin-logout" onclick="doLogout()">Cerrar sesión</button>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-row" id="stats-row"></div>
+
+    <!-- Tabs -->
+    <div class="admin-tabs">
+      <button class="admin-tab admin-tab--active" data-panel="inbox" onclick="switchPanel('inbox')">Inbox</button>
+      <button class="admin-tab" data-panel="orders" onclick="switchPanel('orders')">Órdenes</button>
+    </div>
+
+    <!-- Inbox Panel -->
+    <div id="panel-inbox" class="panel-section panel-section--active">
+      <div class="filter-row">
+        <select class="filter-select" id="inbox-type" onchange="loadInbox()">
+          <option value="">Todos los tipos</option>
+          <option value="requests">Solicitudes de servicio</option>
+          <option value="incidents">Reportes</option>
+          <option value="suggestions">Sugerencias</option>
+          <option value="applications">Aplicaciones de Partner</option>
+        </select>
+      </div>
+      <div class="table-scroll">
+        <table class="admin-table">
+          <thead>
+            <tr><th>Fecha</th><th>Tipo</th><th>Nombre</th><th>Detalle</th><th>Estado</th></tr>
+          </thead>
+          <tbody id="inbox-body"></tbody>
+        </table>
+      </div>
+      <div id="inbox-empty" class="empty-state" style="display:none">No hay elementos.</div>
+    </div>
+
+    <!-- Orders Panel -->
+    <div id="panel-orders" class="panel-section">
+      <div class="filter-row">
+        <input class="filter-input" id="orders-search" placeholder="Buscar por nombre, teléfono, código..." oninput="debounceOrders()">
+        <select class="filter-select" id="orders-status" onchange="loadOrders()">
+          <option value="">Todos los estados</option>
+          <option value="Pending">Pending</option>
+          <option value="Confirmed">Confirmed</option>
+          <option value="Scheduled">Scheduled</option>
+          <option value="Captured">Captured</option>
+          <option value="Canceled">Canceled</option>
+          <option value="Declined">Declined</option>
+        </select>
+      </div>
+      <div class="table-scroll">
+        <table class="admin-table">
+          <thead>
+            <tr><th>Código</th><th>Cliente</th><th>Servicio</th><th>Monto</th><th>Fecha</th><th>Estado</th></tr>
+          </thead>
+          <tbody id="orders-body"></tbody>
+        </table>
+      </div>
+      <div id="orders-empty" class="empty-state" style="display:none">No hay órdenes.</div>
+      <div class="pagination" id="orders-pagination"></div>
+    </div>
+  </div>
+</div>
+
+<script src="/config.js"></script>
+<script>
+const API = (window.CONFIG?.API_BASE || '');
+let TOKEN = sessionStorage.getItem('servi-admin-token') || '';
+let ordersPage = 0;
+let ordersTimer = null;
+
+function headers() { return { 'Authorization': 'Bearer ' + TOKEN, 'Content-Type': 'application/json' }; }
+function fmtDate(d) { if (!d) return '—'; const dt = new Date(d); return dt.toLocaleDateString('es-MX', { day:'2-digit', month:'short', year:'numeric' }); }
+function fmtMoney(cents) { if (!cents && cents !== 0) return '—'; return '$' + (cents / 100).toFixed(2) + ' MXN'; }
+
+function badgeClass(status) {
+  const s = (status || '').toLowerCase();
+  if (s === 'pending') return 'badge-pending';
+  if (s === 'new') return 'badge-new';
+  if (s === 'confirmed') return 'badge-confirmed';
+  if (s === 'captured') return 'badge-captured';
+  if (s === 'canceled' || s === 'cancelled') return 'badge-canceled';
+  if (s === 'contacted') return 'badge-contacted';
+  if (s === 'verified') return 'badge-verified';
+  if (s === 'rejected') return 'badge-rejected';
+  if (s === 'reviewed') return 'badge-reviewed';
+  if (s === 'resolved') return 'badge-resolved';
+  return '';
+}
+
+// Auth
+function doLogin() {
+  const input = document.getElementById('token-input').value.trim();
+  if (!input) return;
+  TOKEN = input;
+  sessionStorage.setItem('servi-admin-token', TOKEN);
+  testAuth();
+}
+function doLogout() {
+  TOKEN = '';
+  sessionStorage.removeItem('servi-admin-token');
+  document.getElementById('dashboard').style.display = 'none';
+  document.getElementById('auth-gate').style.display = 'flex';
+}
+async function testAuth() {
+  try {
+    const res = await fetch(API + '/api/admin/stats', { headers: headers() });
+    if (!res.ok) throw new Error();
+    document.getElementById('auth-gate').style.display = 'none';
+    document.getElementById('dashboard').style.display = 'block';
+    loadStats();
+    loadInbox();
+  } catch {
+    document.getElementById('auth-error').style.display = 'block';
+    sessionStorage.removeItem('servi-admin-token');
+  }
+}
+
+// Stats
+async function loadStats() {
+  try {
+    const res = await fetch(API + '/api/admin/stats', { headers: headers() });
+    const d = await res.json();
+    document.getElementById('stats-row').innerHTML = [
+      { num: d.requestsToday, label: 'Solicitudes hoy' },
+      { num: d.pendingOrders, label: 'Órdenes pendientes' },
+      { num: d.confirmedOrders, label: 'Confirmadas' },
+      { num: d.capturedOrders, label: 'Capturadas' },
+      { num: fmtMoney(d.capturedRevenue), label: 'Revenue capturado' },
+      { num: d.newReports, label: 'Reportes nuevos' },
+      { num: d.pendingApplications, label: 'Apps pendientes' },
+    ].map(s => `<div class="stat-card"><div class="num">${s.num}</div><div class="label">${s.label}</div></div>`).join('');
+  } catch {}
+}
+
+// Panel switching
+function switchPanel(name) {
+  document.querySelectorAll('.panel-section').forEach(el => el.classList.remove('panel-section--active'));
+  document.querySelectorAll('.admin-tab').forEach(el => el.classList.remove('admin-tab--active'));
+  document.getElementById('panel-' + name)?.classList.add('panel-section--active');
+  document.querySelector('[data-panel="' + name + '"]')?.classList.add('admin-tab--active');
+  if (name === 'orders') loadOrders();
+}
+
+// Inbox
+async function loadInbox() {
+  const type = document.getElementById('inbox-type').value;
+  const body = document.getElementById('inbox-body');
+  const empty = document.getElementById('inbox-empty');
+  body.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:#666">Cargando...</td></tr>';
+
+  let items = [];
+  try {
+    if (!type || type === 'requests') {
+      const r = await fetch(API + '/api/service-requests?limit=30', { headers: headers() });
+      const d = await r.json();
+      items.push(...d.items.map(i => ({ date: i.created_at, type: 'Solicitud', name: i.client_name, detail: i.category + (i.description ? ' — ' + i.description.slice(0,60) : ''), status: i.status })));
+    }
+    if (!type || type === 'incidents') {
+      const r = await fetch(API + '/api/reports?type=incident&limit=30', { headers: headers() });
+      const d = await r.json();
+      items.push(...d.items.map(i => ({ date: i.created_at, type: 'Reporte', name: i.name || '—', detail: (i.category || '') + ' — ' + (i.description || '').slice(0,60), status: i.status })));
+    }
+    if (!type || type === 'suggestions') {
+      const r = await fetch(API + '/api/reports?type=suggestion&limit=30', { headers: headers() });
+      const d = await r.json();
+      items.push(...d.items.map(i => ({ date: i.created_at, type: 'Sugerencia', name: i.name || '—', detail: (i.description || '').slice(0,80), status: i.status })));
+    }
+    if (!type || type === 'applications') {
+      const r = await fetch(API + '/api/partner-applications?limit=30', { headers: headers() });
+      const d = await r.json();
+      items.push(...d.items.map(i => ({ date: i.created_at, type: 'Partner App', name: i.name, detail: (i.specialty || '') + (i.city ? ' — ' + i.city : ''), status: i.status })));
+    }
+    items.sort((a, b) => new Date(b.date) - new Date(a.date));
+    if (!items.length) { body.innerHTML = ''; empty.style.display = 'block'; return; }
+    empty.style.display = 'none';
+    body.innerHTML = items.map(i => `
+      <tr>
+        <td>${fmtDate(i.date)}</td>
+        <td>${i.type}</td>
+        <td>${i.name}</td>
+        <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${i.detail}</td>
+        <td><span class="badge ${badgeClass(i.status)}">${i.status}</span></td>
+      </tr>
+    `).join('');
+  } catch (err) {
+    body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#ef4444">Error al cargar datos</td></tr>';
+  }
+}
+
+// Orders
+function debounceOrders() { clearTimeout(ordersTimer); ordersTimer = setTimeout(loadOrders, 400); }
+async function loadOrders() {
+  const search = document.getElementById('orders-search').value.trim();
+  const status = document.getElementById('orders-status').value;
+  const body = document.getElementById('orders-body');
+  const empty = document.getElementById('orders-empty');
+  const limit = 30;
+  const offset = ordersPage * limit;
+
+  body.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:#666">Cargando...</td></tr>';
+  try {
+    const params = new URLSearchParams({ limit, offset });
+    if (search) params.set('search', search);
+    if (status) params.set('status', status);
+    const res = await fetch(API + '/api/admin/orders?' + params, { headers: headers() });
+    const d = await res.json();
+    if (!d.items.length) { body.innerHTML = ''; empty.style.display = 'block'; return; }
+    empty.style.display = 'none';
+    body.innerHTML = d.items.map(o => `
+      <tr>
+        <td style="font-family:monospace;font-size:12px">${o.public_code || o.id.slice(0,8)}</td>
+        <td>${o.client_name || '—'}<br><span style="color:#666;font-size:11px">${o.client_phone || ''}</span></td>
+        <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${o.service_description || '—'}</td>
+        <td>${fmtMoney(o.pricing_total_amount || o.amount)}</td>
+        <td>${fmtDate(o.service_date || o.created_at)}</td>
+        <td><span class="badge ${badgeClass(o.status)}">${o.status || '—'}</span></td>
+      </tr>
+    `).join('');
+
+    // Pagination
+    const totalPages = Math.ceil(d.total / limit);
+    document.getElementById('orders-pagination').innerHTML = `
+      <button onclick="ordersPage=Math.max(0,ordersPage-1);loadOrders()" ${ordersPage === 0 ? 'disabled' : ''}>Anterior</button>
+      <span class="page-info">${ordersPage + 1} / ${totalPages || 1}</span>
+      <button onclick="ordersPage++;loadOrders()" ${ordersPage >= totalPages - 1 ? 'disabled' : ''}>Siguiente</button>
+    `;
+  } catch {
+    body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#ef4444">Error al cargar órdenes</td></tr>';
+  }
+}
+
+// Auto-login if token saved
+if (TOKEN) testAuth();
+</script>
+</body>
+</html>

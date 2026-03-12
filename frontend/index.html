@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SERVI — Servicios a domicilio</title>
+  <meta name="description" content="Servicios a domicilio sin complicaciones. Limpieza, reparaciones, mantenimiento y más — encuentra al especialista ideal en minutos.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,700;1,9..40,400&family=Syne:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/shared/shared-styles.css">
+  <style>
+    /* Hero decorative gradients */
+    .hero-glow-1 { position:absolute;top:-200px;right:-200px;width:600px;height:600px;border-radius:50%;background:radial-gradient(circle,rgba(16,185,129,0.06) 0%,transparent 70%);pointer-events:none; }
+    .hero-glow-2 { position:absolute;bottom:-100px;left:-100px;width:400px;height:400px;border-radius:50%;background:radial-gradient(circle,rgba(16,185,129,0.04) 0%,transparent 70%);pointer-events:none; }
+    /* App mockup placeholder */
+    .app-mockup {
+      width: 280px; height: 500px; border-radius: 40px; background: #0a0a0a;
+      border: 4px solid #333; position: relative; overflow: hidden;
+      box-shadow: 0 24px 64px rgba(0,0,0,0.15); animation: float 4s ease-in-out infinite;
+    }
+    .app-mockup-inner {
+      position:absolute;inset:8px;border-radius:32px;background:#fafafa;overflow:hidden;
+      display:flex;flex-direction:column;padding:20px 16px;gap:12px;
+    }
+    .app-cat-pill {
+      display:flex;align-items:center;gap:10px;padding:12px 14px;
+      border:1px solid #e8e8e8;border-radius:12px;background:#fff;font-size:12px;
+    }
+    .app-cat-icon { width:28px;height:28px;border-radius:8px;background:#10b981;opacity:0.15;flex-shrink:0; }
+    /* Quote mark */
+    .quote-mark { font-size:32px;color:#10b981;font-family:Georgia,serif;line-height:1;margin-bottom:16px; }
+    /* Author avatar */
+    .author-avatar {
+      width:40px;height:40px;border-radius:50%;
+      background:linear-gradient(135deg,#10b981,#059669);
+      display:flex;align-items:center;justify-content:center;
+      color:#fff;font-size:14px;font-weight:600;flex-shrink:0;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ═══ SHARED NAVBAR ═══ -->
+<script src="/shared/i18n.js"></script>
+<div id="navbar"></div>
+<script src="/shared/shared-nav.js"></script>
+
+<!-- ═══ HERO ═══ -->
+<section style="padding-top:140px;padding-bottom:80px;position:relative;overflow:hidden">
+  <div class="hero-glow-1"></div>
+  <div class="hero-glow-2"></div>
+  <div class="container" style="position:relative">
+    <div style="max-width:720px" class="animate-fadeUp">
+      <h1 class="heading-xl" id="hero-headline">
+        <span data-i18n="hero.headline">Servicios a domicilio.</span><br>
+        <span class="gradient-text" data-i18n="hero.headlineBold">Sin complicaciones.</span>
+      </h1>
+      <p class="text-body" style="max-width:520px;margin:24px 0 40px;font-size:19px" data-i18n="hero.sub">
+        Desde limpieza hasta reparaciones — encuentra al especialista ideal en minutos, no en días.
+      </p>
+      <div class="flex-gap-12">
+        <button class="btn-primary btn-primary--lg" onclick="openBooking()">
+          <span data-i18n="hero.cta">Solicitar servicio</span>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ SERVICES ═══ -->
+<section id="services" class="section--sm">
+  <div class="container">
+    <h2 class="heading-lg" style="margin-bottom:48px" data-i18n="categories.title">Explora nuestros servicios</h2>
+    <div class="grid-3" id="categories-grid"></div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ═══ HOW IT WORKS ═══ -->
+<section id="how" class="section">
+  <div class="container">
+    <h2 class="heading-lg" style="margin-bottom:56px" data-i18n="how.title">Así de fácil</h2>
+    <div class="grid-3" id="steps-grid" style="gap:32px"></div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ═══ WHY SERVI ═══ -->
+<section id="about" class="section">
+  <div class="container">
+    <div class="about-layout" style="display:flex;gap:64px;align-items:center">
+      <div style="flex:1">
+        <h2 class="heading-lg" style="margin-bottom:24px" data-i18n="about.title">¿Por qué SERVI?</h2>
+        <p class="text-body" style="margin-bottom:16px" data-i18n="about.sub">Hoy puedes pedir comida o un taxi en segundos, pero encontrar un plomero o un electricista sigue siendo lento, informal y desorganizado.</p>
+        <p class="text-body text-bold" data-i18n="about.bold">SERVI gestiona todo el proceso por ti.</p>
+      </div>
+      <div class="stats-grid" style="flex:1;display:grid;grid-template-columns:1fr 1fr;gap:40px" id="stats-grid"></div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ═══ APP PREVIEW ═══ -->
+<section id="app" class="section">
+  <div class="container" style="text-align:center">
+    <div style="display:inline-block;background:#10b981;color:#fff;padding:6px 16px;border-radius:20px;font-size:13px;font-weight:600;margin-bottom:20px;letter-spacing:0.03em" data-i18n="app.badge">Muy pronto</div>
+    <h2 class="heading-lg" style="margin-bottom:16px" data-i18n="app.title">La app de SERVI</h2>
+    <p class="text-body" style="max-width:480px;margin:0 auto 48px" data-i18n="app.sub">Solicita servicios, da seguimiento y paga — todo desde tu celular.</p>
+    <div style="display:flex;justify-content:center">
+      <div class="app-mockup">
+        <div class="app-mockup-inner">
+          <div style="font-family:'Syne',sans-serif;font-weight:800;font-size:16px;margin-bottom:4px">SERVI<span style="color:#10b981">.</span></div>
+          <div id="app-mockup-cats"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ═══ TESTIMONIALS ═══ -->
+<section id="testimonials" class="section">
+  <div class="container">
+    <h2 class="heading-lg" style="margin-bottom:48px" data-i18n="testimonials.title">Nuestros clientes</h2>
+    <div class="grid-3" id="testimonials-grid" style="gap:20px"></div>
+  </div>
+</section>
+
+<!-- ═══ PROVIDERS ═══ -->
+<section id="providers" style="padding:40px 0 80px">
+  <div style="max-width:1200px;margin:0 auto">
+    <div class="provider-section">
+      <h2 style="font-family:'Syne',sans-serif;font-size:36px;font-weight:700;letter-spacing:-0.02em;margin-bottom:16px" data-i18n="providers.title">¿Eres proveedor de servicios?</h2>
+      <p style="font-size:17px;color:rgba(255,255,255,0.7);margin-bottom:36px;max-width:480px;line-height:1.6" data-i18n="providers.sub">Ofrece tus servicios con SERVI y haz crecer tu clientela de manera gratuita.</p>
+      <div class="flex-gap-12">
+        <a href="/partners.html" class="btn-white" data-i18n="providers.cta1">Guía para ganar con SERVI</a>
+        <a href="/partners.html#how" class="btn-outline-white" data-i18n="providers.cta2">Aplicar como Partner</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ CONTACT ═══ -->
+<section id="contact" style="padding:0 0 80px">
+  <div class="container">
+    <h2 class="heading-lg" style="margin-bottom:32px" data-i18n="contact.title">Contacto</h2>
+    <div style="display:flex;flex-direction:column;gap:16px">
+      <div style="display:flex;align-items:center;gap:12px;color:#555;font-size:15px">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+        <span data-i18n="contact.address">Santa Fe, Cuajimalpa de Morelos, Ciudad de México, CDMX.</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;color:#555;font-size:15px">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M22 4l-10 8L2 4"/></svg>
+        <span>serv.clientserv@gmail.com</span>
+      </div>
+      <a href="https://wa.me/525525112588" target="_blank" rel="noopener" style="display:flex;align-items:center;gap:12px;color:#555;font-size:15px;text-decoration:none">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="#25D366"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+        <span data-i18n="contact.whatsapp">WhatsApp</span>
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ FINAL CTA ═══ -->
+<section style="padding:0 0 80px">
+  <div class="container" style="text-align:center">
+    <button class="btn-primary btn-primary--lg" onclick="openBooking()">
+      <span data-i18n="cta.request">Solicita tu servicio</span>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+    </button>
+  </div>
+</section>
+
+<!-- ═══ SHARED FOOTER ═══ -->
+<div id="footer"></div>
+<script src="/shared/shared-footer.js"></script>
+
+<!-- ═══ AUTH MODAL ═══ -->
+<div id="auth-modal"></div>
+
+<!-- ═══ BOOKING PANEL ═══ -->
+<div id="booking-panel"></div>
+
+<!-- ═══ PAGE SCRIPT ═══ -->
+<script src="/config.js"></script>
+<script>
+(function () {
+  const t = () => window.__t;
+  const lang = () => window.__lang;
+
+  // ─── SVG Icons ──────────────────────────────────────────────
+  const icons = {
+    cleaning: '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v6m0 0l-3-3m3 3l3-3"/><path d="M8 14h8"/><path d="M7 14l-2 8h14l-2-8"/><circle cx="12" cy="11" r="1"/></svg>',
+    repair: '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>',
+    wellness: '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>',
+    maintenance: '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>',
+    supply: '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4zM3 6h18"/><path d="M16 10a4 4 0 01-8 0"/></svg>',
+    custom: '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>',
+    arrow: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>',
+    back: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>',
+    check: '<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg>',
+    x: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>',
+  };
+
+  const catKeys = ['cleaning', 'repair', 'wellness', 'maintenance', 'supply', 'custom'];
+  const catI18n = {
+    cleaning: { name: 'categories.cleaning', desc: 'categories.cleaningDesc' },
+    repair:   { name: 'categories.repair',   desc: 'categories.repairDesc' },
+    wellness: { name: 'categories.wellness', desc: 'categories.wellnessDesc' },
+    maintenance: { name: 'categories.maintenance', desc: 'categories.maintenanceDesc' },
+    supply:   { name: 'categories.supply',   desc: 'categories.supplyDesc' },
+    custom:   { name: 'categories.custom',   desc: 'categories.customDesc' },
+  };
+
+  function resolve(key) {
+    return key.split('.').reduce((o, k) => o?.[k], t());
+  }
+
+  // ─── Render dynamic sections ─────────────────────────────────
+  function renderCategories() {
+    const grid = document.getElementById('categories-grid');
+    if (!grid) return;
+    grid.innerHTML = catKeys.map((key, i) => `
+      <div class="card card--clickable" onclick="openBooking('${key}')" style="animation-delay:${i * 0.08}s">
+        <div style="margin-bottom:16px;color:#10b981">${icons[key]}</div>
+        <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:18px;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between">
+          ${resolve(catI18n[key].name)}
+          <span class="cat-arrow">${icons.arrow}</span>
+        </div>
+        <div class="text-sm" style="color:#888">${resolve(catI18n[key].desc)}</div>
+      </div>
+    `).join('');
+  }
+
+  function renderSteps() {
+    const grid = document.getElementById('steps-grid');
+    if (!grid) return;
+    const steps = [
+      { num: '1', title: resolve('how.s1t'), desc: resolve('how.s1d') },
+      { num: '2', title: resolve('how.s2t'), desc: resolve('how.s2d') },
+      { num: '3', title: resolve('how.s3t'), desc: resolve('how.s3d') },
+    ];
+    grid.innerHTML = steps.map(s => `
+      <div style="display:flex;gap:20px;align-items:flex-start">
+        <div class="step-num">${s.num}</div>
+        <div>
+          <div class="heading-sm" style="margin-bottom:8px">${s.title}</div>
+          <div class="text-sm">${s.desc}</div>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function renderStats() {
+    const grid = document.getElementById('stats-grid');
+    if (!grid) return;
+    const stats = t().about.stats;
+    grid.innerHTML = stats.map(s => `
+      <div style="text-align:center">
+        <div class="stat-num">${s.num}</div>
+        <div class="stat-label">${s.label}</div>
+      </div>
+    `).join('');
+  }
+
+  function renderAppMockup() {
+    const el = document.getElementById('app-mockup-cats');
+    if (!el) return;
+    el.innerHTML = catKeys.map(key => `
+      <div class="app-cat-pill">
+        <div class="app-cat-icon"></div>
+        <span style="font-weight:500">${resolve(catI18n[key].name)}</span>
+      </div>
+    `).join('');
+  }
+
+  function renderTestimonials() {
+    const grid = document.getElementById('testimonials-grid');
+    if (!grid) return;
+    const items = t().testimonials.items;
+    grid.innerHTML = items.map(item => `
+      <div class="testimonial-card">
+        <div class="quote-mark">&ldquo;</div>
+        <p class="text-sm" style="color:#555;margin-bottom:20px">${item.text}</p>
+        <div style="display:flex;align-items:center;gap:12px">
+          <div class="author-avatar">${item.author.charAt(0)}</div>
+          <div style="font-weight:600;font-size:14px">${item.author}</div>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function renderAll() {
+    renderCategories();
+    renderSteps();
+    renderStats();
+    renderAppMockup();
+    renderTestimonials();
+  }
+
+  renderAll();
+  window.addEventListener('langchange', renderAll);
+
+  // ─── Auth Modal ─────────────────────────────────────────────
+  window.openAuthModal = function (mode) {
+    const tr = t().auth;
+    const isLogin = mode === 'login';
+    document.getElementById('auth-modal').innerHTML = `
+    <div class="modal-overlay" onclick="closeAuthModal()">
+      <div class="modal-content" onclick="event.stopPropagation()">
+        <div style="padding:32px 32px 0">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:32px">
+            <h2 class="heading-md">${isLogin ? tr.loginTitle : tr.signupTitle}</h2>
+            <button onclick="closeAuthModal()" style="background:none;border:none;cursor:pointer;padding:4px">${icons.x}</button>
+          </div>
+        </div>
+        <div style="padding:0 32px 32px">
+          <button style="width:100%;padding:14px;border:1.5px solid #e0e0e0;border-radius:12px;background:#fff;font-size:15px;font-weight:500;cursor:pointer;font-family:'DM Sans',sans-serif;margin-bottom:10px;display:flex;align-items:center;justify-content:center;gap:10px">
+            <svg width="18" height="18" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+            ${tr.google}
+          </button>
+          <button style="width:100%;padding:14px;border:1.5px solid #e0e0e0;border-radius:12px;background:#0a0a0a;color:#fff;font-size:15px;font-weight:500;cursor:pointer;font-family:'DM Sans',sans-serif;margin-bottom:24px;display:flex;align-items:center;justify-content:center;gap:10px">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="#fff"><path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.32 2.32-1.55 4.16-3.74 4.25z"/></svg>
+            ${tr.apple}
+          </button>
+          <div style="display:flex;align-items:center;gap:16px;margin-bottom:24px">
+            <div style="flex:1;height:1px;background:#eee"></div>
+            <span class="text-xs" style="color:#aaa">${tr.or}</span>
+            <div style="flex:1;height:1px;background:#eee"></div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:12px">
+            ${!isLogin ? `
+              <input class="input-field" id="auth-name" placeholder="${tr.name}">
+              <input class="input-field" id="auth-phone" placeholder="${tr.phone}">
+            ` : ''}
+            <input class="input-field" id="auth-email" type="email" placeholder="${tr.email}">
+            <input class="input-field" id="auth-password" type="password" placeholder="${tr.password}">
+            <button class="btn-primary" onclick="handleAuth('${mode}')" style="width:100%;justify-content:center;margin-top:8px">
+              ${isLogin ? tr.loginBtn : tr.signupBtn}
+            </button>
+          </div>
+          <div style="text-align:center;margin-top:20px">
+            <button onclick="openAuthModal('${isLogin ? 'signup' : 'login'}')" style="background:none;border:none;font-size:14px;color:#10b981;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">
+              ${isLogin ? tr.switchToSignup : tr.switchToLogin}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+    document.body.style.overflow = 'hidden';
+  };
+
+  window.closeAuthModal = function () {
+    document.getElementById('auth-modal').innerHTML = '';
+    document.body.style.overflow = '';
+  };
+
+  window.handleAuth = function (mode) {
+    // Placeholder — accept any input for now
+    const email = document.getElementById('auth-email')?.value;
+    const name = mode === 'signup' ? document.getElementById('auth-name')?.value : (email || '').split('@')[0];
+    if (email) {
+      window.__user = { name, email };
+      closeAuthModal();
+      openBooking();
+    }
+  };
+
+  // ─── Booking Panel ──────────────────────────────────────────
+  let bookingState = { step: 1, category: null, description: '', whenType: 'asap', date: '', time: '', address: '', clientName: '', clientPhone: '', clientEmail: '' };
+
+  window.openBooking = function (preselectedCategory) {
+    bookingState = { step: 1, category: preselectedCategory || null, description: '', whenType: 'asap', date: '', time: '', address: '', clientName: '', clientPhone: '', clientEmail: '' };
+    if (preselectedCategory) bookingState.step = 2;
+    renderBooking();
+  };
+
+  window.closeBooking = function () {
+    document.getElementById('booking-panel').innerHTML = '';
+    document.body.style.overflow = '';
+  };
+
+  function renderBooking() {
+    const tr = t().booking;
+    const s = bookingState;
+    let content = '';
+
+    // Header
+    const header = `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid #eee">
+        ${s.step > 1 ? `<button onclick="bookingBack()" style="background:none;border:none;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:15px;font-weight:500;font-family:'DM Sans',sans-serif">${icons.back} ${tr.back}</button>` : '<div></div>'}
+        <span class="heading-md">${tr.title}</span>
+        <button onclick="closeBooking()" style="background:none;border:none;cursor:pointer;padding:4px">${icons.x}</button>
+      </div>`;
+
+    if (s.step === 1) {
+      // Category selection
+      content = `<div style="padding:24px;display:flex;flex-direction:column;gap:12px">
+        <p class="text-body" style="margin-bottom:8px">${tr.selectCategory}</p>
+        ${catKeys.map(key => `
+          <div class="booking-cat ${s.category === key ? 'booking-cat--active' : ''}" onclick="bookingSelectCat('${key}')">
+            <div style="color:#10b981">${icons[key]}</div>
+            <div>
+              <div style="font-weight:600;font-size:15px">${resolve(catI18n[key].name)}</div>
+              <div class="text-xs">${resolve(catI18n[key].desc)}</div>
+            </div>
+          </div>
+        `).join('')}
+      </div>`;
+    } else if (s.step === 2) {
+      // Description + When
+      content = `<div style="padding:24px;display:flex;flex-direction:column;gap:24px">
+        <div>
+          <label class="text-body text-bold" style="display:block;margin-bottom:8px">${tr.describeNeed}</label>
+          <textarea class="input-field" id="booking-desc" placeholder="${tr.descPlaceholder}" oninput="bookingState.description=this.value">${s.description}</textarea>
+        </div>
+        <div>
+          <label class="text-body text-bold" style="display:block;margin-bottom:12px">${tr.when}</label>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <div class="radio-option ${s.whenType === 'asap' ? 'radio-option--selected' : ''}" onclick="bookingSetWhen('asap')">
+              <div class="radio-dot"></div>
+              <span style="font-size:15px;font-weight:500">${tr.asap}</span>
+            </div>
+            <div class="radio-option ${s.whenType === 'schedule' ? 'radio-option--selected' : ''}" onclick="bookingSetWhen('schedule')">
+              <div class="radio-dot"></div>
+              <span style="font-size:15px;font-weight:500">${tr.schedule}</span>
+            </div>
+          </div>
+          ${s.whenType === 'schedule' ? `
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px">
+              <div>
+                <label class="text-xs" style="display:block;margin-bottom:4px">${tr.date}</label>
+                <input class="input-field" type="date" id="booking-date" value="${s.date}" onchange="bookingState.date=this.value">
+              </div>
+              <div>
+                <label class="text-xs" style="display:block;margin-bottom:4px">${tr.time}</label>
+                <input class="input-field" type="time" id="booking-time" value="${s.time}" onchange="bookingState.time=this.value">
+              </div>
+            </div>
+          ` : ''}
+        </div>
+        <button class="btn-primary" onclick="bookingState.step=3;renderBooking()" style="width:100%;justify-content:center">
+          ${tr.where} ${icons.arrow}
+        </button>
+      </div>`;
+    } else if (s.step === 3) {
+      // Address + Contact + Confirm
+      content = `<div style="padding:24px;display:flex;flex-direction:column;gap:24px">
+        <div>
+          <label class="text-body text-bold" style="display:block;margin-bottom:8px">${tr.where}</label>
+          <input class="input-field" id="booking-address" placeholder="${tr.addressPlaceholder}" value="${s.address}" oninput="bookingState.address=this.value">
+        </div>
+        <div>
+          <label class="text-body text-bold" style="display:block;margin-bottom:12px">${tr.contactTitle}</label>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <input class="input-field" id="booking-name" placeholder="${tr.namePlaceholder}" value="${s.clientName || (window.__user?.name || '')}" oninput="bookingState.clientName=this.value">
+            <input class="input-field" id="booking-phone" placeholder="${tr.phonePlaceholder}" value="${s.clientPhone}" oninput="bookingState.clientPhone=this.value">
+            <input class="input-field" id="booking-email" type="email" placeholder="${tr.emailPlaceholder}" value="${s.clientEmail || (window.__user?.email || '')}" oninput="bookingState.clientEmail=this.value">
+          </div>
+        </div>
+        <button class="btn-primary" onclick="submitBooking()" style="width:100%;justify-content:center" id="booking-submit-btn">
+          ${tr.confirm}
+        </button>
+      </div>`;
+    } else if (s.step === 4) {
+      // Confirmation
+      content = `<div style="padding:48px 24px;text-align:center">
+        <div style="margin-bottom:24px">${icons.check}</div>
+        <h3 class="heading-md" style="margin-bottom:12px">${tr.confirmed}</h3>
+        <p class="text-body" style="margin-bottom:32px">${tr.confirmedSub}</p>
+        <button class="btn-primary" onclick="closeBooking()" style="margin:0 auto">${tr.done}</button>
+      </div>`;
+    }
+
+    document.getElementById('booking-panel').innerHTML = `<div class="booking-panel">${header}${content}</div>`;
+    document.body.style.overflow = 'hidden';
+  }
+
+  window.bookingSelectCat = function (key) {
+    bookingState.category = key;
+    bookingState.step = 2;
+    renderBooking();
+  };
+
+  window.bookingSetWhen = function (type) {
+    bookingState.whenType = type;
+    renderBooking();
+  };
+
+  window.bookingBack = function () {
+    if (bookingState.step > 1) { bookingState.step--; renderBooking(); }
+  };
+
+  window.submitBooking = function () {
+    const s = bookingState;
+    // Read current input values
+    s.clientName = document.getElementById('booking-name')?.value || s.clientName;
+    s.clientPhone = document.getElementById('booking-phone')?.value || s.clientPhone;
+    s.clientEmail = document.getElementById('booking-email')?.value || s.clientEmail;
+    s.address = document.getElementById('booking-address')?.value || s.address;
+
+    if (!s.clientName || !s.clientPhone) {
+      alert(lang() === 'es' ? 'Por favor completa tu nombre y teléfono.' : 'Please fill in your name and phone.');
+      return;
+    }
+
+    const btn = document.getElementById('booking-submit-btn');
+    if (btn) { btn.disabled = true; btn.textContent = '...'; }
+
+    const API = window.CONFIG?.API_BASE || '';
+    fetch(API + '/api/service-requests', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        category: s.category,
+        description: s.description,
+        preferredDate: s.whenType === 'schedule' ? s.date : null,
+        preferredTime: s.whenType === 'schedule' ? s.time : null,
+        isAsap: s.whenType === 'asap',
+        serviceAddress: s.address,
+        clientName: s.clientName,
+        clientPhone: s.clientPhone,
+        clientEmail: s.clientEmail,
+        lang: lang(),
+      }),
+    })
+    .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then(() => { bookingState.step = 4; renderBooking(); })
+    .catch(err => {
+      console.error('Booking submit error:', err);
+      if (btn) { btn.disabled = false; btn.textContent = t().booking.confirm; }
+      alert(lang() === 'es' ? 'Error al enviar. Inténtalo de nuevo.' : 'Submission error. Please try again.');
+    });
+  };
+})();
+</script>
+</body>
+</html>

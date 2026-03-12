@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SERVI — Legal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,700&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/shared/shared-styles.css">
+  <style>
+    .legal-tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:32px; border-bottom:1px solid #e8e8e8; padding-bottom:16px; }
+    .legal-tab { padding:10px 20px; border-radius:10px; font-size:14px; font-weight:600; cursor:pointer; border:1.5px solid #e0e0e0; background:#fff; font-family:'DM Sans',sans-serif; transition:all 0.2s; }
+    .legal-tab:hover { border-color:#0a0a0a; }
+    .legal-tab--active { background:#0a0a0a; color:#fff; border-color:#0a0a0a; }
+    .legal-content { display:none; }
+    .legal-content--active { display:block; }
+    .legal-body { background:#fff; border:1px solid #e8e8e8; border-radius:16px; padding:32px; min-height:300px; }
+    .legal-body p { color:#666; font-size:15px; line-height:1.7; }
+  </style>
+</head>
+<body>
+<script>window.__navType = 'helpcenter';</script>
+<script src="/shared/i18n.js"></script>
+<div id="navbar"></div>
+<script src="/shared/shared-nav.js"></script>
+
+<section style="padding-top:120px;padding-bottom:80px">
+  <div class="container" style="max-width:900px">
+    <h1 class="heading-lg" style="margin-bottom:32px">Legal</h1>
+
+    <div class="legal-tabs" id="legal-tabs">
+      <button class="legal-tab legal-tab--active" data-tab="terms" onclick="showTab('terms')">Términos y Condiciones</button>
+      <button class="legal-tab" data-tab="privacy" onclick="showTab('privacy')">Aviso de Privacidad</button>
+      <button class="legal-tab" data-tab="cancellation" onclick="showTab('cancellation')">Política de Cancelación</button>
+      <button class="legal-tab" data-tab="legal-notice" onclick="showTab('legal-notice')">Aviso Legal</button>
+      <button class="legal-tab" data-tab="stripe" onclick="showTab('stripe')">Términos de Stripe</button>
+    </div>
+
+    <div id="tab-terms" class="legal-content legal-content--active">
+      <div class="legal-body" id="terms">
+        <h2 class="heading-md" style="margin-bottom:16px">Términos y Condiciones de Uso</h2>
+        <!-- [PLACEHOLDER: Paste legal text from Google Doc] -->
+        <p style="color:#aaa;font-style:italic">El contenido de los Términos y Condiciones de Uso será añadido próximamente.</p>
+      </div>
+    </div>
+    <div id="tab-privacy" class="legal-content">
+      <div class="legal-body" id="privacy">
+        <h2 class="heading-md" style="margin-bottom:16px">Aviso de Privacidad</h2>
+        <!-- [PLACEHOLDER: Paste privacy policy text] -->
+        <p style="color:#aaa;font-style:italic">El contenido del Aviso de Privacidad será añadido próximamente.</p>
+      </div>
+    </div>
+    <div id="tab-cancellation" class="legal-content">
+      <div class="legal-body" id="cancellation">
+        <h2 class="heading-md" style="margin-bottom:16px">Política de Cancelación</h2>
+        <!-- [PLACEHOLDER: Paste cancellation policy text] -->
+        <p style="color:#aaa;font-style:italic">El contenido de la Política de Cancelación será añadido próximamente.</p>
+      </div>
+    </div>
+    <div id="tab-legal-notice" class="legal-content">
+      <div class="legal-body" id="legal-notice">
+        <h2 class="heading-md" style="margin-bottom:16px">Aviso Legal</h2>
+        <!-- [PLACEHOLDER: Paste legal notice text] -->
+        <p style="color:#aaa;font-style:italic">El contenido del Aviso Legal será añadido próximamente.</p>
+      </div>
+    </div>
+    <div id="tab-stripe" class="legal-content">
+      <div class="legal-body">
+        <h2 class="heading-md" style="margin-bottom:16px">Términos y Condiciones de Stripe</h2>
+        <!-- [PLACEHOLDER: Paste Stripe terms text] -->
+        <p style="color:#aaa;font-style:italic">El contenido de los Términos y Condiciones de Stripe será añadido próximamente.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div id="footer"></div>
+<script src="/shared/shared-footer.js"></script>
+<script>
+function showTab(name) {
+  document.querySelectorAll('.legal-content').forEach(el => el.classList.remove('legal-content--active'));
+  document.querySelectorAll('.legal-tab').forEach(el => el.classList.remove('legal-tab--active'));
+  const panel = document.getElementById('tab-' + name);
+  const tab = document.querySelector('[data-tab="' + name + '"]');
+  if (panel) panel.classList.add('legal-content--active');
+  if (tab) tab.classList.add('legal-tab--active');
+}
+// Handle anchor links (e.g., /legal.html#privacy)
+(function() {
+  const hash = window.location.hash.replace('#', '');
+  if (hash) showTab(hash);
+})();
+</script>
+</body>
+</html>
