@@ -261,6 +261,78 @@ export async function initDb() {
 
     CREATE INDEX IF NOT EXISTS idx_saved_servi_users_latest_pm
       ON saved_servi_users (latest_payment_method_id);
+
+    -- ─── Phase 1: Service request intake ───────────────────────
+
+    -- Service requests (from customer booking flow)
+    CREATE TABLE IF NOT EXISTS service_requests (
+      id TEXT PRIMARY KEY,
+      category TEXT NOT NULL,
+      description TEXT,
+      preferred_date TEXT,
+      preferred_time TEXT,
+      is_asap BOOLEAN DEFAULT FALSE,
+      service_address TEXT,
+      client_name TEXT NOT NULL,
+      client_phone TEXT NOT NULL,
+      client_email TEXT,
+      customer_id TEXT,
+      status TEXT DEFAULT 'pending',
+      converted_order_id TEXT,
+      admin_notes TEXT,
+      lang TEXT DEFAULT 'es',
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_service_requests_status
+      ON service_requests(status);
+    CREATE INDEX IF NOT EXISTS idx_service_requests_created_at
+      ON service_requests(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_service_requests_customer
+      ON service_requests(customer_id)
+      WHERE customer_id IS NOT NULL;
+
+    -- Incident reports & suggestions (from Help Center forms)
+    CREATE TABLE IF NOT EXISTS service_reports (
+      id TEXT PRIMARY KEY,
+      type TEXT NOT NULL,              -- 'incident' or 'suggestion'
+      category TEXT,                   -- incident type or suggestion category
+      name TEXT,
+      email TEXT,
+      phone TEXT,
+      description TEXT NOT NULL,
+      incident_date TEXT,              -- for incidents only
+      status TEXT DEFAULT 'new',       -- new, reviewed, resolved, archived
+      admin_notes TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_service_reports_type
+      ON service_reports(type);
+    CREATE INDEX IF NOT EXISTS idx_service_reports_status
+      ON service_reports(status);
+    CREATE INDEX IF NOT EXISTS idx_service_reports_created_at
+      ON service_reports(created_at DESC);
+
+    -- Partner applications (from Partners registration form)
+    CREATE TABLE IF NOT EXISTS partner_applications (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      email TEXT,
+      specialty TEXT,
+      city TEXT,
+      experience TEXT,
+      status TEXT DEFAULT 'pending',   -- pending, contacted, verified, rejected
+      admin_notes TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_partner_applications_status
+      ON partner_applications(status);
+    CREATE INDEX IF NOT EXISTS idx_partner_applications_created_at
+      ON partner_applications(created_at DESC);
   `);
 }
 

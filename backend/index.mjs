@@ -499,6 +499,14 @@ const adminRateLimit = rateLimit({
   legacyHeaders: false,
   message: { error: 'too_many_requests' },
 });
+
+const publicFormLimit = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  limit: 30,               // stricter than admin — public forms
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'too_many_requests' },
+});
 const stripe = new StripePackage(process.env.STRIPE_SECRET_KEY);
 const GOOGLE_SCRIPT_WEBHOOK_URL = process.env.SHEETS_WEBHOOK_URL || '';
 const ADMIN_API_TOKEN = process.env.ADMIN_API_TOKEN || '';
@@ -4254,6 +4262,309 @@ async function successGate(req, res) {
     return res.redirect(302, `/pay?orderId=${encodeURIComponent(orderId)}`);
   }
 }
+
+// ─── Phase 1: Service request intake + Admin dashboard ──────────────────────
+
+// --- Public: Submit a service request ---
+app.post('/api/service-requests', publicFormLimit, async (req, res) => {
+  try {
+    const { category, description, preferredDate, preferredTime, isAsap, serviceAddress, clientName, clientPhone, clientEmail, customerId, lang } = req.body || {};
+    if (!category || !clientName || !clientPhone) {
+      return res.status(400).json({ error: 'missing_required_fields', message: 'category, clientName, and clientPhone are required' });
+    }
+    const id = randomUUID();
+    await pool.query(
+      `INSERT INTO service_requests (id, category, description, preferred_date, preferred_time, is_asap, service_address, client_name, client_phone, client_email, customer_id, lang)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+      [id, category, description || null, preferredDate || null, preferredTime || null, !!isAsap, serviceAddress || null, clientName, clientPhone, clientEmail || null, customerId || null, lang || 'es']
+    );
+    // Notify Google Sheets
+    postToGoogleWebhook({ type: 'service_request.created', requestId: id, category, clientName, clientPhone, clientEmail: clientEmail || '', serviceAddress: serviceAddress || '', isAsap: !!isAsap, preferredDate: preferredDate || '', preferredTime: preferredTime || '' });
+    return res.status(201).json({ id, status: 'pending' });
+  } catch (err) {
+    console.error('[POST /api/service-requests]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// --- Public: Submit a report or suggestion ---
+app.post('/api/reports', publicFormLimit, async (req, res) => {
+  try {
+    const { type, category, name, email, phone, description, incidentDate } = req.body || {};
+    if (!type || !description) {
+      return res.status(400).json({ error: 'missing_required_fields', message: 'type and description are required' });
+    }
+    if (type !== 'incident' && type !== 'suggestion') {
+      return res.status(400).json({ error: 'invalid_type', message: 'type must be "incident" or "suggestion"' });
+    }
+    const id = randomUUID();
+    await pool.query(
+      `INSERT INTO service_reports (id, type, category, name, email, phone, description, incident_date)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [id, type, category || null, name || null, email || null, phone || null, description, incidentDate || null]
+    );
+    postToGoogleWebhook({ type: 'report.created', reportId: id, reportType: type, category: category || '', name: name || '', email: email || '', description });
+    return res.status(201).json({ id, status: 'new' });
+  } catch (err) {
+    console.error('[POST /api/reports]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// --- Public: Submit a partner application ---
+app.post('/api/partner-applications', publicFormLimit, async (req, res) => {
+  try {
+    const { name, phone, email, specialty, city, experience } = req.body || {};
+    if (!name || !phone) {
+      return res.status(400).json({ error: 'missing_required_fields', message: 'name and phone are required' });
+    }
+    const id = randomUUID();
+    await pool.query(
+      `INSERT INTO partner_applications (id, name, phone, email, specialty, city, experience)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [id, name, phone, email || null, specialty || null, city || null, experience || null]
+    );
+    postToGoogleWebhook({ type: 'partner_application.created', applicationId: id, name, phone, email: email || '', specialty: specialty || '', city: city || '' });
+    return res.status(201).json({ id, status: 'pending' });
+  } catch (err) {
+    console.error('[POST /api/partner-applications]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// --- Admin: Service requests CRUD ---
+app.get('/api/service-requests', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const { status, limit = '50', offset = '0' } = req.query;
+    const params = [];
+    let where = '';
+    if (status) {
+      params.push(status);
+      where = `WHERE status = $${params.length}`;
+    }
+    params.push(Number(limit) || 50, Number(offset) || 0);
+    const { rows } = await pool.query(
+      `SELECT * FROM service_requests ${where} ORDER BY created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params
+    );
+    const { rows: countRows } = await pool.query(
+      `SELECT count(*)::int AS total FROM service_requests ${where}`,
+      status ? [status] : []
+    );
+    return res.json({ items: rows, total: countRows[0]?.total || 0 });
+  } catch (err) {
+    console.error('[GET /api/service-requests]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+app.patch('/api/service-requests/:id', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, adminNotes, convertedOrderId } = req.body || {};
+    const sets = [];
+    const params = [];
+    if (status) { params.push(status); sets.push(`status = $${params.length}`); }
+    if (adminNotes !== undefined) { params.push(adminNotes); sets.push(`admin_notes = $${params.length}`); }
+    if (convertedOrderId !== undefined) { params.push(convertedOrderId); sets.push(`converted_order_id = $${params.length}`); }
+    if (sets.length === 0) return res.status(400).json({ error: 'no_fields_to_update' });
+    sets.push('updated_at = NOW()');
+    params.push(id);
+    const { rowCount } = await pool.query(
+      `UPDATE service_requests SET ${sets.join(', ')} WHERE id = $${params.length}`,
+      params
+    );
+    if (!rowCount) return res.status(404).json({ error: 'not_found' });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('[PATCH /api/service-requests/:id]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// --- Admin: Reports/suggestions CRUD ---
+app.get('/api/reports', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const { type, status, limit = '50', offset = '0' } = req.query;
+    const params = [];
+    const conditions = [];
+    if (type) { params.push(type); conditions.push(`type = $${params.length}`); }
+    if (status) { params.push(status); conditions.push(`status = $${params.length}`); }
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const countParams = [...params];
+    params.push(Number(limit) || 50, Number(offset) || 0);
+    const { rows } = await pool.query(
+      `SELECT * FROM service_reports ${where} ORDER BY created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params
+    );
+    const { rows: countRows } = await pool.query(
+      `SELECT count(*)::int AS total FROM service_reports ${where}`,
+      countParams
+    );
+    return res.json({ items: rows, total: countRows[0]?.total || 0 });
+  } catch (err) {
+    console.error('[GET /api/reports]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+app.patch('/api/reports/:id', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, adminNotes } = req.body || {};
+    const sets = [];
+    const params = [];
+    if (status) { params.push(status); sets.push(`status = $${params.length}`); }
+    if (adminNotes !== undefined) { params.push(adminNotes); sets.push(`admin_notes = $${params.length}`); }
+    if (sets.length === 0) return res.status(400).json({ error: 'no_fields_to_update' });
+    params.push(id);
+    const { rowCount } = await pool.query(
+      `UPDATE service_reports SET ${sets.join(', ')} WHERE id = $${params.length}`,
+      params
+    );
+    if (!rowCount) return res.status(404).json({ error: 'not_found' });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('[PATCH /api/reports/:id]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// --- Admin: Partner applications CRUD ---
+app.get('/api/partner-applications', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const { status, limit = '50', offset = '0' } = req.query;
+    const params = [];
+    let where = '';
+    if (status) {
+      params.push(status);
+      where = `WHERE status = $${params.length}`;
+    }
+    params.push(Number(limit) || 50, Number(offset) || 0);
+    const { rows } = await pool.query(
+      `SELECT * FROM partner_applications ${where} ORDER BY created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params
+    );
+    const { rows: countRows } = await pool.query(
+      `SELECT count(*)::int AS total FROM partner_applications ${where}`,
+      status ? [status] : []
+    );
+    return res.json({ items: rows, total: countRows[0]?.total || 0 });
+  } catch (err) {
+    console.error('[GET /api/partner-applications]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+app.patch('/api/partner-applications/:id', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, adminNotes } = req.body || {};
+    const sets = [];
+    const params = [];
+    if (status) { params.push(status); sets.push(`status = $${params.length}`); }
+    if (adminNotes !== undefined) { params.push(adminNotes); sets.push(`admin_notes = $${params.length}`); }
+    if (sets.length === 0) return res.status(400).json({ error: 'no_fields_to_update' });
+    params.push(id);
+    const { rowCount } = await pool.query(
+      `UPDATE partner_applications SET ${sets.join(', ')} WHERE id = $${params.length}`,
+      params
+    );
+    if (!rowCount) return res.status(404).json({ error: 'not_found' });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('[PATCH /api/partner-applications/:id]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// --- Admin dashboard: Orders list ---
+app.get('/api/admin/orders', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const { status, search, limit = '50', offset = '0', sort = 'created_at', dir = 'desc' } = req.query;
+    const allowedSorts = ['created_at', 'service_date', 'amount', 'status'];
+    const sortCol = allowedSorts.includes(sort) ? sort : 'created_at';
+    const sortDir = dir === 'asc' ? 'ASC' : 'DESC';
+
+    const params = [];
+    const conditions = [];
+    if (status) {
+      params.push(status);
+      conditions.push(`status = $${params.length}`);
+    }
+    if (search) {
+      params.push(`%${search}%`);
+      const i = params.length;
+      conditions.push(`(client_name ILIKE $${i} OR client_phone ILIKE $${i} OR client_email ILIKE $${i} OR public_code ILIKE $${i} OR id ILIKE $${i})`);
+    }
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const countParams = [...params];
+    params.push(Number(limit) || 50, Number(offset) || 0);
+
+    const { rows } = await pool.query(
+      `SELECT id, public_code, kind, client_name, client_phone, client_email,
+              service_description, service_date, service_datetime, service_address,
+              amount, provider_amount, booking_fee_amount, processing_fee_amount, vat_amount, pricing_total_amount,
+              status, provider_id, provider_name, customer_id, created_at
+         FROM all_bookings ${where}
+         ORDER BY ${sortCol} ${sortDir}
+         LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params
+    );
+    const { rows: countRows } = await pool.query(
+      `SELECT count(*)::int AS total FROM all_bookings ${where}`,
+      countParams
+    );
+    return res.json({ items: rows, total: countRows[0]?.total || 0 });
+  } catch (err) {
+    console.error('[GET /api/admin/orders]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// --- Admin dashboard: Single order detail ---
+app.get('/api/admin/orders/:id', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const { rows } = await pool.query(`SELECT * FROM all_bookings WHERE id = $1`, [req.params.id]);
+    if (!rows.length) return res.status(404).json({ error: 'not_found' });
+    // Include adjustments if any
+    const { rows: adjustments } = await pool.query(
+      `SELECT * FROM all_bookings WHERE parent_id_of_adjustment = $1 ORDER BY created_at`,
+      [req.params.id]
+    );
+    return res.json({ order: rows[0], adjustments });
+  } catch (err) {
+    console.error('[GET /api/admin/orders/:id]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// --- Admin dashboard: Quick stats ---
+app.get('/api/admin/stats', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const [requests, pendingOrders, confirmed, captured, reports, applications] = await Promise.all([
+      pool.query(`SELECT count(*)::int AS c FROM service_requests WHERE created_at::date = $1`, [today]),
+      pool.query(`SELECT count(*)::int AS c FROM all_bookings WHERE status = 'Pending'`),
+      pool.query(`SELECT count(*)::int AS c FROM all_bookings WHERE status = 'Confirmed'`),
+      pool.query(`SELECT count(*)::int AS c, COALESCE(sum(final_captured_amount),0)::int AS revenue FROM all_bookings WHERE status = 'Captured'`),
+      pool.query(`SELECT count(*)::int AS c FROM service_reports WHERE status = 'new'`),
+      pool.query(`SELECT count(*)::int AS c FROM partner_applications WHERE status = 'pending'`),
+    ]);
+    return res.json({
+      requestsToday: requests.rows[0]?.c || 0,
+      pendingOrders: pendingOrders.rows[0]?.c || 0,
+      confirmedOrders: confirmed.rows[0]?.c || 0,
+      capturedOrders: captured.rows[0]?.c || 0,
+      capturedRevenue: captured.rows[0]?.revenue || 0,
+      newReports: reports.rows[0]?.c || 0,
+      pendingApplications: applications.rows[0]?.c || 0,
+    });
+  } catch (err) {
+    console.error('[GET /api/admin/stats]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
 
 // 🚀 Start server
 const PORT = process.env.PORT || 4242;
