@@ -1,4 +1,5 @@
 .env
-.env
 node_modules/
 frontend/config.js
+docs/pdfs/
+*.DS_Store
