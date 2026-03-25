@@ -102,6 +102,7 @@
   window.buildNavbar = function () {
     const el = document.getElementById('navbar');
     if (el) el.innerHTML = buildNav();
+    if (el) el.style.visibility = 'visible';
   };
 
   window.toggleMobileMenu = function (show) {

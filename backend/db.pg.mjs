@@ -44,9 +44,10 @@ export async function initDb() {
       provider_name TEXT,
       cash_exception_allowed BOOLEAN DEFAULT FALSE,
       cash_selected BOOLEAN DEFAULT FALSE,
-      provider_name TEXT,
       service_description TEXT,
       service_date TEXT,              -- date-only (YYYY-MM-DD) for >7d rule
+      category TEXT,
+      service_datetime TEXT,
       service_address TEXT,
       booking_type TEXT,
       status TEXT,

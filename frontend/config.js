@@ -27,6 +27,7 @@
   window.CONFIG = {
     API_BASE: normalizedApi,
     STRIPE_PUBLISHABLE_KEY: rawPk,
-    WHATSAPP_NUMBER
+    WHATSAPP_NUMBER,
+    GOOGLE_CLIENT_ID: ''  // Set to your Google OAuth Client ID
   };
 })();

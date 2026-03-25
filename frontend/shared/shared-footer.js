@@ -72,6 +72,7 @@
   window.buildServiFooter = function () {
     const el = document.getElementById('footer');
     if (el) el.innerHTML = buildFooter();
+    if (el) el.style.visibility = 'visible';
   };
 
   // Auto-init

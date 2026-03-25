@@ -386,6 +386,11 @@ async function loadStats() {
 
 // Panel switching
 function switchPanel(name) {
+  if (name === 'orders') {
+    const badge = document.getElementById('orders-badge');
+    if (badge) { badge.style.display = 'none'; badge.textContent = ''; }
+    _lastOrderCount = null;
+  }
   document.querySelectorAll('.panel-section').forEach(el => el.classList.remove('panel-section--active'));
   document.querySelectorAll('.admin-tab').forEach(el => el.classList.remove('admin-tab--active'));
   document.getElementById('panel-' + name)?.classList.add('panel-section--active');
@@ -684,6 +689,7 @@ async function lookupByPhone() {
     if (!res.ok) return;
     const d = await res.json();
     if (d.email && !document.getElementById('n-email').value) document.getElementById('n-email').value = d.email;
+    if (d.customerName && !document.getElementById('n-name').value) document.getElementById('n-name').value = d.customerName;
     if (d.address && !document.getElementById('n-address').value) document.getElementById('n-address').value = d.address;
   } catch (_) {}
 }

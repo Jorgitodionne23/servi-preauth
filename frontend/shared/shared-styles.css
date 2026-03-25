@@ -477,3 +477,6 @@ textarea.input-field { resize: vertical; min-height: 100px; }
 .grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
 .flex-gap-12 { display: flex; gap: 12px; flex-wrap: wrap; }
 .flex-gap-32 { display: flex; gap: 32px; align-items: center; }
+
+#navbar { visibility: hidden; }
+#footer { visibility: hidden; }

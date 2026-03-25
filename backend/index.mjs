@@ -21,8 +21,10 @@ import { rateLimit } from 'express-rate-limit';
 const JWT_SECRET = process.env.STRIPE_WEBHOOK_SECRET || process.env.ADMIN_API_TOKEN || 'servi-fallback-auth-secret';
 
 function signSessionToken(payload) {
+  const now = Math.floor(Date.now() / 1000);
+  const fullPayload = { ...payload, iat: now, exp: now + (30 * 24 * 60 * 60) };
   const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
-  const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const body = Buffer.from(JSON.stringify(fullPayload)).toString('base64url');
   const signature = createHmac('sha256', JWT_SECRET).update(`${header}.${body}`).digest('base64url');
   return `${header}.${body}.${signature}`;
 }
@@ -34,7 +36,9 @@ function verifySessionToken(token) {
   const expectedSignature = createHmac('sha256', JWT_SECRET).update(`${header}.${body}`).digest('base64url');
   if (signature !== expectedSignature) return null;
   try {
-    return JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
+    const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
+    if (payload.exp && Math.floor(Date.now() / 1000) > payload.exp) return null;
+    return payload;
   } catch (e) { return null; }
 }
 
@@ -420,6 +424,24 @@ function normalizeEmail(value) {
   const pattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
   if (!pattern.test(email)) return null;
   return email.toLowerCase();
+}
+
+async function resolveStripeCustomerForEmail(email) {
+  const norm = normalizeEmail(email);
+  if (!norm) return null;
+  const { rows: bookingRows } = await pool.query(
+    `SELECT customer_id FROM all_bookings
+     WHERE LOWER(client_email) = LOWER($1) AND customer_id IS NOT NULL
+     ORDER BY created_at DESC LIMIT 1`,
+    [norm]
+  );
+  if (bookingRows.length > 0) return bookingRows[0].customer_id;
+  const { rows: userRows } = await pool.query(
+    `SELECT customer_id FROM saved_servi_users
+     WHERE LOWER(customer_email) = LOWER($1) LIMIT 1`,
+    [norm]
+  );
+  return userRows.length > 0 ? userRows[0].customer_id : null;
 }
 
 async function syncOrderEmail(orderId, rawEmail, { existingRow } = {}) {
@@ -4398,6 +4420,14 @@ app.post('/api/auth/signup', publicFormLimit, async (req, res) => {
       [id, emailNorm, pwHash, name, normalizePhoneDigits(phone) || null]
     );
 
+    const customerId = await resolveStripeCustomerForEmail(emailNorm);
+    if (customerId) {
+      await pool.query(
+        'UPDATE auth_users SET stripe_customer_id = $1 WHERE id = $2 AND stripe_customer_id IS NULL',
+        [customerId, id]
+      );
+    }
+
     const token = signSessionToken({ user_id: id, email: emailNorm, name });
     return res.status(201).json({ token, user: { id, email: emailNorm, name } });
   } catch (err) {
@@ -4425,6 +4455,30 @@ app.post('/api/auth/login', publicFormLimit, async (req, res) => {
     }
 
     await pool.query('UPDATE auth_users SET last_login = NOW() WHERE id = $1', [user.id]);
+
+    const customerId = await resolveStripeCustomerForEmail(emailNorm);
+    if (customerId) {
+      await pool.query(
+        'UPDATE auth_users SET stripe_customer_id = $1 WHERE id = $2 AND stripe_customer_id IS NULL',
+        [customerId, user.id]
+      );
+    }
+
+    if (!customerId && user.phone) {
+      const phoneDigits = normalizePhoneDigits(user.phone);
+      const phoneResult = await pool.query(
+        `SELECT customer_id FROM saved_servi_users
+         WHERE regexp_replace(COALESCE(customer_phone,''),'[^0-9]','','g') = $1
+         LIMIT 1`,
+        [phoneDigits]
+      );
+      if (phoneResult.rows[0]?.customer_id) {
+        await pool.query(
+          'UPDATE auth_users SET stripe_customer_id = $1 WHERE id = $2 AND stripe_customer_id IS NULL',
+          [phoneResult.rows[0].customer_id, user.id]
+        );
+      }
+    }
 
     const token = signSessionToken({ user_id: user.id, email: user.email, name: user.name });
     return res.json({ token, user: { id: user.id, email: user.email, name: user.name } });
@@ -4463,6 +4517,14 @@ app.post('/api/auth/social', publicFormLimit, async (req, res) => {
         await pool.query(`UPDATE auth_users SET ${col} = $1 WHERE id = $2`, [providerId, user.id]);
       }
       await pool.query('UPDATE auth_users SET last_login = NOW() WHERE id = $1', [user.id]);
+    }
+
+    const customerId = await resolveStripeCustomerForEmail(emailNorm);
+    if (customerId) {
+      await pool.query(
+        'UPDATE auth_users SET stripe_customer_id = $1 WHERE id = $2 AND stripe_customer_id IS NULL',
+        [customerId, user.id]
+      );
     }
 
     const token = signSessionToken({ user_id: user.id, email: user.email, name: user.name });
@@ -4710,30 +4772,6 @@ app.get('/api/admin/stats', adminRateLimit, requireAdminAuth, async (req, res) =
 // 🚀 Start server
 const PORT = process.env.PORT || 4242;
 
-// ── Startup migrations (idempotent) ──────────────────────────────────────────
-async function runMigrations() {
-  const migrations = [
-    // Add service category column for admin-side order creation (March 2026)
-    `ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS category TEXT`,
-  ];
-  for (const sql of migrations) {
-    try {
-      await pool.query(sql);
-    } catch (err) {
-      // Non-fatal: log and continue. The column may already exist in prod.
-      console.warn('[migration] skipped:', sql.slice(0, 80), '—', err.message);
-    }
-  }
-  console.log('[migrations] done');
-}
-
-runMigrations().then(() => {
-  app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
-}).catch((err) => {
-  console.error('[migrations] fatal error, starting anyway:', err.message);
-  app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
+app.listen(PORT, () => {
+  console.log(`Server running on http://localhost:${PORT}`);
 });
