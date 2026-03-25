@@ -14,8 +14,45 @@ import {
 import { fileURLToPath, URLSearchParams } from 'url';
 import { dirname } from 'path';
 import fetch from 'node-fetch';
-import { randomUUID, randomBytes, createHash, timingSafeEqual } from 'crypto';
+import { randomUUID, randomBytes, createHash, createHmac, scryptSync, timingSafeEqual } from 'crypto';
 import { rateLimit } from 'express-rate-limit';
+
+// --- Auth Helpers ---
+const JWT_SECRET = process.env.STRIPE_WEBHOOK_SECRET || process.env.ADMIN_API_TOKEN || 'servi-fallback-auth-secret';
+
+function signSessionToken(payload) {
+  const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
+  const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const signature = createHmac('sha256', JWT_SECRET).update(`${header}.${body}`).digest('base64url');
+  return `${header}.${body}.${signature}`;
+}
+
+function verifySessionToken(token) {
+  if (!token) return null;
+  const [header, body, signature] = token.split('.');
+  if (!header || !body || !signature) return null;
+  const expectedSignature = createHmac('sha256', JWT_SECRET).update(`${header}.${body}`).digest('base64url');
+  if (signature !== expectedSignature) return null;
+  try {
+    return JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
+  } catch (e) { return null; }
+}
+
+function hashPassword(password) {
+  const salt = randomBytes(16).toString('hex');
+  const derivedKey = scryptSync(password, salt, 64);
+  return `${salt}:${derivedKey.toString('hex')}`;
+}
+
+function verifyPassword(password, hash) {
+  if (!hash || !password) return false;
+  const [salt, key] = hash.split(':');
+  if (!salt || !key) return false;
+  const keyBuffer = Buffer.from(key, 'hex');
+  const derivedKey = scryptSync(password, salt, 64);
+  if (keyBuffer.length !== derivedKey.length) return false;
+  return timingSafeEqual(keyBuffer, derivedKey);
+}
 
 // --- helpers (add) ---
 const MS_PER_DAY = 86_400_000;
@@ -1129,8 +1166,12 @@ app.use(express.static(FRONTEND_DIR));
       providerName: providerNameBody,
       provider_name: providerNameSnake,
       allowCashOnce,
-      allow_cash_once
+      allow_cash_once,
+      category: categoryRaw
     } = req.body;
+    const categoryInput = String(categoryRaw || '').trim().toLowerCase() || null;
+    const VALID_CATEGORIES = new Set(['cleaning','repair','wellness','maintenance','supply','custom']);
+    const category = categoryInput && VALID_CATEGORIES.has(categoryInput) ? categoryInput : (categoryInput || null);
     const providerIdInput = providerIdBody ?? providerIdSnake;
     const providerId = providerIdInput != null ? String(providerIdInput).trim() || null : null;
     const providerNameInput = providerNameBody ?? providerNameSnake;
@@ -1403,7 +1444,7 @@ app.use(express.static(FRONTEND_DIR));
 
     // also persist service_date/service_datetime (you already do)
   await pool.query(
-    'UPDATE all_bookings SET service_date=$1, service_datetime=$2, client_phone=$3, client_email=$4, service_address=$5, booking_type=$6, provider_id=$7, provider_name=$8 WHERE id=$9',
+    'UPDATE all_bookings SET service_date=$1, service_datetime=$2, client_phone=$3, client_email=$4, service_address=$5, booking_type=$6, provider_id=$7, provider_name=$8, category=$9 WHERE id=$10',
     [
       serviceDate || null,
       serviceDateTime || null,
@@ -1413,6 +1454,7 @@ app.use(express.static(FRONTEND_DIR));
       bookingType || null,
       providerId || null,
       providerName || null,
+      category || null,
       orderId
     ]
   );
@@ -4332,6 +4374,105 @@ app.post('/api/partner-applications', publicFormLimit, async (req, res) => {
   }
 });
 
+// --- Public Auth: Login, Signup, Social ---
+app.post('/api/auth/signup', publicFormLimit, async (req, res) => {
+  try {
+    const { email, password, name, phone } = req.body;
+    if (!email || !password || !name) {
+      return res.status(400).json({ error: 'missing_fields', message: 'Email, password, and name are required' });
+    }
+    const emailNorm = normalizeEmail(email);
+    if (!emailNorm) return res.status(400).json({ error: 'invalid_email', message: 'Invalid email format' });
+
+    // Check if exists
+    const { rows: existing } = await pool.query('SELECT id FROM auth_users WHERE email = $1', [emailNorm]);
+    if (existing.length > 0) {
+      return res.status(409).json({ error: 'email_exists', message: 'Email already registered' });
+    }
+
+    const id = randomUUID();
+    const pwHash = hashPassword(password);
+    
+    await pool.query(
+      `INSERT INTO auth_users (id, email, password_hash, name, phone) VALUES ($1, $2, $3, $4, $5)`,
+      [id, emailNorm, pwHash, name, normalizePhoneDigits(phone) || null]
+    );
+
+    const token = signSessionToken({ user_id: id, email: emailNorm, name });
+    return res.status(201).json({ token, user: { id, email: emailNorm, name } });
+  } catch (err) {
+    console.error('[POST /api/auth/signup]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+app.post('/api/auth/login', publicFormLimit, async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) return res.status(400).json({ error: 'missing_fields' });
+    
+    const emailNorm = normalizeEmail(email);
+    const { rows } = await pool.query('SELECT * FROM auth_users WHERE email = $1', [emailNorm]);
+    const user = rows[0];
+
+    if (!user || !user.password_hash) {
+      // Don't leak whether user exists vs no password (e.g. social login only)
+      return res.status(401).json({ error: 'invalid_credentials', message: 'Invalid email or password' });
+    }
+
+    if (!verifyPassword(password, user.password_hash)) {
+      return res.status(401).json({ error: 'invalid_credentials', message: 'Invalid email or password' });
+    }
+
+    await pool.query('UPDATE auth_users SET last_login = NOW() WHERE id = $1', [user.id]);
+
+    const token = signSessionToken({ user_id: user.id, email: user.email, name: user.name });
+    return res.json({ token, user: { id: user.id, email: user.email, name: user.name } });
+  } catch (err) {
+    console.error('[POST /api/auth/login]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+app.post('/api/auth/social', publicFormLimit, async (req, res) => {
+  // Mock endpoint to accept verified OAuth claims from Frontend
+  // In a strict production system, you would verify an id_token (Google) or authorization code (Apple) 
+  // with Apple/Google keys here instead of trusting the frontend payload blindly.
+  try {
+    const { provider, email, name, providerId } = req.body;
+    if (!email || !provider || !providerId) return res.status(400).json({ error: 'missing_fields' });
+    
+    const emailNorm = normalizeEmail(email);
+    let { rows: users } = await pool.query('SELECT * FROM auth_users WHERE email = $1', [emailNorm]);
+    let user = users[0];
+
+    if (!user) {
+      const id = randomUUID();
+      const col = provider === 'google' ? 'google_id' : provider === 'apple' ? 'apple_id' : null;
+      if (!col) return res.status(400).json({ error: 'invalid_provider' });
+      
+      await pool.query(
+        `INSERT INTO auth_users (id, email, name, ${col}) VALUES ($1, $2, $3, $4)`,
+        [id, emailNorm, name, providerId]
+      );
+      user = { id, email: emailNorm, name };
+    } else {
+      // Link account if not already linked
+      const col = provider === 'google' ? 'google_id' : provider === 'apple' ? 'apple_id' : null;
+      if (col && !user[col]) {
+        await pool.query(`UPDATE auth_users SET ${col} = $1 WHERE id = $2`, [providerId, user.id]);
+      }
+      await pool.query('UPDATE auth_users SET last_login = NOW() WHERE id = $1', [user.id]);
+    }
+
+    const token = signSessionToken({ user_id: user.id, email: user.email, name: user.name });
+    return res.json({ token, user: { id: user.id, email: user.email, name: user.name } });
+  } catch (err) {
+    console.error('[POST /api/auth/social]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
 // --- Admin: Service requests CRUD ---
 app.get('/api/service-requests', adminRateLimit, requireAdminAuth, async (req, res) => {
   try {
@@ -4568,6 +4709,31 @@ app.get('/api/admin/stats', adminRateLimit, requireAdminAuth, async (req, res) =
 
 // 🚀 Start server
 const PORT = process.env.PORT || 4242;
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+
+// ── Startup migrations (idempotent) ──────────────────────────────────────────
+async function runMigrations() {
+  const migrations = [
+    // Add service category column for admin-side order creation (March 2026)
+    `ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS category TEXT`,
+  ];
+  for (const sql of migrations) {
+    try {
+      await pool.query(sql);
+    } catch (err) {
+      // Non-fatal: log and continue. The column may already exist in prod.
+      console.warn('[migration] skipped:', sql.slice(0, 80), '—', err.message);
+    }
+  }
+  console.log('[migrations] done');
+}
+
+runMigrations().then(() => {
+  app.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+  });
+}).catch((err) => {
+  console.error('[migrations] fatal error, starting anyway:', err.message);
+  app.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+  });
 });

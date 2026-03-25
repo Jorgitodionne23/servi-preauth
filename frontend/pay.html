@@ -544,7 +544,7 @@
   <script>
     const CONFIG = window.CONFIG || {};
     const API_BASE = (CONFIG.API_BASE || '').replace(/\/+$/, '') || window.location.origin;
-    const STRIPE_PUBLISHABLE_KEY = CONFIG.STRIPE_PUBLISHABLE_KEY || '';
+    let STRIPE_PUBLISHABLE_KEY = CONFIG.STRIPE_PUBLISHABLE_KEY || '';
     const qs = new URLSearchParams(window.location.search);
     const orderParam = qs.get('order') || qs.get('orderId');
     const retryToken = qs.get('rt') || '';
@@ -900,8 +900,17 @@
         alert('Link inválido o incompleto. Por favor contacta a soporte.');
         return;
       }
+      try {
+        const pkResp = await fetch(`${API_BASE}/config/stripe`);
+        if (pkResp.ok) {
+          const { pk } = await pkResp.json();
+          if (pk) STRIPE_PUBLISHABLE_KEY = pk;
+        }
+      } catch (e) {
+        console.warn('Could not fetch dynamic PK, falling back to config.js');
+      }
       if (!STRIPE_PUBLISHABLE_KEY) {
-        alert('Configura STRIPE_PUBLISHABLE_KEY en frontend/config.js antes de continuar.');
+        alert('Configura STRIPE_PUBLISHABLE_KEY en frontend/config.js (o en .env) antes de continuar.');
         return;
       }
       stripe = Stripe(STRIPE_PUBLISHABLE_KEY, { locale: 'es' });

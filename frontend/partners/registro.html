@@ -19,45 +19,45 @@
   <div class="container" style="max-width:640px">
     <a href="/partners.html" class="nav-link" style="display:inline-flex;align-items:center;gap:6px;margin-bottom:24px">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-      Partners
+      <span data-i18n="nav.partners">Partners</span>
     </a>
-    <h1 class="heading-lg" style="margin-bottom:8px">Registro de Partner</h1>
-    <p class="text-body" style="margin-bottom:32px">Completa tu aplicación para unirte a la comunidad SERVI.</p>
+    <h1 class="heading-lg" style="margin-bottom:8px" data-i18n="partnerForm.title">Registro de Partner</h1>
+    <p class="text-body" style="margin-bottom:32px" data-i18n="partnerForm.sub">Completa tu aplicación para unirte a la comunidad SERVI.</p>
 
     <form id="partner-form" style="display:flex;flex-direction:column;gap:16px">
       <div>
-        <label style="display:block;font-weight:600;font-size:14px;margin-bottom:6px">Nombre completo *</label>
+        <label style="display:block;font-weight:600;font-size:14px;margin-bottom:6px" data-i18n="partnerForm.labels.name">Nombre completo *</label>
         <input class="input-field" name="name" required>
       </div>
       <div>
-        <label style="display:block;font-weight:600;font-size:14px;margin-bottom:6px">Teléfono (WhatsApp) *</label>
+        <label style="display:block;font-weight:600;font-size:14px;margin-bottom:6px" data-i18n="partnerForm.labels.phone">Teléfono (WhatsApp) *</label>
         <input class="input-field" name="phone" type="tel" required>
       </div>
       <div>
-        <label style="display:block;font-weight:600;font-size:14px;margin-bottom:6px">Correo electrónico</label>
+        <label style="display:block;font-weight:600;font-size:14px;margin-bottom:6px" data-i18n="partnerForm.labels.email">Correo electrónico</label>
         <input class="input-field" name="email" type="email">
       </div>
       <div>
-        <label style="display:block;font-weight:600;font-size:14px;margin-bottom:6px">Especialidad / Categoría *</label>
+        <label style="display:block;font-weight:600;font-size:14px;margin-bottom:6px" data-i18n="partnerForm.labels.specialty">Especialidad / Categoría *</label>
         <select class="input-field" name="specialty" required>
-          <option value="">Selecciona...</option>
-          <option value="cleaning">Limpieza</option>
-          <option value="repair">Reparación y Mantenimiento</option>
-          <option value="wellness">Bienestar y Cuidado Personal</option>
-          <option value="maintenance">Mantenimiento</option>
-          <option value="supply">Abastecimiento y Compras</option>
-          <option value="other">Otro</option>
+          <option value="" data-i18n="partnerForm.specialty.placeholder">Selecciona...</option>
+          <option value="cleaning" data-i18n="partnerForm.specialty.cleaning">Limpieza</option>
+          <option value="repair" data-i18n="partnerForm.specialty.repair">Reparación y Mantenimiento</option>
+          <option value="wellness" data-i18n="partnerForm.specialty.wellness">Bienestar y Cuidado Personal</option>
+          <option value="maintenance" data-i18n="partnerForm.specialty.maintenance">Mantenimiento</option>
+          <option value="supply" data-i18n="partnerForm.specialty.supply">Abastecimiento y Compras</option>
+          <option value="other" data-i18n="partnerForm.specialty.other">Otro</option>
         </select>
       </div>
       <div>
-        <label style="display:block;font-weight:600;font-size:14px;margin-bottom:6px">Ciudad</label>
-        <input class="input-field" name="city" placeholder="Ej: Ciudad de México">
+        <label style="display:block;font-weight:600;font-size:14px;margin-bottom:6px" data-i18n="partnerForm.labels.city">Ciudad</label>
+        <input class="input-field" name="city" data-i18n-placeholder="partnerForm.cityPlaceholder" placeholder="Ej: Ciudad de México">
       </div>
       <div>
-        <label style="display:block;font-weight:600;font-size:14px;margin-bottom:6px">Describe tu experiencia</label>
-        <textarea class="input-field" name="experience" rows="4" placeholder="Cuéntanos sobre tu experiencia y especialidad..."></textarea>
+        <label style="display:block;font-weight:600;font-size:14px;margin-bottom:6px" data-i18n="partnerForm.labels.experience">Describe tu experiencia</label>
+        <textarea class="input-field" name="experience" rows="4" data-i18n-placeholder="partnerForm.experiencePlaceholder" placeholder="Cuéntanos sobre tu experiencia y especialidad..."></textarea>
       </div>
-      <button type="submit" class="btn-primary" style="width:100%;justify-content:center;margin-top:8px" id="submit-btn">Enviar aplicación</button>
+      <button type="submit" class="btn-primary" style="width:100%;justify-content:center;margin-top:8px" id="submit-btn" data-i18n="partnerForm.submit">Enviar aplicación</button>
       <div id="form-msg" style="text-align:center;display:none"></div>
     </form>
   </div>
@@ -83,10 +83,12 @@ document.getElementById('partner-form').addEventListener('submit', async functio
     if (!res.ok) throw new Error(res.status);
     this.style.display = 'none';
     msg.style.display = 'block';
-    msg.innerHTML = '<div style="padding:32px 0"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg><h3 class="heading-md" style="margin:16px 0 8px">Aplicación enviada</h3><p class="text-body">Gracias por tu interés. Te contactaremos pronto.</p></div>';
+    const tr = window.__t?.partnerForm;
+    msg.innerHTML = '<div style="padding:32px 0"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg><h3 class="heading-md" style="margin:16px 0 8px">' + (tr?.successTitle || 'Aplicación enviada') + '</h3><p class="text-body">' + (tr?.successBody || 'Gracias por tu interés. Te contactaremos pronto.') + '</p></div>';
   } catch (err) {
-    btn.disabled = false; btn.textContent = 'Enviar aplicación';
-    alert('Error al enviar. Inténtalo de nuevo.');
+    const tr = window.__t?.partnerForm;
+    btn.disabled = false; btn.textContent = tr?.submit || 'Enviar aplicación';
+    alert(tr?.error || 'Error al enviar. Inténtalo de nuevo.');
   }
 });
 </script>

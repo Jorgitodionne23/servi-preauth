@@ -333,6 +333,20 @@ export async function initDb() {
       ON partner_applications(status);
     CREATE INDEX IF NOT EXISTS idx_partner_applications_created_at
       ON partner_applications(created_at DESC);
+
+    -- Auth Users (Client login identities)
+    CREATE TABLE IF NOT EXISTS auth_users (
+      id TEXT PRIMARY KEY,
+      email TEXT UNIQUE NOT NULL,
+      phone TEXT,
+      name TEXT,
+      password_hash TEXT,
+      google_id TEXT,
+      apple_id TEXT,
+      stripe_customer_id TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      last_login TIMESTAMPTZ
+    );
   `);
 }
 

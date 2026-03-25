@@ -47,6 +47,31 @@
     .filter-select, .filter-input { padding:8px 12px; background:#1a1a1a; border:1px solid #333; border-radius:8px; color:#eee; font-size:13px; font-family:inherit; outline:none; }
     .filter-select:focus, .filter-input:focus { border-color:#10b981; }
 
+    /* Action buttons */
+    .action-btn { display:inline-flex; align-items:center; gap:5px; padding:5px 11px; border-radius:6px; font-size:11px; font-weight:700; cursor:pointer; border:none; font-family:inherit; transition:opacity 0.15s; white-space:nowrap; }
+    .action-btn:hover { opacity:0.82; }
+    .action-btn:disabled { opacity:0.35; cursor:default; }
+    .action-btn--capture  { background:#1d4ed8; color:#fff; }
+    .action-btn--cancel   { background:#292524; color:#a8a29e; border:1px solid #3d3835; }
+    .action-btn--refund   { background:#1e1b4b; color:#818cf8; }
+    .action-btns { display:flex; gap:6px; flex-wrap:wrap; }
+
+    /* Lightweight admin modal */
+    .adm-overlay { position:fixed;inset:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:9999; }
+    .adm-box { background:#1a1a1a;border:1px solid #333;border-radius:14px;padding:28px 28px 22px;width:380px;max-width:94%; }
+    .adm-box h3 { font-size:16px;font-weight:700;margin:0 0 14px; }
+    .adm-box p  { font-size:13px;color:#aaa;margin:0 0 14px;line-height:1.5; }
+    .adm-input { width:100%;padding:10px 12px;background:#222;border:1px solid #444;border-radius:8px;color:#eee;font-size:14px;font-family:inherit;outline:none;margin-bottom:16px; }
+    .adm-input:focus { border-color:#10b981; }
+    .adm-row  { display:flex;gap:10px;justify-content:flex-end; }
+    .adm-btn  { padding:9px 20px;border-radius:8px;border:none;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit; }
+    .adm-btn--ok     { background:#10b981;color:#fff; }
+    .adm-btn--ok:hover { background:#059669; }
+    .adm-btn--cancel { background:#222;color:#aaa;border:1px solid #333; }
+    .adm-btn--cancel:hover { color:#eee; }
+    .adm-btn--danger { background:#dc2626;color:#fff; }
+    .adm-btn--danger:hover { background:#b91c1c; }
+
     /* Table */
     .admin-table { width:100%; border-collapse:collapse; font-size:13px; }
     .admin-table th { text-align:left; padding:10px 12px; color:#888; font-weight:600; border-bottom:1px solid #222; font-size:12px; text-transform:uppercase; letter-spacing:0.05em; }
@@ -109,7 +134,11 @@
     <!-- Tabs -->
     <div class="admin-tabs">
       <button class="admin-tab admin-tab--active" data-panel="inbox" onclick="switchPanel('inbox')">Inbox</button>
-      <button class="admin-tab" data-panel="orders" onclick="switchPanel('orders')">Órdenes</button>
+      <button class="admin-tab" data-panel="orders" onclick="switchPanel('orders')">
+        Órdenes <span id="orders-badge" style="display:none;background:#ef4444;color:#fff;border-radius:10px;font-size:10px;padding:1px 6px;margin-left:4px"></span>
+      </button>
+      <button class="admin-tab" data-panel="nueva" onclick="switchPanel('nueva')">+ Nueva Orden</button>
+      <button class="admin-tab" data-panel="ajustes" onclick="switchPanel('ajustes')">Ajuste / Cobro</button>
     </div>
 
     <!-- Inbox Panel -->
@@ -126,7 +155,7 @@
       <div class="table-scroll">
         <table class="admin-table">
           <thead>
-            <tr><th>Fecha</th><th>Tipo</th><th>Nombre</th><th>Detalle</th><th>Estado</th></tr>
+            <tr><th>Fecha</th><th>Hora</th><th>Tipo</th><th>Nombre</th><th>Detalle</th><th>Estado</th></tr>
           </thead>
           <tbody id="inbox-body"></tbody>
         </table>
@@ -151,7 +180,7 @@
       <div class="table-scroll">
         <table class="admin-table">
           <thead>
-            <tr><th>Código</th><th>Cliente</th><th>Servicio</th><th>Monto</th><th>Fecha</th><th>Estado</th></tr>
+            <tr><th>Código</th><th>Cliente</th><th>Servicio</th><th>Monto</th><th>Fecha</th><th>Estado</th><th>Acciones</th></tr>
           </thead>
           <tbody id="orders-body"></tbody>
         </table>
@@ -159,9 +188,130 @@
       <div id="orders-empty" class="empty-state" style="display:none">No hay órdenes.</div>
       <div class="pagination" id="orders-pagination"></div>
     </div>
+
+    <!-- Nueva Orden Panel -->
+    <div id="panel-nueva" class="panel-section">
+      <div style="display:grid;grid-template-columns:1fr 400px;gap:24px;align-items:start">
+        <div style="background:#1a1a1a;border:1px solid #222;border-radius:14px;padding:28px">
+          <h3 style="font-size:16px;font-weight:700;margin:0 0 20px">Datos del cliente y servicio</h3>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+            <div><label class="form-label">WhatsApp (E.164) *</label><input class="auth-input" id="n-phone" placeholder="+5255..." oninput="onPhoneInput()"></div>
+            <div><label class="form-label">Nombre del cliente *</label><input class="auth-input" id="n-name" placeholder="Nombre completo"></div>
+            <div><label class="form-label">Email *</label><input class="auth-input" id="n-email" type="email" placeholder="correo@email.com"></div>
+            <div>
+              <label class="form-label">Tipo de servicio</label>
+              <select class="auth-input" id="n-category" style="background:#222">
+                <option value="">— Selecciona —</option>
+                <option value="cleaning">Limpieza</option>
+                <option value="repair">Reparación y Mantenimiento</option>
+                <option value="wellness">Bienestar y Cuidado Personal</option>
+                <option value="supply">Abastecimiento y Compras</option>
+                <option value="custom">Personalizado</option>
+              </select>
+            </div>
+            <div style="grid-column:1/-1"><label class="form-label">Descripción del servicio *</label><input class="auth-input" id="n-desc" placeholder="Ej: Limpieza de 3 recámaras..."></div>
+            <div><label class="form-label">Monto proveedor (MXN) *</label><input class="auth-input" id="n-amount" type="number" min="1" placeholder="Ej: 800"></div>
+            <div><label class="form-label">Fecha y hora del servicio</label><input class="auth-input" id="n-datetime" type="datetime-local"></div>
+            <div style="grid-column:1/-1"><label class="form-label">Dirección</label><input class="auth-input" id="n-address" placeholder="Calle, colonia, ciudad..."></div>
+            <div>
+              <label class="form-label">Tipo de reserva</label>
+              <select class="auth-input" id="n-booking-type" style="background:#222">
+                <option value="rango">Rango de Precio</option>
+                <option value="visita">Visita para cotizar</option>
+              </select>
+            </div>
+            <div>
+              <label class="form-label">Tipo de captura</label>
+              <select class="auth-input" id="n-capture" style="background:#222">
+                <option value="manual">Manual (default)</option>
+                <option value="automatic">Automático</option>
+              </select>
+            </div>
+            <div style="grid-column:1/-1"><label class="form-label">Proveedor asignado (opcional)</label><input class="auth-input" id="n-provider" placeholder="Nombre del proveedor"></div>
+          </div>
+          <button class="auth-btn" style="margin-top:20px" onclick="submitNuevaOrden()" id="nueva-btn">Generar enlace de pago</button>
+          <div id="nueva-error" style="color:#ef4444;font-size:13px;margin-top:10px;display:none"></div>
+        </div>
+        <div id="nueva-result" style="background:#1a1a1a;border:1px solid #222;border-radius:14px;padding:28px;display:none">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg>
+            <span style="font-weight:700;font-size:15px">Enlace generado</span>
+          </div>
+          <div style="margin-bottom:12px">
+            <div style="font-size:11px;color:#888;margin-bottom:4px">ENLACE DE PAGO</div>
+            <div id="nueva-link-url" style="font-size:12px;color:#10b981;word-break:break-all;background:#0d1f18;padding:8px;border-radius:6px"></div>
+          </div>
+          <div style="margin-bottom:16px">
+            <div style="font-size:11px;color:#888;margin-bottom:4px">MENSAJE PARA WHATSAPP</div>
+            <div id="nueva-wa-msg" style="font-size:13px;color:#ddd;background:#111;padding:12px;border-radius:8px;white-space:pre-wrap;line-height:1.6"></div>
+          </div>
+          <button class="auth-btn" onclick="copyNuevaLink()" id="nueva-copy-btn">Copiar mensaje completo</button>
+          <button onclick="resetNuevaOrden()" style="width:100%;margin-top:10px;background:#222;border:1px solid #333;color:#aaa;border-radius:8px;padding:10px;cursor:pointer;font-family:inherit;font-size:13px">Nueva orden</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Ajustes Panel -->
+    <div id="panel-ajustes" class="panel-section">
+      <div style="display:grid;grid-template-columns:1fr 400px;gap:24px;align-items:start">
+        <div style="background:#1a1a1a;border:1px solid #222;border-radius:14px;padding:28px">
+          <h3 style="font-size:16px;font-weight:700;margin:0 0 20px">Crear ajuste / cobro adicional</h3>
+          <div style="display:grid;gap:14px">
+            <div>
+              <label class="form-label">Parent Order ID *</label>
+              <input class="auth-input" id="aj-parent" placeholder="UUID de la orden padre" oninput="onAjParentInput()">
+              <div id="aj-parent-info" style="font-size:12px;color:#888;margin-top:6px"></div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+              <div>
+                <label class="form-label">Tipo de ajuste *</label>
+                <select class="auth-input" id="aj-reason" style="background:#222">
+                  <option value="Surcharge">Cargo extra (Surcharge)</option>
+                  <option value="Final price">Precio final (Final price)</option>
+                  <option value="Deposit (anticipo)">Anticipo (Deposit)</option>
+                  <option value="Billing error">Error de cobro (Billing error)</option>
+                </select>
+              </div>
+              <div><label class="form-label">Monto (MXN) *</label><input class="auth-input" id="aj-amount" type="number" min="1" placeholder="Ej: 300"></div>
+            </div>
+            <div>
+              <label class="form-label">Tipo de captura</label>
+              <select class="auth-input" id="aj-capture" style="background:#222">
+                <option value="manual">Manual (default)</option>
+                <option value="automatic">Automático</option>
+              </select>
+            </div>
+          </div>
+          <button class="auth-btn" style="margin-top:20px" onclick="submitAjuste()" id="ajuste-btn">Crear ajuste</button>
+          <div id="ajuste-error" style="color:#ef4444;font-size:13px;margin-top:10px;display:none"></div>
+        </div>
+        <div id="ajuste-result" style="background:#1a1a1a;border:1px solid #222;border-radius:14px;padding:28px;display:none">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg>
+            <span style="font-weight:700;font-size:15px">Ajuste creado</span>
+          </div>
+          <div style="margin-bottom:12px">
+            <div style="font-size:11px;color:#888;margin-bottom:4px">ENLACE DE PAGO</div>
+            <div id="ajuste-link-url" style="font-size:12px;color:#10b981;word-break:break-all;background:#0d1f18;padding:8px;border-radius:6px"></div>
+          </div>
+          <div style="margin-bottom:16px">
+            <div style="font-size:11px;color:#888;margin-bottom:4px">MENSAJE PARA WHATSAPP</div>
+            <div id="ajuste-wa-msg" style="font-size:13px;color:#ddd;background:#111;padding:12px;border-radius:8px;white-space:pre-wrap;line-height:1.6"></div>
+          </div>
+          <button class="auth-btn" onclick="copyAjusteLink()" id="ajuste-copy-btn">Copiar mensaje completo</button>
+          <button onclick="resetAjuste()" style="width:100%;margin-top:10px;background:#222;border:1px solid #333;color:#aaa;border-radius:8px;padding:10px;cursor:pointer;font-family:inherit;font-size:13px">Nuevo ajuste</button>
+        </div>
+      </div>
+    </div>
+
   </div>
 </div>
 
+<style>
+  .form-label { display:block; font-size:12px; color:#888; font-weight:600; margin-bottom:5px; text-transform:uppercase; letter-spacing:0.04em; }
+  #panel-nueva .auth-input, #panel-ajustes .auth-input { width:100%; }
+  #panel-nueva select.auth-input, #panel-ajustes select.auth-input { background:#222; }
+</style>
 <script src="/config.js"></script>
 <script>
 const API = (window.CONFIG?.API_BASE || '');
@@ -171,6 +321,7 @@ let ordersTimer = null;
 
 function headers() { return { 'Authorization': 'Bearer ' + TOKEN, 'Content-Type': 'application/json' }; }
 function fmtDate(d) { if (!d) return '—'; const dt = new Date(d); return dt.toLocaleDateString('es-MX', { day:'2-digit', month:'short', year:'numeric' }); }
+function fmtTime(d) { if (!d) return '—'; const dt = new Date(d); return dt.toLocaleTimeString('es-MX', { hour:'2-digit', minute:'2-digit' }); }
 function fmtMoney(cents) { if (!cents && cents !== 0) return '—'; return '$' + (cents / 100).toFixed(2) + ' MXN'; }
 
 function badgeClass(status) {
@@ -254,37 +405,66 @@ async function loadInbox() {
     if (!type || type === 'requests') {
       const r = await fetch(API + '/api/service-requests?limit=30', { headers: headers() });
       const d = await r.json();
-      items.push(...d.items.map(i => ({ date: i.created_at, type: 'Solicitud', name: i.client_name, detail: i.category + (i.description ? ' — ' + i.description.slice(0,60) : ''), status: i.status })));
+      items.push(...d.items.map(i => ({ id: i.id, apiPath: '/api/service-requests', date: i.created_at, type: 'Solicitud', name: i.client_name, detail: i.category + (i.description ? ' — ' + i.description.slice(0,60) : ''), status: i.status || 'pending', options: ['pending','contacted','resolved','canceled'] })));
     }
     if (!type || type === 'incidents') {
       const r = await fetch(API + '/api/reports?type=incident&limit=30', { headers: headers() });
       const d = await r.json();
-      items.push(...d.items.map(i => ({ date: i.created_at, type: 'Reporte', name: i.name || '—', detail: (i.category || '') + ' — ' + (i.description || '').slice(0,60), status: i.status })));
+      items.push(...d.items.map(i => ({ id: i.id, apiPath: '/api/reports', date: i.created_at, type: 'Reporte', name: i.name || '—', detail: (i.category || '') + ' — ' + (i.description || '').slice(0,60), status: i.status || 'new', options: ['new','reviewed','resolved'] })));
     }
     if (!type || type === 'suggestions') {
       const r = await fetch(API + '/api/reports?type=suggestion&limit=30', { headers: headers() });
       const d = await r.json();
-      items.push(...d.items.map(i => ({ date: i.created_at, type: 'Sugerencia', name: i.name || '—', detail: (i.description || '').slice(0,80), status: i.status })));
+      items.push(...d.items.map(i => ({ id: i.id, apiPath: '/api/reports', date: i.created_at, type: 'Sugerencia', name: i.name || '—', detail: (i.description || '').slice(0,80), status: i.status || 'new', options: ['new','reviewed','resolved'] })));
     }
     if (!type || type === 'applications') {
       const r = await fetch(API + '/api/partner-applications?limit=30', { headers: headers() });
       const d = await r.json();
-      items.push(...d.items.map(i => ({ date: i.created_at, type: 'Partner App', name: i.name, detail: (i.specialty || '') + (i.city ? ' — ' + i.city : ''), status: i.status })));
+      items.push(...d.items.map(i => ({ id: i.id, apiPath: '/api/partner-applications', date: i.created_at, type: 'Partner App', name: i.name, detail: (i.specialty || '') + (i.city ? ' — ' + i.city : ''), status: i.status || 'pending', options: ['pending','reviewed','verified','rejected'] })));
     }
     items.sort((a, b) => new Date(b.date) - new Date(a.date));
     if (!items.length) { body.innerHTML = ''; empty.style.display = 'block'; return; }
     empty.style.display = 'none';
-    body.innerHTML = items.map(i => `
+    body.innerHTML = items.map(i => {
+      const selOpts = i.options.map(opt => `<option value="${opt}" ${i.status.toLowerCase()===opt?'selected':''}>${opt}</option>`).join('');
+      const safeDetail = String(i.detail).replace(/"/g, '&quot;');
+      return `
       <tr>
         <td>${fmtDate(i.date)}</td>
+        <td>${fmtTime(i.date)}</td>
         <td>${i.type}</td>
         <td>${i.name}</td>
-        <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${i.detail}</td>
-        <td><span class="badge ${badgeClass(i.status)}">${i.status}</span></td>
+        <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${safeDetail}">${i.detail}</td>
+        <td>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span class="badge ${badgeClass(i.status)}" style="min-width:70px;text-align:center">${i.status}</span>
+            <select class="auth-input" style="padding:4px;font-size:11px;width:auto;height:auto;background:#222;border-radius:4px" onchange="updateInboxStatus('${i.apiPath}', '${i.id}', this.value)">
+              <option value="" disabled hidden ${!i.options.includes(i.status.toLowerCase()) ? 'selected' : ''}>—</option>
+              ${selOpts}
+            </select>
+          </div>
+        </td>
       </tr>
-    `).join('');
+      `;
+    }).join('');
   } catch (err) {
     body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#ef4444">Error al cargar datos</td></tr>';
+  }
+}
+
+async function updateInboxStatus(apiPath, id, newStatus) {
+  if (!newStatus) return;
+  try {
+    const res = await fetch(API + apiPath + '/' + id, {
+      method: 'PATCH',
+      headers: headers(),
+      body: JSON.stringify({ status: newStatus })
+    });
+    if (!res.ok) throw new Error();
+    loadInbox();
+    loadStats();
+  } catch (err) {
+    alert('Error al actualizar estado.');
   }
 }
 
@@ -311,10 +491,11 @@ async function loadOrders() {
       <tr>
         <td style="font-family:monospace;font-size:12px">${o.public_code || o.id.slice(0,8)}</td>
         <td>${o.client_name || '—'}<br><span style="color:#666;font-size:11px">${o.client_phone || ''}</span></td>
-        <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${o.service_description || '—'}</td>
+        <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${o.service_description || '—'}</td>
         <td>${fmtMoney(o.pricing_total_amount || o.amount)}</td>
         <td>${fmtDate(o.service_date || o.created_at)}</td>
         <td><span class="badge ${badgeClass(o.status)}">${o.status || '—'}</span></td>
+        <td>${buildActionBtns(o)}</td>
       </tr>
     `).join('');
 
@@ -329,6 +510,387 @@ async function loadOrders() {
     body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#ef4444">Error al cargar órdenes</td></tr>';
   }
 }
+
+// ─── Action button builder ───────────────────────────────────────────────────
+function buildActionBtns(o) {
+  const s = (o.status || '').toLowerCase();
+  const id = o.id;
+  const btns = [];
+
+  // Capture — only for orders in manual pre-auth state
+  const capturable = s === 'scheduled' || s === 'confirmed';
+  if (capturable) {
+    btns.push(`<button class="action-btn action-btn--capture" onclick="captureOrder('${id}')" title="Capturar pago">⚡ Capturar</button>`);
+  }
+
+  // Cancel — anything not already captured/canceled/refunded
+  const notCancelable = new Set(['captured', 'canceled', 'cancelled', 'refunded', 'declined', 'failed', 'canceled (expired)', 'captured (partial refund)']);
+  if (!notCancelable.has(s)) {
+    btns.push(`<button class="action-btn action-btn--cancel" onclick="cancelOrder('${id}')" title="Cancelar orden">✕ Cancelar</button>`);
+  }
+
+  // Refund — only for captured orders
+  const refundable = s === 'captured' || s === 'captured (partial refund)';
+  if (refundable) {
+    btns.push(`<button class="action-btn action-btn--refund" onclick="refundOrder('${id}', ${o.pricing_total_amount || o.amount || 0})" title="Reembolsar">↩ Reembolso</button>`);
+  }
+
+  return btns.length ? `<div class="action-btns">${btns.join('')}</div>` : '<span style="color:#444;font-size:11px">—</span>';
+}
+
+// ─── Lightweight in-page modal ────────────────────────────────────────────────
+function admModal({ title, body, inputLabel, inputType = 'text', inputPlaceholder = '', confirmText, confirmClass = 'adm-btn--ok' }) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'adm-overlay';
+    const hasInput = Boolean(inputLabel);
+    overlay.innerHTML = `
+      <div class="adm-box" onclick="event.stopPropagation()">
+        <h3>${title}</h3>
+        ${body ? `<p>${body}</p>` : ''}
+        ${hasInput ? `<label style="font-size:12px;color:#aaa;display:block;margin-bottom:6px">${inputLabel}</label><input class="adm-input" id="adm-inp" type="${inputType}" placeholder="${inputPlaceholder}">` : ''}
+        <div class="adm-row">
+          <button class="adm-btn adm-btn--cancel" id="adm-no">Cancelar</button>
+          <button class="adm-btn ${confirmClass}" id="adm-yes">${confirmText}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', () => { document.body.removeChild(overlay); resolve(null); });
+    document.getElementById('adm-no').addEventListener('click', () => { document.body.removeChild(overlay); resolve(null); });
+    document.getElementById('adm-yes').addEventListener('click', () => {
+      const val = hasInput ? (document.getElementById('adm-inp')?.value ?? '') : true;
+      document.body.removeChild(overlay);
+      resolve(val);
+    });
+    document.getElementById('adm-inp')?.focus();
+  });
+}
+
+// ─── Capture ─────────────────────────────────────────────────────────────────
+async function captureOrder(orderId) {
+  const confirmed = await admModal({
+    title: '⚡ Capturar pago',
+    body: 'Se capturará el monto autorizado para esta orden. Esta acción es irreversible.',
+    confirmText: 'Confirmar captura',
+    confirmClass: 'adm-btn--ok'
+  });
+  if (!confirmed) return;
+
+  try {
+    const res = await fetch(API + '/capture-order', {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ orderId })
+    });
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.error || `HTTP ${res.status}`);
+    alert(`✅ Capturado correctamente.\nEstado PI: ${d.status}`);
+    loadOrders();
+    loadStats();
+  } catch (err) {
+    alert(`❌ Error al capturar:\n${err.message}`);
+  }
+}
+
+// ─── Cancel ───────────────────────────────────────────────────────────────────
+async function cancelOrder(orderId) {
+  const reason = await admModal({
+    title: '✕ Cancelar orden',
+    body: 'La autorización de Stripe se cancelará. Si ya fue capturada, usa Reembolso en su lugar.',
+    inputLabel: 'Motivo de cancelación (opcional)',
+    inputPlaceholder: 'Ej: Cliente solicitó cancelación',
+    confirmText: 'Cancelar orden',
+    confirmClass: 'adm-btn--danger'
+  });
+  if (reason === null) return; // user dismissed
+
+  try {
+    const res = await fetch(API + '/cancel-order', {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ orderId, reason: String(reason || '').trim() || undefined })
+    });
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.message || d.error || `HTTP ${res.status}`);
+    alert(`✅ Orden cancelada.\n${d.message || ''}`);
+    loadOrders();
+    loadStats();
+  } catch (err) {
+    alert(`❌ Error al cancelar:\n${err.message}`);
+  }
+}
+
+// ─── Refund ───────────────────────────────────────────────────────────────────
+async function refundOrder(orderId, totalAmountCents) {
+  const totalMXN = (totalAmountCents / 100).toFixed(2);
+  const input = await admModal({
+    title: '↩ Reembolsar orden',
+    body: `Monto total capturado: $${totalMXN} MXN. Deja el campo en blanco para reembolso completo (se descuenta comisión de procesamiento).`,
+    inputLabel: 'Monto a reembolsar en MXN (opcional — vacío = total)',
+    inputType: 'number',
+    inputPlaceholder: `Ej: ${totalMXN}`,
+    confirmText: 'Confirmar reembolso',
+    confirmClass: 'adm-btn--danger'
+  });
+  if (input === null) return; // dismissed
+
+  const rawMXN = String(input || '').trim();
+  const amountCents = rawMXN ? Math.round(parseFloat(rawMXN) * 100) : undefined;
+  if (rawMXN && (isNaN(amountCents) || amountCents <= 0)) {
+    alert('Monto inválido.');
+    return;
+  }
+
+  const reason = await admModal({
+    title: '↩ Motivo del reembolso',
+    inputLabel: 'Motivo (opcional)',
+    inputPlaceholder: 'Ej: Servicio no realizado',
+    confirmText: 'Enviar reembolso',
+    confirmClass: 'adm-btn--danger'
+  });
+  if (reason === null) return;
+
+  try {
+    const body = { orderId, reason: String(reason || '').trim() || undefined };
+    if (amountCents) body.amountCents = amountCents;
+
+    const res = await fetch(API + '/refund-order', {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify(body)
+    });
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.message || d.error || `HTTP ${res.status}`);
+    const refundedMXN = ((d.refundedAmountCents || 0) / 100).toFixed(2);
+    alert(`✅ Reembolso procesado.\n$${refundedMXN} MXN reembolsados.\n${d.message || ''}`);
+    loadOrders();
+    loadStats();
+  } catch (err) {
+    alert(`❌ Error al reembolsar:\n${err.message}`);
+  }
+}
+
+// ─── Nueva Orden ─────────────────────────────────────────────────────────────
+let _lookupTimer = null;
+function onPhoneInput() {
+  clearTimeout(_lookupTimer);
+  _lookupTimer = setTimeout(lookupByPhone, 700);
+}
+async function lookupByPhone() {
+  const phone = document.getElementById('n-phone').value.trim();
+  if (!phone || phone.length < 8) return;
+  try {
+    const res = await fetch(API + '/admin/contact-lookup?phone=' + encodeURIComponent(phone), { headers: headers() });
+    if (!res.ok) return;
+    const d = await res.json();
+    if (d.email && !document.getElementById('n-email').value) document.getElementById('n-email').value = d.email;
+    if (d.address && !document.getElementById('n-address').value) document.getElementById('n-address').value = d.address;
+  } catch (_) {}
+}
+
+function buildWaMessage(bookingType, link) {
+  const isVisita = String(bookingType).toLowerCase().includes('visita');
+  if (isVisita) return 'Usa este enlace para agendar tu visita de diagnóstico.\nEl monto cubre la visita y se descuenta del total si decides continuar con el servicio.\nEnlace seguro con Stripe:\n' + link;
+  return 'Usa este enlace para reservar tu servicio.\nSERVI solo cobrará al finalizar el trabajo, según lo realizado.\nEnlace seguro con Stripe:\n' + link;
+}
+
+function buildAjWaMessage(reason, totalMXN, link, visitCredit) {
+  const r = String(reason).toLowerCase();
+  const amt = 'Monto: $' + Number(totalMXN).toLocaleString('es-MX', { minimumFractionDigits: 2 }) + ' MXN';
+  let intro;
+  if (r.includes('final price')) intro = 'Este enlace es para pagar el resto de tu servicio. ¡Se descontó lo que pagaste inicialmente!';
+  else if (r.includes('deposit') || r.includes('anticipo')) intro = 'Usa este enlace para pagar el anticipo de tu servicio. Este monto se descuenta del total y el resto se cobrará al finalizar el trabajo.';
+  else if (r.includes('surcharge')) intro = 'Confirma aquí el cargo extra de tu servicio.';
+  else if (r.includes('billing')) intro = 'Detectamos un error en el cobro de tu servicio. Usa este enlace para corregir el pago; el monto ya está ajustado según lo correcto.';
+  else intro = 'Confirma el ajuste de tu servicio.';
+  const parts = [intro];
+  if (visitCredit > 0) parts.push('Se descontará tu visita de $' + (visitCredit).toLocaleString('es-MX', { minimumFractionDigits: 2 }) + ' MXN del total.');
+  parts.push(amt, link);
+  return parts.join('\n');
+}
+
+function normalizeBookingTypeFE(val) {
+  const v = String(val).toLowerCase();
+  if (v === 'visita') return 'Visita para cotizar';
+  return 'Rango de Precio';
+}
+
+async function submitNuevaOrden() {
+  const btn = document.getElementById('nueva-btn');
+  const errEl = document.getElementById('nueva-error');
+  errEl.style.display = 'none';
+  const phone = document.getElementById('n-phone').value.trim();
+  const name = document.getElementById('n-name').value.trim();
+  const email = document.getElementById('n-email').value.trim();
+  const category = document.getElementById('n-category').value;
+  const desc = document.getElementById('n-desc').value.trim();
+  const amountRaw = parseFloat(document.getElementById('n-amount').value);
+  const dtVal = document.getElementById('n-datetime').value;
+  const address = document.getElementById('n-address').value.trim();
+  const bookingTypeKey = document.getElementById('n-booking-type').value;
+  const capture = document.getElementById('n-capture').value;
+  const provider = document.getElementById('n-provider').value.trim();
+
+  if (!phone) { errEl.textContent = 'WhatsApp requerido.'; errEl.style.display='block'; return; }
+  if (!name) { errEl.textContent = 'Nombre requerido.'; errEl.style.display='block'; return; }
+  if (!email) { errEl.textContent = 'Email requerido.'; errEl.style.display='block'; return; }
+  if (!desc) { errEl.textContent = 'Descripción requerida.'; errEl.style.display='block'; return; }
+  const bookingType = normalizeBookingTypeFE(bookingTypeKey);
+  const isVisita = bookingTypeKey === 'visita';
+  const amount = isVisita && (!amountRaw || amountRaw <= 0) ? 140 : amountRaw;
+  if (!isVisita && (!amount || amount <= 0)) { errEl.textContent = 'Monto requerido.'; errEl.style.display='block'; return; }
+
+  let serviceDate = '', serviceDateTime = '', hasTimeComponent = false;
+  if (dtVal) {
+    const d = new Date(dtVal);
+    if (d < new Date()) { errEl.textContent = 'La fecha del servicio ya pasó.'; errEl.style.display='block'; return; }
+    serviceDate = dtVal.slice(0, 10);
+    serviceDateTime = d.toISOString();
+    hasTimeComponent = true;
+  }
+
+  btn.disabled = true; btn.textContent = 'Generando...';
+  try {
+    const res = await fetch(API + '/create-payment-intent', {
+      method: 'POST', headers: headers(),
+      body: JSON.stringify({ amount, clientName: name, serviceDescription: desc, serviceDate, serviceDateTime, hasTimeComponent, clientPhone: phone, clientEmail: email, serviceAddress: address, bookingType, capture, providerName: provider || undefined, category: category || undefined })
+    });
+    const d = await res.json();
+    if (res.status === 403 && d.error === 'account_required') {
+      showNuevaResult(d.payUrl || (API + '/pay.html?order=' + d.orderId), bookingType, d);
+    } else if (!res.ok) {
+      throw new Error(d.message || d.error || 'Error ' + res.status);
+    } else {
+      showNuevaResult(d.payUrl, bookingType, d);
+    }
+  } catch (err) {
+    errEl.textContent = '❌ ' + err.message;
+    errEl.style.display = 'block';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Generar enlace de pago';
+  }
+}
+
+function showNuevaResult(link, bookingType, data) {
+  document.getElementById('nueva-link-url').textContent = link;
+  const waMsg = buildWaMessage(bookingType, link);
+  document.getElementById('nueva-wa-msg').textContent = waMsg;
+  document.getElementById('nueva-result').style.display = 'block';
+  document.getElementById('nueva-result')._link = link;
+  document.getElementById('nueva-result')._msg = waMsg;
+  loadOrders(); loadStats();
+}
+
+function copyNuevaLink() {
+  const msg = document.getElementById('nueva-result')._msg || '';
+  navigator.clipboard.writeText(msg).then(() => {
+    const btn = document.getElementById('nueva-copy-btn');
+    btn.textContent = '✅ Copiado';
+    setTimeout(() => { btn.textContent = 'Copiar mensaje completo'; }, 2000);
+  });
+}
+
+function resetNuevaOrden() {
+  ['n-phone','n-name','n-email','n-desc','n-amount','n-datetime','n-address','n-provider'].forEach(id => { const el = document.getElementById(id); if(el) el.value=''; });
+  document.getElementById('n-category').selectedIndex = 0;
+  document.getElementById('n-booking-type').selectedIndex = 0;
+  document.getElementById('n-capture').selectedIndex = 0;
+  document.getElementById('nueva-result').style.display = 'none';
+  document.getElementById('nueva-error').style.display = 'none';
+}
+
+// ─── Ajustes ──────────────────────────────────────────────────────────────────
+let _ajTimer = null;
+function onAjParentInput() {
+  clearTimeout(_ajTimer);
+  _ajTimer = setTimeout(lookupParentOrder, 600);
+}
+async function lookupParentOrder() {
+  const id = document.getElementById('aj-parent').value.trim();
+  const info = document.getElementById('aj-parent-info');
+  if (!id) { info.textContent = ''; return; }
+  try {
+    const res = await fetch(API + '/api/admin/orders/' + encodeURIComponent(id), { headers: headers() });
+    if (!res.ok) { info.textContent = '⚠️ Orden no encontrada'; return; }
+    const d = await res.json();
+    const o = d.order;
+    info.textContent = `✓ ${o.client_name || '—'} · ${o.service_description || '—'} · ${fmtMoney(o.amount)} · ${o.status}`;
+  } catch (_) { info.textContent = '⚠️ Error al buscar'; }
+}
+
+async function submitAjuste() {
+  const btn = document.getElementById('ajuste-btn');
+  const errEl = document.getElementById('ajuste-error');
+  errEl.style.display = 'none';
+  const parentOrderId = document.getElementById('aj-parent').value.trim();
+  const reason = document.getElementById('aj-reason').value;
+  const amountMXN = parseFloat(document.getElementById('aj-amount').value);
+  const capture = document.getElementById('aj-capture').value;
+
+  if (!parentOrderId) { errEl.textContent = 'Parent Order ID requerido.'; errEl.style.display='block'; return; }
+  if (!amountMXN || amountMXN <= 0) { errEl.textContent = 'Monto requerido.'; errEl.style.display='block'; return; }
+
+  btn.disabled = true; btn.textContent = 'Creando...';
+  try {
+    const res = await fetch(API + '/create-adjustment', {
+      method: 'POST', headers: headers(),
+      body: JSON.stringify({ parentOrderId, amount: Math.round(amountMXN * 100), note: reason, capture })
+    });
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.message || d.error || 'Error ' + res.status);
+    const link = d.payUrl || d.bookUrl || (API + '/pay.html?order=' + d.childOrderId);
+    const totalMXN = (d.totalAmountCents || 0) / 100;
+    const visitCredit = (d.visitCreditCents || 0) / 100;
+    const waMsg = buildAjWaMessage(reason, totalMXN || amountMXN, link, visitCredit);
+    document.getElementById('ajuste-link-url').textContent = link;
+    document.getElementById('ajuste-wa-msg').textContent = waMsg;
+    document.getElementById('ajuste-result').style.display = 'block';
+    document.getElementById('ajuste-result')._msg = waMsg;
+    loadStats();
+  } catch (err) {
+    errEl.textContent = '❌ ' + err.message;
+    errEl.style.display = 'block';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Crear ajuste';
+  }
+}
+
+function copyAjusteLink() {
+  const msg = document.getElementById('ajuste-result')._msg || '';
+  navigator.clipboard.writeText(msg).then(() => {
+    const btn = document.getElementById('ajuste-copy-btn');
+    btn.textContent = '✅ Copiado';
+    setTimeout(() => { btn.textContent = 'Copiar mensaje completo'; }, 2000);
+  });
+}
+
+function resetAjuste() {
+  ['aj-parent','aj-amount'].forEach(id => { const el = document.getElementById(id); if(el) el.value=''; });
+  document.getElementById('aj-parent-info').textContent = '';
+  document.getElementById('aj-reason').selectedIndex = 0;
+  document.getElementById('aj-capture').selectedIndex = 0;
+  document.getElementById('ajuste-result').style.display = 'none';
+  document.getElementById('ajuste-error').style.display = 'none';
+}
+
+// ─── New-order notification polling ─────────────────────────────────────────
+let _lastOrderCount = null;
+async function pollNewOrders() {
+  if (!TOKEN) return;
+  try {
+    const res = await fetch(API + '/api/admin/stats', { headers: headers() });
+    if (!res.ok) return;
+    const d = await res.json();
+    const total = (d.pendingOrders || 0) + (d.confirmedOrders || 0);
+    if (_lastOrderCount !== null && total > _lastOrderCount) {
+      const diff = total - _lastOrderCount;
+      const badge = document.getElementById('orders-badge');
+      if (badge) { badge.textContent = '+' + diff; badge.style.display = 'inline'; }
+    }
+    _lastOrderCount = total;
+  } catch (_) {}
+}
+setInterval(pollNewOrders, 45000);
 
 // Auto-login if token saved
 if (TOKEN) testAuth();

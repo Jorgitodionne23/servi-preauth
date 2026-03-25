@@ -1,0 +1,45 @@
+name: Auto Preauth — Hourly Cron
+
+on:
+  schedule:
+    # Runs at minute 5 of every hour (UTC). Offset by 5 min to avoid cold-start race.
+    - cron: '5 * * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Pass force=true to the endpoint (bypasses 24h window check)'
+        required: false
+        default: 'false'
+
+jobs:
+  preauth:
+    name: Trigger preauth-due
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Ping Render — POST /tasks/preauth-due
+        run: |
+          FORCE_FLAG="${{ github.event.inputs.force }}"
+          BODY="{}"
+          if [ "$FORCE_FLAG" = "true" ]; then
+            BODY='{"force":true}'
+          fi
+
+          echo "Sending preauth-due request (force=$FORCE_FLAG)..."
+          HTTP_STATUS=$(curl -s -o /tmp/response.json -w "%{http_code}" \
+            -X POST "https://servi-preauth.onrender.com/tasks/preauth-due" \
+            -H "Authorization: Bearer ${{ secrets.ADMIN_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d "$BODY" \
+            --max-time 90)
+
+          echo "HTTP status: $HTTP_STATUS"
+          echo "Response: $(cat /tmp/response.json)"
+
+          if [ "$HTTP_STATUS" -lt 200 ] || [ "$HTTP_STATUS" -ge 300 ]; then
+            echo "❌ preauth-due returned non-2xx: $HTTP_STATUS"
+            exit 1
+          fi
+
+          echo "✅ preauth-due completed successfully"
