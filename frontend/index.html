@@ -373,7 +373,7 @@
 
     const payload = mode === 'signup' ? { email, password, name, phone } : { email, password };
     try {
-      const res = await fetch(API_BASE + '/api/auth/' + mode, {
+      const res = await fetch((window.CONFIG?.API_BASE || '').replace(/\/+$/, '') + '/api/auth/' + mode, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
