@@ -90,6 +90,7 @@
     .badge-rejected { background:#450a0a; color:#f87171; }
     .badge-reviewed { background:#1e1b4b; color:#818cf8; }
     .badge-resolved { background:#052e16; color:#22c55e; }
+    .badge-web { background:#1e1b4b; color:#a78bfa; }
 
     /* Panel */
     .panel-section { display:none; }
@@ -146,7 +147,6 @@
       <div class="filter-row">
         <select class="filter-select" id="inbox-type" onchange="loadInbox()">
           <option value="">Todos los tipos</option>
-          <option value="requests">Solicitudes de servicio</option>
           <option value="incidents">Reportes</option>
           <option value="suggestions">Sugerencias</option>
           <option value="applications">Aplicaciones de Partner</option>
@@ -318,6 +318,7 @@ const API = (window.CONFIG?.API_BASE || '');
 let TOKEN = sessionStorage.getItem('servi-admin-token') || '';
 let ordersPage = 0;
 let ordersTimer = null;
+const _subsCache = {};
 
 function headers() { return { 'Authorization': 'Bearer ' + TOKEN, 'Content-Type': 'application/json' }; }
 function fmtDate(d) { if (!d) return '—'; const dt = new Date(d); return dt.toLocaleDateString('es-MX', { day:'2-digit', month:'short', year:'numeric' }); }
@@ -407,11 +408,6 @@ async function loadInbox() {
 
   let items = [];
   try {
-    if (!type || type === 'requests') {
-      const r = await fetch(API + '/api/service-requests?limit=30', { headers: headers() });
-      const d = await r.json();
-      items.push(...d.items.map(i => ({ id: i.id, apiPath: '/api/service-requests', date: i.created_at, type: 'Solicitud', name: i.client_name, detail: i.category + (i.description ? ' — ' + i.description.slice(0,60) : ''), status: i.status || 'pending', options: ['pending','contacted','resolved','canceled'] })));
-    }
     if (!type || type === 'incidents') {
       const r = await fetch(API + '/api/reports?type=incident&limit=30', { headers: headers() });
       const d = await r.json();
@@ -483,16 +479,37 @@ async function loadOrders() {
   const limit = 30;
   const offset = ordersPage * limit;
 
-  body.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:#666">Cargando...</td></tr>';
+  body.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:#666">Cargando...</td></tr>';
   try {
     const params = new URLSearchParams({ limit, offset });
     if (search) params.set('search', search);
     if (status) params.set('status', status);
-    const res = await fetch(API + '/api/admin/orders?' + params, { headers: headers() });
-    const d = await res.json();
-    if (!d.items.length) { body.innerHTML = ''; empty.style.display = 'block'; return; }
-    empty.style.display = 'none';
-    body.innerHTML = d.items.map(o => `
+
+    // Fetch real orders + pending web submissions in parallel
+    const [ordersRes, subsRes] = await Promise.all([
+      fetch(API + '/api/admin/orders?' + params, { headers: headers() }),
+      // Only fetch submissions when not filtering by a Stripe-specific status
+      (!status) ? fetch(API + '/api/service-requests?status=pending&limit=50', { headers: headers() }) : Promise.resolve(null)
+    ]);
+
+    const d = await ordersRes.json();
+
+    // Build web submission rows (only when no status filter is active)
+    let subRows = '';
+    if (subsRes && subsRes.ok) {
+      const subData = await subsRes.json();
+      const subs = (subData.items || []).filter(s => {
+        // Client-side search filter
+        if (!search) return true;
+        const q = search.toLowerCase();
+        return (s.client_name || '').toLowerCase().includes(q) ||
+               (s.client_phone || '').toLowerCase().includes(q) ||
+               (s.category || '').toLowerCase().includes(q);
+      });
+      subRows = subs.map(s => buildSubmissionRow(s)).join('');
+    }
+
+    const orderRows = d.items.map(o => `
       <tr>
         <td style="font-family:monospace;font-size:12px">${o.public_code || o.id.slice(0,8)}</td>
         <td>${o.client_name || '—'}<br><span style="color:#666;font-size:11px">${o.client_phone || ''}</span></td>
@@ -504,6 +521,11 @@ async function loadOrders() {
       </tr>
     `).join('');
 
+    const allRows = subRows + orderRows;
+    if (!allRows) { body.innerHTML = ''; empty.style.display = 'block'; return; }
+    empty.style.display = 'none';
+    body.innerHTML = allRows;
+
     // Pagination
     const totalPages = Math.ceil(d.total / limit);
     document.getElementById('orders-pagination').innerHTML = `
@@ -511,9 +533,186 @@ async function loadOrders() {
       <span class="page-info">${ordersPage + 1} / ${totalPages || 1}</span>
       <button onclick="ordersPage++;loadOrders()" ${ordersPage >= totalPages - 1 ? 'disabled' : ''}>Siguiente</button>
     `;
-  } catch {
-    body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#ef4444">Error al cargar órdenes</td></tr>';
+  } catch (err) {
+    body.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#ef4444">Error al cargar órdenes</td></tr>';
   }
+}
+
+function buildSubmissionRow(s) {
+  _subsCache[s.id] = s;
+  const detail = (s.category || '') + (s.description ? ' — ' + s.description.slice(0, 60) : '');
+  return `
+    <tr style="border-left:3px solid #7c3aed">
+      <td style="font-family:monospace;font-size:12px;color:#a78bfa">WEB-${s.id.slice(0,6).toUpperCase()}</td>
+      <td>${s.client_name || '—'}<br><span style="color:#666;font-size:11px">${s.client_phone || ''}</span></td>
+      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${detail}">${detail}</td>
+      <td><span style="color:#555;font-size:11px">Sin precio</span></td>
+      <td>${fmtDate(s.created_at)}</td>
+      <td><span class="badge badge-web">Web · Sin enlace</span></td>
+      <td>
+        <button class="action-btn" style="background:#3b0764;color:#c4b5fd;border:1px solid #6d28d9"
+          onclick="openSubmissionLinkModal('${s.id}')">
+          + Crear enlace
+        </button>
+      </td>
+    </tr>
+  `;
+}
+
+// ─── Submission → Payment Link modal ─────────────────────────────────────────
+function openSubmissionLinkModal(subId) {
+  const sub = _subsCache[subId];
+  if (!sub) return;
+  // Remove existing modal if any
+  document.getElementById('sub-modal-overlay')?.remove();
+
+  const datetimeValue = sub.preferred_date
+    ? (sub.preferred_date + (sub.preferred_time ? 'T' + sub.preferred_time : 'T00:00'))
+    : '';
+
+  const overlay = document.createElement('div');
+  overlay.id = 'sub-modal-overlay';
+  overlay.className = 'adm-overlay';
+  overlay.innerHTML = `
+    <div class="adm-box" style="width:480px;max-width:96%" onclick="event.stopPropagation()">
+      <h3 style="margin-bottom:6px">+ Crear enlace de pago</h3>
+      <p style="font-size:12px;color:#666;margin-bottom:16px">
+        ${sub.client_name} · ${sub.client_phone} · ${sub.category || ''}
+        ${sub.service_address ? '<br>' + sub.service_address : ''}
+        ${sub.description ? '<br><span style="font-style:italic">"' + sub.description.slice(0,80) + (sub.description.length > 80 ? '…' : '') + '"</span>' : ''}
+      </p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+        <div>
+          <label class="form-label">Monto proveedor (MXN) *</label>
+          <input class="adm-input" id="sub-amount" type="number" min="1" placeholder="Ej: 800" style="margin-bottom:0">
+        </div>
+        <div>
+          <label class="form-label">Tipo de reserva</label>
+          <select class="adm-input" id="sub-booking-type" style="margin-bottom:0;background:#222">
+            <option value="rango">Rango de Precio</option>
+            <option value="visita">Visita para cotizar</option>
+          </select>
+        </div>
+      </div>
+      <div style="margin-bottom:10px">
+        <label class="form-label">Proveedor asignado</label>
+        <input class="adm-input" id="sub-provider" placeholder="Nombre del proveedor" style="margin-bottom:0">
+      </div>
+      <div style="margin-bottom:10px">
+        <label class="form-label">Email del cliente *</label>
+        <input class="adm-input" id="sub-email" type="email" value="${sub.client_email || ''}" placeholder="correo@email.com" style="margin-bottom:0">
+      </div>
+      <div style="margin-bottom:16px">
+        <label class="form-label">Fecha y hora del servicio</label>
+        <input class="adm-input" id="sub-datetime" type="datetime-local" value="${datetimeValue}" style="margin-bottom:0">
+      </div>
+      <div id="sub-modal-error" style="color:#ef4444;font-size:13px;margin-bottom:10px;display:none"></div>
+      <div id="sub-modal-result" style="display:none;margin-bottom:14px">
+        <div style="font-size:11px;color:#888;margin-bottom:4px">ENLACE DE PAGO</div>
+        <div id="sub-modal-link" style="font-size:12px;color:#10b981;word-break:break-all;background:#0d1f18;padding:8px;border-radius:6px;margin-bottom:10px"></div>
+        <div style="font-size:11px;color:#888;margin-bottom:4px">MENSAJE PARA WHATSAPP</div>
+        <div id="sub-modal-wa" style="font-size:13px;color:#ddd;background:#111;padding:12px;border-radius:8px;white-space:pre-wrap;line-height:1.6;margin-bottom:10px"></div>
+        <button class="adm-btn adm-btn--ok" id="sub-copy-btn" onclick="copySubLink()">Copiar mensaje completo</button>
+      </div>
+      <div class="adm-row">
+        <button class="adm-btn adm-btn--cancel" onclick="document.getElementById('sub-modal-overlay').remove()">Cerrar</button>
+        <button class="adm-btn adm-btn--ok" id="sub-modal-submit" onclick="submitSubmissionLink('${sub.id}')">Generar enlace</button>
+      </div>
+    </div>`;
+
+  // Store submission data on the overlay for use in submitSubmissionLink
+  overlay._sub = sub;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', () => overlay.remove());
+  document.getElementById('sub-amount').focus();
+}
+
+async function submitSubmissionLink(subId) {
+  const overlay = document.getElementById('sub-modal-overlay');
+  if (!overlay) return;
+  const sub = overlay._sub;
+  const errEl = document.getElementById('sub-modal-error');
+  errEl.style.display = 'none';
+
+  const amountRaw = parseFloat(document.getElementById('sub-amount').value);
+  const bookingTypeKey = document.getElementById('sub-booking-type').value;
+  const provider = document.getElementById('sub-provider').value.trim();
+  const email = document.getElementById('sub-email').value.trim();
+  const dtVal = document.getElementById('sub-datetime').value;
+
+  const isVisita = bookingTypeKey === 'visita';
+  const amount = isVisita && (!amountRaw || amountRaw <= 0) ? 140 : amountRaw;
+  if (!isVisita && (!amount || amount <= 0)) { errEl.textContent = 'Monto requerido.'; errEl.style.display = 'block'; return; }
+  if (!email) { errEl.textContent = 'Email requerido.'; errEl.style.display = 'block'; return; }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { errEl.textContent = 'Email inválido.'; errEl.style.display = 'block'; return; }
+
+  let serviceDate = '', serviceDateTime = '', hasTimeComponent = false;
+  if (dtVal) {
+    const d = new Date(dtVal);
+    serviceDate = dtVal.slice(0, 10);
+    serviceDateTime = d.toISOString();
+    hasTimeComponent = true;
+  }
+
+  const bookingType = bookingTypeKey === 'visita' ? 'Visita para cotizar' : 'Rango de Precio';
+  const btn = document.getElementById('sub-modal-submit');
+  btn.disabled = true; btn.textContent = 'Generando...';
+
+  try {
+    const res = await fetch(API + '/create-payment-intent', {
+      method: 'POST', headers: headers(),
+      body: JSON.stringify({
+        amount,
+        clientName: sub.client_name,
+        serviceDescription: (sub.category || '') + (sub.description ? ' — ' + sub.description : ''),
+        serviceDate,
+        serviceDateTime,
+        hasTimeComponent,
+        clientPhone: sub.client_phone,
+        clientEmail: email,
+        serviceAddress: sub.service_address || '',
+        bookingType,
+        capture: 'manual',
+        providerName: provider || undefined,
+        category: sub.category || undefined,
+      })
+    });
+    const data = await res.json();
+    if (!res.ok && !(res.status === 403 && data.error === 'account_required')) {
+      throw new Error(data.message || data.error || 'Error ' + res.status);
+    }
+
+    const link = data.payUrl || (API + '/pay.html?order=' + data.orderId);
+    const waMsg = buildWaMessage(bookingType, link);
+
+    document.getElementById('sub-modal-link').textContent = link;
+    document.getElementById('sub-modal-wa').textContent = waMsg;
+    document.getElementById('sub-modal-result').style.display = 'block';
+    document.getElementById('sub-modal-result')._msg = waMsg;
+    btn.style.display = 'none';
+
+    // Mark submission as contacted so it leaves the pending list
+    await fetch(API + '/api/service-requests/' + subId, {
+      method: 'PATCH', headers: headers(),
+      body: JSON.stringify({ status: 'contacted' })
+    });
+
+    loadOrders();
+    loadStats();
+  } catch (err) {
+    errEl.textContent = '❌ ' + err.message;
+    errEl.style.display = 'block';
+    btn.disabled = false; btn.textContent = 'Generar enlace';
+  }
+}
+
+function copySubLink() {
+  const msg = document.getElementById('sub-modal-result')?._msg || '';
+  navigator.clipboard.writeText(msg).then(() => {
+    const btn = document.getElementById('sub-copy-btn');
+    btn.textContent = '✅ Copiado';
+    setTimeout(() => { btn.textContent = 'Copiar mensaje completo'; }, 2000);
+  });
 }
 
 // ─── Action button builder ───────────────────────────────────────────────────

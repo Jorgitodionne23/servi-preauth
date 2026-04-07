@@ -10,30 +10,33 @@
   <link rel="stylesheet" href="/shared/shared-styles.css">
 </head>
 <body>
-<script>window.__navType = 'helpcenter';</script>
+<script>window.__navType = 'main';</script>
 <script src="/shared/i18n.js"></script>
 <div id="navbar"></div>
+<script src="/shared/shared-auth.js"></script>
 <script src="/shared/shared-nav.js"></script>
 
 <section style="padding-top:120px;padding-bottom:80px">
   <div class="container" style="max-width:640px">
-    <a href="/helpcenter.html" class="nav-link" style="display:inline-flex;align-items:center;gap:6px;margin-bottom:24px">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-      <span data-i18n="nav.helpCenter">Help Center</span>
-    </a>
-    <h1 class="heading-lg" style="margin-bottom:8px" data-i18n="reportForm.title">Reportar Incidente o Problema</h1>
-    <p class="text-body" style="margin-bottom:32px" data-i18n="reportForm.sub">Cuéntanos qué pasó para que podamos mejorar.</p>
+    <div id="page-header">
+      <a href="/helpcenter.html" class="nav-link" style="display:inline-flex;align-items:center;gap:6px;margin-bottom:24px">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        <span data-i18n="nav.helpCenter">Help Center</span>
+      </a>
+      <h1 class="heading-lg" style="margin-bottom:8px" data-i18n="reportForm.title">Reportar Incidente o Problema</h1>
+      <p class="text-body" style="margin-bottom:32px" data-i18n="reportForm.sub">Cuéntanos qué pasó para que podamos mejorar.</p>
+    </div>
 
     <form id="report-form" style="display:flex;flex-direction:column;gap:16px">
-      <div>
+      <div id="name-field">
         <label style="display:block;font-weight:600;font-size:14px;margin-bottom:6px" data-i18n="reportForm.labels.name">Nombre</label>
         <input class="input-field" name="name" required>
       </div>
-      <div>
+      <div id="email-field">
         <label style="display:block;font-weight:600;font-size:14px;margin-bottom:6px" data-i18n="reportForm.labels.email">Correo electrónico</label>
         <input class="input-field" name="email" type="email" required>
       </div>
-      <div>
+      <div id="phone-field">
         <label style="display:block;font-weight:600;font-size:14px;margin-bottom:6px" data-i18n="reportForm.labels.phone">Teléfono</label>
         <input class="input-field" name="phone" type="tel">
       </div>
@@ -59,10 +62,50 @@
         <textarea class="input-field" name="description" rows="5" data-i18n-placeholder="reportForm.descriptionPlaceholder" placeholder="Describe lo que sucedió con el mayor detalle posible..." required></textarea>
       </div>
       <button type="submit" class="btn-primary" style="width:100%;justify-content:center;margin-top:8px" id="submit-btn" data-i18n="reportForm.submit">Enviar reporte</button>
-      <div id="form-msg" style="text-align:center;display:none"></div>
     </form>
+    <div id="form-msg" style="text-align:center;display:none"></div>
   </div>
 </section>
+
+<script>
+// Pre-fill logged-in user info and hide fields (with proper timing)
+function preFillUserInfo() {
+  if (window.__user) {
+    const nameInput = document.querySelector('input[name="name"]');
+    const emailInput = document.querySelector('input[name="email"]');
+    const phoneInput = document.querySelector('input[name="phone"]');
+    const nameField = document.getElementById('name-field');
+    const emailField = document.getElementById('email-field');
+    const phoneField = document.getElementById('phone-field');
+
+    // Pre-fill
+    if (nameInput) nameInput.value = window.__user.name || '';
+    if (emailInput) emailInput.value = window.__user.email || '';
+    if (phoneInput) phoneInput.value = window.__user.phone || '';
+
+    // Hide fields for logged-in users (they're editable in profile)
+    if (nameField) {
+      nameField.style.display = 'none';
+      if (nameInput) nameInput.removeAttribute('required');
+    }
+    if (emailField) {
+      emailField.style.display = 'none';
+      if (emailInput) emailInput.removeAttribute('required');
+    }
+    if (phoneField) {
+      phoneField.style.display = 'none';
+    }
+
+    console.log('[SERVI] Report form pre-filled for user:', window.__user.email);
+  }
+}
+// Run after DOM is ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', preFillUserInfo);
+} else {
+  preFillUserInfo();
+}
+</script>
 
 <div id="footer"></div>
 <script src="/shared/shared-footer.js"></script>
@@ -76,20 +119,29 @@ document.getElementById('report-form').addEventListener('submit', async function
   btn.disabled = true; btn.textContent = '...';
   try {
     const API = window.CONFIG?.API_BASE || '';
+    console.log('[SERVI] Submitting report to:', API + '/api/reports');
     const res = await fetch(API + '/api/reports', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ type: 'incident', category: fd.get('category'), name: fd.get('name'), email: fd.get('email'), phone: fd.get('phone'), description: fd.get('description'), incidentDate: fd.get('incidentDate') }),
     });
-    if (!res.ok) throw new Error(res.status);
+    const data = await res.json().catch(() => ({}));
+    console.log('[SERVI] API response:', res.status, data);
+    if (!res.ok) {
+      throw new Error(data.message || data.error || 'HTTP ' + res.status);
+    }
+    console.log('[SERVI] Report submitted successfully');
     this.style.display = 'none';
+    document.getElementById('page-header').style.display = 'none';
     msg.style.display = 'block';
     const tr = window.__t?.reportForm;
-    msg.innerHTML = '<div style="padding:32px 0"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg><h3 class="heading-md" style="margin:16px 0 8px">' + (tr?.successTitle || 'Reporte enviado') + '</h3><p class="text-body">' + (tr?.successBody || 'Gracias por tu reporte. Lo revisaremos pronto.') + '</p></div>';
+    msg.innerHTML = '<div style="padding:32px 0;text-align:center"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" style="margin:0 auto;display:block"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg><h3 class="heading-md" style="margin:16px 0 8px" data-i18n="reportForm.successTitle">Reporte enviado</h3><p class="text-body" style="margin-bottom:24px" data-i18n="reportForm.successBody">Gracias por tu reporte. Lo revisaremos pronto.</p><a href="/helpcenter.html" class="btn-primary" style="display:inline-block;text-decoration:none" data-i18n="reportForm.backButton">Volver a Help Center</a></div>';
+    if (window.updateTranslations) window.updateTranslations();
   } catch (err) {
+    console.error('[SERVI] Report submission error:', err);
     const tr = window.__t?.reportForm;
     btn.disabled = false; btn.textContent = tr?.submit || 'Enviar reporte';
-    alert(tr?.error || 'Error al enviar. Inténtalo de nuevo.');
+    alert(tr?.error || 'Error: ' + err.message);
   }
 });
 </script>

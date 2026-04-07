@@ -10,7 +10,7 @@ SERVI is an on-demand home services platform based in **Santa Fe, Cuajimalpa de 
 
 - Email: serv.clientserv@gmail.com
 - Location: Santa Fe, Cuajimalpa de Morelos, Ciudad de México, CDMX
-- WhatsApp: (linked from site)
+- WhatsApp: (525525112588)
 
 ---
 
@@ -59,8 +59,8 @@ The entire application must support **Spanish and English** with a toggle in the
 
 SERVI offers 5 main categories + a custom/catch-all option:
 
-1. **Limpieza / Cleaning** — Home, office, garden care and cleaning services
-2. **Reparación y Mantenimiento / Repair & Maintenance** — Plumbing, electrical, technical repairs, installations, structural fixes
+1. **Limpieza / Clean** — Home, office, garden care and cleaning services
+2. **Armar, Reparar y Mantenimiento / Build, Repair & Maintenance** — Plumbing, electrical, technical repairs, installations, structural fixes
 3. **Bienestar y Cuidado Personal / Wellness & Personal Care** — Personal care services delivered at home
 4. **Mantenimiento / Maintenance** — Preventive maintenance and installations
 5. **Abastecimiento y Compras / Supply & Shopping** — Deliveries, grocery runs, errands, product sourcing
@@ -70,27 +70,27 @@ SERVI offers 5 main categories + a custom/catch-all option:
 
 ## Core User Flows
 
-### Authentication (Required before booking)
+### Authentication (Optional before booking)
 
-- Users MUST be logged in to request a service (Uber-style gate)
-- Login methods: Email/password, Google OAuth, Apple Sign-In
-- Signup collects: full name, email, phone, password
-- If a non-authenticated user tries to book, show login modal first, then redirect to booking after auth
+- Users can request a service as guests (name, phone, email, and address required)
+- Users can also log in for faster repeat requests
+- Current auth methods in UI: Email/password, Phone OTP (Firebase), Google Sign-In
+- Logged-in users can have booking data pre-filled
 
 ### Service Booking (3-step flow)
 
-1. **Select category** — Choose from the 6 service categories
+1. **Smart search or select category** — Choose from the 5 service categories or using the inteligent ccustom request (picture, video, voice message).
 2. **Describe + Schedule** — Free-text description of the need + choose "ASAP" or schedule a specific date/time
-3. **Address + Confirm** — Enter full address, review summary, confirm request
+3. **Address + Confirm** — Enter full address, review summary, confirm request. Phone is neccesary if user does not have account or is not logged in.
 
 ### SERVI Match
 
-After a request is confirmed, SERVI assigns a verified specialist based on availability (this is the "SERVI Match" system). Users are notified when matched.
+After a request is confirmed, SERVI Admin team assigns a verified specialist based on availability (this is the "SERVI Match" system). Users are notified when matched.
 
 ### Provider Onboarding
 
 - Separate section/flow for service providers ("SERVI Partners")
-- Partners can apply for free to offer their services through the platform
+- Partners can apply for free to offer their services through SERVI.
 - Links: "Guide to earning with SERVI" and "Apply as a Partner"
 
 ---
@@ -98,7 +98,7 @@ After a request is confirmed, SERVI assigns a verified specialist based on avail
 ## How It Works (3 Steps — for marketing/landing page)
 
 1. **Choose your service** — Select a category and describe what you need
-2. **SERVI Match** — We assign the closest verified specialist
+2. **SERVI Match** — We assign the closest/available verified specialist
 3. **Done** — Your specialist arrives. We handle the rest.
 
 ---
@@ -150,31 +150,32 @@ This is NOT a simple payment form. It's a complete **admin-driven order manageme
 
 ### Current User Flow (Admin-Initiated)
 
-1. Admin creates order in **Google Sheets** (Apps Script button)
+1. Admin creates order in **Google Sheets** (Apps Script button) (We are currently in the process of transitioning to an personalizeed production ready Admin dashboard in order to not depend on google sheets)
 2. Apps Script calls backend → creates Stripe PaymentIntent (manual capture / pre-auth)
 3. Customer receives **payment link via WhatsApp**
 4. Customer pays on `pay.html` (new card) or confirms on `book.html` (saved card, 1-click)
 5. Card is **pre-authorized** (hold, not charged)
 6. After service completion, admin **captures** the payment from Sheets
-7. Saved-card customers get auto-pre-authorized 24h before service via hourly trigger
+7. Saved-card customers get auto-pre-authorized 24h before service via hourly trigger when order is scheduled with more than 72 hours in advance. If order is scheduled and booked within the 72 hour window, pre authorization is done immediately.
 
-**There is currently NO customer-facing service discovery, browsing, or self-service booking UI.** Everything is initiated by the admin. The new landing page + on-demand booking is a NEW layer on top of this system.
+**There is now customer-facing self-service booking intake on the landing page.** Customers can submit service requests from the website, and admin still handles manual matching + payment-link creation.
 
 ### Deployment Topology
 
-| Layer    | Host                   | Details                                                           |
-| -------- | ---------------------- | ----------------------------------------------------------------- |
-| Backend  | **Render** (Docker)    | `node backend/index.mjs`, auto-deploys on push to `main`          |
-| Frontend | **Cloudflare Pages**   | Static HTML from `frontend/` folder                               |
-| Database | **Neon** (PostgreSQL)  | Serverless Postgres, `pg` Pool connection                         |
-| Admin    | **Google Apps Script** | Container-bound to Google Sheet, synced via `clasp`               |
-| Payments | **Stripe**             | Pre-auth (manual capture), saved cards, off-session, 3DS fallback |
+| Layer             | Host                   | Details                                                           |
+| ----------------- | ---------------------- | ----------------------------------------------------------------- |
+| Backend           | **Render** (Docker)    | `node backend/index.mjs`, auto-deploys on push to `main`          |
+| Frontend          | **Cloudflare Pages**   | Static HTML from `frontend/` folder                               |
+| Database          | **Neon** (PostgreSQL)  | Serverless Postgres, `pg` Pool connection                         |
+| Admin             | **Google Apps Script** | Container-bound to Google Sheet, synced via `clasp`               |
+| Payments          | **Stripe**             | Pre-auth (manual capture), saved cards, off-session, 3DS fallback |
+| Auth signup/login | **Firebase**           | Free instance                                                     |
 
 ### Backend (`backend/`)
 
 - **Runtime:** Node.js with ES modules (`.mjs` extensions only)
 - **Framework:** Express 5
-- **Entry point:** `backend/index.mjs` — ALL routes and business logic in one file (~2500 lines)
+- **Entry point:** `backend/index.mjs` — ALL routes and business logic in one file (large monolith, 5k+ lines)
 - **Database:** `backend/db.pg.mjs` — Pool connection + full schema (`CREATE TABLE IF NOT EXISTS`)
 - **Pricing:** `backend/pricing.mjs` — Dynamic fee calculation (alpha curve for booking fees, Stripe processing fees with VAT)
 - **TLS guard:** `ALLOW_INSECURE_DB_TLS=true` throws at startup if `NODE_ENV=production`
@@ -244,214 +245,184 @@ This is NOT a simple payment form. It's a complete **admin-driven order manageme
 
 ---
 
-## What We're Building — Phase 1 (Full Scope)
+## Current State: Production Readiness Phase
 
-A complete website rebuild + admin dashboard in one push. Four workstreams:
+**Status:**
 
-1. **Full public website** — 25+ pages replacing the Canva-hosted site entirely
-2. **Service request intake** — Structured booking form + report/suggestion forms
-3. **Admin dashboard** — Web-based admin panel (requests inbox, orders management, reports/suggestions)
-4. **Backend additions** — New tables, endpoints, and webhook notifications
+- ✅ **Phase 1 (Quick Wins) — COMPLETE**
+  - Report/suggestion form success messages ✓
+  - Pre-filled user info for logged-in users ✓
+  - Navbar text contrast fixed ✓
+  - Partner button visual differentiation ✓
+  - Navbar link reordering ✓
+
+- ✅ **Phase 2 (Firebase Auth + Account Management) — IMPLEMENTED (needs QA hardening)**
+  - Firebase auth setup in frontend (Email/Password, SMS OTP, Google)
+  - Shared auth modal deployed across public pages
+  - User account page implemented (profile, security, addresses, payment methods)
+  - Backend auth/account endpoints implemented
+
+- 📋 **Phase 3 (Booking & Provider Redesign) — PLANNED**
+  - Custom-first booking with service examples
+  - Image/video/voice upload
+  - Providers admin tab + detail view
+  - Partner form improvements
+
+### What's Complete
+
+✓ **All 25+ HTML pages** — Landing, Help Center (hub + forms + about + contact), Legal (tabbed), Partners (landing + signup), Handbook (hub + 6 articles)
+✓ **All backend API endpoints** — Auth (signup, login, me), service requests, reports, partner applications, admin queries
+✓ **All database tables** — `auth_users`, `service_requests`, `service_reports`, `partner_applications` (plus existing `all_bookings`, `saved_servi_users`, etc.)
+✓ **Authentication system** — Firebase-based auth in UI (email/password, phone OTP, Google) with backend sync endpoint
+✓ **Shared components** — Navbar (with auth modal setup), footer, i18n (ES/EN toggle), design system (Syne + DM Sans, colors, cards, buttons)
+✓ **Bilingual i18n** — Full Spanish/English translation system for all new pages
+✓ **Mobile-responsive design** — Hamburger menu at 900px, grid layouts
+✓ **Existing payment flows untouched** — `pay.html`, `book.html`, `success.html`, `save.html` continue working
+
+### What's Incomplete / In Progress
+
+⚠️ **Booking flow modal** — Backend ready (`POST /api/service-requests`), likely missing full step-by-step UI integration or bugs
+⚠️ **Form submission wiring** — Endpoints exist, need error handling + success confirmation flows
+⚠️ **Admin dashboard refinement** — Tabs built (Inbox, Orders), may need detail panels, refinement
+⚠️ **Legal page text** — Structure built, 5 placeholders for legal documents (términos, privacidad, etc.)
+⚠️ **Auth session consistency** — Firebase session and backend session behavior needs end-to-end verification
+⚠️ **i18n completeness** — New pages need spot-checking for `data-i18n` attributes
+⚠️ **Integration testing** — Full end-to-end flows not yet verified
 
 ---
 
-### ─── COMPLETE SITE MAP ───
+## Authentication & User Accounts
 
-All new files live in `frontend/`. All pages share a consistent new design language (Uber-inspired, light theme, Syne + DM Sans). Every page has: shared navbar, shared footer (4-column links), bilingual ES/EN toggle, mobile responsive.
+### Current Implementation
 
-**Text content:** Many pages have full text extracted from the PDFs in `/docs/`. Where content is available, use it. Where marked `[PLACEHOLDER]`, leave a clearly marked empty section for the developer to fill in later. Structure and layout matter more than copy.
+- Frontend auth runs through Firebase (email/password, phone OTP, Google)
+- Backend sync endpoint: `POST /api/auth/firebase`
+- Backend account endpoints exist for profile, password, addresses, and payment methods
+- Navbar: Shows logged-in user's name or Login/Signup buttons
 
-#### 1. MAIN LANDING PAGE
+### Logged-In User Benefits
 
-**File:** `frontend/index.html`
-Single-page scroll:
+- **Faster checkout** — Pre-filled address + contact info
+- **Saved addresses** — Select from previous service addresses
+- **Saved payment methods** — Customers can manage saved cards from account page
+- **Manage Account page** — Live page for editing name, phone, email, addresses, password, and payment methods
 
-- Sticky navbar (SERVI. logo, nav links, ES/EN toggle, Login/Signup)
-- Hero — Headline + "Solicitar servicio" CTA
-- Service categories — 6 cards (Limpieza, Reparación y Mantenimiento, Bienestar y Cuidado Personal, Mantenimiento, Abastecimiento y Compras, Personalizado)
-- How it works — 3-step (Choose → SERVI Match → Done)
-- Why SERVI — Value prop + stats (500+, 98%, 50+, 24h)
-- App preview section — "¡Muy pronto!" with phone mockup showing the service categories
-- Testimonials — 3 reviews (Diego Flores, Patricia Espinoza, Valeria Sanchez)
-- Provider recruitment — Dark section with "¿Eres proveedor?" CTA → links to Partners page
-- Contact — Address, email, WhatsApp
-- "Solicita tu servicio" floating/final CTA
-- Footer
+### Future Vision
 
-#### 2. HELP CENTER
+- All customers MUST have an account + saved payment method to order services
+- For now, accounts are optional for convenience; guests can still order
 
-**File:** `frontend/helpcenter.html`
-Hub page with:
+### Payment Method Logic
 
-- Header: "Reporta Problemas o Comparte Ideas"
-- Intro text about the Centro de Ayuda y Feedback
-- Two CTA buttons: "Reportar Incidente o Problema" → opens report form, "Compartir Sugerencia o Idea" → opens suggestion form
-- Footer
+- **Pre-authorization:** Existing logic in `backend/pricing.mjs` already handles pre-auth timing. Depends on order nature (24h before service, early pre-auth if ≤72h, etc.). **Do not redesign this.**
+- **Saved cards:** When a user saves a card, it's validated and stored. Pre-auth happens according to the order's schedule.
+- **Reference:** Study Uber's auth/account flow for UX inspiration.
 
-#### 3. REPORT INCIDENT FORM (replaces Google Form)
+---
 
-**File:** `frontend/helpcenter/report.html`
-Form fields: name, email, phone, incident type (dropdown), description (textarea), date of incident, submit button.
-Submissions go to `service_reports` database table + admin dashboard inbox + Sheets webhook.
+## Service Request Booking Flow
 
-#### 4. SHARE SUGGESTION FORM (replaces Google Form)
+### Customer Journey
 
-**File:** `frontend/helpcenter/suggestion.html`
-Form fields: name, email (optional), suggestion category (dropdown), description (textarea), submit button.
-Submissions go to same `service_reports` table (type: 'suggestion') + admin dashboard + Sheets webhook.
+1. Click "Solicitar servicio" (CTA on landing or navbar)
+2. _(Optional)_ Login or create account (or continue as guest with name + phone + email)
+3. 5-step form:
+   - Select category (6 options)
+   - Describe service needed (free text)
+   - Choose timing ("Lo antes posible" or schedule)
+   - Enter service address
+   - Review + confirm
+4. Submit → Service request created in database
+5. Confirmation screen: "¡Solicitud enviada! Te contactaremos pronto por WhatsApp."
 
-#### 5. QUIÉNES SOMOS (About Us)
+### Backend Processing
 
-**File:** `frontend/helpcenter/quienes-somos.html`
-Full content from PDF page 2 of Help_Center.pdf:
+- Endpoint: `POST /api/service-requests` (public, rate-limited)
+- Creates entry in `service_requests` table with `status: 'pending'`
+- **Admin matching:** Admin team MANUALLY reviews request, finds available provider, contacts customer via WhatsApp
+- **Order creation:** Admin creates order in Google Sheets (Apps Script), which triggers payment flow
+- Pending web service requests are surfaced in the **Orders** tab as "WEB-..." rows until converted into a payment order
 
-- "¿Quiénes Somos?" heading
-- Mission text (service evolution, connecting people with specialists)
-- "Nuestro Punto de Vista" section
-- "Lo que hacemos diferente" — 4 differentiators with icons:
-  - Centralización
-  - Gestión total
-  - Más flexibilidad
-  - Nosotros no ponemos los límites
-- "Nuestra comunidad" section
-- "¿Qué sigue?" section
-- Footer
+### Database Table: `service_requests`
 
-#### 6. CONTÁCTANOS (Help Center version)
+```sql
+CREATE TABLE IF NOT EXISTS service_requests (
+  id TEXT PRIMARY KEY,
+  category TEXT NOT NULL,
+  description TEXT,
+  preferred_date TEXT,
+  preferred_time TEXT,
+  is_asap BOOLEAN DEFAULT FALSE,
+  service_address TEXT,
+  client_name TEXT NOT NULL,
+  client_phone TEXT NOT NULL,
+  client_email TEXT,
+  customer_id TEXT,
+  status TEXT DEFAULT 'pending',
+  converted_order_id TEXT,
+  lang TEXT DEFAULT 'es',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
 
-**File:** `frontend/helpcenter/contactanos.html`
+---
 
-- Heading: "Contáctanos"
-- "¿Tienes mas dudas o preguntas de como trabajar con SERVI?"
-- WhatsApp CTA button → `https://wa.me/525525112588`
-- Footer
+## Admin Dashboard
 
-#### 7. LEGAL (Tabbed/Accordion page)
+**File:** `frontend/admin.html` — Web-based admin panel protected by `ADMIN_API_TOKEN`
 
-**File:** `frontend/legal.html`
-One page with 5 tabs or accordion sections:
+### Tabs Overview
 
-- Términos y Condiciones de Uso — `[PLACEHOLDER: paste from Google Doc]`
-- Aviso de Privacidad — `[PLACEHOLDER]`
-- Política de Cancelación — `[PLACEHOLDER]`
-- Aviso Legal — `[PLACEHOLDER]`
-- Términos y Condiciones de Stripe — `[PLACEHOLDER]`
+#### 1. **Inbox Tab**
 
-Each section has a clear heading and scrollable text area. Tabs switch between documents. The actual legal text will be pasted in later by the developer.
+Shows: **Reports + Suggestions + Partner Applications** (service requests are handled from Orders tab)
 
-#### 8. PARTNERS LANDING
+**Workflow:** Each submission type has different resolution path (see below)
 
-**File:** `frontend/partners.html`
-Single-page scroll with anchor sections:
+**UI Reference:** `dashboard.jsx` REPORTS section shows Uber/DoorDash/Rappi pattern:
 
-- **Hero:** "Impulsa tus ventas con SERVI" + "Sé parte de una comunidad exclusiva de especialistas reales y ofrece tus servicios a domicilio" + "Regístrate a SERVI" CTA
-- **¿Qué es ser un SERVI Partner?** — 4 benefit cards:
-  - 🔓 Libertad con estructura
-  - 💬 Cero estrés, más enfoque
-  - 🏅 Una comunidad, un estándar
-  - 💵 Mayores Ingresos
-- **¿Cómo ser Partner?** — 3 steps:
-  1. Requisitos mínimos (18+, phone, WhatsApp)
-  2. Tener especialidad comprobable
-  3. Completar aplicación → link to registration form
-- **Handbook CTA:** "¿Ya eres SERVI Partner? Échale un vistazo a nuestro manual" → links to Handbook
-- Footer
+- Stats cards at top (Open Issues, In Review, Resolved, Suggestions)
+- Filters by type and table-level status values used by each submission type
+- Report cards list with subject, customer, type badge, priority badge, status badge
+- Click card → detail side panel opens
+- Detail panel shows: customer info, subject, description, linked order (if applicable), resolution notes textarea, action buttons
+- Bottom: "How Big Platforms Handle This" info box with real-world examples
 
-#### 9. PARTNER REGISTRATION FORM
+**Actions by Type:**
 
-**File:** `frontend/partners/registro.html`
-Form: name, phone, email, specialty/category (dropdown), city, experience description, submit.
-Submissions go to `partner_applications` table + admin dashboard + Sheets webhook.
+- **Reports (Complaints):** Mark `new` → `reviewed` → `resolved` with admin notes.
+- **Suggestions:** Mark `new` → `reviewed` → `resolved` as needed.
+- **Partner Applications:** Review and update status (`pending`, `reviewed`, `verified`, `rejected`).
 
-#### 10. PARTNERS HANDBOOK (Hub)
+**Database Tables:**
 
-**File:** `frontend/handbook.html`
+- `service_reports` (type: 'incident' or 'suggestion', status: new/reviewed/resolved)
+- `partner_applications` (status: pending/reviewed/verified/rejected)
 
-- Header: "Partners Handbook" + "Un manual para el SERVI Partner. Todo lo que necesitas saber para trabajar con excelencia dentro de la comunidad SERVI"
-- 6 article cards linking to sub-pages:
-  1. Guía comunitaria
-  2. ¿Cómo prepararte para tu cita?
-  3. Video demostrativo
-  4. Los tipos de cambios en precio
-  5. ¿Cómo se calcula tu calificación?
-  6. ¿Cómo funcionan los pagos?
-- Footer
+#### 2. **Orders Tab**
 
-#### 11. HANDBOOK: Guía Comunitaria
+Shows: All orders from `all_bookings`
 
-**File:** `frontend/handbook/guia-comunitaria.html`
-Content from Handbook PDF page 2:
+**Display:** Order ID, customer name, service, amount, status, service date, provider
+**Status badges:** Pending, Setup required, Scheduled, Confirmed, Captured, Declined, Canceled, etc.
+**Actions:** View details, capture, cancel, refund
+**Filters:** By status, search by name/phone/order ID, sort by date
 
-- 3 principles with icons: Trata a todos con respeto, Cuida tu seguridad y la de los demás, Cumple con las normas
-- Full text for each principle
-- Cross-navigation cards to other 5 handbook articles
-- Footer
+#### 3. **Auth Gate**
 
-#### 12. HANDBOOK: Cómo prepararte para tu cita
+- Login screen → enter `ADMIN_API_TOKEN` → stored in `sessionStorage`
+- All API calls use `Authorization: Bearer {token}`
 
-**File:** `frontend/handbook/prepararte-cita.html`
-Content from Handbook PDF page 3:
+### Admin Backend Endpoints
 
-- 4 steps with illustrations: Revisa detalles, Herramientas listas, Celular con batería, Planea tu llegada
-- Cross-navigation cards
-- Footer
-
-#### 13. HANDBOOK: Video demostrativo
-
-**File:** `frontend/handbook/video-demostrativo.html`
-Content from Handbook PDF page 4:
-
-- "Cómo tomar una solicitud" heading
-- Embedded video placeholder (or phone mockup with video screenshot)
-- Text: "Una vez registrado como proveedor, mira este video para aprender como tomar tu primer solicitud con SERVI."
-- Cross-navigation cards
-- Footer
-
-#### 14. HANDBOOK: Cambio de Precios
-
-**File:** `frontend/handbook/cambio-precios.html`
-Content from Handbook PDF page 5:
-
-- "Si el precio cambia, notifícalo antes de continuar!"
-- 4 types: Pieza adicional, Petición adicional, Tiempo adicional, Cambio de Servicio
-- "También es importante" section (4 info blocks)
-- Cross-navigation cards
-- Footer
-
-#### 15. HANDBOOK: Tu Calificación
-
-**File:** `frontend/handbook/calificacion.html`
-Content from Handbook PDF page 6:
-
-- Intro about reputation and rating
-- "¿Cómo se calcula por servicio?" — SERVI rating + Client rating = final
-- "¿Cómo se calcula general?" — average across all services
-- "¿Cómo mejorar?" — 5 tips
-- Cross-navigation cards
-- Footer
-
-#### 16. HANDBOOK: ¿Cómo funcionan los pagos?
-
-**File:** `frontend/handbook/pagos.html`
-Content from Handbook PDF page 7:
-
-- "Recibe tus pagos de forma rápida, clara y sin complicaciones"
-- El monto exacto acordado
-- Método de pago flexible (transferencia, efectivo)
-- Tiempo de transferencia
-- Historial de pagos vía WhatsApp
-- Cross-navigation cards
-- Footer
-
-#### 17. HANDBOOK: Contáctanos
-
-**File:** `frontend/handbook/contactanos.html`
-Content from Handbook PDF page 8:
-
-- Same WhatsApp CTA as Help Center contact
-- Cross-navigation cards to all 6 handbook articles
-- "¿Todavía no eres SERVI Partner verificado?" + CTA to Partners page
-- Footer
+- `GET /api/admin/orders` — List orders with pagination, filtering, search
+- `GET /api/admin/orders/:id` — Full order details
+- `GET /api/reports` — List reports/suggestions (admin auth; filters by type/status)
+- `PATCH /api/reports/:id` — Update report status/notes (admin auth)
+- `GET /api/partner-applications` — List applications (admin auth)
+- `PATCH /api/partner-applications/:id` — Update application status (admin auth)
+- `GET /api/admin/stats` — Quick stats (requests today, pending orders, confirmed, revenue)
 
 ---
 
@@ -590,7 +561,7 @@ CREATE TABLE IF NOT EXISTS partner_applications (
   specialty TEXT,
   city TEXT,
   experience TEXT,
-  status TEXT DEFAULT 'pending',   -- pending, contacted, verified, rejected
+  status TEXT DEFAULT 'pending',   -- pending, reviewed, verified, rejected
   admin_notes TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -621,12 +592,13 @@ Web-based admin panel protected by `ADMIN_API_TOKEN`. Replaces Google Forms + st
 **Sections/Tabs:**
 
 1. **Inbox** — Unified view of ALL incoming submissions
-   - Service requests (from booking flow)
    - Incident reports (from Help Center)
    - Suggestions (from Help Center)
    - Partner applications (from Partners page)
-   - Filter by type, status, date
+   - Filter by type and status
    - Quick status updates
+
+   Service requests are managed from the Orders tab (pending web intake rows).
 
 2. **Orders Management** — View all orders from `all_bookings`
    - Table: order ID (short code), customer name, service, amount, status, service date, provider
@@ -649,37 +621,116 @@ Web-based admin panel protected by `ADMIN_API_TOKEN`. Replaces Google Forms + st
 
 ---
 
-### ─── DESIGN REFERENCE ───
+## Production Readiness Checklist
 
-- `servi-app.jsx` — React prototype with design system (re-implement in vanilla HTML/CSS/JS)
-- `/docs/pdfs/` — PDF exports of all Canva pages (SERVI landing, Help Center, Partners, Handbook) — use for content reference
-- `frontend/pay.html`, `book.html` — Reference for dark-theme admin dashboard styling
+Before launching to production, verify:
 
----
-
-### ─── BUILD ORDER (Recommended) ───
-
-1. **Database** — Create `service_requests`, `service_reports`, `partner_applications` tables
-2. **Backend routes** — All new POST/GET/PATCH endpoints for requests, reports, applications, admin
-3. **Shared CSS/JS** — Extract shared navbar, footer, i18n, and styles into `frontend/shared/` (e.g., `shared-styles.css`, `shared-nav.js`, `shared-footer.js`, `i18n.js`)
-4. **Landing page** (`index.html`) — Full page with booking flow
-5. **Help Center pages** (hub + report form + suggestion form + quiénes somos + contáctanos)
-6. **Legal page** (tabbed accordion)
-7. **Partners page** (landing + registration form)
-8. **Handbook** (hub + 6 article pages + contáctanos)
-9. **Admin dashboard** (`admin.html`)
-10. **Integration testing** — Verify all forms submit correctly, Sheets webhook fires, existing payment pages untouched
+- [ ] **Booking flow:** End-to-end from landing CTA to `service_requests` table to order creation
+- [ ] **Auth flow:** Signup/login → session token → navbar shows user name → pre-filled info on return
+- [ ] **All 25 pages:** Content complete, mobile responsive, bilingual (ES/EN)
+- [ ] **Form submissions:** Reports, suggestions, partner apps all submit to backend + Sheets webhook
+- [ ] **Admin dashboard:** Login works, Inbox shows all types (reports, suggestions, apps), Orders tab shows all orders, filters work, can update status
+- [ ] **Legal page:** All 5 placeholders filled with actual legal text
+- [ ] **Manage Account page:** Designed and functional (name, phone, email, addresses, payment methods, preferences)
+- [ ] **Integration testing:** Full end-to-end flows verified (see checklist below)
+- [ ] **Deployment:** Merged to `main`, Render auto-deploys, Cloudflare Pages live, no errors in console
 
 ---
 
-### ─── KEY PRINCIPLES ───
+## Integration Testing Checklist (Before Launch)
+
+### Guest User Flow
+
+- [ ] Load homepage, click "Solicitar servicio"
+- [ ] Booking modal appears, category select visible
+- [ ] Navigate through all 5 steps (category → describe → schedule → address → confirm)
+- [ ] Form submits successfully, request appears in database
+- [ ] Admin sees pending request in Orders as web intake row
+- [ ] Sheets webhook fires (check Google Sheet for new row)
+- [ ] Confirmation page shows success message
+
+### Authenticated User Flow
+
+- [ ] Click Login/Signup on navbar
+- [ ] Auth modal opens
+- [ ] Signup: Enter email, phone, password → account created → redirected to home, navbar shows name
+- [ ] Return to booking → info is pre-filled (name, email, phone)
+- [ ] Submit booking while logged in
+- [ ] Can access "Manage Account" page → can edit info
+
+### Report Submission Flow
+
+- [ ] Go to Help Center → click "Reportar Incidente o Problema"
+- [ ] Report form opens, fill fields (name, email, phone, incident type, description, date)
+- [ ] Submit → success confirmation
+- [ ] Admin logs into dashboard → Inbox tab shows report
+- [ ] Admin can mark `reviewed`, write resolution notes, then mark `resolved`
+- [ ] Report status updates in admin dashboard
+
+### Suggestion Submission Flow
+
+- [ ] Go to Help Center → click "Compartir Sugerencia o Idea"
+- [ ] Suggestion form opens, fill fields (name, email optional, category, description)
+- [ ] Submit → success confirmation
+- [ ] Admin sees in Inbox tab (filtered as "Suggestion")
+- [ ] Admin can mark as reviewed
+
+### Partner Application Flow
+
+- [ ] Go to Partners page → click "Regístrate a SERVI"
+- [ ] Registration form opens (name, phone, email, specialty, city, experience)
+- [ ] Submit → success confirmation
+- [ ] Admin logs in → Inbox shows partner application
+- [ ] Admin extracts phone number → contacts via WhatsApp with pre-built message
+- [ ] Admin marks `reviewed` → after interview → `verified` or `rejected`
+
+### Admin Dashboard
+
+- [ ] Login with ADMIN_API_TOKEN works
+- [ ] Inbox tab loads, shows all submission types
+- [ ] Filters work for current report/app status values and type selections
+- [ ] Can update report status (`new`/`reviewed`/`resolved`) and partner app status (`pending`/`reviewed`/`verified`/`rejected`)
+- [ ] Orders tab shows all orders from all_bookings
+- [ ] Can view order details, capture/cancel buttons present
+- [ ] Search/filter by status, customer name, order ID works
+
+### Existing Payment Flows (Must Not Break)
+
+- [ ] `pay.html` still works (new card payment)
+- [ ] `book.html` still works (saved card 1-click)
+- [ ] `success.html` displays correctly
+- [ ] Stripe webhooks still fire
+- [ ] Google Apps Script still receives status updates
+- [ ] Capture/cancel/refund from Sheets still works
+
+---
+
+## Known Blockers / Issues
+
+### ✅ RESOLVED
+
+### 🟡 PENDING TESTING
+
+_[Test these flows and report back if you encounter issues. Format: Issue name (component, severity) — description, expected vs. actual behavior, estimated fix time]_
+
+## Reference Files & Resources
+
+- **Dashboard reference:** `dashboard.jsx` — Read the "REPORTS" section (line ~228) for Inbox UI pattern
+- **PDF content:** `/docs/pdfs/` — Help Center, Partners, Handbook content
+- **Existing payment styling:** `frontend/pay.html`, `book.html` — Reference for dark-theme admin dashboard
+- **i18n system:** `frontend/shared/i18n.js` — Full translation system (916 lines, ES/EN complete)
+- **Design system:** `frontend/shared/shared-styles.css` — All brand colors, components, animations
+
+---
+
+## Key Principles (Still Valid)
 
 1. **Do NOT break existing flows** — `pay.html`, `book.html`, `success.html`, `save.html`, all backend routes, Stripe webhooks, and Apps Script must continue working unchanged.
-2. **Plain HTML/CSS/JS only** — No React, no build step, no bundler. Match existing `frontend/` patterns. CDN for libraries.
-3. **Express + ESM conventions** — New routes in `.mjs`, use existing `pool`, follow `requireAdminAuth` pattern.
-4. **Shared components** — Navbar, footer, and i18n should be reusable across all 25+ pages to avoid duplication.
-5. **Uber-quality UX** on customer pages — Polished, intentional, professional.
-6. **Mobile-first** — Most CDMX users are on phones.
-7. **Bilingual** — ES/EN toggle, Spanish default. All customer-facing pages. Admin dashboard can be Spanish-only.
-8. **Content placeholders** — Where text isn't provided, use clear `<!-- [PLACEHOLDER: Section title] -->` markers.
-9. **Integrate, don't replace** — New intake feeds INTO existing pipeline. Dashboard reads FROM same database. Sheets continues in parallel.
+2. **Plain HTML/CSS/JS only** — No React, no build step, no bundler. Match existing `frontend/` patterns.
+3. **Express + ESM conventions** — All routes in `.mjs`, use existing `pool` connection, follow `requireAdminAuth` pattern.
+4. **Shared components** — Navbar, footer, and i18n are reusable across all pages to avoid duplication.
+5. **Uber-quality UX** — Polished, intentional, professional on customer pages.
+6. **Mobile-first** — Most CDMX users on phones.
+7. **Bilingual** — ES/EN toggle, Spanish default. Admin dashboard can be Spanish-only.
+8. **Content placeholders** — Use clear `<!-- [PLACEHOLDER: Section title] -->` markers where text is missing.
+9. **Integrate, don't replace** — New intake feeds into existing pipeline. Dashboard reads from same database. Sheets continues in parallel.

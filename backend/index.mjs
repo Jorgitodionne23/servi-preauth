@@ -16,6 +16,14 @@ import { dirname } from 'path';
 import fetch from 'node-fetch';
 import { randomUUID, randomBytes, createHash, createHmac, scryptSync, timingSafeEqual } from 'crypto';
 import { rateLimit } from 'express-rate-limit';
+import firebaseAdmin from 'firebase-admin';
+
+// --- Firebase Admin Init ---
+if (!firebaseAdmin.apps.length) {
+  firebaseAdmin.initializeApp({
+    projectId: process.env.FIREBASE_PROJECT_ID || 'servi-bec91',
+  });
+}
 
 // --- Auth Helpers ---
 const JWT_SECRET = process.env.STRIPE_WEBHOOK_SECRET || process.env.ADMIN_API_TOKEN || 'servi-fallback-auth-secret';
@@ -90,6 +98,15 @@ function hoursUntilService(row) {
 
 function normalizePhoneDigits(value) {
   return String(value || '').replace(/\D+/g, '');
+}
+
+function normalizePhoneToE164(raw) {
+  if (!raw) return '';
+  const digits = String(raw).replace(/\D+/g, '');
+  if (String(raw).trim().startsWith('+')) return '+' + digits;
+  if (digits.length === 10) return '+52' + digits;
+  if (digits.length === 11 && digits.charAt(0) === '1') return '+' + digits;
+  return '+' + digits;
 }
 
 function normalizeNameKey(value) {
@@ -4406,18 +4423,29 @@ app.post('/api/auth/signup', publicFormLimit, async (req, res) => {
     const emailNorm = normalizeEmail(email);
     if (!emailNorm) return res.status(400).json({ error: 'invalid_email', message: 'Invalid email format' });
 
-    // Check if exists
+    const phoneNorm = normalizePhoneToE164(phone);
+    if (!phoneNorm) {
+      return res.status(400).json({ error: 'phone_required', message: 'El número de teléfono es requerido.' });
+    }
+
+    // Check if email exists
     const { rows: existing } = await pool.query('SELECT id FROM auth_users WHERE email = $1', [emailNorm]);
     if (existing.length > 0) {
       return res.status(409).json({ error: 'email_exists', message: 'Email already registered' });
     }
 
+    // Check if phone exists
+    const { rows: phoneExisting } = await pool.query('SELECT id FROM auth_users WHERE phone = $1', [phoneNorm]);
+    if (phoneExisting.length > 0) {
+      return res.status(409).json({ error: 'phone_exists', message: '¿Ya tienes una cuenta? Este número ya está registrado. Inicia sesión.' });
+    }
+
     const id = randomUUID();
     const pwHash = hashPassword(password);
-    
+
     await pool.query(
       `INSERT INTO auth_users (id, email, password_hash, name, phone) VALUES ($1, $2, $3, $4, $5)`,
-      [id, emailNorm, pwHash, name, normalizePhoneDigits(phone) || null]
+      [id, emailNorm, pwHash, name, phoneNorm]
     );
 
     const customerId = await resolveStripeCustomerForEmail(emailNorm);
@@ -4428,11 +4456,17 @@ app.post('/api/auth/signup', publicFormLimit, async (req, res) => {
       );
     }
 
-    const token = signSessionToken({ user_id: id, email: emailNorm, name });
-    return res.status(201).json({ token, user: { id, email: emailNorm, name } });
+    const token = signSessionToken({ user_id: id, email: emailNorm, name, phone: phoneNorm });
+    return res.status(201).json({ token, user: { id, email: emailNorm, name, phone: phoneNorm } });
   } catch (err) {
-    console.error('[POST /api/auth/signup]', err);
-    return res.status(500).json({ error: 'internal_error' });
+    if (err.code === '23505') {
+      const isPhoneConstraint = err.constraint === 'auth_users_phone_unique' || (err.detail || '').includes('phone');
+      if (isPhoneConstraint) {
+        return res.status(409).json({ error: 'phone_exists', message: '¿Ya tienes una cuenta? Este número ya está registrado. Inicia sesión.' });
+      }
+    }
+    console.error('[POST /api/auth/signup] code=%s message=%s', err.code, err.message, err);
+    return res.status(500).json({ error: 'internal_error', debug: err.message });
   }
 });
 
@@ -4442,15 +4476,17 @@ app.post('/api/auth/login', publicFormLimit, async (req, res) => {
     if (!email || !password) return res.status(400).json({ error: 'missing_fields' });
     
     const emailNorm = normalizeEmail(email);
+    if (!emailNorm) return res.status(401).json({ error: 'invalid_credentials', message: 'Invalid email or password' });
     const { rows } = await pool.query('SELECT * FROM auth_users WHERE email = $1', [emailNorm]);
     const user = rows[0];
 
     if (!user || !user.password_hash) {
-      // Don't leak whether user exists vs no password (e.g. social login only)
+      console.log('[LOGIN] 401 Path A — user not found or no password_hash:', { emailFound: !!user, hasHash: !!user?.password_hash });
       return res.status(401).json({ error: 'invalid_credentials', message: 'Invalid email or password' });
     }
 
     if (!verifyPassword(password, user.password_hash)) {
+      console.log('[LOGIN] 401 Path B — password mismatch for:', emailNorm);
       return res.status(401).json({ error: 'invalid_credentials', message: 'Invalid email or password' });
     }
 
@@ -4480,10 +4516,29 @@ app.post('/api/auth/login', publicFormLimit, async (req, res) => {
       }
     }
 
-    const token = signSessionToken({ user_id: user.id, email: user.email, name: user.name });
-    return res.json({ token, user: { id: user.id, email: user.email, name: user.name } });
+    const token = signSessionToken({ user_id: user.id, email: user.email, name: user.name, phone: user.phone || null });
+    return res.json({ token, user: { id: user.id, email: user.email, name: user.name, phone: user.phone || null } });
   } catch (err) {
     console.error('[POST /api/auth/login]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+app.get('/api/auth/me', async (req, res) => {
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+  const payload = verifySessionToken(token);
+  if (!payload?.user_id) return res.status(401).json({ error: 'unauthorized' });
+  try {
+    const { rows } = await pool.query(
+      'SELECT id, email, name, phone, auth_provider FROM auth_users WHERE id = $1',
+      [payload.user_id]
+    );
+    const user = rows[0];
+    if (!user) return res.status(404).json({ error: 'not_found' });
+    return res.json({ user: { id: user.id, email: user.email, name: user.name, phone: user.phone || null, auth_provider: user.auth_provider || null } });
+  } catch (err) {
+    console.error('[GET /api/auth/me]', err);
     return res.status(500).json({ error: 'internal_error' });
   }
 });
@@ -4527,10 +4582,393 @@ app.post('/api/auth/social', publicFormLimit, async (req, res) => {
       );
     }
 
-    const token = signSessionToken({ user_id: user.id, email: user.email, name: user.name });
-    return res.json({ token, user: { id: user.id, email: user.email, name: user.name } });
+    const token = signSessionToken({ user_id: user.id, email: user.email, name: user.name, phone: user.phone || null });
+    return res.json({ token, user: { id: user.id, email: user.email, name: user.name, phone: user.phone || null } });
   } catch (err) {
     console.error('[POST /api/auth/social]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// --- Firebase Auth: verify ID token and sync user record ---
+app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization || '';
+    const idToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+    if (!idToken) return res.status(401).json({ error: 'missing_token' });
+
+    // Verify the Firebase ID token
+    let decoded;
+    try {
+      decoded = await firebaseAdmin.auth().verifyIdToken(idToken);
+    } catch (verifyErr) {
+      console.error('[POST /api/auth/firebase] token verification failed:', verifyErr.code);
+      return res.status(401).json({ error: 'invalid_token', message: 'Firebase token verification failed' });
+    }
+
+    const firebaseUid = decoded.uid;
+    const email = decoded.email || req.body.email || null;
+    const name = decoded.name || req.body.name || null;
+    const phone = decoded.phone_number || req.body.phone || null;
+    const provider = decoded.firebase?.sign_in_provider || 'unknown';
+
+    // Look up existing user by firebase_uid first, then by email
+    let { rows } = await pool.query('SELECT * FROM auth_users WHERE firebase_uid = $1', [firebaseUid]);
+    let user = rows[0];
+
+    if (!user && email) {
+      const emailNorm = email.toLowerCase().trim();
+      ({ rows } = await pool.query('SELECT * FROM auth_users WHERE email = $1', [emailNorm]));
+      user = rows[0];
+
+      // Link existing email-based account to this Firebase UID
+      if (user) {
+        await pool.query(
+          'UPDATE auth_users SET firebase_uid = $1, auth_provider = $2, last_login = NOW() WHERE id = $3',
+          [firebaseUid, provider, user.id]
+        );
+        if (name && !user.name) await pool.query('UPDATE auth_users SET name = $1 WHERE id = $2', [name, user.id]);
+        if (phone && !user.phone) await pool.query('UPDATE auth_users SET phone = $1 WHERE id = $2', [phone, user.id]);
+      }
+    }
+
+    if (!user) {
+      // Create new user
+      const id = randomUUID();
+      const emailNorm = email ? email.toLowerCase().trim() : null;
+      await pool.query(
+        `INSERT INTO auth_users (id, email, name, phone, firebase_uid, auth_provider)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [id, emailNorm, name, phone, firebaseUid, provider]
+      );
+      user = { id, email: emailNorm, name, phone };
+      console.log('[POST /api/auth/firebase] new user created:', id, emailNorm || phone);
+    } else {
+      await pool.query('UPDATE auth_users SET last_login = NOW() WHERE id = $1', [user.id]);
+    }
+
+    // Resolve Stripe customer if applicable
+    if (user.email) {
+      const customerId = await resolveStripeCustomerForEmail(user.email);
+      if (customerId) {
+        await pool.query(
+          'UPDATE auth_users SET stripe_customer_id = $1 WHERE id = $2 AND stripe_customer_id IS NULL',
+          [customerId, user.id]
+        );
+      }
+    }
+
+    return res.json({
+      user: { id: user.id, email: user.email, name: user.name || name, phone: user.phone || phone }
+    });
+  } catch (err) {
+    console.error('[POST /api/auth/firebase]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// ─── Account management (authenticated user routes) ───────────────────────────
+
+function requireUserAuth(req, res) {
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+  const payload = verifySessionToken(token);
+  if (!payload?.user_id) { res.status(401).json({ error: 'unauthorized' }); return null; }
+  return payload;
+}
+
+// PATCH /api/auth/me — update profile
+app.patch('/api/auth/me', publicFormLimit, async (req, res) => {
+  const payload = requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const { name, email, phone } = req.body || {};
+    const sets = []; const params = [];
+    if (name !== undefined) { params.push(String(name).trim()); sets.push(`name = $${params.length}`); }
+    if (email !== undefined) {
+      const emailNorm = normalizeEmail(email);
+      if (!emailNorm) return res.status(400).json({ error: 'invalid_email' });
+      const { rows } = await pool.query('SELECT id FROM auth_users WHERE email = $1 AND id != $2', [emailNorm, payload.user_id]);
+      if (rows.length) return res.status(409).json({ error: 'email_exists', message: 'Este correo ya está en uso.' });
+      params.push(emailNorm); sets.push(`email = $${params.length}`);
+    }
+    if (phone !== undefined) {
+      const phoneNorm = normalizePhoneToE164(phone);
+      if (!phoneNorm) return res.status(400).json({ error: 'invalid_phone' });
+      const { rows } = await pool.query('SELECT id FROM auth_users WHERE phone = $1 AND id != $2', [phoneNorm, payload.user_id]);
+      if (rows.length) return res.status(409).json({ error: 'phone_exists', message: 'Este teléfono ya está en uso.' });
+      params.push(phoneNorm); sets.push(`phone = $${params.length}`);
+    }
+    if (!sets.length) return res.status(400).json({ error: 'no_fields' });
+    params.push(payload.user_id);
+    await pool.query(`UPDATE auth_users SET ${sets.join(', ')} WHERE id = $${params.length}`, params);
+    const { rows } = await pool.query('SELECT id, email, name, phone, auth_provider FROM auth_users WHERE id = $1', [payload.user_id]);
+    const u = rows[0];
+    return res.json({ user: { id: u.id, email: u.email, name: u.name, phone: u.phone || null, auth_provider: u.auth_provider || null } });
+  } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ error: 'conflict', message: 'Ese dato ya está en uso.' });
+    console.error('[PATCH /api/auth/me]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// POST /api/auth/change-password
+app.post('/api/auth/change-password', publicFormLimit, async (req, res) => {
+  const payload = requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const { currentPassword, newPassword } = req.body || {};
+    if (!currentPassword || !newPassword) return res.status(400).json({ error: 'missing_fields' });
+    if (String(newPassword).length < 6) return res.status(400).json({ error: 'weak_password', message: 'La contraseña debe tener al menos 6 caracteres.' });
+    const { rows } = await pool.query('SELECT password_hash FROM auth_users WHERE id = $1', [payload.user_id]);
+    const user = rows[0];
+    if (!user?.password_hash) return res.status(400).json({ error: 'no_password', message: 'Tu cuenta no usa contraseña.' });
+    if (!verifyPassword(currentPassword, user.password_hash)) return res.status(401).json({ error: 'wrong_password', message: 'Contraseña actual incorrecta.' });
+    const newHash = hashPassword(newPassword);
+    await pool.query('UPDATE auth_users SET password_hash = $1 WHERE id = $2', [newHash, payload.user_id]);
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('[POST /api/auth/change-password]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// DELETE /api/auth/me — delete account
+app.delete('/api/auth/me', publicFormLimit, async (req, res) => {
+  const payload = requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    await pool.query('DELETE FROM auth_users WHERE id = $1', [payload.user_id]);
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('[DELETE /api/auth/me]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// GET /api/auth/addresses
+app.get('/api/auth/addresses', async (req, res) => {
+  const payload = requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const { rows } = await pool.query(
+      'SELECT * FROM user_addresses WHERE user_id = $1 ORDER BY is_default DESC, created_at ASC',
+      [payload.user_id]
+    );
+    return res.json({ addresses: rows });
+  } catch (err) {
+    console.error('[GET /api/auth/addresses]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// POST /api/auth/addresses
+app.post('/api/auth/addresses', publicFormLimit, async (req, res) => {
+  const payload = requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const { label, street, city, state, postal_code, country, is_default } = req.body || {};
+    if (!street) return res.status(400).json({ error: 'missing_street' });
+    const id = randomUUID();
+    if (is_default) {
+      await pool.query('UPDATE user_addresses SET is_default = FALSE WHERE user_id = $1', [payload.user_id]);
+    }
+    await pool.query(
+      `INSERT INTO user_addresses (id, user_id, label, street, city, state, postal_code, country, is_default)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [id, payload.user_id, label || null, street, city || null, state || null, postal_code || null, country || 'MX', !!is_default]
+    );
+    const { rows } = await pool.query('SELECT * FROM user_addresses WHERE id = $1', [id]);
+    return res.status(201).json({ address: rows[0] });
+  } catch (err) {
+    console.error('[POST /api/auth/addresses]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// PATCH /api/auth/addresses/:id
+app.patch('/api/auth/addresses/:id', publicFormLimit, async (req, res) => {
+  const payload = requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const { label, street, city, state, postal_code, country } = req.body || {};
+    const sets = []; const params = [];
+    if (label !== undefined)       { params.push(label);       sets.push(`label = $${params.length}`); }
+    if (street !== undefined)      { params.push(street);      sets.push(`street = $${params.length}`); }
+    if (city !== undefined)        { params.push(city);        sets.push(`city = $${params.length}`); }
+    if (state !== undefined)       { params.push(state);       sets.push(`state = $${params.length}`); }
+    if (postal_code !== undefined) { params.push(postal_code); sets.push(`postal_code = $${params.length}`); }
+    if (country !== undefined)     { params.push(country);     sets.push(`country = $${params.length}`); }
+    if (!sets.length) return res.status(400).json({ error: 'no_fields' });
+    params.push(req.params.id, payload.user_id);
+    const { rowCount } = await pool.query(
+      `UPDATE user_addresses SET ${sets.join(', ')} WHERE id = $${params.length - 1} AND user_id = $${params.length}`,
+      params
+    );
+    if (!rowCount) return res.status(404).json({ error: 'not_found' });
+    const { rows } = await pool.query('SELECT * FROM user_addresses WHERE id = $1', [req.params.id]);
+    return res.json({ address: rows[0] });
+  } catch (err) {
+    console.error('[PATCH /api/auth/addresses/:id]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// DELETE /api/auth/addresses/:id
+app.delete('/api/auth/addresses/:id', async (req, res) => {
+  const payload = requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const { rowCount } = await pool.query(
+      'DELETE FROM user_addresses WHERE id = $1 AND user_id = $2',
+      [req.params.id, payload.user_id]
+    );
+    if (!rowCount) return res.status(404).json({ error: 'not_found' });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('[DELETE /api/auth/addresses/:id]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// PATCH /api/auth/addresses/:id/default
+app.patch('/api/auth/addresses/:id/default', publicFormLimit, async (req, res) => {
+  const payload = requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    await pool.query('UPDATE user_addresses SET is_default = FALSE WHERE user_id = $1', [payload.user_id]);
+    const { rowCount } = await pool.query(
+      'UPDATE user_addresses SET is_default = TRUE WHERE id = $1 AND user_id = $2',
+      [req.params.id, payload.user_id]
+    );
+    if (!rowCount) return res.status(404).json({ error: 'not_found' });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('[PATCH /api/auth/addresses/:id/default]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// ─── Payment Methods (auth users) ────────────────────────────────────────────
+
+// Resolve or create a Stripe customer for an authenticated user
+async function getStripeCustomerForUser(userId) {
+  const { rows } = await pool.query(
+    'SELECT id, name, email, phone FROM auth_users WHERE id = $1',
+    [userId]
+  );
+  const user = rows[0];
+  if (!user) throw new Error('user_not_found');
+
+  // Look up existing customer by email
+  if (user.email) {
+    const saved = await findSavedClientByEmailNormalized(user.email);
+    if (saved?.customer_id) return saved.customer_id;
+    const { rows: bRows } = await pool.query(
+      `SELECT customer_id FROM all_bookings WHERE LOWER(client_email) = LOWER($1) AND customer_id IS NOT NULL ORDER BY created_at DESC LIMIT 1`,
+      [user.email]
+    );
+    if (bRows[0]?.customer_id) return bRows[0].customer_id;
+  }
+  // Look up by phone digits
+  if (user.phone) {
+    const digits = user.phone.replace(/\D/g, '');
+    const saved = await findSavedClientByPhoneDigits(digits);
+    if (saved?.customer_id) return saved.customer_id;
+  }
+  // Create new Stripe customer and register in saved_servi_users
+  const customer = await stripe.customers.create({
+    name: user.name || undefined,
+    email: user.email || undefined,
+    phone: user.phone || undefined,
+    metadata: { auth_user_id: user.id }
+  });
+  await pool.query(
+    `INSERT INTO saved_servi_users (customer_id, customer_name, customer_email, customer_phone, first_checked_at, last_checked_at)
+     VALUES ($1, $2, $3, $4, NOW(), NOW())
+     ON CONFLICT (customer_id) DO UPDATE SET last_checked_at = NOW()`,
+    [customer.id, user.name || null, user.email || null, user.phone || null]
+  );
+  return customer.id;
+}
+
+// GET /api/auth/payment-methods — list saved payment methods
+app.get('/api/auth/payment-methods', publicFormLimit, async (req, res) => {
+  const payload = requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const customerId = await getStripeCustomerForUser(payload.user_id);
+    const [pms, customer] = await Promise.all([
+      stripe.paymentMethods.list({ customer: customerId, limit: 20 }),
+      stripe.customers.retrieve(customerId)
+    ]);
+    const defaultPmId = customer.invoice_settings?.default_payment_method;
+    const methods = pms.data.map(pm => ({
+      id: pm.id,
+      type: pm.type,
+      brand: pm.card?.brand || null,
+      last4: pm.card?.last4 || null,
+      expMonth: pm.card?.exp_month || null,
+      expYear: pm.card?.exp_year || null,
+      isDefault: pm.id === defaultPmId,
+      walletType: pm.card?.wallet?.type || null
+    }));
+    return res.json({ methods, customerId });
+  } catch (err) {
+    console.error('[GET /api/auth/payment-methods]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// POST /api/auth/payment-methods/setup — create SetupIntent for adding card/Apple Pay/Google Pay
+app.post('/api/auth/payment-methods/setup', publicFormLimit, async (req, res) => {
+  const payload = requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const customerId = await getStripeCustomerForUser(payload.user_id);
+    const si = await stripe.setupIntents.create({
+      customer: customerId,
+      automatic_payment_methods: { enabled: true },
+      usage: 'off_session',
+      metadata: { auth_user_id: payload.user_id }
+    });
+    return res.json({ clientSecret: si.client_secret, customerId });
+  } catch (err) {
+    console.error('[POST /api/auth/payment-methods/setup]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// DELETE /api/auth/payment-methods/:pmId — detach a payment method
+app.delete('/api/auth/payment-methods/:pmId', publicFormLimit, async (req, res) => {
+  const payload = requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const customerId = await getStripeCustomerForUser(payload.user_id);
+    const pm = await stripe.paymentMethods.retrieve(req.params.pmId);
+    if (pm.customer !== customerId) return res.status(403).json({ error: 'forbidden' });
+    await stripe.paymentMethods.detach(req.params.pmId);
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('[DELETE /api/auth/payment-methods/:pmId]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// PATCH /api/auth/payment-methods/:pmId/default — set default payment method
+app.patch('/api/auth/payment-methods/:pmId/default', publicFormLimit, async (req, res) => {
+  const payload = requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const customerId = await getStripeCustomerForUser(payload.user_id);
+    const pm = await stripe.paymentMethods.retrieve(req.params.pmId);
+    if (pm.customer !== customerId) return res.status(403).json({ error: 'forbidden' });
+    await stripe.customers.update(customerId, {
+      invoice_settings: { default_payment_method: req.params.pmId }
+    });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('[PATCH /api/auth/payment-methods/:pmId/default]', err);
     return res.status(500).json({ error: 'internal_error' });
   }
 });

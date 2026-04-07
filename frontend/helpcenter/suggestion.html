@@ -10,19 +10,22 @@
   <link rel="stylesheet" href="/shared/shared-styles.css">
 </head>
 <body>
-<script>window.__navType = 'helpcenter';</script>
+<script>window.__navType = 'main';</script>
 <script src="/shared/i18n.js"></script>
 <div id="navbar"></div>
+<script src="/shared/shared-auth.js"></script>
 <script src="/shared/shared-nav.js"></script>
 
 <section style="padding-top:120px;padding-bottom:80px">
   <div class="container" style="max-width:640px">
-    <a href="/helpcenter.html" class="nav-link" style="display:inline-flex;align-items:center;gap:6px;margin-bottom:24px">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-      <span data-i18n="nav.helpCenter">Help Center</span>
-    </a>
-    <h1 class="heading-lg" style="margin-bottom:8px" data-i18n="suggestionForm.title">Compartir Sugerencia o Idea</h1>
-    <p class="text-body" style="margin-bottom:32px" data-i18n="suggestionForm.sub">Tu feedback nos ayuda a construir un mejor SERVI.</p>
+    <div id="page-header">
+      <a href="/helpcenter.html" class="nav-link" style="display:inline-flex;align-items:center;gap:6px;margin-bottom:24px">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        <span data-i18n="nav.helpCenter">Help Center</span>
+      </a>
+      <h1 class="heading-lg" style="margin-bottom:8px" data-i18n="suggestionForm.title">Compartir Sugerencia o Idea</h1>
+      <p class="text-body" style="margin-bottom:32px" data-i18n="suggestionForm.sub">Tu feedback nos ayuda a construir un mejor SERVI.</p>
+    </div>
 
     <form id="suggestion-form" style="display:flex;flex-direction:column;gap:16px">
       <div>
@@ -49,8 +52,8 @@
         <textarea class="input-field" name="description" rows="5" data-i18n-placeholder="suggestionForm.descriptionPlaceholder" placeholder="Cuéntanos tu idea..." required></textarea>
       </div>
       <button type="submit" class="btn-primary" style="width:100%;justify-content:center;margin-top:8px" id="submit-btn" data-i18n="suggestionForm.submit">Enviar sugerencia</button>
-      <div id="form-msg" style="text-align:center;display:none"></div>
     </form>
+    <div id="form-msg" style="text-align:center;display:none"></div>
   </div>
 </section>
 
@@ -66,20 +69,29 @@ document.getElementById('suggestion-form').addEventListener('submit', async func
   btn.disabled = true; btn.textContent = '...';
   try {
     const API = window.CONFIG?.API_BASE || '';
+    console.log('[SERVI] Submitting suggestion to:', API + '/api/reports');
     const res = await fetch(API + '/api/reports', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ type: 'suggestion', category: fd.get('category'), name: fd.get('name'), email: fd.get('email'), description: fd.get('description') }),
     });
-    if (!res.ok) throw new Error(res.status);
+    const data = await res.json().catch(() => ({}));
+    console.log('[SERVI] API response:', res.status, data);
+    if (!res.ok) {
+      throw new Error(data.message || data.error || 'HTTP ' + res.status);
+    }
+    console.log('[SERVI] Suggestion submitted successfully');
     this.style.display = 'none';
+    document.getElementById('page-header').style.display = 'none';
     msg.style.display = 'block';
     const tr = window.__t?.suggestionForm;
-    msg.innerHTML = '<div style="padding:32px 0"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg><h3 class="heading-md" style="margin:16px 0 8px">' + (tr?.successTitle || 'Sugerencia enviada') + '</h3><p class="text-body">' + (tr?.successBody || 'Gracias por compartir tu idea con nosotros.') + '</p></div>';
+    msg.innerHTML = '<div style="padding:32px 0;text-align:center"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" style="margin:0 auto;display:block"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg><h3 class="heading-md" style="margin:16px 0 8px" data-i18n="suggestionForm.successTitle">Sugerencia enviada</h3><p class="text-body" style="margin-bottom:24px" data-i18n="suggestionForm.successBody">Gracias por compartir tu idea con nosotros.</p><a href="/helpcenter.html" class="btn-primary" style="display:inline-block;text-decoration:none" data-i18n="suggestionForm.backButton">Volver a Help Center</a></div>';
+    if (window.updateTranslations) window.updateTranslations();
   } catch (err) {
+    console.error('[SERVI] Suggestion submission error:', err);
     const tr = window.__t?.suggestionForm;
     btn.disabled = false; btn.textContent = tr?.submit || 'Enviar sugerencia';
-    alert(tr?.error || 'Error al enviar. Inténtalo de nuevo.');
+    alert(tr?.error || 'Error: ' + err.message);
   }
 });
 </script>

@@ -348,6 +348,35 @@ export async function initDb() {
       created_at TIMESTAMPTZ DEFAULT NOW(),
       last_login TIMESTAMPTZ
     );
+
+    ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS phone TEXT;
+    ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS name TEXT;
+    ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS password_hash TEXT;
+    ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS google_id TEXT;
+    ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS apple_id TEXT;
+    ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT;
+    ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS last_login TIMESTAMPTZ;
+    ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS firebase_uid TEXT;
+    ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS auth_provider TEXT;
+
+    DO $$ BEGIN
+      ALTER TABLE auth_users ADD CONSTRAINT auth_users_phone_unique UNIQUE (phone);
+    EXCEPTION WHEN duplicate_table THEN NULL;
+    END $$;
+
+    CREATE TABLE IF NOT EXISTS user_addresses (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+      label TEXT,
+      street TEXT NOT NULL,
+      city TEXT,
+      state TEXT,
+      postal_code TEXT,
+      country TEXT DEFAULT 'MX',
+      is_default BOOLEAN DEFAULT FALSE,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
   `);
 }
 

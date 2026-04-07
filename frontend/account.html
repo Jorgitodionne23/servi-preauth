@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SERVI — Mi Cuenta</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,700&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/shared/shared-styles.css">
+  <style>
+    .account-page { padding: 120px 0 80px; min-height: 100vh; }
+    .account-layout { display: grid; grid-template-columns: 220px 1fr; gap: 32px; align-items: start; }
+    .account-sidebar { background: #fff; border: 1px solid #e8e8e8; border-radius: 16px; overflow: hidden; position: sticky; top: 100px; }
+    .account-sidebar-item { display: flex; align-items: center; gap: 12px; padding: 14px 20px; font-size: 14px; font-weight: 500; color: #555; cursor: pointer; border: none; background: none; width: 100%; text-align: left; font-family: 'DM Sans', sans-serif; transition: background 0.15s, color 0.15s; border-left: 3px solid transparent; }
+    .account-sidebar-item:hover { background: #f5f5f5; color: #0a0a0a; }
+    .account-sidebar-item.active { color: #0a0a0a; font-weight: 700; background: #f0fdf8; border-left-color: #10b981; }
+    .account-sidebar-item.danger { color: #dc2626; }
+    .account-sidebar-item.danger:hover { background: #fef2f2; }
+    .account-sidebar-item.danger.active { background: #fef2f2; border-left-color: #dc2626; }
+    .account-card { background: #fff; border: 1px solid #e8e8e8; border-radius: 16px; padding: 32px; }
+    .account-card + .account-card { margin-top: 20px; }
+    .account-section { display: none; }
+    .account-section.active { display: block; }
+    .section-title { font-family: 'Syne', sans-serif; font-size: 22px; font-weight: 800; color: #0a0a0a; margin-bottom: 6px; }
+    .section-sub { font-size: 14px; color: #888; margin-bottom: 28px; }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+    .form-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+    .form-label { font-size: 12px; font-weight: 700; color: #555; text-transform: uppercase; letter-spacing: 0.04em; }
+    .form-input { padding: 12px 14px; border: 1.5px solid #e0e0e0; border-radius: 12px; font-size: 15px; font-family: 'DM Sans', sans-serif; color: #0a0a0a; background: #fff; outline: none; transition: border-color 0.2s; }
+    .form-input:focus { border-color: #10b981; }
+    .form-input:disabled { background: #f9f9f9; color: #aaa; cursor: not-allowed; }
+    .form-input::placeholder { color: #bbb; }
+    .btn-save { display: inline-flex; align-items: center; gap: 8px; padding: 12px 24px; background: #0a0a0a; color: #fff; border: none; border-radius: 12px; font-size: 14px; font-weight: 700; font-family: 'DM Sans', sans-serif; cursor: pointer; transition: opacity 0.2s; }
+    .btn-save:hover { opacity: 0.85; }
+    .btn-save:disabled { opacity: 0.4; cursor: default; }
+    .btn-outline { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; background: #fff; color: #0a0a0a; border: 1.5px solid #e0e0e0; border-radius: 10px; font-size: 13px; font-weight: 600; font-family: 'DM Sans', sans-serif; cursor: pointer; transition: border-color 0.2s, background 0.2s; }
+    .btn-outline:hover { border-color: #0a0a0a; background: #f5f5f5; }
+    .btn-danger { display: inline-flex; align-items: center; gap: 8px; padding: 12px 24px; background: #dc2626; color: #fff; border: none; border-radius: 12px; font-size: 14px; font-weight: 700; font-family: 'DM Sans', sans-serif; cursor: pointer; transition: opacity 0.2s; }
+    .btn-danger:hover { opacity: 0.85; }
+    .success-msg { display: none; align-items: center; gap: 8px; font-size: 14px; color: #059669; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 10px 14px; margin-top: 14px; }
+    .error-msg { display: none; font-size: 13px; color: #dc2626; margin-top: 8px; }
+    .info-box { background: #f8f8f8; border: 1px solid #e8e8e8; border-radius: 12px; padding: 16px 20px; font-size: 14px; color: #555; display: flex; align-items: center; gap: 10px; margin-bottom: 20px; }
+    /* Addresses */
+    .address-list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px; }
+    .address-card { border: 1.5px solid #e8e8e8; border-radius: 12px; padding: 16px 18px; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; transition: border-color 0.2s; }
+    .address-card.default { border-color: #10b981; background: #f0fdf8; }
+    .address-label { font-size: 13px; font-weight: 700; color: #0a0a0a; display: flex; align-items: center; gap: 8px; }
+    .badge-default { background: #10b981; color: #fff; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.05em; }
+    .address-detail { font-size: 13px; color: #666; margin-top: 2px; }
+    .address-actions { display: flex; gap: 6px; flex-shrink: 0; }
+    .addr-btn { padding: 5px 10px; border-radius: 7px; font-size: 11px; font-weight: 700; font-family: 'DM Sans', sans-serif; cursor: pointer; border: 1.5px solid #e0e0e0; background: #fff; color: #555; transition: all 0.15s; }
+    .addr-btn:hover { border-color: #0a0a0a; color: #0a0a0a; }
+    .addr-btn.default-btn:hover { border-color: #10b981; color: #10b981; }
+    .addr-btn.delete-btn:hover { border-color: #dc2626; color: #dc2626; }
+    .add-address-form { background: #f8f8f8; border: 1.5px dashed #d0d0d0; border-radius: 12px; padding: 20px; display: none; }
+    .add-address-form.open { display: block; }
+    /* Danger zone */
+    .danger-zone { border: 1.5px solid #fecaca; border-radius: 16px; padding: 28px; background: #fff; }
+    .danger-title { font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 800; color: #dc2626; margin-bottom: 8px; }
+    .danger-text { font-size: 14px; color: #666; margin-bottom: 20px; line-height: 1.6; }
+    /* Mobile top tabs */
+    .mobile-tabs { display: none; overflow-x: auto; gap: 8px; padding-bottom: 4px; margin-bottom: 20px; }
+    .mobile-tab { flex-shrink: 0; padding: 8px 16px; border-radius: 20px; font-size: 13px; font-weight: 600; border: 1.5px solid #e0e0e0; background: #fff; color: #555; cursor: pointer; font-family: 'DM Sans', sans-serif; white-space: nowrap; }
+    .mobile-tab.active { background: #0a0a0a; color: #fff; border-color: #0a0a0a; }
+    .mobile-tab.danger.active { background: #dc2626; border-color: #dc2626; }
+    /* Payment Methods */
+    .pm-list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px; }
+    .pm-card { border: 1.5px solid #e8e8e8; border-radius: 12px; padding: 16px 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px; transition: border-color 0.2s; }
+    .pm-card.default { border-color: #10b981; background: #f0fdf8; }
+    .pm-brand-wrap { display: flex; align-items: center; gap: 12px; }
+    .pm-brand-badge { border-radius: 6px; padding: 4px 10px; font-size: 11px; font-weight: 700; color: #fff; text-transform: uppercase; letter-spacing: 0.05em; background: #555; }
+    .pm-brand-badge.visa { background: #1a1f71; }
+    .pm-brand-badge.mastercard { background: #eb001b; }
+    .pm-brand-badge.amex { background: #2e77bc; }
+    .pm-brand-badge.discover { background: #f76d1b; }
+    .pm-brand-badge.apple { background: #000; }
+    .pm-brand-badge.google { background: #4285f4; }
+    .pm-info { font-size: 14px; color: #0a0a0a; font-weight: 500; display: flex; align-items: center; gap: 8px; }
+    .pm-exp { font-size: 12px; color: #888; margin-top: 2px; }
+    .pm-actions { display: flex; gap: 6px; flex-shrink: 0; }
+    /* Add payment modal */
+    .pm-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 9999; backdrop-filter: blur(4px); }
+    .pm-modal-box { background: #fff; border-radius: 20px; padding: 28px; width: 460px; max-width: 95%; box-shadow: 0 20px 60px rgba(0,0,0,0.15); }
+    .pm-modal-title { font-family: 'Syne', sans-serif; font-size: 20px; font-weight: 800; color: #0a0a0a; margin-bottom: 6px; }
+    .pm-modal-sub { font-size: 13px; color: #888; margin-bottom: 24px; line-height: 1.5; }
+    #payment-element-mount { margin-bottom: 20px; min-height: 48px; }
+    .pm-modal-actions { display: flex; gap: 10px; }
+    /* Confirm modal */
+    .confirm-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 9999; backdrop-filter: blur(4px); }
+    .confirm-box { background: #fff; border-radius: 16px; padding: 28px; width: 380px; max-width: 94%; box-shadow: 0 20px 60px rgba(0,0,0,0.15); }
+    .confirm-box h3 { font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 800; margin-bottom: 8px; }
+    .confirm-box p { font-size: 14px; color: #666; margin-bottom: 18px; line-height: 1.5; }
+    .confirm-row { display: flex; gap: 10px; justify-content: flex-end; }
+    .confirm-cancel { padding: 10px 18px; border-radius: 10px; border: 1.5px solid #e0e0e0; background: #fff; color: #555; font-size: 13px; font-weight: 600; font-family: 'DM Sans', sans-serif; cursor: pointer; }
+    .confirm-ok { padding: 10px 18px; border-radius: 10px; border: none; background: #dc2626; color: #fff; font-size: 13px; font-weight: 700; font-family: 'DM Sans', sans-serif; cursor: pointer; }
+    @media (max-width: 900px) {
+      .account-layout { grid-template-columns: 1fr; }
+      .account-sidebar { display: none; }
+      .mobile-tabs { display: flex; }
+      .form-row { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+<script src="/shared/i18n.js"></script>
+<div id="navbar"></div>
+<script src="/shared/shared-nav.js"></script>
+<script src="/shared/shared-auth.js"></script>
+<script src="/config.js"></script>
+<script src="https://js.stripe.com/v3/"></script>
+
+<main class="account-page">
+  <div class="container">
+    <div class="mobile-tabs" id="mobile-tabs"></div>
+    <div class="account-layout">
+
+      <!-- Sidebar -->
+      <nav class="account-sidebar" id="sidebar"></nav>
+
+      <!-- Content -->
+      <div id="account-content">
+
+        <!-- Personal Info -->
+        <section class="account-section" id="section-info">
+          <div class="account-card">
+            <div class="section-title" id="title-info">Información personal</div>
+            <div class="section-sub" id="sub-info">Actualiza tu nombre, correo y teléfono.</div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label" id="lbl-name">Nombre completo</label>
+                <input class="form-input" id="info-name" type="text" placeholder="Tu nombre">
+              </div>
+              <div class="form-group">
+                <label class="form-label" id="lbl-phone">Teléfono</label>
+                <input class="form-input" id="info-phone" type="tel" placeholder="+52 55 1234 5678">
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label" id="lbl-email">Correo electrónico</label>
+              <input class="form-input" id="info-email" type="email" placeholder="tu@correo.com">
+            </div>
+            <button class="btn-save" id="info-save-btn" onclick="saveProfile()">
+              <span id="info-save-label">Guardar cambios</span>
+            </button>
+            <div class="success-msg" id="info-success">✓ <span id="info-success-text">Cambios guardados.</span></div>
+            <div class="error-msg" id="info-error"></div>
+          </div>
+        </section>
+
+        <!-- Security -->
+        <section class="account-section" id="section-security">
+          <div class="account-card">
+            <div class="section-title" id="title-security">Seguridad</div>
+            <div class="section-sub" id="sub-security">Cambia tu contraseña.</div>
+            <div id="security-no-pw" class="info-box" style="display:none">
+              🔐 <span id="security-no-pw-text">Tu cuenta inicia sesión con Google o teléfono.</span>
+            </div>
+            <div id="security-pw-form">
+              <div class="form-group">
+                <label class="form-label" id="lbl-cur-pw">Contraseña actual</label>
+                <input class="form-input" id="sec-current" type="password" placeholder="••••••••">
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label" id="lbl-new-pw">Nueva contraseña</label>
+                  <input class="form-input" id="sec-new" type="password" placeholder="••••••••">
+                </div>
+                <div class="form-group">
+                  <label class="form-label" id="lbl-confirm-pw">Confirmar contraseña</label>
+                  <input class="form-input" id="sec-confirm" type="password" placeholder="••••••••">
+                </div>
+              </div>
+              <button class="btn-save" id="sec-save-btn" onclick="changePassword()">
+                <span id="sec-save-label">Cambiar contraseña</span>
+              </button>
+              <div class="success-msg" id="sec-success">✓ <span id="sec-success-text">Contraseña actualizada.</span></div>
+              <div class="error-msg" id="sec-error"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Addresses -->
+        <section class="account-section" id="section-addresses">
+          <div class="account-card">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+              <div class="section-title" id="title-addresses">Mis direcciones</div>
+              <button class="btn-outline" onclick="toggleAddForm()" id="add-addr-btn">+ Agregar</button>
+            </div>
+            <div class="section-sub" id="sub-addresses">Guarda tus domicilios para agilizar tus solicitudes.</div>
+            <div class="address-list" id="address-list"></div>
+            <div class="add-address-form" id="add-addr-form">
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label" id="lbl-addr-label">Etiqueta (opcional)</label>
+                  <input class="form-input" id="addr-label" type="text" placeholder="Casa, Trabajo...">
+                </div>
+                <div class="form-group">
+                  <label class="form-label" id="lbl-addr-street">Calle y número *</label>
+                  <input class="form-input" id="addr-street" type="text" placeholder="Calle, número ext/int">
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label" id="lbl-addr-city">Ciudad</label>
+                  <input class="form-input" id="addr-city" type="text" placeholder="Ciudad de México">
+                </div>
+                <div class="form-group">
+                  <label class="form-label" id="lbl-addr-state">Estado</label>
+                  <input class="form-input" id="addr-state" type="text" placeholder="CDMX">
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label" id="lbl-addr-postal">Código postal</label>
+                  <input class="form-input" id="addr-postal" type="text" placeholder="05348">
+                </div>
+                <div class="form-group" style="justify-content:flex-end;padding-top:22px">
+                  <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#555;cursor:pointer">
+                    <input type="checkbox" id="addr-default" style="width:15px;height:15px;accent-color:#10b981">
+                    <span id="lbl-addr-default">Predeterminada</span>
+                  </label>
+                </div>
+              </div>
+              <div style="display:flex;gap:10px;margin-top:4px">
+                <button class="btn-save" id="addr-save-btn" onclick="saveNewAddress()"><span id="addr-save-label">Guardar dirección</span></button>
+                <button class="btn-outline" onclick="toggleAddForm()" id="addr-cancel-btn">Cancelar</button>
+              </div>
+              <div class="error-msg" id="addr-error"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Payment Methods -->
+        <section class="account-section" id="section-payments">
+          <div class="account-card">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+              <div class="section-title" id="title-payments">Métodos de pago</div>
+              <button class="btn-outline" onclick="openAddPaymentModal()" id="add-pm-btn">+ Agregar</button>
+            </div>
+            <div class="section-sub" id="sub-payments">Gestiona tus tarjetas, Apple Pay y Google Pay guardados.</div>
+            <div class="pm-list" id="pm-list"></div>
+          </div>
+        </section>
+
+        <!-- Delete Account -->
+        <section class="account-section" id="section-delete">
+          <div class="danger-zone">
+            <div class="danger-title" id="title-delete">Eliminar cuenta</div>
+            <p class="danger-text" id="text-delete">
+              Esta acción es permanente e irreversible. Se eliminarán tu perfil, direcciones guardadas y toda tu información de la plataforma. Los pedidos y pagos existentes no se verán afectados.
+            </p>
+            <button class="btn-danger" onclick="confirmDeleteAccount()" id="delete-btn">Eliminar mi cuenta</button>
+          </div>
+        </section>
+
+      </div>
+    </div>
+  </div>
+</main>
+
+<div id="footer"></div>
+<script src="/shared/shared-footer.js"></script>
+
+<script>
+const API = window.CONFIG?.API_BASE || '';
+const isEs = () => (localStorage.getItem('servi-lang') || 'es') === 'es';
+
+// ─── i18n strings ─────────────────────────────────────────────────────────────
+const TX = {
+  es: {
+    pageTitle: 'Mi cuenta',
+    navInfo: 'Información personal', navSecurity: 'Seguridad', navAddresses: 'Mis direcciones', navPayments: 'Métodos de pago', navDelete: 'Eliminar cuenta',
+    titleInfo: 'Información personal', subInfo: 'Actualiza tu nombre, correo y teléfono.',
+    titleSecurity: 'Seguridad', subSecurity: 'Cambia tu contraseña.',
+    titleAddresses: 'Mis direcciones', subAddresses: 'Guarda tus domicilios para agilizar tus solicitudes.',
+    titlePayments: 'Métodos de pago', subPayments: 'Gestiona tus tarjetas, Apple Pay y Google Pay guardados.',
+    addPaymentTitle: 'Agregar método de pago', addPaymentSub: 'Agrega una tarjeta de crédito o débito. Apple Pay y Google Pay se muestran automáticamente si tu dispositivo los soporta.',
+    addPaymentBtn: 'Guardar método', expires: 'Vence',
+    titleDelete: 'Eliminar cuenta',
+    textDelete: 'Esta acción es permanente e irreversible. Se eliminarán tu perfil, direcciones guardadas y toda tu información de la plataforma. Los pedidos y pagos existentes no se verán afectados.',
+    lblName: 'Nombre completo', lblEmail: 'Correo electrónico', lblPhone: 'Teléfono',
+    lblCurPw: 'Contraseña actual', lblNewPw: 'Nueva contraseña', lblConfirmPw: 'Confirmar contraseña',
+    lblAddrLabel: 'Etiqueta (opcional)', lblAddrStreet: 'Calle y número *', lblAddrCity: 'Ciudad', lblAddrState: 'Estado', lblAddrPostal: 'Código postal', lblAddrDefault: 'Predeterminada',
+    saveBtn: 'Guardar cambios', saving: 'Guardando...', saved: 'Cambios guardados.',
+    changePwBtn: 'Cambiar contraseña', pwChanged: 'Contraseña actualizada.',
+    addAddr: '+ Agregar', saveAddr: 'Guardar dirección', cancel: 'Cancelar',
+    deleteBtn: 'Eliminar mi cuenta',
+    noPwMsg: 'Tu cuenta inicia sesión con Google o teléfono. No puedes cambiar la contraseña desde aquí.',
+    defaultBadge: 'Predeterminada', editBtn: 'Editar', setDefaultBtn: 'Predeterminada', deleteAddrBtn: 'Eliminar',
+    confirmDeleteTitle: 'Eliminar cuenta', confirmDeleteBody: 'Escribe ELIMINAR para confirmar. Esta acción no se puede deshacer.',
+    confirmDeletePlaceholder: 'ELIMINAR', confirmDeleteBtn: 'Confirmar eliminación', cancelBtn: 'Cancelar',
+    errNoStreet: 'La calle es obligatoria.',
+    errPasswordMismatch: 'Las contraseñas no coinciden.',
+    errShortPassword: 'La contraseña debe tener al menos 6 caracteres.',
+    errWrongPassword: 'Contraseña actual incorrecta.',
+    errConflict: 'Ese correo o teléfono ya está en uso.',
+    errGeneric: 'Ocurrió un error. Inténtalo de nuevo.',
+  },
+  en: {
+    pageTitle: 'My account',
+    navInfo: 'Personal info', navSecurity: 'Security', navAddresses: 'My addresses', navPayments: 'Payment methods', navDelete: 'Delete account',
+    titleInfo: 'Personal information', subInfo: 'Update your name, email, and phone.',
+    titleSecurity: 'Security', subSecurity: 'Change your password.',
+    titleAddresses: 'My addresses', subAddresses: 'Save your addresses to speed up your requests.',
+    titlePayments: 'Payment methods', subPayments: 'Manage your saved cards, Apple Pay, and Google Pay.',
+    addPaymentTitle: 'Add payment method', addPaymentSub: 'Add a credit or debit card. Apple Pay and Google Pay appear automatically if your device supports them.',
+    addPaymentBtn: 'Save method', expires: 'Expires',
+    titleDelete: 'Delete account',
+    textDelete: 'This action is permanent and irreversible. Your profile, saved addresses, and all your information will be deleted. Existing orders and payments will not be affected.',
+    lblName: 'Full name', lblEmail: 'Email', lblPhone: 'Phone',
+    lblCurPw: 'Current password', lblNewPw: 'New password', lblConfirmPw: 'Confirm password',
+    lblAddrLabel: 'Label (optional)', lblAddrStreet: 'Street and number *', lblAddrCity: 'City', lblAddrState: 'State', lblAddrPostal: 'Postal code', lblAddrDefault: 'Set as default',
+    saveBtn: 'Save changes', saving: 'Saving...', saved: 'Changes saved.',
+    changePwBtn: 'Change password', pwChanged: 'Password updated.',
+    addAddr: '+ Add', saveAddr: 'Save address', cancel: 'Cancel',
+    deleteBtn: 'Delete my account',
+    noPwMsg: 'Your account signs in with Google or phone. You cannot change the password here.',
+    defaultBadge: 'Default', editBtn: 'Edit', setDefaultBtn: 'Set default', deleteAddrBtn: 'Delete',
+    confirmDeleteTitle: 'Delete account', confirmDeleteBody: 'Type DELETE to confirm. This action cannot be undone.',
+    confirmDeletePlaceholder: 'DELETE', confirmDeleteBtn: 'Confirm deletion', cancelBtn: 'Cancel',
+    errNoStreet: 'Street is required.',
+    errPasswordMismatch: 'Passwords do not match.',
+    errShortPassword: 'Password must be at least 6 characters.',
+    errWrongPassword: 'Current password is incorrect.',
+    errConflict: 'That email or phone is already in use.',
+    errGeneric: 'An error occurred. Please try again.',
+  }
+};
+function tr() { return TX[isEs() ? 'es' : 'en']; }
+
+// ─── Auth guard ───────────────────────────────────────────────────────────────
+function authHeaders() {
+  const token = window.getSessionToken ? window.getSessionToken() : null;
+  return { 'Content-Type': 'application/json', ...(token ? { 'Authorization': 'Bearer ' + token } : {}) };
+}
+
+function guardAuth() {
+  // Wait briefly for session restore, then check
+  setTimeout(() => {
+    if (!window.__user) window.location.replace('/');
+  }, 300);
+}
+
+// ─── Section navigation ───────────────────────────────────────────────────────
+const SECTIONS = ['info', 'security', 'addresses', 'payments', 'delete'];
+let activeSection = 'info';
+
+function buildNav() {
+  const t = tr();
+  const items = [
+    { id: 'info',      label: t.navInfo,      icon: '👤', danger: false },
+    { id: 'security',  label: t.navSecurity,   icon: '🔒', danger: false },
+    { id: 'addresses', label: t.navAddresses,  icon: '📍', danger: false },
+    { id: 'payments',  label: t.navPayments,   icon: '💳', danger: false },
+    { id: 'delete',    label: t.navDelete,     icon: '🗑',  danger: true  },
+  ];
+  const html = items.map(item => `
+    <button class="account-sidebar-item ${item.danger ? 'danger' : ''} ${item.id === activeSection ? 'active' : ''}"
+      onclick="switchSection('${item.id}')">
+      <span>${item.icon}</span><span>${item.label}</span>
+    </button>
+  `).join('');
+  document.getElementById('sidebar').innerHTML = html;
+
+  // Mobile tabs
+  const mhtml = items.map(item => `
+    <button class="mobile-tab ${item.danger ? 'danger' : ''} ${item.id === activeSection ? 'active' : ''}"
+      onclick="switchSection('${item.id}')">
+      ${item.label}
+    </button>
+  `).join('');
+  document.getElementById('mobile-tabs').innerHTML = mhtml;
+}
+
+function switchSection(id) {
+  activeSection = id;
+  SECTIONS.forEach(s => {
+    document.getElementById('section-' + s)?.classList.toggle('active', s === id);
+  });
+  buildNav();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// ─── Pre-fill personal info ───────────────────────────────────────────────────
+function fillProfileForm() {
+  const u = window.__user;
+  if (!u) return;
+  document.getElementById('info-name').value  = u.name  || '';
+  document.getElementById('info-email').value = u.email || '';
+  document.getElementById('info-phone').value = u.phone || '';
+}
+
+// ─── Save profile ─────────────────────────────────────────────────────────────
+async function saveProfile() {
+  const t = tr();
+  const btn  = document.getElementById('info-save-btn');
+  const lbl  = document.getElementById('info-save-label');
+  const errEl = document.getElementById('info-error');
+  const sucEl = document.getElementById('info-success');
+  errEl.style.display = 'none';
+  sucEl.style.display = 'none';
+
+  const name  = document.getElementById('info-name').value.trim();
+  const email = document.getElementById('info-email').value.trim();
+  const phone = document.getElementById('info-phone').value.trim();
+
+  btn.disabled = true; lbl.textContent = t.saving;
+  try {
+    const res = await fetch(API + '/api/auth/me', {
+      method: 'PATCH', headers: authHeaders(),
+      body: JSON.stringify({ name: name || undefined, email: email || undefined, phone: phone || undefined })
+    });
+    const d = await res.json();
+    if (!res.ok) {
+      if (res.status === 409) { errEl.textContent = t.errConflict; }
+      else { errEl.textContent = d.message || t.errGeneric; }
+      errEl.style.display = 'block';
+      return;
+    }
+    // Update in-memory session
+    if (window.__user) {
+      window.__user.name  = d.user.name  || window.__user.name;
+      window.__user.email = d.user.email || window.__user.email;
+      window.__user.phone = d.user.phone || window.__user.phone;
+    }
+    try {
+      const raw = localStorage.getItem('servi_user_session');
+      if (raw) {
+        const sess = JSON.parse(raw);
+        if (sess.user) { sess.user.name = d.user.name; sess.user.email = d.user.email; sess.user.phone = d.user.phone; }
+        localStorage.setItem('servi_user_session', JSON.stringify(sess));
+      }
+    } catch {}
+    if (window.buildNavbar) window.buildNavbar();
+    document.getElementById('info-success-text').textContent = t.saved;
+    sucEl.style.display = 'flex';
+    setTimeout(() => { sucEl.style.display = 'none'; }, 3000);
+  } catch {
+    errEl.textContent = t.errGeneric;
+    errEl.style.display = 'block';
+  } finally {
+    btn.disabled = false; lbl.textContent = t.saveBtn;
+  }
+}
+
+// ─── Security section: detect if user has a password ─────────────────────────
+async function initSecuritySection() {
+  const t = tr();
+  // Fetch user from backend to check auth_provider / password_hash presence
+  try {
+    const res = await fetch(API + '/api/auth/me', { headers: authHeaders() });
+    if (!res.ok) return;
+    const d = await res.json();
+    const provider = d.user?.auth_provider;
+    const isOAuth = provider === 'google.com' || provider === 'phone' || provider === 'apple.com';
+    if (isOAuth) {
+      document.getElementById('security-no-pw').style.display = 'flex';
+      document.getElementById('security-pw-form').style.display = 'none';
+      const providerName = provider === 'google.com' ? 'Google' : provider === 'phone' ? tr().navSecurity === 'Security' ? 'phone OTP' : 'teléfono' : 'Apple';
+      document.getElementById('security-no-pw-text').textContent = t.noPwMsg;
+    }
+  } catch {}
+}
+
+// ─── Change password ──────────────────────────────────────────────────────────
+async function changePassword() {
+  const t = tr();
+  const btn   = document.getElementById('sec-save-btn');
+  const lbl   = document.getElementById('sec-save-label');
+  const errEl = document.getElementById('sec-error');
+  const sucEl = document.getElementById('sec-success');
+  errEl.style.display = 'none';
+  sucEl.style.display = 'none';
+
+  const cur     = document.getElementById('sec-current').value;
+  const newPw   = document.getElementById('sec-new').value;
+  const confirm = document.getElementById('sec-confirm').value;
+
+  if (newPw.length < 6)    { errEl.textContent = t.errShortPassword;  errEl.style.display = 'block'; return; }
+  if (newPw !== confirm)   { errEl.textContent = t.errPasswordMismatch; errEl.style.display = 'block'; return; }
+
+  btn.disabled = true; lbl.textContent = t.saving;
+  try {
+    const res = await fetch(API + '/api/auth/change-password', {
+      method: 'POST', headers: authHeaders(),
+      body: JSON.stringify({ currentPassword: cur, newPassword: newPw })
+    });
+    const d = await res.json();
+    if (!res.ok) {
+      errEl.textContent = res.status === 401 ? t.errWrongPassword : (d.message || t.errGeneric);
+      errEl.style.display = 'block';
+      return;
+    }
+    document.getElementById('sec-current').value = '';
+    document.getElementById('sec-new').value = '';
+    document.getElementById('sec-confirm').value = '';
+    document.getElementById('sec-success-text').textContent = t.pwChanged;
+    sucEl.style.display = 'flex';
+    setTimeout(() => { sucEl.style.display = 'none'; }, 3000);
+  } catch {
+    errEl.textContent = t.errGeneric;
+    errEl.style.display = 'block';
+  } finally {
+    btn.disabled = false; lbl.textContent = t.changePwBtn;
+  }
+}
+
+// ─── Addresses ────────────────────────────────────────────────────────────────
+let _addresses = [];
+
+async function loadAddresses() {
+  try {
+    const res = await fetch(API + '/api/auth/addresses', { headers: authHeaders() });
+    if (!res.ok) return;
+    const d = await res.json();
+    _addresses = d.addresses || [];
+    renderAddresses();
+  } catch {}
+}
+
+function renderAddresses() {
+  const t = tr();
+  const list = document.getElementById('address-list');
+  if (!_addresses.length) {
+    list.innerHTML = `<p style="font-size:14px;color:#aaa;text-align:center;padding:20px 0">${isEs() ? 'No tienes direcciones guardadas.' : 'No saved addresses yet.'}</p>`;
+    return;
+  }
+  list.innerHTML = _addresses.map(a => `
+    <div class="address-card ${a.is_default ? 'default' : ''}">
+      <div style="flex:1">
+        <div class="address-label">
+          ${a.label ? `<span>${a.label}</span>` : ''}
+          ${a.is_default ? `<span class="badge-default">${t.defaultBadge}</span>` : ''}
+        </div>
+        <div class="address-detail">${a.street}${a.city ? ', ' + a.city : ''}${a.state ? ', ' + a.state : ''}${a.postal_code ? ' ' + a.postal_code : ''}</div>
+      </div>
+      <div class="address-actions">
+        ${!a.is_default ? `<button class="addr-btn default-btn" onclick="setDefaultAddress('${a.id}')">${t.setDefaultBtn}</button>` : ''}
+        <button class="addr-btn delete-btn" onclick="deleteAddress('${a.id}')">${t.deleteAddrBtn}</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function toggleAddForm() {
+  const form = document.getElementById('add-addr-form');
+  const isOpen = form.classList.toggle('open');
+  document.getElementById('add-addr-btn').textContent = isOpen ? tr().cancel : tr().addAddr;
+  if (!isOpen) {
+    ['addr-label','addr-street','addr-city','addr-state','addr-postal'].forEach(id => {
+      const el = document.getElementById(id); if (el) el.value = '';
+    });
+    document.getElementById('addr-default').checked = false;
+    document.getElementById('addr-error').style.display = 'none';
+  }
+}
+
+async function saveNewAddress() {
+  const t = tr();
+  const btn = document.getElementById('addr-save-btn');
+  const lbl = document.getElementById('addr-save-label');
+  const errEl = document.getElementById('addr-error');
+  errEl.style.display = 'none';
+
+  const street = document.getElementById('addr-street').value.trim();
+  if (!street) { errEl.textContent = t.errNoStreet; errEl.style.display = 'block'; return; }
+
+  btn.disabled = true; lbl.textContent = t.saving;
+  try {
+    const res = await fetch(API + '/api/auth/addresses', {
+      method: 'POST', headers: authHeaders(),
+      body: JSON.stringify({
+        label:       document.getElementById('addr-label').value.trim() || undefined,
+        street,
+        city:        document.getElementById('addr-city').value.trim()  || undefined,
+        state:       document.getElementById('addr-state').value.trim() || undefined,
+        postal_code: document.getElementById('addr-postal').value.trim() || undefined,
+        is_default:  document.getElementById('addr-default').checked,
+      })
+    });
+    if (!res.ok) { const d = await res.json(); errEl.textContent = d.message || t.errGeneric; errEl.style.display = 'block'; return; }
+    await loadAddresses();
+    toggleAddForm();
+  } catch {
+    errEl.textContent = t.errGeneric; errEl.style.display = 'block';
+  } finally {
+    btn.disabled = false; lbl.textContent = t.saveAddr;
+  }
+}
+
+async function setDefaultAddress(id) {
+  try {
+    await fetch(API + '/api/auth/addresses/' + id + '/default', { method: 'PATCH', headers: authHeaders() });
+    await loadAddresses();
+  } catch {}
+}
+
+async function deleteAddress(id) {
+  if (!confirm(isEs() ? '¿Eliminar esta dirección?' : 'Delete this address?')) return;
+  try {
+    await fetch(API + '/api/auth/addresses/' + id, { method: 'DELETE', headers: authHeaders() });
+    await loadAddresses();
+  } catch {}
+}
+
+// ─── Payment Methods ──────────────────────────────────────────────────────────
+let _stripe = null;
+let _pmElements = null;
+let _pmSetupSecret = null;
+
+async function loadPaymentMethods() {
+  const list = document.getElementById('pm-list');
+  if (!list) return;
+  list.innerHTML = `<p style="font-size:14px;color:#aaa;text-align:center;padding:20px 0">${isEs() ? 'Cargando...' : 'Loading...'}</p>`;
+  try {
+    const res = await fetch(API + '/api/auth/payment-methods', { headers: authHeaders() });
+    if (!res.ok) throw new Error('load_failed');
+    const d = await res.json();
+    renderPaymentMethods(d.methods || []);
+  } catch {
+    list.innerHTML = `<p style="font-size:14px;color:#aaa;text-align:center;padding:20px 0">${isEs() ? 'Error al cargar.' : 'Failed to load.'}</p>`;
+  }
+}
+
+function brandInfo(brand, walletType) {
+  if (walletType === 'apple_pay') return { label: 'Apple Pay', cls: 'apple' };
+  if (walletType === 'google_pay') return { label: 'Google Pay', cls: 'google' };
+  const map = { visa: 'Visa', mastercard: 'Mastercard', amex: 'Amex', discover: 'Discover', jcb: 'JCB', unionpay: 'UnionPay' };
+  return { label: map[brand] || (brand ? brand.charAt(0).toUpperCase() + brand.slice(1) : 'Card'), cls: brand || '' };
+}
+
+function renderPaymentMethods(methods) {
+  const t = tr();
+  const list = document.getElementById('pm-list');
+  if (!list) return;
+  if (!methods.length) {
+    list.innerHTML = `<p style="font-size:14px;color:#aaa;text-align:center;padding:20px 0">${isEs() ? 'No tienes métodos de pago guardados.' : 'No saved payment methods yet.'}</p>`;
+    return;
+  }
+  list.innerHTML = methods.map(pm => {
+    const { label, cls } = brandInfo(pm.brand, pm.walletType);
+    const expiry = pm.expMonth ? `${String(pm.expMonth).padStart(2,'0')}/${String(pm.expYear).slice(-2)}` : '';
+    return `
+      <div class="pm-card ${pm.isDefault ? 'default' : ''}">
+        <div class="pm-brand-wrap">
+          <span class="pm-brand-badge ${cls}">${label}</span>
+          <div>
+            <div class="pm-info">•••• ${pm.last4 || '••••'} ${pm.isDefault ? `<span class="badge-default">${t.defaultBadge}</span>` : ''}</div>
+            ${expiry ? `<div class="pm-exp">${t.expires} ${expiry}</div>` : ''}
+          </div>
+        </div>
+        <div class="pm-actions">
+          ${!pm.isDefault ? `<button class="addr-btn default-btn" onclick="setDefaultPaymentMethod('${pm.id}')">${t.setDefaultBtn}</button>` : ''}
+          <button class="addr-btn delete-btn" onclick="deletePaymentMethod('${pm.id}')">${t.deleteAddrBtn}</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+async function setDefaultPaymentMethod(pmId) {
+  try {
+    await fetch(API + '/api/auth/payment-methods/' + pmId + '/default', { method: 'PATCH', headers: authHeaders() });
+    await loadPaymentMethods();
+  } catch {}
+}
+
+async function deletePaymentMethod(pmId) {
+  if (!confirm(isEs() ? '¿Eliminar este método de pago?' : 'Delete this payment method?')) return;
+  try {
+    await fetch(API + '/api/auth/payment-methods/' + pmId, { method: 'DELETE', headers: authHeaders() });
+    await loadPaymentMethods();
+  } catch {}
+}
+
+async function openAddPaymentModal() {
+  const t = tr();
+  const overlay = document.createElement('div');
+  overlay.className = 'pm-modal-overlay';
+  overlay.id = 'pm-modal';
+  overlay.innerHTML = `
+    <div class="pm-modal-box">
+      <div class="pm-modal-title">${t.addPaymentTitle}</div>
+      <div class="pm-modal-sub">${t.addPaymentSub}</div>
+      <div id="payment-element-mount"></div>
+      <div class="error-msg" id="pm-modal-error" style="margin-bottom:12px"></div>
+      <div class="pm-modal-actions">
+        <button class="btn-save" id="pm-confirm-btn" onclick="confirmAddPayment()"><span id="pm-confirm-label">${t.addPaymentBtn}</span></button>
+        <button class="btn-outline" onclick="closePaymentModal()">${t.cancel}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  if (!_stripe) _stripe = Stripe(window.CONFIG?.STRIPE_PUBLISHABLE_KEY);
+
+  try {
+    const res = await fetch(API + '/api/auth/payment-methods/setup', { method: 'POST', headers: authHeaders() });
+    if (!res.ok) throw new Error('setup_failed');
+    const d = await res.json();
+    _pmSetupSecret = d.clientSecret;
+    _pmElements = _stripe.elements({
+      clientSecret: _pmSetupSecret,
+      appearance: { theme: 'stripe', variables: { fontFamily: '"DM Sans", sans-serif', borderRadius: '12px', colorPrimary: '#10b981' } }
+    });
+    _pmElements.create('payment').mount('#payment-element-mount');
+  } catch {
+    const errEl = document.getElementById('pm-modal-error');
+    if (errEl) { errEl.textContent = tr().errGeneric; errEl.style.display = 'block'; }
+  }
+}
+
+function closePaymentModal() {
+  document.getElementById('pm-modal')?.remove();
+  _pmElements = null;
+  _pmSetupSecret = null;
+}
+
+async function confirmAddPayment() {
+  const t = tr();
+  if (!_stripe || !_pmElements) return;
+  const btn = document.getElementById('pm-confirm-btn');
+  const lbl = document.getElementById('pm-confirm-label');
+  const errEl = document.getElementById('pm-modal-error');
+  errEl.style.display = 'none';
+  btn.disabled = true; lbl.textContent = t.saving;
+
+  const { error } = await _stripe.confirmSetup({
+    elements: _pmElements,
+    confirmParams: { return_url: window.location.href },
+    redirect: 'if_required'
+  });
+
+  if (error) {
+    errEl.textContent = error.message || t.errGeneric;
+    errEl.style.display = 'block';
+    btn.disabled = false; lbl.textContent = t.addPaymentBtn;
+    return;
+  }
+  closePaymentModal();
+  await loadPaymentMethods();
+}
+
+// ─── Delete account ───────────────────────────────────────────────────────────
+function confirmDeleteAccount() {
+  const t = tr();
+  const overlay = document.createElement('div');
+  overlay.className = 'confirm-overlay';
+  overlay.innerHTML = `
+    <div class="confirm-box">
+      <h3>${t.confirmDeleteTitle}</h3>
+      <p>${t.confirmDeleteBody}</p>
+      <input class="form-input" id="delete-confirm-input" placeholder="${t.confirmDeletePlaceholder}" style="margin-bottom:18px">
+      <div class="confirm-row">
+        <button class="confirm-cancel" onclick="this.closest('.confirm-overlay').remove()">${t.cancelBtn}</button>
+        <button class="confirm-ok" onclick="executeDeleteAccount(this)">${t.confirmDeleteBtn}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  document.getElementById('delete-confirm-input')?.focus();
+}
+
+async function executeDeleteAccount(btn) {
+  const t = tr();
+  const expected = isEs() ? 'ELIMINAR' : 'DELETE';
+  const val = document.getElementById('delete-confirm-input')?.value?.trim();
+  if (val !== expected) {
+    document.getElementById('delete-confirm-input').style.borderColor = '#dc2626';
+    return;
+  }
+  btn.disabled = true; btn.textContent = '...';
+  try {
+    const res = await fetch(API + '/api/auth/me', { method: 'DELETE', headers: authHeaders() });
+    if (!res.ok) { btn.disabled = false; btn.textContent = t.confirmDeleteBtn; return; }
+    if (window.logoutUser) await window.logoutUser();
+    window.location.replace('/');
+  } catch {
+    btn.disabled = false; btn.textContent = t.confirmDeleteBtn;
+  }
+}
+
+// ─── Apply translations to static elements ────────────────────────────────────
+function applyTranslations() {
+  const t = tr();
+  document.title = 'SERVI — ' + t.pageTitle;
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+  set('title-info', t.titleInfo);       set('sub-info', t.subInfo);
+  set('title-security', t.titleSecurity); set('sub-security', t.subSecurity);
+  set('title-addresses', t.titleAddresses); set('sub-addresses', t.subAddresses);
+  set('title-payments', t.titlePayments); set('sub-payments', t.subPayments);
+  set('add-pm-btn', '+ ' + (isEs() ? 'Agregar' : 'Add'));
+  set('title-delete', t.titleDelete);   set('text-delete', t.textDelete);
+  set('lbl-name', t.lblName);           set('lbl-email', t.lblEmail);   set('lbl-phone', t.lblPhone);
+  set('lbl-cur-pw', t.lblCurPw);        set('lbl-new-pw', t.lblNewPw);  set('lbl-confirm-pw', t.lblConfirmPw);
+  set('lbl-addr-label', t.lblAddrLabel); set('lbl-addr-street', t.lblAddrStreet);
+  set('lbl-addr-city', t.lblAddrCity);  set('lbl-addr-state', t.lblAddrState);
+  set('lbl-addr-postal', t.lblAddrPostal); set('lbl-addr-default', t.lblAddrDefault);
+  set('info-save-label', t.saveBtn);    set('sec-save-label', t.changePwBtn);
+  set('addr-save-label', t.saveAddr);   set('addr-cancel-btn', t.cancel);
+  set('add-addr-btn', document.getElementById('add-addr-form')?.classList.contains('open') ? t.cancel : t.addAddr);
+  set('delete-btn', t.deleteBtn);
+  set('security-no-pw-text', t.noPwMsg);
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  guardAuth();
+  applyTranslations();
+
+  // Wait for session to be restored by shared-nav.js, then fill
+  const waitForUser = (attempts) => {
+    if (window.__user) {
+      fillProfileForm();
+      initSecuritySection();
+      loadAddresses();
+      loadPaymentMethods();
+      buildNav();
+      switchSection('info');
+    } else if (attempts > 0) {
+      setTimeout(() => waitForUser(attempts - 1), 100);
+    }
+  };
+  waitForUser(15);
+
+  // Re-apply translations if language changes
+  window.addEventListener('servi-lang-change', () => {
+    applyTranslations();
+    buildNav();
+    renderAddresses();
+    // Re-render payment methods list with updated language (data is already cached in DOM)
+    const pmList = document.getElementById('pm-list');
+    if (pmList && pmList.querySelector('.pm-card')) loadPaymentMethods();
+  });
+});
+</script>
+</body>
+</html>

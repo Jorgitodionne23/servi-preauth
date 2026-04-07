@@ -28,8 +28,8 @@
       { label: t.nav.services, anchor: 'services' },
       { label: t.nav.howItWorks, anchor: 'how' },
       { label: t.nav.testimonials, anchor: 'testimonials' },
-      { label: t.nav.partners, href: '/partners.html' },
       { label: t.nav.helpCenter, href: '/helpcenter.html' },
+      { label: t.nav.partners, href: '/partners.html' },
     ];
   }
 
@@ -50,8 +50,10 @@
       return `<a class="nav-link" href="${l.href}">${label}</a>`;
     }).join('');
 
+    const navClass = type === 'helpcenter' ? 'navbar navbar--light-on-dark' : 'navbar';
+
     return `
-    <nav class="navbar" id="site-navbar">
+    <nav class="${navClass}" id="site-navbar">
       <div class="navbar__inner">
         <a href="/index.html" class="logo" style="text-decoration:none">SERVI<span class="logo-dot">.</span>${logoSuffix}</a>
 
@@ -66,12 +68,36 @@
           </div>
 
           <div class="desktop-nav" style="display:flex;align-items:center;gap:8px">
-            <button class="nav-login-btn" onclick="openAuthModal && openAuthModal('login')">${t.nav.login}</button>
-            <button class="nav-signup-btn" onclick="openAuthModal && openAuthModal('signup')">${t.nav.signup}</button>
+            ${window.__user
+              ? `<div class="user-menu" id="user-menu">
+                   <button class="user-menu-trigger" onclick="toggleUserMenu()" aria-label="User menu">
+                     <span class="user-menu-avatar">${((window.__user.name || window.__user.email || '?')[0]).toUpperCase()}</span>
+                     <span class="user-menu-name">${(window.__user.name || window.__user.email || '').split(' ')[0]}</span>
+                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+                   </button>
+                   <div class="user-menu-dropdown" id="user-menu-dropdown">
+                     <div class="user-menu-dropdown-header">
+                       <div class="um-name">${window.__user.name || ''}</div>
+                       <div class="um-email">${window.__user.email || window.__user.phone || ''}</div>
+                     </div>
+                     <a href="/account.html" class="user-menu-item">
+                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                       ${lang === 'es' ? 'Mi cuenta' : 'My account'}
+                     </a>
+                     <div class="user-menu-divider"></div>
+                     <button class="user-menu-item user-menu-item--danger" onclick="logoutUser && logoutUser()">
+                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                       ${lang === 'es' ? 'Cerrar sesión' : 'Log out'}
+                     </button>
+                   </div>
+                 </div>`
+              : `<button class="nav-login-btn" onclick="openAuthModal && openAuthModal('login')">${t.nav.login}</button>
+                 <button class="nav-signup-btn" onclick="openAuthModal && openAuthModal('signup')">${t.nav.signup}</button>`
+            }
           </div>
 
           <button class="hamburger" onclick="toggleMobileMenu(true)" aria-label="Menu">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0a0a0a" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
           </button>
         </div>
       </div>
@@ -92,18 +118,70 @@
           return `<a href="${l.href}" style="font-size:18px;font-weight:500;color:#0a0a0a;text-decoration:none">${label}</a>`;
         }).join('')}
         <div style="height:1px;background:#eee;margin:8px 0"></div>
-        <button onclick="toggleMobileMenu(false);openAuthModal && openAuthModal('login')" style="background:none;border:none;font-size:16px;font-weight:600;cursor:pointer;text-align:left;font-family:'DM Sans',sans-serif">${t.nav.login}</button>
-        <button class="btn-primary" onclick="toggleMobileMenu(false);openAuthModal && openAuthModal('signup')" style="justify-content:center">${t.nav.signup}</button>
+        ${window.__user
+          ? `<span style="font-size:16px;font-weight:600;font-family:'DM Sans',sans-serif">Hola, ${(window.__user.name || window.__user.email || '').split(' ')[0]}</span>
+             <a href="/account.html" onclick="toggleMobileMenu(false)" style="font-size:16px;font-weight:500;color:#0a0a0a;text-decoration:none;font-family:'DM Sans',sans-serif">${lang === 'es' ? 'Mi cuenta' : 'My account'}</a>
+             <button onclick="toggleMobileMenu(false);logoutUser && logoutUser()" style="background:none;border:none;font-size:16px;font-weight:500;cursor:pointer;text-align:left;font-family:'DM Sans',sans-serif;color:#ef4444">${lang === 'es' ? 'Cerrar sesión' : 'Log out'}</button>`
+          : `<button onclick="toggleMobileMenu(false);openAuthModal && openAuthModal('login')" style="background:none;border:none;font-size:16px;font-weight:600;cursor:pointer;text-align:left;font-family:'DM Sans',sans-serif">${t.nav.login}</button>
+             <button class="btn-primary" onclick="toggleMobileMenu(false);openAuthModal && openAuthModal('signup')" style="justify-content:center">${t.nav.signup}</button>`
+        }
       </div>
     </div>`;
   }
 
+  // ─── Session restore (runs on every page before rendering) ──
+  function restoreSession() {
+    try {
+      const raw = localStorage.getItem('servi_user_session');
+      if (!raw) { window.__user = null; return; }
+      const session = JSON.parse(raw);
+      let tokenPayload = null;
+      if (session.token) {
+        const parts = session.token.split('.');
+        if (parts.length === 3) {
+          tokenPayload = JSON.parse(atob(parts[1].replace(/-/g,'+').replace(/_/g,'/')));
+          if (tokenPayload.exp && Date.now() / 1000 > tokenPayload.exp) {
+            localStorage.removeItem('servi_user_session');
+            window.__user = null;
+            return;
+          }
+        }
+      }
+      // Build window.__user: start from session.user, then overlay fields
+      // from the signed token payload so that fields added after a session
+      // was originally stored (e.g. phone) are picked up on the next page load.
+      const base = session.user || {};
+      window.__user = {
+        id:    base.id    || tokenPayload?.user_id || null,
+        email: base.email || tokenPayload?.email   || null,
+        name:  base.name  || tokenPayload?.name    || null,
+        phone: base.phone || tokenPayload?.phone   || null,
+      };
+      if (!window.__user.id) { window.__user = null; }
+      console.log('[SERVI] session restored:', window.__user);
+    } catch (e) { window.__user = null; }
+  }
+
   // Expose globally so i18n can re-render
   window.buildNavbar = function () {
+    restoreSession();
     const el = document.getElementById('navbar');
     if (el) el.innerHTML = buildNav();
     if (el) el.style.visibility = 'visible';
   };
+
+  // ─── User menu dropdown toggle + click-outside ──
+  window.toggleUserMenu = function () {
+    var dd = document.getElementById('user-menu-dropdown');
+    if (dd) dd.classList.toggle('user-menu-dropdown--open');
+  };
+  document.addEventListener('click', function (e) {
+    var menu = document.getElementById('user-menu');
+    var dd = document.getElementById('user-menu-dropdown');
+    if (dd && menu && !menu.contains(e.target)) {
+      dd.classList.remove('user-menu-dropdown--open');
+    }
+  });
 
   window.toggleMobileMenu = function (show) {
     const overlay = document.getElementById('mobile-overlay');
