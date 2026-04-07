@@ -38,7 +38,7 @@ frontend/
   success.html       — post-payment confirmation page
   save.html          — customer account / card management
   link-expired.html  — shown when a payment link has expired
-  config.js          — runtime config (API_BASE, Stripe publishable key, WhatsApp number)
+  config.js          — runtime config (API_BASE, Stripe publishable key, Firebase config, WhatsApp number)
 
 apps-script/         — synced to live Apps Script via clasp (see Apps Script section below)
   Code.js            — main Sheet integration (order creation, capture, cancel, etc.)
@@ -85,6 +85,15 @@ The server starts on port `3000` by default.
 The backend is deployed to **Render** as a Docker container. Every push to `main` triggers a new deploy automatically.
 
 The frontend is deployed to **Cloudflare Pages** from the `frontend/` folder.
+
+For frontend runtime values, inject them before `config.js` loads (for example in HTML `<head>`):
+
+```html
+<script>
+  window.CONFIG_FIREBASE_API_KEY = 'REPLACE_AT_DEPLOY_TIME';
+</script>
+<script src="/config.js"></script>
+```
 
 ---
 

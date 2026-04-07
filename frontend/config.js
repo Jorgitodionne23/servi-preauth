@@ -24,14 +24,35 @@
   // Update here when the number changes; then update the href values in each HTML file.
   const WHATSAPP_NUMBER = '525525112588';
 
-  // Firebase configuration
+  // Firebase configuration (set via window.CONFIG or global window variables before this script loads).
+  // Keep the key out of source control to avoid secret-scanning alerts.
+  const explicitFirebase = explicit.FIREBASE_CONFIG || {};
   const FIREBASE_CONFIG = {
-    apiKey: "AIzaSyBYowh63UIEk_znMumnW0mNZuv8bkBsHag",
-    authDomain: "servi-bec91.firebaseapp.com",
-    projectId: "servi-bec91",
-    storageBucket: "servi-bec91.firebasestorage.app",
-    messagingSenderId: "315005869570",
-    appId: "1:315005869570:web:ceff25c61cc8b5b361d11b"
+    apiKey:
+      explicitFirebase.apiKey ||
+      window.CONFIG_FIREBASE_API_KEY ||
+      window.FIREBASE_API_KEY ||
+      '__FIREBASE_API_KEY__',
+    authDomain:
+      explicitFirebase.authDomain ||
+      window.CONFIG_FIREBASE_AUTH_DOMAIN ||
+      'servi-bec91.firebaseapp.com',
+    projectId:
+      explicitFirebase.projectId ||
+      window.CONFIG_FIREBASE_PROJECT_ID ||
+      'servi-bec91',
+    storageBucket:
+      explicitFirebase.storageBucket ||
+      window.CONFIG_FIREBASE_STORAGE_BUCKET ||
+      'servi-bec91.firebasestorage.app',
+    messagingSenderId:
+      explicitFirebase.messagingSenderId ||
+      window.CONFIG_FIREBASE_MESSAGING_SENDER_ID ||
+      '315005869570',
+    appId:
+      explicitFirebase.appId ||
+      window.CONFIG_FIREBASE_APP_ID ||
+      '1:315005869570:web:ceff25c61cc8b5b361d11b'
   };
 
   window.CONFIG = {
