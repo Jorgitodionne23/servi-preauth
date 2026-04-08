@@ -332,7 +332,7 @@
     return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
   }
 
-  function triggerCapture(type) {
+  window.triggerCapture = function triggerCapture(type) {
     const existing = document.getElementById('_bk-capture-input');
     if (existing) existing.remove();
     const input = document.createElement('input');
@@ -378,7 +378,7 @@
     });
   }
 
-  function startAudioRecording() {
+  window.startAudioRecording = function startAudioRecording() {
     if (_audioRecorder) return;
     navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
       _audioChunks = [];
@@ -407,7 +407,7 @@
     });
   }
 
-  function stopAudioRecording() {
+  window.stopAudioRecording = function stopAudioRecording() {
     if (_audioRecorder && _audioRecorder.state !== 'inactive') {
       _audioRecorder.stop();
     }
