@@ -24,12 +24,14 @@ Phase 3 complete — QA and deploy.
 ### 2026-04-07 — Phase 3 (3C + 3B + 3A)
 
 **Phase 3C — Order detail side panel**
+
 - Clicking any order row in admin.html opens a slide-in side panel
 - Shows: customer info, service, pricing breakdown (provider/fees/VAT/total), Stripe PI ID, link to Stripe Dashboard, adjustments list, Capture/Cancel/Refund action buttons
 - Panel auto-refreshes after capture/cancel/refund actions
 - Files: `frontend/admin.html`
 
 **Phase 3B — Providers tab + registro.html improvements**
+
 - New "Proveedores" tab in admin dashboard (separate from Inbox)
 - Shows all partner applications with search + status filter
 - Click row → side panel with applicant details, status dropdown, admin notes textarea + save, WhatsApp contact button
@@ -39,6 +41,7 @@ Phase 3 complete — QA and deploy.
 - DB: Added `services TEXT`, `coverage_areas TEXT` to `partner_applications`
 
 **Phase 3A — Custom-first booking flow + R2 media capture**
+
 - Step 1 redesigned: free-text description first, media capture (📷 photo / 🎥 video / 🎙 audio), collapsible category cards
 - Mobile: uses `capture="environment"` for native camera/mic access
 - Audio: MediaRecorder API with 2-min limit, real-time timer on button
@@ -54,6 +57,7 @@ Phase 3 complete — QA and deploy.
 ## Bugs / Hotfix Queue
 
 ### Low priority (from Phase 3C audit, 2026-04-07)
+
 - [ ] No HTML escaping on interpolated fields in order detail panel (low risk — admin-only)
 - [ ] No `Escape` key handler to close side panels
 - [ ] Attachments column exists on `service_requests` but not `all_bookings` — admin panel attachments section only renders for web intake orders, not Stripe payment orders
