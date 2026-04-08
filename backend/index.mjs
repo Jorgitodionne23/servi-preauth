@@ -17,6 +17,31 @@ import fetch from 'node-fetch';
 import { randomUUID, randomBytes, createHash, createHmac, scryptSync, timingSafeEqual } from 'crypto';
 import { rateLimit } from 'express-rate-limit';
 import firebaseAdmin from 'firebase-admin';
+import multer from 'multer';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+
+// --- R2 / S3 Client ---
+const r2 = new S3Client({
+  region: 'auto',
+  endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  credentials: {
+    accessKeyId: process.env.R2_ACCESS_KEY_ID || '',
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || '',
+  },
+});
+const R2_BUCKET = process.env.R2_BUCKET_NAME || 'uploads';
+const R2_PUBLIC_URL = (process.env.R2_PUBLIC_URL || '').replace(/\/$/, '');
+
+// multer: memory storage, 55 MB max (largest file we accept is 50 MB video)
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 55 * 1024 * 1024 },
+  fileFilter(req, file, cb) {
+    const allowed = ['image/jpeg','image/png','image/webp','image/gif','video/mp4','video/webm','video/quicktime','audio/webm','audio/mpeg','audio/wav','audio/ogg','audio/mp4'];
+    if (allowed.includes(file.mimetype)) cb(null, true);
+    else cb(new Error('unsupported_file_type'));
+  },
+});
 
 // --- Firebase Admin Init ---
 if (!firebaseAdmin.apps.length) {
@@ -4346,18 +4371,48 @@ async function successGate(req, res) {
 
 // ─── Phase 1: Service request intake + Admin dashboard ──────────────────────
 
+// --- Public: Upload media attachment to R2 ---
+app.post('/api/uploads', publicFormLimit, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'no_file', message: 'No file received' });
+    const { mimetype, size, originalname, buffer } = req.file;
+    const isVideo = mimetype.startsWith('video/');
+    const maxBytes = isVideo ? 50 * 1024 * 1024 : 10 * 1024 * 1024;
+    if (size > maxBytes) {
+      return res.status(413).json({ error: 'file_too_large', message: `Max: ${isVideo ? '50' : '10'} MB` });
+    }
+    const ext = originalname.split('.').pop().toLowerCase().replace(/[^a-z0-9]/g, '') || 'bin';
+    const key = `bookings/${Date.now()}-${randomUUID().slice(0,8)}.${ext}`;
+    await r2.send(new PutObjectCommand({
+      Bucket: R2_BUCKET,
+      Key: key,
+      Body: buffer,
+      ContentType: mimetype,
+      CacheControl: 'public, max-age=31536000',
+    }));
+    const url = R2_PUBLIC_URL ? `${R2_PUBLIC_URL}/${key}` : key;
+    console.log('[POST /api/uploads] Uploaded', key, size, 'bytes');
+    return res.json({ url, key, mimetype, size });
+  } catch (err) {
+    if (err.message === 'unsupported_file_type') return res.status(415).json({ error: 'unsupported_file_type' });
+    console.error('[POST /api/uploads]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
 // --- Public: Submit a service request ---
 app.post('/api/service-requests', publicFormLimit, async (req, res) => {
   try {
-    const { category, description, preferredDate, preferredTime, isAsap, serviceAddress, clientName, clientPhone, clientEmail, customerId, lang } = req.body || {};
+    const { category, description, preferredDate, preferredTime, isAsap, serviceAddress, clientName, clientPhone, clientEmail, customerId, lang, attachments } = req.body || {};
     if (!category || !clientName || !clientPhone) {
       return res.status(400).json({ error: 'missing_required_fields', message: 'category, clientName, and clientPhone are required' });
     }
+    const attachmentsStr = Array.isArray(attachments) ? attachments.join(',') : (attachments || null);
     const id = randomUUID();
     await pool.query(
-      `INSERT INTO service_requests (id, category, description, preferred_date, preferred_time, is_asap, service_address, client_name, client_phone, client_email, customer_id, lang)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-      [id, category, description || null, preferredDate || null, preferredTime || null, !!isAsap, serviceAddress || null, clientName, clientPhone, clientEmail || null, customerId || null, lang || 'es']
+      `INSERT INTO service_requests (id, category, description, preferred_date, preferred_time, is_asap, service_address, client_name, client_phone, client_email, customer_id, lang, attachments)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+      [id, category, description || null, preferredDate || null, preferredTime || null, !!isAsap, serviceAddress || null, clientName, clientPhone, clientEmail || null, customerId || null, lang || 'es', attachmentsStr]
     );
     // Notify Google Sheets
     postToGoogleWebhook({ type: 'service_request.created', requestId: id, category, clientName, clientPhone, clientEmail: clientEmail || '', serviceAddress: serviceAddress || '', isAsap: !!isAsap, preferredDate: preferredDate || '', preferredTime: preferredTime || '' });
@@ -4395,15 +4450,15 @@ app.post('/api/reports', publicFormLimit, async (req, res) => {
 // --- Public: Submit a partner application ---
 app.post('/api/partner-applications', publicFormLimit, async (req, res) => {
   try {
-    const { name, phone, email, specialty, city, experience } = req.body || {};
+    const { name, phone, email, specialty, city, experience, services, coverage_areas } = req.body || {};
     if (!name || !phone) {
       return res.status(400).json({ error: 'missing_required_fields', message: 'name and phone are required' });
     }
     const id = randomUUID();
     await pool.query(
-      `INSERT INTO partner_applications (id, name, phone, email, specialty, city, experience)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-      [id, name, phone, email || null, specialty || null, city || null, experience || null]
+      `INSERT INTO partner_applications (id, name, phone, email, specialty, city, experience, services, coverage_areas)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [id, name, phone, email || null, specialty || null, city || null, experience || null, services || null, coverage_areas || null]
     );
     postToGoogleWebhook({ type: 'partner_application.created', applicationId: id, name, phone, email: email || '', specialty: specialty || '', city: city || '' });
     return res.status(201).json({ id, status: 'pending' });

@@ -42,8 +42,8 @@
         <input class="input-field" name="email" type="email">
       </div>
       <div>
-        <label style="display:block;font-weight:600;font-size:14px;margin-bottom:6px" data-i18n="partnerForm.labels.specialty">Especialidad / Categoría *</label>
-        <select class="input-field" name="specialty" required>
+        <label style="display:block;font-weight:600;font-size:14px;margin-bottom:6px" data-i18n="partnerForm.labels.specialty">Especialidad principal *</label>
+        <select class="input-field" name="specialty" id="specialty-select" required onchange="onSpecialtyChange()">
           <option value="" data-i18n="partnerForm.specialty.placeholder">Selecciona...</option>
           <option value="cleaning" data-i18n="partnerForm.specialty.cleaning">Limpieza</option>
           <option value="repair" data-i18n="partnerForm.specialty.repair">Reparación y Mantenimiento</option>
@@ -52,6 +52,24 @@
           <option value="supply" data-i18n="partnerForm.specialty.supply">Abastecimiento y Compras</option>
           <option value="other" data-i18n="partnerForm.specialty.other">Otro</option>
         </select>
+        <div id="specialty-other-wrap" style="display:none;margin-top:8px">
+          <input class="input-field" id="specialty-other" placeholder="Describe tu especialidad...">
+        </div>
+      </div>
+      <div>
+        <label style="display:block;font-weight:600;font-size:14px;margin-bottom:8px">Servicios adicionales que ofreces</label>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <label style="display:flex;align-items:center;gap:10px;font-size:14px;cursor:pointer"><input type="checkbox" name="svc_cleaning" value="cleaning" style="width:16px;height:16px;accent-color:#10b981"> Limpieza</label>
+          <label style="display:flex;align-items:center;gap:10px;font-size:14px;cursor:pointer"><input type="checkbox" name="svc_repair" value="repair" style="width:16px;height:16px;accent-color:#10b981"> Reparación y Mantenimiento</label>
+          <label style="display:flex;align-items:center;gap:10px;font-size:14px;cursor:pointer"><input type="checkbox" name="svc_wellness" value="wellness" style="width:16px;height:16px;accent-color:#10b981"> Bienestar y Cuidado Personal</label>
+          <label style="display:flex;align-items:center;gap:10px;font-size:14px;cursor:pointer"><input type="checkbox" name="svc_maintenance" value="maintenance" style="width:16px;height:16px;accent-color:#10b981"> Mantenimiento</label>
+          <label style="display:flex;align-items:center;gap:10px;font-size:14px;cursor:pointer"><input type="checkbox" name="svc_supply" value="supply" style="width:16px;height:16px;accent-color:#10b981"> Abastecimiento y Compras</label>
+        </div>
+      </div>
+      <div>
+        <label style="display:block;font-weight:600;font-size:14px;margin-bottom:6px">Áreas / colonias donde trabajas</label>
+        <input class="input-field" name="coverage_areas" placeholder="Ej: Santa Fe, Cuajimalpa, Interlomas, Lomas de Chapultepec...">
+        <p style="font-size:12px;color:#888;margin-top:4px">Separa las áreas con comas.</p>
       </div>
       <div>
         <label style="display:block;font-weight:600;font-size:14px;margin-bottom:6px" data-i18n="partnerForm.labels.city">Ciudad</label>
@@ -71,6 +89,14 @@
 <script src="/shared/shared-footer.js"></script>
 
 <script>
+function onSpecialtyChange() {
+  const val = document.getElementById('specialty-select')?.value;
+  const wrap = document.getElementById('specialty-other-wrap');
+  const input = document.getElementById('specialty-other');
+  if (wrap) wrap.style.display = val === 'other' ? 'block' : 'none';
+  if (input) input.required = val === 'other';
+}
+
 document.getElementById('partner-form').addEventListener('submit', async function(e) {
   e.preventDefault();
   const btn = document.getElementById('submit-btn');
@@ -80,10 +106,18 @@ document.getElementById('partner-form').addEventListener('submit', async functio
   try {
     const API = window.CONFIG?.API_BASE || '';
     console.log('[SERVI] Submitting partner application to:', API + '/api/partner-applications');
+    // Resolve specialty (use free-text if "other" selected)
+    let specialty = fd.get('specialty');
+    if (specialty === 'other') {
+      specialty = document.getElementById('specialty-other')?.value?.trim() || 'other';
+    }
+    // Collect additional services
+    const serviceBoxes = document.querySelectorAll('input[name^="svc_"]:checked');
+    const services = Array.from(serviceBoxes).map(cb => cb.value).join(', ') || null;
     const res = await fetch(API + '/api/partner-applications', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: fd.get('name'), phone: fd.get('phone'), email: fd.get('email'), specialty: fd.get('specialty'), city: fd.get('city'), experience: fd.get('experience') }),
+      body: JSON.stringify({ name: fd.get('name'), phone: fd.get('phone'), email: fd.get('email'), specialty, city: fd.get('city'), experience: fd.get('experience'), services, coverage_areas: fd.get('coverage_areas') || null }),
     });
     const data = await res.json().catch(() => ({}));
     console.log('[SERVI] API response:', res.status, data);

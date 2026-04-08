@@ -314,10 +314,167 @@
   // Auth modal functions moved to shared-auth.js
 
   // ─── Booking Panel ──────────────────────────────────────────
-  window.bookingState = { step: 1, category: null, description: '', whenType: 'asap', date: '', time: '', address: '', clientName: '', clientPhone: '', clientEmail: '' };
+  window.bookingState = {
+    step: 1, category: null, description: '', whenType: 'asap', date: '', time: '',
+    address: '', clientName: '', clientPhone: '', clientEmail: '',
+    attachments: [],        // array of { url, mimetype, name }
+    catsExpanded: false,
+  };
 
+  // ─── Media capture helpers ───────────────────────────────────
+  let _audioRecorder = null;
+  let _audioChunks = [];
+  let _audioTimer = null;
+  const MAX_AUDIO_SECS = 120;
+  const MAX_VIDEO_SECS = 60;
+
+  function isMobile() {
+    return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  }
+
+  function triggerCapture(type) {
+    const existing = document.getElementById('_bk-capture-input');
+    if (existing) existing.remove();
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.id = '_bk-capture-input';
+    input.style.display = 'none';
+    if (type === 'photo') {
+      input.accept = 'image/*';
+      if (isMobile()) input.setAttribute('capture', 'environment');
+    } else if (type === 'video') {
+      input.accept = 'video/*';
+      if (isMobile()) input.setAttribute('capture', 'environment');
+    }
+    input.addEventListener('change', () => {
+      if (input.files[0]) handleMediaFile(input.files[0], type);
+    });
+    document.body.appendChild(input);
+    input.click();
+  }
+
+  async function handleMediaFile(file, type) {
+    // Duration check for video (client-side, best-effort)
+    if (type === 'video' && file.type.startsWith('video/')) {
+      try {
+        const dur = await getVideoDuration(file);
+        if (dur > MAX_VIDEO_SECS + 5) {
+          alert(lang() === 'es' ? `El video no puede superar ${MAX_VIDEO_SECS} segundos.` : `Video must be ${MAX_VIDEO_SECS} seconds or less.`);
+          return;
+        }
+      } catch (_) { /* skip if can't read duration */ }
+    }
+    uploadAttachment(file);
+  }
+
+  function getVideoDuration(file) {
+    return new Promise((res, rej) => {
+      const url = URL.createObjectURL(file);
+      const v = document.createElement('video');
+      v.preload = 'metadata';
+      v.onloadedmetadata = () => { URL.revokeObjectURL(url); res(v.duration); };
+      v.onerror = rej;
+      v.src = url;
+    });
+  }
+
+  function startAudioRecording() {
+    if (_audioRecorder) return;
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+      _audioChunks = [];
+      _audioRecorder = new MediaRecorder(stream);
+      _audioRecorder.ondataavailable = e => { if (e.data.size > 0) _audioChunks.push(e.data); };
+      _audioRecorder.onstop = () => {
+        stream.getTracks().forEach(t => t.stop());
+        const blob = new Blob(_audioChunks, { type: 'audio/webm' });
+        const file = new File([blob], `audio-${Date.now()}.webm`, { type: 'audio/webm' });
+        uploadAttachment(file);
+        _audioRecorder = null;
+        clearInterval(_audioTimer);
+        _audioTimer = null;
+        updateAudioBtn();
+      };
+      _audioRecorder.start();
+      let secs = 0;
+      _audioTimer = setInterval(() => {
+        secs++;
+        updateAudioBtn(secs);
+        if (secs >= MAX_AUDIO_SECS) stopAudioRecording();
+      }, 1000);
+      updateAudioBtn(0);
+    }).catch(() => {
+      alert(lang() === 'es' ? 'No se pudo acceder al micrófono.' : 'Could not access microphone.');
+    });
+  }
+
+  function stopAudioRecording() {
+    if (_audioRecorder && _audioRecorder.state !== 'inactive') {
+      _audioRecorder.stop();
+    }
+  }
+
+  function updateAudioBtn(secs) {
+    const btn = document.getElementById('bk-audio-btn');
+    if (!btn) return;
+    if (_audioRecorder && _audioRecorder.state === 'recording') {
+      btn.textContent = `⏹ ${Math.floor((secs||0)/60)}:${String((secs||0)%60).padStart(2,'0')}`;
+      btn.style.background = '#dc2626';
+      btn.style.color = '#fff';
+      btn.onclick = stopAudioRecording;
+    } else {
+      btn.textContent = '🎙 Audio';
+      btn.style.background = '';
+      btn.style.color = '';
+      btn.onclick = startAudioRecording;
+    }
+  }
+
+  async function uploadAttachment(file) {
+    const statusEl = document.getElementById('bk-attach-status');
+    if (statusEl) statusEl.textContent = lang() === 'es' ? 'Subiendo...' : 'Uploading...';
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      const res = await fetch((window.CONFIG?.API_BASE || '') + '/api/uploads', {
+        method: 'POST', body: fd
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.message || d.error || 'Upload error');
+      window.bookingState.attachments.push({ url: d.url, mimetype: d.mimetype, name: file.name });
+      if (statusEl) statusEl.textContent = '';
+      renderAttachmentPreviews();
+    } catch (err) {
+      if (statusEl) statusEl.textContent = '❌ ' + err.message;
+    }
+  }
+
+  function renderAttachmentPreviews() {
+    const el = document.getElementById('bk-previews');
+    if (!el) return;
+    const atts = window.bookingState.attachments;
+    if (!atts.length) { el.innerHTML = ''; return; }
+    el.innerHTML = atts.map((a, i) => {
+      const isImage = a.mimetype.startsWith('image/');
+      const isVideo = a.mimetype.startsWith('video/');
+      const thumb = isImage
+        ? `<img src="${a.url}" style="width:64px;height:64px;object-fit:cover;border-radius:8px">`
+        : isVideo
+          ? `<div style="width:64px;height:64px;border-radius:8px;background:#1a1a1a;display:flex;align-items:center;justify-content:center;font-size:24px">🎥</div>`
+          : `<div style="width:64px;height:64px;border-radius:8px;background:#1a1a1a;display:flex;align-items:center;justify-content:center;font-size:24px">🎙</div>`;
+      return `<div style="position:relative;display:inline-block">
+        ${thumb}
+        <button onclick="removeAttachment(${i})" style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;background:#dc2626;color:#fff;border:none;cursor:pointer;font-size:11px;line-height:1;display:flex;align-items:center;justify-content:center">✕</button>
+      </div>`;
+    }).join('');
+  }
+
+  window.removeAttachment = function(i) {
+    window.bookingState.attachments.splice(i, 1);
+    renderAttachmentPreviews();
+  };
+
+  // ─── Main booking render ─────────────────────────────────────
   window.openBooking = async function (preselectedCategory) {
-    // If user is logged in but phone is missing, fetch fresh profile from server
     if (window.__user && !window.__user.phone) {
       try {
         const raw = localStorage.getItem('servi_user_session');
@@ -335,16 +492,16 @@
         }
       } catch {}
     }
-    window.bookingState = { step: 1, category: preselectedCategory || null, description: '', whenType: 'asap', date: '', time: '', address: '',
-      clientName:  window.__user?.name  || '',
-      clientPhone: window.__user?.phone || '',
-      clientEmail: window.__user?.email || '',
+    window.bookingState = {
+      step: 1, category: preselectedCategory || null, description: '', whenType: 'asap', date: '', time: '',
+      address: '', clientName: window.__user?.name || '', clientPhone: window.__user?.phone || '',
+      clientEmail: window.__user?.email || '', attachments: [], catsExpanded: !!preselectedCategory,
     };
-    if (preselectedCategory) window.bookingState.step = 2;
     renderBooking();
   };
 
   window.closeBooking = function () {
+    stopAudioRecording();
     document.getElementById('booking-panel').innerHTML = '';
     document.body.style.overflow = '';
   };
@@ -355,34 +512,62 @@
     let content = '';
 
     // Header
+    const stepLabel = ['', '1/3', '2/3', '3/3', ''][s.step] || '';
     const header = `
       <div style="display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid #eee">
         ${s.step > 1 ? `<button onclick="bookingBack()" style="background:none;border:none;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:15px;font-weight:500;font-family:'DM Sans',sans-serif">${icons.back} ${tr.back}</button>` : '<div></div>'}
-        <span class="heading-md">${tr.title}</span>
+        <div style="text-align:center"><span class="heading-md">${tr.title}</span>${stepLabel ? `<div style="font-size:11px;color:#aaa;margin-top:2px">${stepLabel}</div>` : ''}</div>
         <button onclick="closeBooking()" style="background:none;border:none;cursor:pointer;padding:4px">${icons.x}</button>
       </div>`;
 
     if (s.step === 1) {
-      // Category selection
-      content = `<div style="padding:24px;display:flex;flex-direction:column;gap:12px">
-        <p class="text-body" style="margin-bottom:8px">${tr.selectCategory}</p>
-        ${catKeys.map(key => `
-          <div class="booking-cat ${s.category === key ? 'booking-cat--active' : ''}" onclick="bookingSelectCat('${key}')">
-            <div style="color:#10b981">${icons[key]}</div>
-            <div>
-              <div style="font-weight:600;font-size:15px">${resolve(catI18n[key].name)}</div>
-              <div class="text-xs">${resolve(catI18n[key].desc)}</div>
-            </div>
+      // ── Custom-first intake ──────────────────────────────────
+      const mediaRow = `
+        <div style="margin-top:12px">
+          <div style="font-size:12px;color:#aaa;margin-bottom:8px">${lang()==='es'?'Adjunta una foto, video o audio (opcional — solo móvil)':'Attach a photo, video, or audio (optional — mobile only'}</div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <button onclick="triggerCapture('photo')" style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:8px;border:1px solid #ddd;background:#fafafa;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">📷 ${lang()==='es'?'Foto':'Photo'}</button>
+            <button onclick="triggerCapture('video')" style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:8px;border:1px solid #ddd;background:#fafafa;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">🎥 Video</button>
+            <button id="bk-audio-btn" onclick="startAudioRecording()" style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:8px;border:1px solid #ddd;background:#fafafa;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">🎙 Audio</button>
           </div>
-        `).join('')}
+          <div id="bk-attach-status" style="font-size:12px;color:#888;margin-top:6px"></div>
+          <div id="bk-previews" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">${s.attachments.map((a,i) => {
+            const isImage = a.mimetype.startsWith('image/');
+            const isVideo = a.mimetype.startsWith('video/');
+            const thumb = isImage ? `<img src="${a.url}" style="width:64px;height:64px;object-fit:cover;border-radius:8px">` : isVideo ? `<div style="width:64px;height:64px;border-radius:8px;background:#eee;display:flex;align-items:center;justify-content:center;font-size:24px">🎥</div>` : `<div style="width:64px;height:64px;border-radius:8px;background:#eee;display:flex;align-items:center;justify-content:center;font-size:24px">🎙</div>`;
+            return `<div style="position:relative;display:inline-block">${thumb}<button onclick="removeAttachment(${i})" style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;background:#dc2626;color:#fff;border:none;cursor:pointer;font-size:11px;display:flex;align-items:center;justify-content:center">✕</button></div>`;
+          }).join('')}</div>
+        </div>`;
+
+      const catsHtml = catKeys.map(key => `
+        <div class="booking-cat ${s.category === key ? 'booking-cat--active' : ''}" onclick="bookingSelectCat('${key}')">
+          <div style="color:#10b981">${icons[key]}</div>
+          <div>
+            <div style="font-weight:600;font-size:15px">${resolve(catI18n[key].name)}</div>
+            <div class="text-xs">${resolve(catI18n[key].desc)}</div>
+          </div>
+        </div>`).join('');
+
+      content = `<div style="padding:24px;display:flex;flex-direction:column;gap:20px">
+        <div>
+          <label class="text-body text-bold" style="display:block;margin-bottom:8px">${lang()==='es'?'¿Qué necesitas? Descríbelo aquí':'What do you need? Describe it here'}</label>
+          <textarea class="input-field" id="booking-desc" rows="4" placeholder="${lang()==='es'?'Ej: Tengo una fuga de agua en el baño, necesito un plomero lo antes posible...':'E.g. I have a water leak in my bathroom, need a plumber ASAP...'}" oninput="window.bookingState.description=this.value" style="resize:none">${s.description}</textarea>
+          ${mediaRow}
+        </div>
+        <div>
+          <button onclick="window.bookingState.catsExpanded=!window.bookingState.catsExpanded;renderBooking()" style="display:flex;align-items:center;justify-content:space-between;width:100%;background:#f8f8f8;border:1px solid #eee;border-radius:10px;padding:12px 16px;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:600">
+            <span>${lang()==='es'?'¿Sabes qué categoría es? (opcional)':'Know the category? (optional)'}</span>
+            <span style="font-size:18px;transition:transform 0.2s;display:inline-block;transform:rotate(${s.catsExpanded?'180':'0'}deg)">⌄</span>
+          </button>
+          ${s.catsExpanded ? `<div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">${catsHtml}</div>` : ''}
+        </div>
+        <button class="btn-primary" onclick="bookingStep1Continue()" style="width:100%;justify-content:center">
+          ${lang()==='es'?'Continuar':'Continue'} ${icons.arrow}
+        </button>
       </div>`;
     } else if (s.step === 2) {
-      // Description + When
+      // ── When ────────────────────────────────────────────────
       content = `<div style="padding:24px;display:flex;flex-direction:column;gap:24px">
-        <div>
-          <label class="text-body text-bold" style="display:block;margin-bottom:8px">${tr.describeNeed}</label>
-          <textarea class="input-field" id="booking-desc" placeholder="${tr.descPlaceholder}" oninput="window.bookingState.description=this.value">${s.description}</textarea>
-        </div>
         <div>
           <label class="text-body text-bold" style="display:block;margin-bottom:12px">${tr.when}</label>
           <div style="display:flex;flex-direction:column;gap:10px">
@@ -413,7 +598,7 @@
         </button>
       </div>`;
     } else if (s.step === 3) {
-      // Address + Contact + Confirm
+      // ── Address + Contact ────────────────────────────────────
       content = `<div style="padding:24px;display:flex;flex-direction:column;gap:24px">
         <div>
           <label class="text-body text-bold" style="display:block;margin-bottom:8px">${tr.where}</label>
@@ -434,12 +619,13 @@
             `}
           </div>
         </div>
+        ${s.attachments.length ? `<div><div style="font-size:12px;color:#888;margin-bottom:6px">${lang()==='es'?'Archivos adjuntos:':'Attachments:'} ${s.attachments.length}</div><div style="display:flex;gap:8px;flex-wrap:wrap">${s.attachments.map(a => a.mimetype.startsWith('image/') ? `<img src="${a.url}" style="width:48px;height:48px;object-fit:cover;border-radius:6px">` : `<span style="font-size:20px">${a.mimetype.startsWith('video/')? '🎥':'🎙'}</span>`).join('')}</div></div>` : ''}
         <button class="btn-primary" onclick="submitBooking()" style="width:100%;justify-content:center" id="booking-submit-btn">
           ${tr.confirm}
         </button>
       </div>`;
     } else if (s.step === 4) {
-      // Confirmation
+      // ── Confirmation ─────────────────────────────────────────
       content = `<div style="padding:48px 24px;text-align:center">
         <div style="margin-bottom:24px">${icons.check}</div>
         <h3 class="heading-md" style="margin-bottom:12px">${tr.confirmed}</h3>
@@ -452,9 +638,20 @@
     document.body.style.overflow = 'hidden';
   }
 
+  window.bookingStep1Continue = function() {
+    const s = window.bookingState;
+    s.description = document.getElementById('booking-desc')?.value || s.description;
+    if (!s.description.trim() && !s.category && !s.attachments.length) {
+      alert(lang() === 'es' ? 'Por favor describe lo que necesitas o selecciona una categoría.' : 'Please describe your need or select a category.');
+      return;
+    }
+    s.step = 2;
+    renderBooking();
+  };
+
   window.bookingSelectCat = function (key) {
     window.bookingState.category = key;
-    window.bookingState.step = 2;
+    window.bookingState.catsExpanded = true;
     renderBooking();
   };
 
@@ -469,7 +666,6 @@
 
   window.submitBooking = function () {
     const s = window.bookingState;
-    // Read current input values
     s.clientName = document.getElementById('booking-name')?.value || s.clientName;
     s.clientPhone = document.getElementById('booking-phone')?.value || s.clientPhone;
     s.clientEmail = document.getElementById('booking-email')?.value || s.clientEmail;
@@ -492,7 +688,7 @@
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        category: s.category,
+        category: s.category || 'custom',
         description: s.description,
         preferredDate: s.whenType === 'schedule' ? s.date : null,
         preferredTime: s.whenType === 'schedule' ? s.time : null,
@@ -502,6 +698,7 @@
         clientPhone: s.clientPhone,
         clientEmail: s.clientEmail,
         lang: lang(),
+        attachments: s.attachments.map(a => a.url),
       }),
     })
     .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })

@@ -294,6 +294,8 @@ export async function initDb() {
       ON service_requests(customer_id)
       WHERE customer_id IS NOT NULL;
 
+    ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS attachments TEXT;
+
     -- Incident reports & suggestions (from Help Center forms)
     CREATE TABLE IF NOT EXISTS service_reports (
       id TEXT PRIMARY KEY,
@@ -334,6 +336,9 @@ export async function initDb() {
       ON partner_applications(status);
     CREATE INDEX IF NOT EXISTS idx_partner_applications_created_at
       ON partner_applications(created_at DESC);
+
+    ALTER TABLE partner_applications ADD COLUMN IF NOT EXISTS services TEXT;
+    ALTER TABLE partner_applications ADD COLUMN IF NOT EXISTS coverage_areas TEXT;
 
     -- Auth Users (Client login identities)
     CREATE TABLE IF NOT EXISTS auth_users (

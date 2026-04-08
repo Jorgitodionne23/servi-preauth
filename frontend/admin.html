@@ -107,6 +107,31 @@
 
     /* Responsive */
     .table-scroll { overflow-x:auto; }
+
+    /* ─── Side Panels (Order Detail + Provider Detail) ───────────────────── */
+    .side-overlay { position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9000;opacity:0;transition:opacity 0.2s;pointer-events:none; }
+    .side-overlay.open { opacity:1;pointer-events:all; }
+    .side-panel { position:fixed;top:0;right:0;bottom:0;width:520px;max-width:96vw;background:#161616;border-left:1px solid #2a2a2a;overflow-y:auto;z-index:9001;transform:translateX(100%);transition:transform 0.25s cubic-bezier(0.4,0,0.2,1); }
+    .side-panel.open { transform:translateX(0); }
+    .sp-hdr { display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid #222;position:sticky;top:0;background:#161616;z-index:1; }
+    .sp-close { width:32px;height:32px;border-radius:8px;border:1px solid #333;background:#222;color:#aaa;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center; }
+    .sp-close:hover { color:#eee;border-color:#555; }
+    .sp-sec { padding:18px 24px;border-bottom:1px solid #1e1e1e; }
+    .sp-sec-t { font-size:11px;color:#555;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:12px; }
+    .sp-grid { display:grid;grid-template-columns:1fr 1fr;gap:12px; }
+    .sp-lbl { font-size:11px;color:#666;margin-bottom:3px; }
+    .sp-val { font-size:13px;color:#ddd;word-break:break-word; }
+    .sp-mono { font-family:monospace;font-size:11px;color:#aaa;word-break:break-all; }
+    .sp-acts { padding:18px 24px;display:flex;gap:8px;flex-wrap:wrap; }
+    .sp-stripe-btn { display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:6px;font-size:11px;font-weight:700;background:#1a3a2a;color:#10b981;border:1px solid #1a5a3a;text-decoration:none; }
+    .sp-stripe-btn:hover { background:#1e4a32; }
+    .sp-adj { background:#1a1a1a;border-radius:8px;padding:10px 12px;margin-bottom:8px;font-size:12px; }
+    .sp-notes { width:100%;padding:10px 12px;background:#1a1a1a;border:1px solid #333;border-radius:8px;color:#eee;font-size:13px;font-family:inherit;resize:vertical;min-height:80px;outline:none; }
+    .sp-notes:focus { border-color:#10b981; }
+    .sp-wa-btn { display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:8px;border:none;background:#1a4731;color:#4ade80;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;text-decoration:none; }
+    .sp-wa-btn:hover { background:#1e5a3a; }
+    .sp-save-btn { padding:7px 14px;border-radius:8px;border:none;background:#10b981;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit; }
+    .sp-save-btn:hover { background:#059669; }
   </style>
 </head>
 <body>
@@ -140,6 +165,7 @@
       </button>
       <button class="admin-tab" data-panel="nueva" onclick="switchPanel('nueva')">+ Nueva Orden</button>
       <button class="admin-tab" data-panel="ajustes" onclick="switchPanel('ajustes')">Ajuste / Cobro</button>
+      <button class="admin-tab" data-panel="providers" onclick="switchPanel('providers')">Proveedores</button>
     </div>
 
     <!-- Inbox Panel -->
@@ -149,7 +175,6 @@
           <option value="">Todos los tipos</option>
           <option value="incidents">Reportes</option>
           <option value="suggestions">Sugerencias</option>
-          <option value="applications">Aplicaciones de Partner</option>
         </select>
       </div>
       <div class="table-scroll">
@@ -304,6 +329,29 @@
       </div>
     </div>
 
+    <!-- Providers Panel -->
+    <div id="panel-providers" class="panel-section">
+      <div class="filter-row">
+        <input class="filter-input" id="prov-search" placeholder="Buscar por nombre, teléfono, especialidad..." oninput="debounceProviders()">
+        <select class="filter-select" id="prov-status" onchange="loadProviders()">
+          <option value="">Todos los estados</option>
+          <option value="pending">Pending</option>
+          <option value="reviewed">Reviewed</option>
+          <option value="verified">Verified</option>
+          <option value="rejected">Rejected</option>
+        </select>
+      </div>
+      <div class="table-scroll">
+        <table class="admin-table">
+          <thead>
+            <tr><th>Nombre</th><th>Teléfono</th><th>Especialidad</th><th>Ciudad</th><th>Estado</th><th>Fecha</th></tr>
+          </thead>
+          <tbody id="providers-body"></tbody>
+        </table>
+      </div>
+      <div id="providers-empty" class="empty-state" style="display:none">No hay aplicaciones de proveedores.</div>
+    </div>
+
   </div>
 </div>
 
@@ -312,6 +360,32 @@
   #panel-nueva .auth-input, #panel-ajustes .auth-input { width:100%; }
   #panel-nueva select.auth-input, #panel-ajustes select.auth-input { background:#222; }
 </style>
+<!-- Order Detail Side Panel -->
+<div id="order-overlay" class="side-overlay" onclick="closeOrderDetail()"></div>
+<div id="order-panel" class="side-panel">
+  <div class="sp-hdr">
+    <div>
+      <div style="font-size:11px;color:#555;margin-bottom:2px">ORDEN</div>
+      <div id="op-title" style="font-size:16px;font-weight:700;font-family:monospace"></div>
+    </div>
+    <button class="sp-close" onclick="closeOrderDetail()">✕</button>
+  </div>
+  <div id="op-body"></div>
+</div>
+
+<!-- Provider Detail Side Panel -->
+<div id="prov-overlay" class="side-overlay" onclick="closeProviderDetail()"></div>
+<div id="prov-panel" class="side-panel">
+  <div class="sp-hdr">
+    <div>
+      <div style="font-size:11px;color:#555;margin-bottom:2px">APLICANTE</div>
+      <div id="pp-title" style="font-size:16px;font-weight:700"></div>
+    </div>
+    <button class="sp-close" onclick="closeProviderDetail()">✕</button>
+  </div>
+  <div id="pp-body"></div>
+</div>
+
 <script src="/config.js"></script>
 <script>
 const API = (window.CONFIG?.API_BASE || '');
@@ -397,6 +471,7 @@ function switchPanel(name) {
   document.getElementById('panel-' + name)?.classList.add('panel-section--active');
   document.querySelector('[data-panel="' + name + '"]')?.classList.add('admin-tab--active');
   if (name === 'orders') loadOrders();
+  if (name === 'providers') loadProviders();
 }
 
 // Inbox
@@ -417,11 +492,6 @@ async function loadInbox() {
       const r = await fetch(API + '/api/reports?type=suggestion&limit=30', { headers: headers() });
       const d = await r.json();
       items.push(...d.items.map(i => ({ id: i.id, apiPath: '/api/reports', date: i.created_at, type: 'Sugerencia', name: i.name || '—', detail: (i.description || '').slice(0,80), status: i.status || 'new', options: ['new','reviewed','resolved'] })));
-    }
-    if (!type || type === 'applications') {
-      const r = await fetch(API + '/api/partner-applications?limit=30', { headers: headers() });
-      const d = await r.json();
-      items.push(...d.items.map(i => ({ id: i.id, apiPath: '/api/partner-applications', date: i.created_at, type: 'Partner App', name: i.name, detail: (i.specialty || '') + (i.city ? ' — ' + i.city : ''), status: i.status || 'pending', options: ['pending','reviewed','verified','rejected'] })));
     }
     items.sort((a, b) => new Date(b.date) - new Date(a.date));
     if (!items.length) { body.innerHTML = ''; empty.style.display = 'block'; return; }
@@ -510,14 +580,14 @@ async function loadOrders() {
     }
 
     const orderRows = d.items.map(o => `
-      <tr>
+      <tr onclick="openOrderDetail('${o.id}')" style="cursor:pointer">
         <td style="font-family:monospace;font-size:12px">${o.public_code || o.id.slice(0,8)}</td>
         <td>${o.client_name || '—'}<br><span style="color:#666;font-size:11px">${o.client_phone || ''}</span></td>
         <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${o.service_description || '—'}</td>
         <td>${fmtMoney(o.pricing_total_amount || o.amount)}</td>
         <td>${fmtDate(o.service_date || o.created_at)}</td>
         <td><span class="badge ${badgeClass(o.status)}">${o.status || '—'}</span></td>
-        <td>${buildActionBtns(o)}</td>
+        <td onclick="event.stopPropagation()">${buildActionBtns(o)}</td>
       </tr>
     `).join('');
 
@@ -789,8 +859,8 @@ async function captureOrder(orderId) {
     const d = await res.json();
     if (!res.ok) throw new Error(d.error || `HTTP ${res.status}`);
     alert(`✅ Capturado correctamente.\nEstado PI: ${d.status}`);
-    loadOrders();
-    loadStats();
+    loadOrders(); loadStats();
+    if (_openDetailOrderId === orderId) openOrderDetail(orderId);
   } catch (err) {
     alert(`❌ Error al capturar:\n${err.message}`);
   }
@@ -817,8 +887,8 @@ async function cancelOrder(orderId) {
     const d = await res.json();
     if (!res.ok) throw new Error(d.message || d.error || `HTTP ${res.status}`);
     alert(`✅ Orden cancelada.\n${d.message || ''}`);
-    loadOrders();
-    loadStats();
+    loadOrders(); loadStats();
+    if (_openDetailOrderId === orderId) openOrderDetail(orderId);
   } catch (err) {
     alert(`❌ Error al cancelar:\n${err.message}`);
   }
@@ -867,8 +937,8 @@ async function refundOrder(orderId, totalAmountCents) {
     if (!res.ok) throw new Error(d.message || d.error || `HTTP ${res.status}`);
     const refundedMXN = ((d.refundedAmountCents || 0) / 100).toFixed(2);
     alert(`✅ Reembolso procesado.\n$${refundedMXN} MXN reembolsados.\n${d.message || ''}`);
-    loadOrders();
-    loadStats();
+    loadOrders(); loadStats();
+    if (_openDetailOrderId === orderId) openOrderDetail(orderId);
   } catch (err) {
     alert(`❌ Error al reembolsar:\n${err.message}`);
   }
@@ -1096,6 +1166,225 @@ async function pollNewOrders() {
   } catch (_) {}
 }
 setInterval(pollNewOrders, 45000);
+
+// ─── Order Detail Panel ───────────────────────────────────────────────────────
+let _openDetailOrderId = null;
+
+async function openOrderDetail(orderId) {
+  _openDetailOrderId = orderId;
+  const overlay = document.getElementById('order-overlay');
+  const panel = document.getElementById('order-panel');
+  document.getElementById('op-title').textContent = '...';
+  document.getElementById('op-body').innerHTML = '<div style="padding:40px;text-align:center;color:#666">Cargando...</div>';
+  overlay.classList.add('open');
+  panel.classList.add('open');
+  try {
+    const res = await fetch(API + '/api/admin/orders/' + encodeURIComponent(orderId), { headers: headers() });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const { order: o, adjustments } = await res.json();
+    document.getElementById('op-title').textContent = o.public_code || o.id.slice(0,8);
+    const piLink = o.payment_intent_id
+      ? `<a class="sp-stripe-btn" href="https://dashboard.stripe.com/payments/${o.payment_intent_id}" target="_blank" rel="noopener">Ver en Stripe ↗</a>`
+      : '';
+    const adjsHtml = (adjustments || []).length
+      ? adjustments.map(a => `<div class="sp-adj"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><span style="font-family:monospace;color:#a78bfa">${a.public_code || a.id.slice(0,8)}</span><span class="badge ${badgeClass(a.status)}">${a.status}</span></div><div style="color:#888">${a.service_description || '—'} · ${fmtMoney(a.pricing_total_amount || a.amount)}</div></div>`).join('')
+      : '<div style="color:#555;font-size:12px">Sin ajustes</div>';
+    document.getElementById('op-body').innerHTML = `
+      <div class="sp-sec">
+        <div class="sp-sec-t">Cliente</div>
+        <div class="sp-grid">
+          <div><div class="sp-lbl">Nombre</div><div class="sp-val">${o.client_name || '—'}</div></div>
+          <div><div class="sp-lbl">Teléfono</div><div class="sp-val">${o.client_phone || '—'}</div></div>
+          <div><div class="sp-lbl">Email</div><div class="sp-val">${o.client_email || '—'}</div></div>
+          <div><div class="sp-lbl">Proveedor</div><div class="sp-val">${o.provider_name || '—'}</div></div>
+          ${o.service_address ? `<div style="grid-column:1/-1"><div class="sp-lbl">Dirección</div><div class="sp-val">${o.service_address}</div></div>` : ''}
+        </div>
+      </div>
+      <div class="sp-sec">
+        <div class="sp-sec-t">Servicio</div>
+        <div class="sp-grid">
+          <div style="grid-column:1/-1"><div class="sp-lbl">Descripción</div><div class="sp-val">${o.service_description || '—'}</div></div>
+          <div><div class="sp-lbl">Fecha</div><div class="sp-val">${fmtDate(o.service_date || o.service_datetime)}</div></div>
+          <div><div class="sp-lbl">Hora</div><div class="sp-val">${o.service_datetime ? fmtTime(o.service_datetime) : '—'}</div></div>
+          <div><div class="sp-lbl">Tipo</div><div class="sp-val">${o.kind || '—'}</div></div>
+          <div><div class="sp-lbl">Estado</div><div class="sp-val"><span class="badge ${badgeClass(o.status)}">${o.status || '—'}</span></div></div>
+        </div>
+      </div>
+      <div class="sp-sec">
+        <div class="sp-sec-t">Desglose de precio</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:#888">Proveedor</span><span>${fmtMoney(o.provider_amount)}</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:#888">Comisión SERVI</span><span>${fmtMoney(o.booking_fee_amount)}</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:#888">Comisión Stripe</span><span>${fmtMoney(o.processing_fee_amount)}</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:#888">IVA</span><span>${fmtMoney(o.vat_amount)}</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:700;border-top:1px solid #333;padding-top:8px"><span>Total</span><span style="color:#10b981">${fmtMoney(o.pricing_total_amount || o.amount)}</span></div>
+          ${o.final_captured_amount ? `<div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:#888">Capturado</span><span style="color:#60a5fa">${fmtMoney(o.final_captured_amount)}</span></div>` : ''}
+        </div>
+      </div>
+      <div class="sp-sec">
+        <div class="sp-sec-t">Stripe</div>
+        <div class="sp-grid">
+          <div style="grid-column:1/-1"><div class="sp-lbl">Payment Intent ID</div><div class="sp-mono">${o.payment_intent_id || '—'}</div></div>
+          <div><div class="sp-lbl">Creado</div><div class="sp-val">${fmtDate(o.created_at)} ${fmtTime(o.created_at)}</div></div>
+          <div><div class="sp-lbl">Order ID</div><div class="sp-mono">${o.id}</div></div>
+        </div>
+        ${piLink ? `<div style="margin-top:12px">${piLink}</div>` : ''}
+      </div>
+      ${o.attachments ? `
+      <div class="sp-sec">
+        <div class="sp-sec-t">Adjuntos</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          ${o.attachments.split(',').filter(Boolean).map(url => {
+            const ext = url.split('.').pop().toLowerCase();
+            const isImg = ['jpg','jpeg','png','webp','gif'].includes(ext);
+            const isVid = ['mp4','webm','mov'].includes(ext);
+            if (isImg) return `<a href="${url}" target="_blank" rel="noopener"><img src="${url}" style="width:80px;height:80px;object-fit:cover;border-radius:8px;border:1px solid #333"></a>`;
+            if (isVid) return `<a href="${url}" target="_blank" rel="noopener" style="display:flex;align-items:center;gap:6px;font-size:12px;color:#10b981">🎥 Ver video</a>`;
+            return `<a href="${url}" target="_blank" rel="noopener" style="display:flex;align-items:center;gap:6px;font-size:12px;color:#10b981">🎙 Escuchar audio</a>`;
+          }).join('')}
+        </div>
+      </div>` : ''}
+      <div class="sp-sec">
+        <div class="sp-sec-t">Ajustes (${(adjustments||[]).length})</div>
+        ${adjsHtml}
+      </div>
+      <div class="sp-acts">${buildActionBtns(o)}</div>
+    `;
+  } catch (err) {
+    document.getElementById('op-body').innerHTML = `<div style="padding:40px;text-align:center;color:#ef4444">Error: ${err.message}</div>`;
+  }
+}
+
+function closeOrderDetail() {
+  _openDetailOrderId = null;
+  document.getElementById('order-overlay').classList.remove('open');
+  document.getElementById('order-panel').classList.remove('open');
+}
+
+// ─── Providers Tab ────────────────────────────────────────────────────────────
+const _provsCache = {};
+let _provsTimer = null;
+function debounceProviders() { clearTimeout(_provsTimer); _provsTimer = setTimeout(loadProviders, 350); }
+
+async function loadProviders() {
+  const search = (document.getElementById('prov-search')?.value || '').trim().toLowerCase();
+  const status = document.getElementById('prov-status')?.value || '';
+  const body = document.getElementById('providers-body');
+  const empty = document.getElementById('providers-empty');
+  body.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:#666">Cargando...</td></tr>';
+  try {
+    const params = new URLSearchParams({ limit: 100 });
+    if (status) params.set('status', status);
+    const res = await fetch(API + '/api/partner-applications?' + params, { headers: headers() });
+    const d = await res.json();
+    let items = d.items || [];
+    items.forEach(i => { _provsCache[i.id] = i; });
+    if (search) {
+      items = items.filter(i =>
+        (i.name||'').toLowerCase().includes(search) ||
+        (i.phone||'').toLowerCase().includes(search) ||
+        (i.specialty||'').toLowerCase().includes(search) ||
+        (i.city||'').toLowerCase().includes(search)
+      );
+    }
+    if (!items.length) { body.innerHTML = ''; empty.style.display = 'block'; return; }
+    empty.style.display = 'none';
+    body.innerHTML = items.map(i => `
+      <tr onclick="openProviderDetail('${i.id}')" style="cursor:pointer">
+        <td style="font-weight:600">${i.name || '—'}</td>
+        <td>${i.phone || '—'}</td>
+        <td>${i.specialty || '—'}</td>
+        <td>${i.city || '—'}</td>
+        <td><span class="badge ${badgeClass(i.status)}">${i.status || 'pending'}</span></td>
+        <td>${fmtDate(i.created_at)}</td>
+      </tr>
+    `).join('');
+  } catch (err) {
+    body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#ef4444">Error al cargar</td></tr>';
+  }
+}
+
+function openProviderDetail(id) {
+  const p = _provsCache[id];
+  if (!p) return;
+  document.getElementById('prov-overlay').classList.add('open');
+  document.getElementById('prov-panel').classList.add('open');
+  document.getElementById('pp-title').textContent = p.name || '—';
+  const phone = (p.phone || '').replace(/\D/g,'');
+  const waMsg = encodeURIComponent('Hola ' + (p.name||'') + ', soy del equipo SERVI. Me comunico contigo respecto a tu solicitud para ser Partner. ¿Tienes unos minutos?');
+  const waHref = phone ? `https://wa.me/${phone}?text=${waMsg}` : null;
+  document.getElementById('pp-body').innerHTML = `
+    <div class="sp-sec">
+      <div class="sp-sec-t">Datos del aplicante</div>
+      <div class="sp-grid">
+        <div><div class="sp-lbl">Nombre</div><div class="sp-val">${p.name || '—'}</div></div>
+        <div><div class="sp-lbl">Teléfono</div><div class="sp-val">${p.phone || '—'}</div></div>
+        <div><div class="sp-lbl">Email</div><div class="sp-val">${p.email || '—'}</div></div>
+        <div><div class="sp-lbl">Especialidad</div><div class="sp-val">${p.specialty || '—'}</div></div>
+        <div><div class="sp-lbl">Ciudad</div><div class="sp-val">${p.city || '—'}</div></div>
+        <div><div class="sp-lbl">Fecha aplicación</div><div class="sp-val">${fmtDate(p.created_at)}</div></div>
+        ${p.services ? `<div style="grid-column:1/-1"><div class="sp-lbl">Servicios ofrecidos</div><div class="sp-val">${p.services}</div></div>` : ''}
+        ${p.coverage_areas ? `<div style="grid-column:1/-1"><div class="sp-lbl">Áreas de cobertura</div><div class="sp-val">${p.coverage_areas}</div></div>` : ''}
+        ${p.experience ? `<div style="grid-column:1/-1"><div class="sp-lbl">Experiencia</div><div class="sp-val">${p.experience}</div></div>` : ''}
+      </div>
+    </div>
+    <div class="sp-sec">
+      <div class="sp-sec-t">Estado</div>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <span class="badge ${badgeClass(p.status)}">${p.status}</span>
+        <select class="filter-select" id="pp-status-${p.id}" onchange="updateProviderStatus('${p.id}', this.value)" style="font-size:12px">
+          <option value="pending" ${p.status==='pending'?'selected':''}>pending</option>
+          <option value="reviewed" ${p.status==='reviewed'?'selected':''}>reviewed</option>
+          <option value="verified" ${p.status==='verified'?'selected':''}>verified</option>
+          <option value="rejected" ${p.status==='rejected'?'selected':''}>rejected</option>
+        </select>
+      </div>
+    </div>
+    <div class="sp-sec">
+      <div class="sp-sec-t">Notas del admin</div>
+      <textarea class="sp-notes" id="pp-notes-${p.id}" placeholder="Notas internas, resultado de entrevista, razón de estado...">${p.admin_notes || ''}</textarea>
+      <button class="sp-save-btn" style="margin-top:8px" onclick="saveProviderNotes('${p.id}')">Guardar notas</button>
+    </div>
+    <div class="sp-acts">
+      ${waHref ? `<a class="sp-wa-btn" href="${waHref}" target="_blank" rel="noopener">📱 Contactar por WhatsApp</a>` : ''}
+    </div>
+  `;
+}
+
+function closeProviderDetail() {
+  document.getElementById('prov-overlay').classList.remove('open');
+  document.getElementById('prov-panel').classList.remove('open');
+}
+
+async function updateProviderStatus(id, status) {
+  try {
+    const res = await fetch(API + '/api/partner-applications/' + id, {
+      method: 'PATCH', headers: headers(),
+      body: JSON.stringify({ status })
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    _provsCache[id] = { ..._provsCache[id], status };
+    loadProviders();
+  } catch (err) {
+    alert('Error al actualizar estado: ' + err.message);
+  }
+}
+
+async function saveProviderNotes(id) {
+  const notes = document.getElementById('pp-notes-' + id)?.value || '';
+  try {
+    const res = await fetch(API + '/api/partner-applications/' + id, {
+      method: 'PATCH', headers: headers(),
+      body: JSON.stringify({ adminNotes: notes })
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    _provsCache[id] = { ..._provsCache[id], admin_notes: notes };
+    const btn = document.querySelector(`button[onclick="saveProviderNotes('${id}')"]`);
+    if (btn) { btn.textContent = '✅ Guardado'; setTimeout(() => { btn.textContent = 'Guardar notas'; }, 2000); }
+  } catch (err) {
+    alert('Error al guardar notas: ' + err.message);
+  }
+}
 
 // Auto-login if token saved
 if (TOKEN) testAuth();
