@@ -4395,8 +4395,8 @@ app.post('/api/uploads', publicFormLimit, upload.single('file'), async (req, res
     return res.json({ url, key, mimetype, size });
   } catch (err) {
     if (err.message === 'unsupported_file_type') return res.status(415).json({ error: 'unsupported_file_type' });
-    console.error('[POST /api/uploads]', err);
-    return res.status(500).json({ error: 'internal_error' });
+    console.error('[POST /api/uploads]', err.name, err.message, err.$metadata || '');
+    return res.status(500).json({ error: 'internal_error', detail: err.message });
   }
 });
 
