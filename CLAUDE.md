@@ -70,12 +70,13 @@ SERVI offers 5 main categories + a custom/catch-all option:
 
 ## Core User Flows
 
-### Authentication (Optional before booking)
+### Authentication (Required for booking confirmation)
 
-- Users can request a service as guests (name, phone, email, and address required)
-- Users can also log in for faster repeat requests
-- Current auth methods in UI: Email/password, Phone OTP (Firebase), Google Sign-In
-- Logged-in users can have booking data pre-filled
+- Users can browse and fill booking steps 1-2 without login
+- Confirming a booking (step 3) requires authentication
+- Auth methods: Phone OTP (Firebase) or Google Sign-In
+- Logged-in users have booking data pre-filled
+- No email/password auth (passwordless Firebase-only)
 
 ### Service Booking (3-step flow)
 
@@ -256,11 +257,14 @@ This is NOT a simple payment form. It's a complete **admin-driven order manageme
   - Partner button visual differentiation ✓
   - Navbar link reordering ✓
 
-- ✅ **Phase 2 (Firebase Auth + Account Management) — IMPLEMENTED (needs QA hardening)**
-  - Firebase auth setup in frontend (Email/Password, SMS OTP, Google)
+- ✅ **Phase 2 (Firebase Auth + Account Management) — COMPLETE**
+  - Firebase auth setup: Phone OTP + Google Sign-In (passwordless)
+  - Legacy email/password auth removed
+  - Booking auth gate: browse without login, confirm with login
   - Shared auth modal deployed across public pages
-  - User account page implemented (profile, security, addresses, payment methods)
-  - Backend auth/account endpoints implemented
+  - Account page implemented (profile, addresses, payment methods, delete account)
+  - Account page full i18n (ES/EN) with lang-toggle translation
+  - Backend auth/account endpoints implemented with proper token issuance
 
 - 📋 **Phase 3 (Booking & Provider Redesign) — PLANNED**
   - Custom-first booking with service examples
@@ -271,23 +275,23 @@ This is NOT a simple payment form. It's a complete **admin-driven order manageme
 ### What's Complete
 
 ✓ **All 25+ HTML pages** — Landing, Help Center (hub + forms + about + contact), Legal (tabbed), Partners (landing + signup), Handbook (hub + 6 articles)
-✓ **All backend API endpoints** — Auth (signup, login, me), service requests, reports, partner applications, admin queries
-✓ **All database tables** — `auth_users`, `service_requests`, `service_reports`, `partner_applications` (plus existing `all_bookings`, `saved_servi_users`, etc.)
-✓ **Authentication system** — Firebase-based auth in UI (email/password, phone OTP, Google) with backend sync endpoint
-✓ **Shared components** — Navbar (with auth modal setup), footer, i18n (ES/EN toggle), design system (Syne + DM Sans, colors, cards, buttons)
-✓ **Bilingual i18n** — Full Spanish/English translation system for all new pages
+✓ **All backend API endpoints** — Auth (Firebase sync, token issuance), service requests, reports, partner applications, account management (profile, addresses), admin queries
+✓ **All database tables** — `auth_users` (firebase_uid, auth_provider), `service_requests`, `service_reports`, `partner_applications`, `user_addresses` (plus existing `all_bookings`, `saved_servi_users`, etc.)
+✓ **Authentication system** — Firebase-only (phone OTP, Google OAuth, no password), custom JWT token issuance, session storage in localStorage
+✓ **Booking auth gate** — Browse 2 steps without login, login required to confirm step 3
+✓ **Account page** — Profile, address management, payment methods, delete account with confirmation (all fully bilingual)
+✓ **Shared components** — Navbar (auth modal, user menu dropdown), footer, i18n (ES/EN toggle with live translation), design system (Syne + DM Sans, colors, cards, buttons)
+✓ **Bilingual i18n** — Full Spanish/English translation for all pages including account page with lang-change event support
 ✓ **Mobile-responsive design** — Hamburger menu at 900px, grid layouts
 ✓ **Existing payment flows untouched** — `pay.html`, `book.html`, `success.html`, `save.html` continue working
 
 ### What's Incomplete / In Progress
 
-⚠️ **Booking flow modal** — Backend ready (`POST /api/service-requests`), likely missing full step-by-step UI integration or bugs
-⚠️ **Form submission wiring** — Endpoints exist, need error handling + success confirmation flows
+⚠️ **End-to-end QA testing** — All flows need testing on live domain (phone OTP, Google OAuth, booking, account management)
 ⚠️ **Admin dashboard refinement** — Tabs built (Inbox, Orders), may need detail panels, refinement
 ⚠️ **Legal page text** — Structure built, 5 placeholders for legal documents (términos, privacidad, etc.)
-⚠️ **Auth session consistency** — Firebase session and backend session behavior needs end-to-end verification
-⚠️ **i18n completeness** — New pages need spot-checking for `data-i18n` attributes
-⚠️ **Integration testing** — Full end-to-end flows not yet verified
+⚠️ **Payment flow integration** — Existing pay.html/book.html/success.html untouched; verify booking flow → payment link creation works end-to-end
+⚠️ **Potential bugs** — Testing may uncover issues in auth edge cases, form validation, error handling
 
 ---
 
@@ -295,17 +299,32 @@ This is NOT a simple payment form. It's a complete **admin-driven order manageme
 
 ### Current Implementation
 
-- Frontend auth runs through Firebase (email/password, phone OTP, Google)
-- Backend sync endpoint: `POST /api/auth/firebase`
-- Backend account endpoints exist for profile, password, addresses, and payment methods
-- Navbar: Shows logged-in user's name or Login/Signup buttons
+- **Frontend auth:** Firebase-only (passwordless)
+  - Phone OTP via reCAPTCHA (Firebase `signInWithPhoneNumber`)
+  - Google OAuth via popup (Firebase `signInWithPopup`)
+  - No email/password signup or login
+- **Backend:** `POST /api/auth/firebase` syncs Firebase ID token → issues custom JWT (30-day HS256)
+- **Session storage:** localStorage (`servi_user_session` key) stores `{ token, user, firebaseUid }`
+- **Account page:** Fully bilingual, edit profile, manage addresses, delete account
+- **Navbar:** Shows logged-in user's name + avatar + dropdown menu with My Account / Logout
+
+### Auth Flow
+
+1. User clicks "Log in" → auth modal opens
+2. Choose phone OTP or Google
+3. Phone OTP: Enter phone → receive SMS code → verify
+4. Google: Click button → popup → select account
+5. Firebase verifies identity → frontend calls `POST /api/auth/firebase` with ID token
+6. Backend returns custom JWT + user data
+7. Frontend stores token in localStorage
+8. User can now book services and access account page
 
 ### Logged-In User Benefits
 
-- **Faster checkout** — Pre-filled address + contact info
-- **Saved addresses** — Select from previous service addresses
-- **Saved payment methods** — Customers can manage saved cards from account page
-- **Manage Account page** — Live page for editing name, phone, email, addresses, password, and payment methods
+- **Faster booking confirmation** — Pre-filled name, phone, email on booking step 3
+- **Saved addresses** — Create/manage addresses from account page, auto-fill on next booking
+- **Account page access** — Edit profile, manage addresses, manage payment methods, delete account
+- **Secure bookings** — All API calls use Bearer token for authorization
 
 ### Future Vision
 
@@ -325,12 +344,14 @@ This is NOT a simple payment form. It's a complete **admin-driven order manageme
 ### Customer Journey
 
 1. Click "Solicitar servicio" (CTA on landing or navbar)
-2. _(Optional)_ Login or create account (or continue as guest with name + phone + email)
-3. 5-step form:
+2. **Step 1-2 (Browse):** No login required
    - Select category (6 options)
    - Describe service needed (free text)
    - Choose timing ("Lo antes posible" or schedule)
-   - Enter service address
+3. **Step 3 (Confirm):** Login REQUIRED via Firebase (phone OTP or Google)
+   - Auth modal opens
+   - After login: pre-filled name, phone, email from account
+   - Enter/confirm service address
    - Review + confirm
 4. Submit → Service request created in database
 5. Confirmation screen: "¡Solicitud enviada! Te contactaremos pronto por WhatsApp."
