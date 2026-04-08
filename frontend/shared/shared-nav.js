@@ -135,6 +135,12 @@
       const raw = localStorage.getItem('servi_user_session');
       if (!raw) { window.__user = null; return; }
       const session = JSON.parse(raw);
+      // Clear stale pre-migration sessions (no token and no firebaseUid) — force re-auth
+      if (!session.token && !session.firebaseUid) {
+        localStorage.removeItem('servi_user_session');
+        window.__user = null;
+        return;
+      }
       let tokenPayload = null;
       if (session.token) {
         const parts = session.token.split('.');

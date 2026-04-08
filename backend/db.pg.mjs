@@ -366,8 +366,15 @@ export async function initDb() {
 
     DO $$ BEGIN
       ALTER TABLE auth_users ADD CONSTRAINT auth_users_phone_unique UNIQUE (phone);
-    EXCEPTION WHEN duplicate_table THEN NULL;
+    EXCEPTION WHEN duplicate_object THEN NULL;
     END $$;
+
+    DO $$ BEGIN
+      ALTER TABLE auth_users ADD CONSTRAINT auth_users_firebase_uid_unique UNIQUE (firebase_uid);
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END $$;
+
+    ALTER TABLE auth_users ALTER COLUMN email DROP NOT NULL;
 
     CREATE TABLE IF NOT EXISTS user_addresses (
       id TEXT PRIMARY KEY,

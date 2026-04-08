@@ -337,10 +337,7 @@ function authHeaders() {
 }
 
 function guardAuth() {
-  // Wait briefly for session restore, then check
-  setTimeout(() => {
-    if (!window.__user) window.location.replace('/');
-  }, 300);
+  // no-op — redirect logic is integrated into waitForUser below
 }
 
 // ─── Section navigation ───────────────────────────────────────────────────────
@@ -818,9 +815,12 @@ document.addEventListener('DOMContentLoaded', () => {
       switchSection('info');
     } else if (attempts > 0) {
       setTimeout(() => waitForUser(attempts - 1), 100);
+    } else {
+      // Firebase onAuthStateChanged exhausted — no session, redirect home
+      window.location.replace('/');
     }
   };
-  waitForUser(15);
+  waitForUser(20); // 20 × 100ms = 2s, enough for Firebase to resolve
 
   // Re-apply translations if language changes
   window.addEventListener('servi-lang-change', () => {

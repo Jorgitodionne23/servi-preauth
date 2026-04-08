@@ -4468,115 +4468,13 @@ app.post('/api/partner-applications', publicFormLimit, async (req, res) => {
   }
 });
 
-// --- Public Auth: Login, Signup, Social ---
-app.post('/api/auth/signup', publicFormLimit, async (req, res) => {
-  try {
-    const { email, password, name, phone } = req.body;
-    if (!email || !password || !name) {
-      return res.status(400).json({ error: 'missing_fields', message: 'Email, password, and name are required' });
-    }
-    const emailNorm = normalizeEmail(email);
-    if (!emailNorm) return res.status(400).json({ error: 'invalid_email', message: 'Invalid email format' });
-
-    const phoneNorm = normalizePhoneToE164(phone);
-    if (!phoneNorm) {
-      return res.status(400).json({ error: 'phone_required', message: 'El número de teléfono es requerido.' });
-    }
-
-    // Check if email exists
-    const { rows: existing } = await pool.query('SELECT id FROM auth_users WHERE email = $1', [emailNorm]);
-    if (existing.length > 0) {
-      return res.status(409).json({ error: 'email_exists', message: 'Email already registered' });
-    }
-
-    // Check if phone exists
-    const { rows: phoneExisting } = await pool.query('SELECT id FROM auth_users WHERE phone = $1', [phoneNorm]);
-    if (phoneExisting.length > 0) {
-      return res.status(409).json({ error: 'phone_exists', message: '¿Ya tienes una cuenta? Este número ya está registrado. Inicia sesión.' });
-    }
-
-    const id = randomUUID();
-    const pwHash = hashPassword(password);
-
-    await pool.query(
-      `INSERT INTO auth_users (id, email, password_hash, name, phone) VALUES ($1, $2, $3, $4, $5)`,
-      [id, emailNorm, pwHash, name, phoneNorm]
-    );
-
-    const customerId = await resolveStripeCustomerForEmail(emailNorm);
-    if (customerId) {
-      await pool.query(
-        'UPDATE auth_users SET stripe_customer_id = $1 WHERE id = $2 AND stripe_customer_id IS NULL',
-        [customerId, id]
-      );
-    }
-
-    const token = signSessionToken({ user_id: id, email: emailNorm, name, phone: phoneNorm });
-    return res.status(201).json({ token, user: { id, email: emailNorm, name, phone: phoneNorm } });
-  } catch (err) {
-    if (err.code === '23505') {
-      const isPhoneConstraint = err.constraint === 'auth_users_phone_unique' || (err.detail || '').includes('phone');
-      if (isPhoneConstraint) {
-        return res.status(409).json({ error: 'phone_exists', message: '¿Ya tienes una cuenta? Este número ya está registrado. Inicia sesión.' });
-      }
-    }
-    console.error('[POST /api/auth/signup] code=%s message=%s', err.code, err.message, err);
-    return res.status(500).json({ error: 'internal_error', debug: err.message });
-  }
+// --- Auth: legacy email/password routes disabled (now Firebase phone/Google only) ---
+app.post('/api/auth/signup', publicFormLimit, (req, res) => {
+  return res.status(410).json({ error: 'deprecated', message: 'Email/password signup is no longer available. Use phone or Google sign-in.' });
 });
 
-app.post('/api/auth/login', publicFormLimit, async (req, res) => {
-  try {
-    const { email, password } = req.body;
-    if (!email || !password) return res.status(400).json({ error: 'missing_fields' });
-    
-    const emailNorm = normalizeEmail(email);
-    if (!emailNorm) return res.status(401).json({ error: 'invalid_credentials', message: 'Invalid email or password' });
-    const { rows } = await pool.query('SELECT * FROM auth_users WHERE email = $1', [emailNorm]);
-    const user = rows[0];
-
-    if (!user || !user.password_hash) {
-      console.log('[LOGIN] 401 Path A — user not found or no password_hash:', { emailFound: !!user, hasHash: !!user?.password_hash });
-      return res.status(401).json({ error: 'invalid_credentials', message: 'Invalid email or password' });
-    }
-
-    if (!verifyPassword(password, user.password_hash)) {
-      console.log('[LOGIN] 401 Path B — password mismatch for:', emailNorm);
-      return res.status(401).json({ error: 'invalid_credentials', message: 'Invalid email or password' });
-    }
-
-    await pool.query('UPDATE auth_users SET last_login = NOW() WHERE id = $1', [user.id]);
-
-    const customerId = await resolveStripeCustomerForEmail(emailNorm);
-    if (customerId) {
-      await pool.query(
-        'UPDATE auth_users SET stripe_customer_id = $1 WHERE id = $2 AND stripe_customer_id IS NULL',
-        [customerId, user.id]
-      );
-    }
-
-    if (!customerId && user.phone) {
-      const phoneDigits = normalizePhoneDigits(user.phone);
-      const phoneResult = await pool.query(
-        `SELECT customer_id FROM saved_servi_users
-         WHERE regexp_replace(COALESCE(customer_phone,''),'[^0-9]','','g') = $1
-         LIMIT 1`,
-        [phoneDigits]
-      );
-      if (phoneResult.rows[0]?.customer_id) {
-        await pool.query(
-          'UPDATE auth_users SET stripe_customer_id = $1 WHERE id = $2 AND stripe_customer_id IS NULL',
-          [phoneResult.rows[0].customer_id, user.id]
-        );
-      }
-    }
-
-    const token = signSessionToken({ user_id: user.id, email: user.email, name: user.name, phone: user.phone || null });
-    return res.json({ token, user: { id: user.id, email: user.email, name: user.name, phone: user.phone || null } });
-  } catch (err) {
-    console.error('[POST /api/auth/login]', err);
-    return res.status(500).json({ error: 'internal_error' });
-  }
+app.post('/api/auth/login', publicFormLimit, (req, res) => {
+  return res.status(410).json({ error: 'deprecated', message: 'Email/password login is no longer available. Use phone or Google sign-in.' });
 });
 
 app.get('/api/auth/me', async (req, res) => {
@@ -4598,51 +4496,9 @@ app.get('/api/auth/me', async (req, res) => {
   }
 });
 
-app.post('/api/auth/social', publicFormLimit, async (req, res) => {
-  // Mock endpoint to accept verified OAuth claims from Frontend
-  // In a strict production system, you would verify an id_token (Google) or authorization code (Apple) 
-  // with Apple/Google keys here instead of trusting the frontend payload blindly.
-  try {
-    const { provider, email, name, providerId } = req.body;
-    if (!email || !provider || !providerId) return res.status(400).json({ error: 'missing_fields' });
-    
-    const emailNorm = normalizeEmail(email);
-    let { rows: users } = await pool.query('SELECT * FROM auth_users WHERE email = $1', [emailNorm]);
-    let user = users[0];
-
-    if (!user) {
-      const id = randomUUID();
-      const col = provider === 'google' ? 'google_id' : provider === 'apple' ? 'apple_id' : null;
-      if (!col) return res.status(400).json({ error: 'invalid_provider' });
-      
-      await pool.query(
-        `INSERT INTO auth_users (id, email, name, ${col}) VALUES ($1, $2, $3, $4)`,
-        [id, emailNorm, name, providerId]
-      );
-      user = { id, email: emailNorm, name };
-    } else {
-      // Link account if not already linked
-      const col = provider === 'google' ? 'google_id' : provider === 'apple' ? 'apple_id' : null;
-      if (col && !user[col]) {
-        await pool.query(`UPDATE auth_users SET ${col} = $1 WHERE id = $2`, [providerId, user.id]);
-      }
-      await pool.query('UPDATE auth_users SET last_login = NOW() WHERE id = $1', [user.id]);
-    }
-
-    const customerId = await resolveStripeCustomerForEmail(emailNorm);
-    if (customerId) {
-      await pool.query(
-        'UPDATE auth_users SET stripe_customer_id = $1 WHERE id = $2 AND stripe_customer_id IS NULL',
-        [customerId, user.id]
-      );
-    }
-
-    const token = signSessionToken({ user_id: user.id, email: user.email, name: user.name, phone: user.phone || null });
-    return res.json({ token, user: { id: user.id, email: user.email, name: user.name, phone: user.phone || null } });
-  } catch (err) {
-    console.error('[POST /api/auth/social]', err);
-    return res.status(500).json({ error: 'internal_error' });
-  }
+app.post('/api/auth/social', publicFormLimit, (req, res) => {
+  console.warn('[POST /api/auth/social] deprecated endpoint called from', req.ip);
+  return res.status(410).json({ error: 'deprecated', message: 'Use Firebase auth instead.' });
 });
 
 // --- Firebase Auth: verify ID token and sync user record ---
@@ -4667,7 +4523,7 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
     const phone = decoded.phone_number || req.body.phone || null;
     const provider = decoded.firebase?.sign_in_provider || 'unknown';
 
-    // Look up existing user by firebase_uid first, then by email
+    // Look up existing user by firebase_uid, then email, then phone (for phone-only OTP users)
     let { rows } = await pool.query('SELECT * FROM auth_users WHERE firebase_uid = $1', [firebaseUid]);
     let user = rows[0];
 
@@ -4675,8 +4531,6 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
       const emailNorm = email.toLowerCase().trim();
       ({ rows } = await pool.query('SELECT * FROM auth_users WHERE email = $1', [emailNorm]));
       user = rows[0];
-
-      // Link existing email-based account to this Firebase UID
       if (user) {
         await pool.query(
           'UPDATE auth_users SET firebase_uid = $1, auth_provider = $2, last_login = NOW() WHERE id = $3',
@@ -4687,17 +4541,45 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
       }
     }
 
+    // Phone-only OTP user (no email on Firebase token)
+    if (!user && !email && phone) {
+      const phoneNorm = normalizePhoneToE164(phone);
+      if (phoneNorm) {
+        ({ rows } = await pool.query('SELECT * FROM auth_users WHERE phone = $1', [phoneNorm]));
+        user = rows[0];
+        if (user && !user.firebase_uid) {
+          await pool.query(
+            'UPDATE auth_users SET firebase_uid = $1, auth_provider = $2, last_login = NOW() WHERE id = $3',
+            [firebaseUid, provider, user.id]
+          );
+        }
+      }
+    }
+
     if (!user) {
-      // Create new user
       const id = randomUUID();
       const emailNorm = email ? email.toLowerCase().trim() : null;
-      await pool.query(
-        `INSERT INTO auth_users (id, email, name, phone, firebase_uid, auth_provider)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [id, emailNorm, name, phone, firebaseUid, provider]
-      );
-      user = { id, email: emailNorm, name, phone };
-      console.log('[POST /api/auth/firebase] new user created:', id, emailNorm || phone);
+      const phoneNorm = phone ? normalizePhoneToE164(phone) : null;
+      try {
+        await pool.query(
+          `INSERT INTO auth_users (id, email, name, phone, firebase_uid, auth_provider)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [id, emailNorm, name, phoneNorm, firebaseUid, provider]
+        );
+        user = { id, email: emailNorm, name, phone: phoneNorm };
+        console.log('[POST /api/auth/firebase] new user created:', id, emailNorm || phoneNorm);
+      } catch (insertErr) {
+        if (insertErr.code === '23505') {
+          const isPhone = (insertErr.constraint || '').includes('phone');
+          if (isPhone) {
+            return res.status(409).json({ error: 'phone_exists', message: 'Este número ya está registrado con otra cuenta.' });
+          }
+          // Firebase UID race: re-fetch
+          ({ rows } = await pool.query('SELECT * FROM auth_users WHERE firebase_uid = $1', [firebaseUid]));
+          user = rows[0];
+        }
+        if (!user) throw insertErr;
+      }
     } else {
       await pool.query('UPDATE auth_users SET last_login = NOW() WHERE id = $1', [user.id]);
     }
@@ -4713,8 +4595,16 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
       }
     }
 
+    const token = signSessionToken({
+      user_id: user.id,
+      email: user.email,
+      name: user.name || name,
+      phone: user.phone || phone || null,
+    });
+
     return res.json({
-      user: { id: user.id, email: user.email, name: user.name || name, phone: user.phone || phone }
+      token,
+      user: { id: user.id, email: user.email, name: user.name || name, phone: user.phone || phone || null },
     });
   } catch (err) {
     console.error('[POST /api/auth/firebase]', err);

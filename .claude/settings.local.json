@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add:*)",
+      "Bash(curl -sv \"https://19eda59f7a6f35c4040d00821cf3c9b47.r2.cloudflarestorage.com\" 2>&1 | grep -E \"SSL|TLS|Connected|subject|issuer|error|Could not\" | head -15)",
+      "Bash(curl -sv \"https://19eda59f7a6f35c404d00821cf3c9b47.r2.cloudflarestorage.com\" 2>&1 | grep -E \"SSL|TLS|Connected|subject|issuer|error|HTTP\" | head -15)"
+    ]
+  }
+}

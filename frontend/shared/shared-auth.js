@@ -1,6 +1,6 @@
 // ─── SERVI Shared Auth (Firebase) ────────────────────────────────────────────
 // Provides global auth modal with Firebase authentication.
-// Supports: Email/Password, Phone OTP, Google OAuth
+// Supports: Phone OTP, Google OAuth (passwordless only — no email/password)
 // Include AFTER i18n.js and BEFORE shared-nav.js.
 
 (function () {
@@ -68,11 +68,14 @@
         name: firebaseUser.displayName,
         phone: firebaseUser.phoneNumber,
       };
+      // Optimistic write — syncWithBackend will overwrite with real token
       localStorage.setItem('servi_user_session', JSON.stringify({ user: window.__user, firebaseUid: firebaseUser.uid }));
+      window.__syncError = null;
       syncWithBackend(firebaseUser);
     } else {
       window.__user = null;
       localStorage.removeItem('servi_user_session');
+      window.__syncError = null;
     }
     if (window.buildNavbar) window.buildNavbar();
   }
@@ -90,18 +93,44 @@
         var data = await res.json();
         if (data.user) {
           window.__user = Object.assign({}, window.__user, data.user);
-          localStorage.setItem('servi_user_session', JSON.stringify({ user: window.__user, firebaseUid: firebaseUser.uid }));
+          // Store token so getSessionToken() works for authenticated API calls
+          localStorage.setItem('servi_user_session', JSON.stringify({
+            token: data.token || null,
+            user: window.__user,
+            firebaseUid: firebaseUser.uid,
+          }));
           if (window.buildNavbar) window.buildNavbar();
         }
+      } else {
+        var errData = {};
+        try { errData = await res.json(); } catch (_) {}
+        if (res.status === 409 && errData.error === 'phone_exists') {
+          window.__syncError = { code: 'phone_exists', message: errData.message };
+        } else {
+          window.__syncError = { code: 'backend_sync_failed', status: res.status };
+        }
+        console.error('[SERVI] Backend sync failed:', res.status, errData);
       }
     } catch (err) {
-      console.log('[SERVI] Backend sync pending:', err.message);
+      window.__syncError = { code: 'network_error', message: err.message };
+      console.error('[SERVI] Backend sync error:', err.message);
     }
   }
 
-  // ─── After successful auth — close modal + optional booking redirect ──────
+  // ─── After successful auth ────────────────────────────────────────────────
   function onAuthSuccess() {
     closeAuthModal();
+    // If booking panel is open at the confirm step, re-render with user info pre-filled
+    if (window.bookingState && window.bookingState.step === 3 && document.getElementById('booking-panel')) {
+      if (window.__user) {
+        window.bookingState.clientName = window.__user.name || window.bookingState.clientName;
+        window.bookingState.clientPhone = window.__user.phone || window.bookingState.clientPhone;
+        window.bookingState.clientEmail = window.__user.email || window.bookingState.clientEmail;
+      }
+      if (window.renderBooking) window.renderBooking();
+      return;
+    }
+    // Otherwise open booking from start (only on landing page)
     var path = window.location.pathname;
     if ((path === '/index.html' || path === '/') && window.openBooking) {
       window.openBooking();
@@ -111,7 +140,7 @@
   // ─── Open Auth Modal ──────────────────────────────────────────────────────
   window.openAuthModal = function (mode) {
     var a = tr();
-    var isLogin = mode === 'login';
+    var isEs = lang() === 'es';
 
     document.getElementById('auth-modal-global').innerHTML =
       '<div class="modal-overlay" onclick="closeAuthModal()">' +
@@ -120,7 +149,7 @@
 
             // Header
             '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">' +
-              '<h2 class="heading-md" id="auth-title">' + (isLogin ? (a.loginTitle || 'Bienvenido de nuevo') : (a.signupTitle || 'Crea tu cuenta')) + '</h2>' +
+              '<h2 class="heading-md" id="auth-title">' + (isEs ? 'Ingresa a SERVI' : 'Sign in to SERVI') + '</h2>' +
               '<button onclick="closeAuthModal()" style="background:none;border:none;cursor:pointer;padding:4px">' + icons.x + '</button>' +
             '</div>' +
 
@@ -136,33 +165,10 @@
               '<div style="flex:1;height:1px;background:#eee"></div>' +
             '</div>' +
 
-            // Method tabs
-            '<div style="display:flex;gap:0;margin-bottom:20px;border:1.5px solid #e0e0e0;border-radius:12px;overflow:hidden">' +
-              '<button id="tab-email" onclick="switchAuthTab(\'email\')" style="flex:1;padding:10px;font-size:14px;font-weight:600;border:none;cursor:pointer;font-family:\'DM Sans\',sans-serif;background:#0a0a0a;color:#fff;transition:all 0.2s">' + (a.emailTab || 'Correo') + '</button>' +
-              '<button id="tab-phone" onclick="switchAuthTab(\'phone\')" style="flex:1;padding:10px;font-size:14px;font-weight:600;border:none;cursor:pointer;font-family:\'DM Sans\',sans-serif;background:#fff;color:#0a0a0a;transition:all 0.2s">' + (a.phoneTab || 'Teléfono') + '</button>' +
-            '</div>' +
-
-            // ── Email form ──
-            '<div id="auth-email-form" style="display:flex;flex-direction:column;gap:12px">' +
-              (!isLogin ? '<input class="input-field" id="auth-name" placeholder="' + (a.name || 'Nombre completo') + '">' : '') +
-              '<input class="input-field" id="auth-email" type="email" placeholder="' + (a.email || 'Correo electrónico') + '">' +
-              '<input class="input-field" id="auth-password" type="password" placeholder="' + (a.password || 'Contraseña') + '">' +
-              (!isLogin ?
-                '<label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;color:#666;line-height:1.4;cursor:pointer">' +
-                  '<input type="checkbox" id="auth-terms" style="margin-top:2px;flex-shrink:0">' +
-                  '<span>' + (a.termsLabel || 'Acepto los <a href="/legal.html#terms" target="_blank" style="color:#10b981;font-weight:600">Términos y Condiciones</a> y el <a href="/legal.html#privacy" target="_blank" style="color:#10b981;font-weight:600">Aviso de Privacidad</a>') + '</span>' +
-                '</label>'
-              : '') +
-              '<button class="btn-primary" onclick="handleEmailAuth(\'' + mode + '\')" id="auth-email-btn" style="width:100%;justify-content:center;margin-top:4px">' +
-                (isLogin ? (a.loginBtn || 'Iniciar sesión') : (a.signupBtn || 'Crear cuenta')) +
-              '</button>' +
-              (isLogin ? '<button onclick="handleForgotPassword()" style="background:none;border:none;font-size:13px;color:#10b981;font-weight:500;cursor:pointer;font-family:\'DM Sans\',sans-serif;text-align:center;width:100%;margin-top:4px">' + (a.forgotPassword || '¿Olvidaste tu contraseña?') + '</button>' : '') +
-            '</div>' +
-
             // ── Phone form ──
-            '<div id="auth-phone-form" style="display:none;flex-direction:column;gap:12px">' +
+            '<div id="auth-phone-form" style="display:flex;flex-direction:column;gap:12px">' +
               '<div id="phone-step-1">' +
-                (!isLogin ? '<input class="input-field" id="auth-phone-name" placeholder="' + (a.name || 'Nombre completo') + '" style="margin-bottom:12px">' : '') +
+                '<input class="input-field" id="auth-phone-name" placeholder="' + (a.name || 'Nombre completo') + '" style="margin-bottom:12px">' +
                 '<input class="input-field" id="auth-phone-number" type="tel" placeholder="' + (a.phonePlaceholder || '+52 55 1234 5678') + '">' +
                 '<div id="recaptcha-container" style="margin-top:8px"></div>' +
                 '<button class="btn-primary" onclick="handleSendOTP()" id="send-otp-btn" style="width:100%;justify-content:center;margin-top:8px">' +
@@ -179,39 +185,12 @@
               '</div>' +
             '</div>' +
 
-            // Toggle login ↔ signup
-            '<div style="text-align:center;margin-top:20px">' +
-              '<button onclick="openAuthModal(\'' + (isLogin ? 'signup' : 'login') + '\')" style="background:none;border:none;font-size:14px;color:#10b981;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif">' +
-                (isLogin ? (a.switchToSignup || '¿No tienes cuenta?') : (a.switchToLogin || '¿Ya tienes cuenta?')) +
-              '</button>' +
-            '</div>' +
-
           '</div>' +
         '</div>' +
       '</div>';
 
     document.body.style.overflow = 'hidden';
-  };
-
-  // ─── Tab switching ────────────────────────────────────────────────────────
-  window.switchAuthTab = function (tab) {
-    var emailForm = document.getElementById('auth-email-form');
-    var phoneForm = document.getElementById('auth-phone-form');
-    var emailTab = document.getElementById('tab-email');
-    var phoneTab = document.getElementById('tab-phone');
-
-    if (tab === 'email') {
-      emailForm.style.display = 'flex';
-      phoneForm.style.display = 'none';
-      emailTab.style.background = '#0a0a0a'; emailTab.style.color = '#fff';
-      phoneTab.style.background = '#fff'; phoneTab.style.color = '#0a0a0a';
-    } else {
-      emailForm.style.display = 'none';
-      phoneForm.style.display = 'flex';
-      phoneTab.style.background = '#0a0a0a'; phoneTab.style.color = '#fff';
-      emailTab.style.background = '#fff'; emailTab.style.color = '#0a0a0a';
-      setupRecaptcha();
-    }
+    setupRecaptcha();
   };
 
   // ─── Close Modal ──────────────────────────────────────────────────────────
@@ -220,46 +199,6 @@
     document.body.style.overflow = '';
     if (recaptchaVerifier) { try { recaptchaVerifier.clear(); } catch (e) {} recaptchaVerifier = null; }
     confirmationResult = null;
-  };
-
-  // ─── Email/Password Auth ──────────────────────────────────────────────────
-  window.handleEmailAuth = async function (mode) {
-    var ok = await ensureFirebase();
-    if (!ok) { alert('Error loading auth. Please refresh the page.'); return; }
-
-    var email = (document.getElementById('auth-email') || {}).value;
-    var password = (document.getElementById('auth-password') || {}).value;
-    var nameEl = document.getElementById('auth-name');
-    var name = nameEl ? nameEl.value.trim() : '';
-    var a = tr();
-    var isEs = lang() === 'es';
-
-    if (!email || !password) { alert(isEs ? 'Ingresa tu correo y contraseña.' : 'Enter your email and password.'); return; }
-    if (mode === 'signup' && !name) { alert(isEs ? 'Ingresa tu nombre completo.' : 'Enter your full name.'); return; }
-    if (mode === 'signup' && !(document.getElementById('auth-terms') || {}).checked) {
-      alert(isEs ? 'Debes aceptar los Términos y Condiciones.' : 'You must accept the Terms & Conditions.');
-      return;
-    }
-
-    var btn = document.getElementById('auth-email-btn');
-    btn.disabled = true; btn.textContent = '...';
-
-    try {
-      var userCredential;
-      if (mode === 'signup') {
-        userCredential = await auth.createUserWithEmailAndPassword(email, password);
-        await userCredential.user.updateProfile({ displayName: name });
-        // Force token refresh so displayName is included
-        await userCredential.user.getIdToken(true);
-      } else {
-        userCredential = await auth.signInWithEmailAndPassword(email, password);
-      }
-      onAuthSuccess();
-    } catch (err) {
-      btn.disabled = false;
-      btn.textContent = mode === 'login' ? (a.loginBtn || 'Iniciar sesión') : (a.signupBtn || 'Crear cuenta');
-      alert(firebaseErrorMessage(err.code));
-    }
   };
 
   // ─── Google Auth ──────────────────────────────────────────────────────────
@@ -351,6 +290,15 @@
         await user.updateProfile({ displayName: nameInput.value.trim() });
         await user.getIdToken(true);
       }
+      // Wait briefly for syncWithBackend (triggered by onAuthStateChanged) to settle
+      window.__syncError = null;
+      await new Promise(function (resolve) { setTimeout(resolve, 800); });
+      if (window.__syncError && window.__syncError.code === 'phone_exists') {
+        if (auth) { try { await auth.signOut(); } catch (_) {} }
+        btn.disabled = false; btn.textContent = tr().verify || 'Verificar';
+        alert(window.__syncError.message || (isEs ? 'Este número ya está registrado con otra cuenta.' : 'This phone is already registered under a different account.'));
+        return;
+      }
       onAuthSuccess();
     } catch (err) {
       btn.disabled = false; btn.textContent = tr().verify || 'Verificar';
@@ -364,23 +312,6 @@
     var btn = document.getElementById('send-otp-btn');
     if (btn) { btn.disabled = false; btn.textContent = tr().sendCode || 'Enviar código'; }
     setupRecaptchaInner();
-  };
-
-  // ─── Forgot Password ─────────────────────────────────────────────────────
-  window.handleForgotPassword = async function () {
-    var ok = await ensureFirebase();
-    if (!ok) return;
-
-    var email = (document.getElementById('auth-email') || {}).value.trim();
-    var isEs = lang() === 'es';
-    if (!email) { alert(isEs ? 'Ingresa tu correo electrónico primero.' : 'Enter your email first.'); return; }
-
-    try {
-      await auth.sendPasswordResetEmail(email);
-      alert(isEs ? 'Te enviamos un correo para restablecer tu contraseña.' : 'We sent you an email to reset your password.');
-    } catch (err) {
-      alert(firebaseErrorMessage(err.code));
-    }
   };
 
   // ─── Logout ───────────────────────────────────────────────────────────────
@@ -400,12 +331,6 @@
   function firebaseErrorMessage(code) {
     var isEs = lang() === 'es';
     var map = {
-      'auth/email-already-in-use':       isEs ? 'Este correo ya está registrado. Inicia sesión.' : 'Email already registered. Please log in.',
-      'auth/invalid-email':              isEs ? 'Correo electrónico inválido.' : 'Invalid email address.',
-      'auth/weak-password':              isEs ? 'La contraseña debe tener al menos 6 caracteres.' : 'Password must be at least 6 characters.',
-      'auth/user-not-found':             isEs ? 'No existe una cuenta con este correo.' : 'No account found with this email.',
-      'auth/wrong-password':             isEs ? 'Contraseña incorrecta.' : 'Incorrect password.',
-      'auth/invalid-credential':         isEs ? 'Correo o contraseña incorrectos.' : 'Invalid email or password.',
       'auth/too-many-requests':          isEs ? 'Demasiados intentos. Intenta más tarde.' : 'Too many attempts. Try again later.',
       'auth/invalid-phone-number':       isEs ? 'Número de teléfono inválido.' : 'Invalid phone number.',
       'auth/invalid-verification-code':  isEs ? 'Código incorrecto.' : 'Incorrect code.',
@@ -417,7 +342,7 @@
     return map[code] || (isEs ? 'Ocurrió un error. Intenta de nuevo.' : 'An error occurred. Please try again.');
   }
 
-  // ─── Session token helper (used by account.html) ─────────────────────────
+  // ─── Session token helper (used by account.html and booking flow) ─────────
   window.getSessionToken = function () {
     try {
       const raw = localStorage.getItem('servi_user_session');

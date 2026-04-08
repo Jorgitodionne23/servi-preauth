@@ -610,12 +610,9 @@
             ${window.__user ? `
               <input class="input-field" id="booking-name" value="${s.clientName || ''}" readonly style="opacity:0.6;cursor:not-allowed">
               <input class="input-field" id="booking-phone" value="${s.clientPhone || ''}" readonly style="opacity:0.6;cursor:not-allowed">
-              <input class="input-field" id="booking-email" type="email" value="${s.clientEmail || ''}" readonly style="opacity:0.6;cursor:not-allowed">
-              <p class="text-muted" style="font-size:13px;margin:0">Información de tu cuenta.</p>
+              <p class="text-muted" style="font-size:13px;margin:0">${lang()==='es'?'Información de tu cuenta.':'From your account.'}</p>
             ` : `
-              <input class="input-field" id="booking-name" placeholder="${tr.namePlaceholder}" value="${s.clientName}" oninput="window.bookingState.clientName=this.value">
-              <input class="input-field" id="booking-phone" placeholder="${tr.phonePlaceholder}" value="${s.clientPhone}" oninput="window.bookingState.clientPhone=this.value">
-              <input class="input-field" id="booking-email" type="email" placeholder="${tr.emailPlaceholder}" value="${s.clientEmail}" oninput="window.bookingState.clientEmail=this.value">
+              <p style="font-size:14px;color:#666;margin:0">${lang()==='es'?'Necesitas iniciar sesión para confirmar tu solicitud.':'You need to sign in to confirm your request.'}</p>
             `}
           </div>
         </div>
@@ -665,18 +662,23 @@
   };
 
   window.submitBooking = function () {
-    const s = window.bookingState;
-    s.clientName = document.getElementById('booking-name')?.value || s.clientName;
-    s.clientPhone = document.getElementById('booking-phone')?.value || s.clientPhone;
-    s.clientEmail = document.getElementById('booking-email')?.value || s.clientEmail;
-    s.address = document.getElementById('booking-address')?.value || s.address;
-
-    if (!s.clientName || !s.clientPhone || !s.address || !s.clientEmail) {
-      alert(lang() === 'es' ? 'Por favor completa tu nombre, teléfono, dirección y correo electrónico.' : 'Please fill in your name, phone, address, and email.');
+    // Auth gate: must be logged in to confirm a booking
+    if (!window.__user) {
+      // Save any typed values before opening auth modal
+      const s = window.bookingState;
+      s.address = document.getElementById('booking-address')?.value || s.address;
+      window.openAuthModal('login');
       return;
     }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.clientEmail)) {
-      alert(lang() === 'es' ? 'Por favor ingresa un correo electrónico válido.' : 'Please enter a valid email address.');
+
+    const s = window.bookingState;
+    s.clientName = window.__user.name || s.clientName;
+    s.clientPhone = window.__user.phone || s.clientPhone;
+    s.clientEmail = window.__user.email || s.clientEmail;
+    s.address = document.getElementById('booking-address')?.value || s.address;
+
+    if (!s.clientName || !s.clientPhone || !s.address) {
+      alert(lang() === 'es' ? 'Por favor completa tu nombre, teléfono y dirección.' : 'Please fill in your name, phone, and address.');
       return;
     }
 
