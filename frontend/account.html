@@ -297,6 +297,8 @@ const TX = {
     errWrongPassword: 'Contraseña actual incorrecta.',
     errConflict: 'Ese correo o teléfono ya está en uso.',
     errGeneric: 'Ocurrió un error. Inténtalo de nuevo.',
+    errDeleteFailed: 'No se pudo eliminar la cuenta. Intenta de nuevo.',
+    phName: 'Tu nombre', phAddrLabel: 'Casa, Trabajo...', phAddrStreet: 'Calle, número ext/int', phAddrCity: 'Ciudad de México', phAddrState: 'CDMX',
   },
   en: {
     pageTitle: 'My account',
@@ -326,6 +328,8 @@ const TX = {
     errWrongPassword: 'Current password is incorrect.',
     errConflict: 'That email or phone is already in use.',
     errGeneric: 'An error occurred. Please try again.',
+    errDeleteFailed: 'Could not delete account. Please try again.',
+    phName: 'Your name', phAddrLabel: 'Home, Work...', phAddrStreet: 'Street, ext/int number', phAddrCity: 'City', phAddrState: 'State',
   }
 };
 function tr() { return TX[isEs() ? 'es' : 'en']; }
@@ -747,7 +751,8 @@ function confirmDeleteAccount() {
     <div class="confirm-box">
       <h3>${t.confirmDeleteTitle}</h3>
       <p>${t.confirmDeleteBody}</p>
-      <input class="form-input" id="delete-confirm-input" placeholder="${t.confirmDeletePlaceholder}" style="margin-bottom:18px">
+      <input class="form-input" id="delete-confirm-input" placeholder="${t.confirmDeletePlaceholder}" style="margin-bottom:12px">
+      <div id="delete-modal-error" style="font-size:13px;color:#dc2626;margin-bottom:12px;min-height:16px"></div>
       <div class="confirm-row">
         <button class="confirm-cancel" onclick="this.closest('.confirm-overlay').remove()">${t.cancelBtn}</button>
         <button class="confirm-ok" onclick="executeDeleteAccount(this)">${t.confirmDeleteBtn}</button>
@@ -761,18 +766,25 @@ async function executeDeleteAccount(btn) {
   const t = tr();
   const expected = isEs() ? 'ELIMINAR' : 'DELETE';
   const val = document.getElementById('delete-confirm-input')?.value?.trim();
+  const errEl = document.getElementById('delete-modal-error');
   if (val !== expected) {
     document.getElementById('delete-confirm-input').style.borderColor = '#dc2626';
     return;
   }
   btn.disabled = true; btn.textContent = '...';
+  if (errEl) errEl.textContent = '';
   try {
     const res = await fetch(API + '/api/auth/me', { method: 'DELETE', headers: authHeaders() });
-    if (!res.ok) { btn.disabled = false; btn.textContent = t.confirmDeleteBtn; return; }
+    if (!res.ok) {
+      btn.disabled = false; btn.textContent = t.confirmDeleteBtn;
+      if (errEl) errEl.textContent = t.errDeleteFailed;
+      return;
+    }
     if (window.logoutUser) await window.logoutUser();
     window.location.replace('/');
   } catch {
     btn.disabled = false; btn.textContent = t.confirmDeleteBtn;
+    if (errEl) errEl.textContent = t.errDeleteFailed;
   }
 }
 
@@ -781,6 +793,7 @@ function applyTranslations() {
   const t = tr();
   document.title = 'SERVI — ' + t.pageTitle;
   const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+  const ph = (id, val) => { const el = document.getElementById(id); if (el) el.placeholder = val; };
   set('title-info', t.titleInfo);       set('sub-info', t.subInfo);
   set('title-security', t.titleSecurity); set('sub-security', t.subSecurity);
   set('title-addresses', t.titleAddresses); set('sub-addresses', t.subAddresses);
@@ -797,6 +810,10 @@ function applyTranslations() {
   set('add-addr-btn', document.getElementById('add-addr-form')?.classList.contains('open') ? t.cancel : t.addAddr);
   set('delete-btn', t.deleteBtn);
   set('security-no-pw-text', t.noPwMsg);
+  set('info-success-text', t.saved);    set('sec-success-text', t.pwChanged);
+  ph('info-name', t.phName);
+  ph('addr-label', t.phAddrLabel);      ph('addr-street', t.phAddrStreet);
+  ph('addr-city', t.phAddrCity);        ph('addr-state', t.phAddrState);
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
@@ -823,7 +840,7 @@ document.addEventListener('DOMContentLoaded', () => {
   waitForUser(20); // 20 × 100ms = 2s, enough for Firebase to resolve
 
   // Re-apply translations if language changes
-  window.addEventListener('servi-lang-change', () => {
+  window.addEventListener('langchange', () => {
     applyTranslations();
     buildNav();
     renderAddresses();
