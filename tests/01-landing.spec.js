@@ -30,10 +30,10 @@ test('1.3 No email/password option in auth modal', async ({ page }) => {
   await page.waitForSelector('#auth-modal-global .modal-overlay', { timeout: 5000 });
   // Should have Google button
   await expect(page.locator('#google-auth-btn')).toBeVisible();
-  // Should NOT have email input
-  await expect(page.locator('input[type="email"]')).toHaveCount(0);
-  // Should have phone input
-  await expect(page.locator('#auth-phone-number')).toBeVisible();
+  // Should have single identifier input (USL flow)
+  await expect(page.locator('#auth-identifier')).toBeVisible();
+  // Should have country code dropdown
+  await expect(page.locator('#auth-country-code')).toBeVisible();
   // Should NOT have password input
   await expect(page.locator('input[type="password"]')).toHaveCount(0);
 });
@@ -42,10 +42,10 @@ test('1.4 Auth modal closes on overlay click', async ({ page }) => {
   await page.goto('/');
   await page.locator('button', { hasText: /Iniciar sesión|Log in/i }).first().click();
   await page.waitForSelector('#auth-modal-global .modal-overlay', { timeout: 5000 });
-  await expect(page.locator('#auth-phone-number')).toBeVisible();
+  await expect(page.locator('#auth-identifier')).toBeVisible();
   // Click the overlay (outside the modal content)
   await page.locator('.modal-overlay').click({ position: { x: 5, y: 5 } });
-  await expect(page.locator('#auth-phone-number')).not.toBeVisible();
+  await expect(page.locator('#auth-identifier')).not.toBeVisible();
 });
 
 test('1.5 Language toggle switches ES→EN on landing', async ({ page }) => {

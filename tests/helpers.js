@@ -70,6 +70,9 @@ export async function injectFakeSession(page, user = {}) {
       },
       signInWithPopup: async function() { return { user: FAKE_USER }; },
       signInWithPhoneNumber: async function() { return { confirm: async () => ({ user: FAKE_USER }) }; },
+      sendSignInLinkToEmail: async function() {},
+      isSignInWithEmailLink: function() { return false; },
+      signInWithEmailLink: async function() { return { user: FAKE_USER }; },
     };
     return inst;
   }

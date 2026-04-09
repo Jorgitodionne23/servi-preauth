@@ -659,7 +659,7 @@ function applyCorsHeaders(req, res) {
   res.header('Access-Control-Allow-Origin', req.headers.origin);
   res.header('Vary', 'Origin');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Servi-Admin-Token');
-  res.header('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.header('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,OPTIONS');
   res.header('Access-Control-Allow-Credentials', 'true');
   return true;
 }
@@ -4499,6 +4499,34 @@ app.get('/api/auth/me', async (req, res) => {
 app.post('/api/auth/social', publicFormLimit, (req, res) => {
   console.warn('[POST /api/auth/social] deprecated endpoint called from', req.ip);
   return res.status(410).json({ error: 'deprecated', message: 'Use Firebase auth instead.' });
+});
+
+// POST /api/auth/check-identifier — USL flow: check if phone or email already has an account
+app.post('/api/auth/check-identifier', publicFormLimit, async (req, res) => {
+  try {
+    const { identifier } = req.body || {};
+    if (!identifier) return res.status(400).json({ error: 'missing_identifier' });
+
+    const isEmail = identifier.includes('@');
+    let exists = false;
+
+    if (isEmail) {
+      const emailNorm = identifier.toLowerCase().trim();
+      const { rows } = await pool.query('SELECT id FROM auth_users WHERE email = $1', [emailNorm]);
+      exists = rows.length > 0;
+    } else {
+      const phoneNorm = normalizePhoneToE164(identifier);
+      if (phoneNorm) {
+        const { rows } = await pool.query('SELECT id FROM auth_users WHERE phone = $1', [phoneNorm]);
+        exists = rows.length > 0;
+      }
+    }
+
+    return res.json({ exists });
+  } catch (err) {
+    console.error('[POST /api/auth/check-identifier]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
 });
 
 // --- Firebase Auth: verify ID token and sync user record ---

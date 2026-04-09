@@ -695,6 +695,10 @@ async function openAddPaymentModal() {
 
   if (!_stripe) _stripe = Stripe(window.CONFIG?.STRIPE_PUBLISHABLE_KEY);
 
+  const confirmBtn = document.getElementById('pm-confirm-btn');
+  const confirmLbl = document.getElementById('pm-confirm-label');
+  if (confirmBtn) { confirmBtn.disabled = true; }
+
   try {
     const res = await fetch(API + '/api/auth/payment-methods/setup', { method: 'POST', headers: authHeaders() });
     if (!res.ok) throw new Error('setup_failed');
@@ -704,10 +708,16 @@ async function openAddPaymentModal() {
       clientSecret: _pmSetupSecret,
       appearance: { theme: 'stripe', variables: { fontFamily: '"DM Sans", sans-serif', borderRadius: '12px', colorPrimary: '#10b981' } }
     });
-    _pmElements.create('payment').mount('#payment-element-mount');
+    const paymentEl = _pmElements.create('payment');
+    // Enable confirm button only once element is fully mounted and ready
+    paymentEl.on('ready', function () {
+      if (confirmBtn) { confirmBtn.disabled = false; }
+    });
+    paymentEl.mount('#payment-element-mount');
   } catch {
     const errEl = document.getElementById('pm-modal-error');
     if (errEl) { errEl.textContent = tr().errGeneric; errEl.style.display = 'block'; }
+    if (confirmBtn) { confirmBtn.disabled = false; }
   }
 }
 

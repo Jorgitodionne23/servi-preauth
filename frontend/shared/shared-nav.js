@@ -42,9 +42,13 @@
       ? ' <span style="color:#888;font-weight:400;font-size:16px;margin-left:4px">| Partner</span>'
       : '';
 
+    const onHome = (window.location.pathname === '/' || window.location.pathname === '/index.html');
     const linksHTML = links.map(l => {
       if (l.anchor) {
-        return `<a class="nav-link" onclick="document.getElementById('${l.anchor}')?.scrollIntoView({behavior:'smooth'})">${l.label}</a>`;
+        if (onHome) {
+          return `<a class="nav-link" style="cursor:pointer" onclick="document.getElementById('${l.anchor}')?.scrollIntoView({behavior:'smooth'})">${l.label}</a>`;
+        }
+        return `<a class="nav-link" href="/index.html#${l.anchor}">${l.label}</a>`;
       }
       const label = l.i18n ? l.i18n[lang] : l.label;
       return `<a class="nav-link" href="${l.href}">${label}</a>`;

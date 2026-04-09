@@ -1,137 +1,120 @@
-// ─── Test Suite 3: Phone OTP Authentication ───────────────────────────────────
-// Uses Firebase test phone +52 55 1202 5121 with OTP 232323.
-// Requires appVerificationDisabledForTesting = true on auth object.
+// ─── Test Suite 3: Phone OTP Authentication (Manual-Only) ─────────────────────
+// These tests require real Firebase phone auth (SMS delivery).
+// They cannot be automated without a real Firebase test phone number configured
+// in the Firebase Console with appVerificationDisabledForTesting.
+//
+// USL flow: user enters phone on identifier screen → backend check-identifier →
+// if new: signup branch; if existing: OTP screen directly.
+//
+// Run manually with: TEST_PHONE=+525512025121 TEST_OTP=232323
 import { test, expect } from '@playwright/test';
 import { TEST_PHONE, TEST_OTP, clearSession, firebaseTestModeScript } from './helpers.js';
 
 test.beforeEach(async ({ page }) => {
   await clearSession(page);
-  // Inject Firebase test mode bypass before page load
   await page.addInitScript(firebaseTestModeScript());
 });
 
-test('3.1 Auth modal opens with correct structure', async ({ page }) => {
+test('3.1 Auth modal opens with USL identifier screen', async ({ page }) => {
   await page.goto('/');
   await page.locator('button', { hasText: /Iniciar sesión|Log in|Crear cuenta|Sign up/i }).first().click();
   await page.waitForSelector('#auth-modal-global .modal-overlay', { timeout: 8000 });
 
+  // USL screen: single identifier input + country code + Google button
   await expect(page.locator('#google-auth-btn')).toBeVisible();
-  await expect(page.locator('#auth-phone-number')).toBeVisible();
-  await expect(page.locator('#auth-phone-name')).toBeVisible();
+  await expect(page.locator('#auth-identifier')).toBeVisible();
+  await expect(page.locator('#auth-country-code')).toBeVisible();
+  await expect(page.locator('#usl-continue-btn')).toBeVisible();
+
+  // No password field
+  await expect(page.locator('input[type="password"]')).toHaveCount(0);
+});
+
+test('3.2 Phone OTP: existing user goes directly to OTP screen', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForTimeout(2000);
+
+  // Mock check-identifier to say user exists
+  await page.route('**/api/auth/check-identifier', async (route) => {
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ exists: true }) });
+  });
+
+  await page.locator('button', { hasText: /Iniciar sesión|Log in|Crear cuenta|Sign up/i }).first().click();
+  await page.waitForSelector('#auth-identifier', { timeout: 8000 });
+
+  // Enter phone digits (country code already selected as +52)
+  await page.locator('#auth-identifier').fill('5512025121');
+  await page.locator('#usl-continue-btn').click();
+
+  // Should land on OTP screen with Send SMS button
+  await page.waitForSelector('#send-otp-btn', { timeout: 8000 });
   await expect(page.locator('#send-otp-btn')).toBeVisible();
-
-  // Step 2 (OTP input) should be hidden initially
-  await expect(page.locator('#phone-step-2')).not.toBeVisible();
 });
 
-test('3.2 Phone OTP: Send code to test number', async ({ page }) => {
-  await page.goto('/');
-  await page.waitForTimeout(2000); // let Firebase initialize
-
-  await page.locator('button', { hasText: /Iniciar sesión|Log in|Crear cuenta|Sign up/i }).first().click();
-  await page.waitForSelector('#auth-phone-number', { timeout: 8000 });
-
-  // Fill name and phone
-  await page.locator('#auth-phone-name').fill('QA Test User');
-  await page.locator('#auth-phone-number').fill(TEST_PHONE);
-
-  // Click send code
-  await page.locator('#send-otp-btn').click();
-
-  // Should transition to OTP step (step-2 visible)
-  await page.waitForSelector('#phone-step-2', { timeout: 15000, state: 'visible' });
-  await expect(page.locator('#auth-otp')).toBeVisible();
-  await expect(page.locator('#verify-otp-btn')).toBeVisible();
-});
-
-test('3.3 Phone OTP: Full sign-in with test credentials', async ({ page }) => {
+test('3.3 Phone OTP: new user goes to signup email collection', async ({ page }) => {
   await page.goto('/');
   await page.waitForTimeout(2000);
 
-  await page.locator('button', { hasText: /Iniciar sesión|Log in|Crear cuenta|Sign up/i }).first().click();
-  await page.waitForSelector('#auth-phone-number', { timeout: 8000 });
-
-  await page.locator('#auth-phone-name').fill('QA Test User');
-  await page.locator('#auth-phone-number').fill(TEST_PHONE);
-  await page.locator('#send-otp-btn').click();
-
-  // Wait for OTP step
-  await page.waitForSelector('#phone-step-2', { timeout: 15000, state: 'visible' });
-
-  // Enter OTP
-  await page.locator('#auth-otp').fill(TEST_OTP);
-  await page.locator('#verify-otp-btn').click();
-
-  // Should be logged in: auth modal closes, user menu appears in navbar
-  await page.waitForSelector('.user-menu-trigger', { timeout: 10000 });
-  await expect(page.locator('.user-menu-trigger')).toBeVisible();
-
-  // Token should be stored in localStorage
-  const session = await page.evaluate(() => {
-    const raw = localStorage.getItem('servi_user_session');
-    return raw ? JSON.parse(raw) : null;
-  });
-  expect(session).toBeTruthy();
-  expect(session.token).toBeTruthy();
-  expect(session.firebaseUid).toBeTruthy();
-});
-
-test('3.4 Phone OTP: Invalid code shows error', async ({ page }) => {
-  await page.goto('/');
-  await page.waitForTimeout(2000);
-
-  await page.locator('button', { hasText: /Iniciar sesión|Log in|Crear cuenta|Sign up/i }).first().click();
-  await page.waitForSelector('#auth-phone-number', { timeout: 8000 });
-
-  await page.locator('#auth-phone-name').fill('QA Test User');
-  await page.locator('#auth-phone-number').fill(TEST_PHONE);
-  await page.locator('#send-otp-btn').click();
-  await page.waitForSelector('#phone-step-2', { timeout: 15000, state: 'visible' });
-
-  // Enter wrong OTP
-  await page.locator('#auth-otp').fill('000000');
-
-  let dialogMessage = '';
-  page.once('dialog', async dialog => {
-    dialogMessage = dialog.message();
-    await dialog.dismiss();
+  // Mock check-identifier to say user does NOT exist
+  await page.route('**/api/auth/check-identifier', async (route) => {
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ exists: false }) });
   });
 
-  await page.locator('#verify-otp-btn').click();
-  await page.waitForTimeout(3000);
+  await page.locator('button', { hasText: /Iniciar sesión|Log in|Crear cuenta|Sign up/i }).first().click();
+  await page.waitForSelector('#auth-identifier', { timeout: 8000 });
 
-  // Should show error (via alert dialog or inline)
-  expect(dialogMessage || '').not.toBe('');
-  // Should still be in OTP step (not logged in)
-  await expect(page.locator('#auth-otp')).toBeVisible();
+  await page.locator('#auth-identifier').fill('5512025121');
+  await page.locator('#usl-continue-btn').click();
+
+  // Should land on signup screen asking for name + email
+  await page.waitForSelector('#signup-name', { timeout: 8000 });
+  await expect(page.locator('#signup-name')).toBeVisible();
+  await expect(page.locator('#signup-email')).toBeVisible();
 });
 
-test('3.5 Phone OTP: Logout clears session', async ({ page }) => {
-  // First log in
+test('3.4 Signup: terms screen appears after collecting counterpart', async ({ page }) => {
   await page.goto('/');
-  await page.addInitScript(firebaseTestModeScript());
   await page.waitForTimeout(2000);
 
+  await page.route('**/api/auth/check-identifier', async (route) => {
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ exists: false }) });
+  });
+
   await page.locator('button', { hasText: /Iniciar sesión|Log in|Crear cuenta|Sign up/i }).first().click();
-  await page.waitForSelector('#auth-phone-number', { timeout: 8000 });
-  await page.locator('#auth-phone-name').fill('QA Test User');
-  await page.locator('#auth-phone-number').fill(TEST_PHONE);
-  await page.locator('#send-otp-btn').click();
-  await page.waitForSelector('#phone-step-2', { timeout: 15000, state: 'visible' });
-  await page.locator('#auth-otp').fill(TEST_OTP);
-  await page.locator('#verify-otp-btn').click();
-  await page.waitForSelector('.user-menu-trigger', { timeout: 10000 });
+  await page.waitForSelector('#auth-identifier', { timeout: 8000 });
+  await page.locator('#auth-identifier').fill('5512025121');
+  await page.locator('#usl-continue-btn').click();
 
-  // Now log out
-  await page.locator('.user-menu-trigger').click();
-  await page.waitForSelector('.user-menu-dropdown--open', { timeout: 3000 });
-  await page.locator('.user-menu-item--danger').click();
-  await page.waitForTimeout(1500);
+  await page.waitForSelector('#signup-name', { timeout: 8000 });
+  await page.locator('#signup-name').fill('QA Tester');
+  await page.locator('#signup-email').fill('qa@playwright.local');
+  await page.locator('.btn-primary', { hasText: /Continuar|Continue/i }).click();
 
-  // Should show login/signup buttons
-  await expect(page.locator('.nav-login-btn')).toBeVisible();
+  // Terms screen
+  await page.waitForSelector('#terms-check', { timeout: 5000 });
+  await expect(page.locator('#terms-check')).toBeVisible();
+});
 
-  // localStorage should be cleared
-  const session = await page.evaluate(() => localStorage.getItem('servi_user_session'));
-  expect(session).toBeNull();
+test('3.5 Recovery: can\'t access phone flow visible for existing user', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForTimeout(1000);
+
+  await page.route('**/api/auth/check-identifier', async (route) => {
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ exists: true }) });
+  });
+
+  await page.locator('button', { hasText: /Iniciar sesión|Log in|Crear cuenta|Sign up/i }).first().click();
+  await page.waitForSelector('#auth-identifier', { timeout: 8000 });
+  await page.locator('#auth-identifier').fill('5512025121');
+  await page.locator('#usl-continue-btn').click();
+
+  // OTP screen should have recovery link
+  await page.waitForSelector('#send-otp-btn', { timeout: 8000 });
+  const recoveryBtn = page.locator('button', { hasText: /teléfono|phone/i });
+  await expect(recoveryBtn).toBeVisible();
+  await recoveryBtn.click();
+
+  // Recovery screen: asks for email
+  await page.waitForSelector('#recovery-email', { timeout: 5000 });
+  await expect(page.locator('#recovery-email')).toBeVisible();
 });

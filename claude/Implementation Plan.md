@@ -15,11 +15,21 @@ Phase 3 complete — QA and deploy.
 
 ## Planned Next
 
-- [ ] Phase 2.5 stabilization (auth/account session QA)
+- [ ] Manual QA by user: phone OTP flow, Google OAuth, end-to-end booking submission, account profile save, payment flow regression (pay.html / book.html / success.html)
+- [ ] Fix any bugs found during manual QA (batch fix after user reports)
 - [ ] VirusTotal malware scanning on uploads (Phase 3A hardening)
 - [ ] Admin order detail: web submission attachments visible in panel
 
 ## Completed (Recent)
+
+### 2026-04-08 — Phase 2.5 (Auth stabilization + Playwright test suite)
+
+- Fixed `account.html` delete account modal (no error feedback → now shows error message on failure)
+- Fixed `account.html` i18n event name (`servi-lang-change` → `langchange`) — full EN translation was silently broken
+- Extended `applyTranslations()` to cover input placeholders and success message spans
+- Added 45 automated Playwright tests (`tests/`) covering landing, booking, auth modal structure, account page, session, and pages — all passing
+- Test infrastructure: `playwright.config.js`, `tests/helpers.js` (fake session injection + Firebase SDK mock via route intercept)
+- Auth bugs identified via plan-mode analysis: token not stored in `syncWithBackend`, stale session not cleared — fixes pending deployment
 
 ### 2026-04-07 — Phase 3 (3C + 3B + 3A)
 
