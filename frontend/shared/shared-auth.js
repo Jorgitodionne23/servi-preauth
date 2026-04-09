@@ -368,10 +368,9 @@
     );
     setScreen(
       '<p style="font-size:14px;color:#666;margin-bottom:16px">' +
-        (es ? 'Número confirmado. Ahora ingresa tu correo y nombre.' : 'Phone confirmed. Now enter your email and name.') +
+        (es ? 'Número confirmado. Ahora ingresa tu correo.' : 'Phone confirmed. Now enter your email.') +
       '</p>' +
       errorBox() +
-      '<input class="input-field" id="signup-name" placeholder="' + (es ? 'Nombre completo' : 'Full name') + '" style="margin-bottom:12px">' +
       '<input class="input-field" id="signup-email" type="email" placeholder="' + (es ? 'Correo electrónico' : 'Email address') + '" style="margin-bottom:12px">' +
       '<button class="btn-primary" onclick="window.__uslSignupEmailNext()" style="width:100%;justify-content:center;margin-bottom:12px">' +
         (es ? 'Continuar' : 'Continue') +
@@ -386,10 +385,9 @@
     );
     setScreen(
       '<p style="font-size:14px;color:#666;margin-bottom:16px">' +
-        (es ? 'Correo confirmado. Ahora ingresa tu nombre y teléfono para verificar tu identidad.' : 'Email confirmed. Now enter your name and phone to verify your identity.') +
+        (es ? 'Correo confirmado. Ahora ingresa tu teléfono para verificar tu identidad.' : 'Email confirmed. Now enter your phone to verify your identity.') +
       '</p>' +
       errorBox() +
-      '<input class="input-field" id="signup-name" placeholder="' + (es ? 'Nombre completo' : 'Full name') + '" style="margin-bottom:12px">' +
       '<div style="display:flex;margin-bottom:12px;border:1.5px solid #e8e8e8;border-radius:10px;overflow:hidden">' +
         countrySelect() +
         '<input id="signup-phone" type="tel" inputmode="numeric" placeholder="55 1234 5678" ' +
@@ -404,23 +402,17 @@
   }
 
   window.__uslSignupEmailNext = function () {
-    var name = (document.getElementById('signup-name') || {}).value.trim();
     var email = (document.getElementById('signup-email') || {}).value.trim();
     var es = isEs();
-    if (!name) { setError(es ? 'Ingresa tu nombre.' : 'Enter your name.'); return; }
     if (!email || !email.includes('@')) { setError(es ? 'Ingresa un correo válido.' : 'Enter a valid email.'); return; }
-    uslNewUserData.name = name;
     uslNewUserData.email = email;
     renderTermsScreen();
   };
 
   window.__uslSignupPhoneNext = function () {
-    var name = (document.getElementById('signup-name') || {}).value.trim();
     var digits = (document.getElementById('signup-phone') || {}).value.replace(/\D/g, '');
     var es = isEs();
-    if (!name) { setError(es ? 'Ingresa tu nombre.' : 'Enter your name.'); return; }
     if (!digits) { setError(es ? 'Ingresa tu teléfono.' : 'Enter your phone.'); return; }
-    uslNewUserData.name = name;
     uslNewUserData.phone = selectedDial + digits;
     uslIdentifier = uslNewUserData.phone;
     uslIdentifierType = 'phone';
