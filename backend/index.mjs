@@ -51,7 +51,9 @@ if (!firebaseAdmin.apps.length) {
 }
 
 // --- Auth Helpers ---
-const JWT_SECRET = process.env.STRIPE_WEBHOOK_SECRET || process.env.ADMIN_API_TOKEN || 'servi-fallback-auth-secret';
+// Use dedicated JWT_SECRET if available; fall back to existing secrets for backward compat.
+// TODO: Set JWT_SECRET as a dedicated env var on Render to decouple from Stripe webhook secret rotation.
+const JWT_SECRET = process.env.JWT_SECRET || process.env.STRIPE_WEBHOOK_SECRET || process.env.ADMIN_API_TOKEN || 'servi-fallback-auth-secret';
 
 function signSessionToken(payload) {
   const now = Math.floor(Date.now() / 1000);
@@ -4711,7 +4713,24 @@ app.delete('/api/auth/me', publicFormLimit, async (req, res) => {
   const payload = requireUserAuth(req, res);
   if (!payload) return;
   try {
+    // Fetch firebase_uid before deleting the row
+    const { rows } = await pool.query('SELECT firebase_uid FROM auth_users WHERE id = $1', [payload.user_id]);
+    const firebaseUid = rows[0]?.firebase_uid;
+
+    // Delete user addresses and then the user record
+    await pool.query('DELETE FROM user_addresses WHERE user_id = $1', [payload.user_id]);
     await pool.query('DELETE FROM auth_users WHERE id = $1', [payload.user_id]);
+
+    // Delete the Firebase user (best-effort — don't fail the request if this errors)
+    if (firebaseUid) {
+      try {
+        await firebaseAdmin.auth().deleteUser(firebaseUid);
+        console.log('[DELETE /api/auth/me] Firebase user deleted:', firebaseUid);
+      } catch (fbErr) {
+        console.warn('[DELETE /api/auth/me] Firebase user deletion failed (non-blocking):', fbErr.code || fbErr.message);
+      }
+    }
+
     return res.json({ ok: true });
   } catch (err) {
     console.error('[DELETE /api/auth/me]', err);

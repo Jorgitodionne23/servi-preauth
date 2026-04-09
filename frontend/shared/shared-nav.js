@@ -151,8 +151,11 @@
         if (parts.length === 3) {
           tokenPayload = JSON.parse(atob(parts[1].replace(/-/g,'+').replace(/_/g,'/')));
           if (tokenPayload.exp && Date.now() / 1000 > tokenPayload.exp) {
+            // Token expired — clear session. Firebase onAuthStateChanged will
+            // attempt to re-sync if the Firebase session is still valid.
             localStorage.removeItem('servi_user_session');
             window.__user = null;
+            window.__sessionExpired = true;
             return;
           }
         }

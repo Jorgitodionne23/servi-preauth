@@ -77,6 +77,13 @@
       auth = firebase.auth();
       auth.languageCode = lang();
       firebaseReady = true;
+
+      // Complete any pending logout from a previous page where Firebase wasn't loaded
+      if (localStorage.getItem('servi_pending_logout')) {
+        localStorage.removeItem('servi_pending_logout');
+        try { await auth.signOut(); } catch (_) {}
+      }
+
       auth.onAuthStateChanged(onAuthStateChanged);
       return true;
     } catch (err) {
@@ -86,21 +93,30 @@
   }
 
   // ─── Auth state listener ──────────────────────────────────────────────────
+  // onAuthStateChanged sets a temporary window.__user for navbar display but
+  // does NOT persist to localStorage until syncWithBackend succeeds with a JWT.
+  // Callers (OTP verify, Google auth) must await window.__syncPromise before
+  // calling onAuthSuccess to ensure the backend token is stored.
   function onAuthStateChanged(firebaseUser) {
     if (firebaseUser) {
+      // Temporary user for navbar — not persisted yet
       window.__user = {
         id: firebaseUser.uid,
         email: firebaseUser.email,
         name: firebaseUser.displayName,
         phone: firebaseUser.phoneNumber,
       };
-      localStorage.setItem('servi_user_session', JSON.stringify({ user: window.__user, firebaseUid: firebaseUser.uid }));
       window.__syncError = null;
-      syncWithBackend(firebaseUser);
+      window.__syncPromise = syncWithBackend(firebaseUser);
     } else {
+      // Signed out — if a pending logout flag exists, don't re-trigger
+      if (localStorage.getItem('servi_pending_logout')) {
+        localStorage.removeItem('servi_pending_logout');
+      }
       window.__user = null;
       localStorage.removeItem('servi_user_session');
       window.__syncError = null;
+      window.__syncPromise = null;
     }
     if (window.buildNavbar) window.buildNavbar();
   }
@@ -115,14 +131,17 @@
       });
       if (res.ok) {
         var data = await res.json();
-        if (data.user) {
+        if (data.user && data.token) {
           window.__user = Object.assign({}, window.__user, data.user);
           localStorage.setItem('servi_user_session', JSON.stringify({
-            token: data.token || null,
+            token: data.token,
             user: window.__user,
             firebaseUid: firebaseUser.uid,
           }));
           if (window.buildNavbar) window.buildNavbar();
+        } else {
+          window.__syncError = { code: 'backend_sync_failed', status: 200 };
+          console.error('[SERVI] Backend sync: missing token or user in response');
         }
       } else {
         var errData = {};
@@ -130,7 +149,7 @@
         if (res.status === 409 && errData.error === 'phone_exists') {
           window.__syncError = { code: 'phone_exists', message: errData.message };
         } else {
-          window.__syncError = { code: 'backend_sync_failed', status: res.status };
+          window.__syncError = { code: 'backend_sync_failed', status: res.status, message: errData.message };
         }
         console.error('[SERVI] Backend sync failed:', res.status, errData);
       }
@@ -138,6 +157,28 @@
       window.__syncError = { code: 'network_error', message: err.message };
       console.error('[SERVI] Backend sync error:', err.message);
     }
+  }
+
+  // Helper: await backend sync, check for errors, handle failure
+  // Returns true if sync succeeded, false if it failed (and shows error + signs out)
+  async function awaitSyncAndCheck() {
+    if (window.__syncPromise) {
+      try { await window.__syncPromise; } catch (_) {}
+    }
+    if (window.__syncError) {
+      var es = isEs();
+      var errMsg;
+      if (window.__syncError.code === 'phone_exists') {
+        errMsg = window.__syncError.message || (es ? 'Este número ya está registrado con otra cuenta.' : 'This phone is already registered with another account.');
+      } else {
+        errMsg = es ? 'Error al conectar con el servidor. Intenta de nuevo.' : 'Error connecting to server. Please try again.';
+      }
+      // Sign out of Firebase since backend rejected
+      if (auth) { try { await auth.signOut(); } catch (_) {} }
+      setError(errMsg);
+      return false;
+    }
+    return true;
   }
 
   // ─── After successful auth ────────────────────────────────────────────────
@@ -510,13 +551,10 @@
         await user.getIdToken(true);
       }
 
-      window.__syncError = null;
-      await new Promise(function (r) { setTimeout(r, 800); });
-
-      if (window.__syncError && window.__syncError.code === 'phone_exists') {
-        if (auth) { try { await auth.signOut(); } catch (_) {} }
+      // Wait for backend sync to complete (replaces fragile 800ms timeout)
+      var syncOk = await awaitSyncAndCheck();
+      if (!syncOk) {
         if (btn) { btn.disabled = false; btn.textContent = es ? 'Verificar' : 'Verify'; }
-        setError(window.__syncError.message || (es ? 'Este número ya está registrado.' : 'This phone is already registered.'));
         return;
       }
       onAuthSuccess();
@@ -674,8 +712,13 @@
       localStorage.removeItem('servi_recovery_mode');
       // Clean URL
       window.history.replaceState({}, document.title, window.location.pathname);
+
+      // Wait for backend sync before proceeding
+      if (window.__syncPromise) {
+        try { await window.__syncPromise; } catch (_) {}
+      }
+
       if (isRecovery) {
-        // Redirect to account page to update phone
         window.location.href = '/account.html?section=security';
       } else {
         onAuthSuccess();
@@ -708,13 +751,24 @@
     var ok = await ensureFirebase();
     if (!ok) { alert('Error loading auth. Please refresh the page.'); return; }
 
+    var btn = document.getElementById('google-auth-btn');
+    if (btn) { btn.disabled = true; btn.style.opacity = '0.6'; }
+
     try {
       var provider = new firebase.auth.GoogleAuthProvider();
       provider.addScope('email');
       provider.addScope('profile');
       await auth.signInWithPopup(provider);
+
+      // Wait for backend sync (triggered by onAuthStateChanged)
+      var syncOk = await awaitSyncAndCheck();
+      if (!syncOk) {
+        if (btn) { btn.disabled = false; btn.style.opacity = ''; }
+        return;
+      }
       onAuthSuccess();
     } catch (err) {
+      if (btn) { btn.disabled = false; btn.style.opacity = ''; }
       if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') return;
       console.error('[SERVI] Google auth error:', err);
       setError(firebaseErrorMessage(err.code));
@@ -737,11 +791,19 @@
   }
 
   // ─── Logout ────────────────────────────────────────────────────────────────
-  // Bug 3 fix: redirect to home when logging out from non-home pages
   window.logoutUser = async function () {
-    try { if (auth) await auth.signOut(); } catch (e) {}
+    // Clear local session first
     window.__user = null;
+    window.__syncPromise = null;
     localStorage.removeItem('servi_user_session');
+
+    // Sign out of Firebase — if SDK isn't loaded, set a flag so next page load completes it
+    if (auth) {
+      try { await auth.signOut(); } catch (e) {}
+    } else {
+      localStorage.setItem('servi_pending_logout', '1');
+    }
+
     var path = window.location.pathname;
     var isHome = (path === '/' || path === '/index.html');
     if (isHome) {
@@ -780,7 +842,33 @@
     } catch { return null; }
   };
 
+  // ─── Session expiry toast ──────────────────────────────────────────────────
+  function showSessionExpiredToast() {
+    if (document.getElementById('servi-session-toast')) return;
+    var es = isEs();
+    var toast = document.createElement('div');
+    toast.id = 'servi-session-toast';
+    toast.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:10000;background:#0a0a0a;color:#fff;padding:12px 24px;border-radius:12px;font-family:"DM Sans",sans-serif;font-size:14px;font-weight:500;box-shadow:0 4px 20px rgba(0,0,0,0.15);display:flex;align-items:center;gap:10px;max-width:90%;animation:fadeInDown 0.3s ease';
+    toast.innerHTML = '<span>' + (es ? 'Tu sesión expiró. Inicia sesión de nuevo.' : 'Your session expired. Please sign in again.') + '</span>' +
+      '<button onclick="this.parentElement.remove()" style="background:none;border:none;color:#888;cursor:pointer;font-size:18px;padding:0 4px">&times;</button>';
+    document.body.appendChild(toast);
+    setTimeout(function () { if (toast.parentElement) toast.remove(); }, 6000);
+  }
+
   // ─── Init ──────────────────────────────────────────────────────────────────
-  ensureFirebase().then(handleEmailLinkSignIn);
+  ensureFirebase().then(function (ok) {
+    handleEmailLinkSignIn();
+
+    // If JWT was expired but Firebase re-authenticated, sync is already in progress.
+    // If Firebase has no session either, show a toast after a short delay.
+    if (window.__sessionExpired) {
+      window.__sessionExpired = false;
+      setTimeout(function () {
+        if (!window.__user) {
+          showSessionExpiredToast();
+        }
+      }, 2500); // Give Firebase onAuthStateChanged time to fire
+    }
+  });
 
 })();

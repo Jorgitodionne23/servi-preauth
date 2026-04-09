@@ -104,10 +104,10 @@
 </head>
 <body>
 <script src="/shared/i18n.js"></script>
-<div id="navbar"></div>
-<script src="/shared/shared-nav.js"></script>
 <script src="/config.js"></script>
 <script src="/shared/shared-auth.js"></script>
+<div id="navbar"></div>
+<script src="/shared/shared-nav.js"></script>
 
 <script src="https://js.stripe.com/v3/"></script>
 
@@ -153,31 +153,11 @@
         <section class="account-section" id="section-security">
           <div class="account-card">
             <div class="section-title" id="title-security">Seguridad</div>
-            <div class="section-sub" id="sub-security">Cambia tu contraseña.</div>
-            <div id="security-no-pw" class="info-box" style="display:none">
-              🔐 <span id="security-no-pw-text">Tu cuenta inicia sesión con Google o teléfono.</span>
+            <div class="section-sub" id="sub-security">Información de acceso a tu cuenta.</div>
+            <div class="info-box" id="security-info">
+              🔐 <span id="security-info-text">Tu cuenta usa inicio de sesión con teléfono o Google. No se requiere contraseña.</span>
             </div>
-            <div id="security-pw-form">
-              <div class="form-group">
-                <label class="form-label" id="lbl-cur-pw">Contraseña actual</label>
-                <input class="form-input" id="sec-current" type="password" placeholder="••••••••">
-              </div>
-              <div class="form-row">
-                <div class="form-group">
-                  <label class="form-label" id="lbl-new-pw">Nueva contraseña</label>
-                  <input class="form-input" id="sec-new" type="password" placeholder="••••••••">
-                </div>
-                <div class="form-group">
-                  <label class="form-label" id="lbl-confirm-pw">Confirmar contraseña</label>
-                  <input class="form-input" id="sec-confirm" type="password" placeholder="••••••••">
-                </div>
-              </div>
-              <button class="btn-save" id="sec-save-btn" onclick="changePassword()">
-                <span id="sec-save-label">Cambiar contraseña</span>
-              </button>
-              <div class="success-msg" id="sec-success">✓ <span id="sec-success-text">Contraseña actualizada.</span></div>
-              <div class="error-msg" id="sec-error"></div>
-            </div>
+            <div style="margin-top:16px;font-size:14px;color:#666;line-height:1.6" id="security-provider-info"></div>
           </div>
         </section>
 
@@ -273,7 +253,7 @@ const TX = {
     pageTitle: 'Mi cuenta',
     navInfo: 'Información personal', navSecurity: 'Seguridad', navAddresses: 'Mis direcciones', navPayments: 'Métodos de pago', navDelete: 'Eliminar cuenta',
     titleInfo: 'Información personal', subInfo: 'Actualiza tu nombre, correo y teléfono.',
-    titleSecurity: 'Seguridad', subSecurity: 'Cambia tu contraseña.',
+    titleSecurity: 'Seguridad', subSecurity: 'Información de acceso a tu cuenta.',
     titleAddresses: 'Mis direcciones', subAddresses: 'Guarda tus domicilios para agilizar tus solicitudes.',
     titlePayments: 'Métodos de pago', subPayments: 'Gestiona tus tarjetas, Apple Pay y Google Pay guardados.',
     addPaymentTitle: 'Agregar método de pago', addPaymentSub: 'Agrega una tarjeta de crédito o débito. Apple Pay y Google Pay se muestran automáticamente si tu dispositivo los soporta.',
@@ -281,20 +261,16 @@ const TX = {
     titleDelete: 'Eliminar cuenta',
     textDelete: 'Esta acción es permanente e irreversible. Se eliminarán tu perfil, direcciones guardadas y toda tu información de la plataforma. Los pedidos y pagos existentes no se verán afectados.',
     lblName: 'Nombre completo', lblEmail: 'Correo electrónico', lblPhone: 'Teléfono',
-    lblCurPw: 'Contraseña actual', lblNewPw: 'Nueva contraseña', lblConfirmPw: 'Confirmar contraseña',
+    securityInfo: 'Tu cuenta usa inicio de sesión con teléfono o Google. No se requiere contraseña.',
+    securityProvider: 'Método de acceso:',
     lblAddrLabel: 'Etiqueta (opcional)', lblAddrStreet: 'Calle y número *', lblAddrCity: 'Ciudad', lblAddrState: 'Estado', lblAddrPostal: 'Código postal', lblAddrDefault: 'Predeterminada',
     saveBtn: 'Guardar cambios', saving: 'Guardando...', saved: 'Cambios guardados.',
-    changePwBtn: 'Cambiar contraseña', pwChanged: 'Contraseña actualizada.',
     addAddr: '+ Agregar', saveAddr: 'Guardar dirección', cancel: 'Cancelar',
     deleteBtn: 'Eliminar mi cuenta',
-    noPwMsg: 'Tu cuenta inicia sesión con Google o teléfono. No puedes cambiar la contraseña desde aquí.',
     defaultBadge: 'Predeterminada', editBtn: 'Editar', setDefaultBtn: 'Predeterminada', deleteAddrBtn: 'Eliminar',
     confirmDeleteTitle: 'Eliminar cuenta', confirmDeleteBody: 'Escribe ELIMINAR para confirmar. Esta acción no se puede deshacer.',
     confirmDeletePlaceholder: 'ELIMINAR', confirmDeleteBtn: 'Confirmar eliminación', cancelBtn: 'Cancelar',
     errNoStreet: 'La calle es obligatoria.',
-    errPasswordMismatch: 'Las contraseñas no coinciden.',
-    errShortPassword: 'La contraseña debe tener al menos 6 caracteres.',
-    errWrongPassword: 'Contraseña actual incorrecta.',
     errConflict: 'Ese correo o teléfono ya está en uso.',
     errGeneric: 'Ocurrió un error. Inténtalo de nuevo.',
     errDeleteFailed: 'No se pudo eliminar la cuenta. Intenta de nuevo.',
@@ -304,7 +280,7 @@ const TX = {
     pageTitle: 'My account',
     navInfo: 'Personal info', navSecurity: 'Security', navAddresses: 'My addresses', navPayments: 'Payment methods', navDelete: 'Delete account',
     titleInfo: 'Personal information', subInfo: 'Update your name, email, and phone.',
-    titleSecurity: 'Security', subSecurity: 'Change your password.',
+    titleSecurity: 'Security', subSecurity: 'Your account access information.',
     titleAddresses: 'My addresses', subAddresses: 'Save your addresses to speed up your requests.',
     titlePayments: 'Payment methods', subPayments: 'Manage your saved cards, Apple Pay, and Google Pay.',
     addPaymentTitle: 'Add payment method', addPaymentSub: 'Add a credit or debit card. Apple Pay and Google Pay appear automatically if your device supports them.',
@@ -312,20 +288,16 @@ const TX = {
     titleDelete: 'Delete account',
     textDelete: 'This action is permanent and irreversible. Your profile, saved addresses, and all your information will be deleted. Existing orders and payments will not be affected.',
     lblName: 'Full name', lblEmail: 'Email', lblPhone: 'Phone',
-    lblCurPw: 'Current password', lblNewPw: 'New password', lblConfirmPw: 'Confirm password',
+    securityInfo: 'Your account uses phone or Google sign-in. No password required.',
+    securityProvider: 'Sign-in method:',
     lblAddrLabel: 'Label (optional)', lblAddrStreet: 'Street and number *', lblAddrCity: 'City', lblAddrState: 'State', lblAddrPostal: 'Postal code', lblAddrDefault: 'Set as default',
     saveBtn: 'Save changes', saving: 'Saving...', saved: 'Changes saved.',
-    changePwBtn: 'Change password', pwChanged: 'Password updated.',
     addAddr: '+ Add', saveAddr: 'Save address', cancel: 'Cancel',
     deleteBtn: 'Delete my account',
-    noPwMsg: 'Your account signs in with Google or phone. You cannot change the password here.',
     defaultBadge: 'Default', editBtn: 'Edit', setDefaultBtn: 'Set default', deleteAddrBtn: 'Delete',
     confirmDeleteTitle: 'Delete account', confirmDeleteBody: 'Type DELETE to confirm. This action cannot be undone.',
     confirmDeletePlaceholder: 'DELETE', confirmDeleteBtn: 'Confirm deletion', cancelBtn: 'Cancel',
     errNoStreet: 'Street is required.',
-    errPasswordMismatch: 'Passwords do not match.',
-    errShortPassword: 'Password must be at least 6 characters.',
-    errWrongPassword: 'Current password is incorrect.',
     errConflict: 'That email or phone is already in use.',
     errGeneric: 'An error occurred. Please try again.',
     errDeleteFailed: 'Could not delete account. Please try again.',
@@ -446,66 +418,25 @@ async function saveProfile() {
   }
 }
 
-// ─── Security section: detect if user has a password ─────────────────────────
+// ─── Security section: show sign-in method info ─────────────────────────────
 async function initSecuritySection() {
   const t = tr();
-  // Fetch user from backend to check auth_provider / password_hash presence
+  const infoText = document.getElementById('security-info-text');
+  const providerInfo = document.getElementById('security-provider-info');
+  if (infoText) infoText.textContent = t.securityInfo;
+
   try {
     const res = await fetch(API + '/api/auth/me', { headers: authHeaders() });
     if (!res.ok) return;
     const d = await res.json();
     const provider = d.user?.auth_provider;
-    const isOAuth = provider === 'google.com' || provider === 'phone' || provider === 'apple.com';
-    if (isOAuth) {
-      document.getElementById('security-no-pw').style.display = 'flex';
-      document.getElementById('security-pw-form').style.display = 'none';
-      const providerName = provider === 'google.com' ? 'Google' : provider === 'phone' ? tr().navSecurity === 'Security' ? 'phone OTP' : 'teléfono' : 'Apple';
-      document.getElementById('security-no-pw-text').textContent = t.noPwMsg;
+    if (providerInfo && provider) {
+      const providerLabel = provider === 'google.com' ? 'Google'
+        : provider === 'phone' ? (isEs() ? 'Teléfono (SMS OTP)' : 'Phone (SMS OTP)')
+        : provider;
+      providerInfo.textContent = t.securityProvider + ' ' + providerLabel;
     }
   } catch {}
-}
-
-// ─── Change password ──────────────────────────────────────────────────────────
-async function changePassword() {
-  const t = tr();
-  const btn   = document.getElementById('sec-save-btn');
-  const lbl   = document.getElementById('sec-save-label');
-  const errEl = document.getElementById('sec-error');
-  const sucEl = document.getElementById('sec-success');
-  errEl.style.display = 'none';
-  sucEl.style.display = 'none';
-
-  const cur     = document.getElementById('sec-current').value;
-  const newPw   = document.getElementById('sec-new').value;
-  const confirm = document.getElementById('sec-confirm').value;
-
-  if (newPw.length < 6)    { errEl.textContent = t.errShortPassword;  errEl.style.display = 'block'; return; }
-  if (newPw !== confirm)   { errEl.textContent = t.errPasswordMismatch; errEl.style.display = 'block'; return; }
-
-  btn.disabled = true; lbl.textContent = t.saving;
-  try {
-    const res = await fetch(API + '/api/auth/change-password', {
-      method: 'POST', headers: authHeaders(),
-      body: JSON.stringify({ currentPassword: cur, newPassword: newPw })
-    });
-    const d = await res.json();
-    if (!res.ok) {
-      errEl.textContent = res.status === 401 ? t.errWrongPassword : (d.message || t.errGeneric);
-      errEl.style.display = 'block';
-      return;
-    }
-    document.getElementById('sec-current').value = '';
-    document.getElementById('sec-new').value = '';
-    document.getElementById('sec-confirm').value = '';
-    document.getElementById('sec-success-text').textContent = t.pwChanged;
-    sucEl.style.display = 'flex';
-    setTimeout(() => { sucEl.style.display = 'none'; }, 3000);
-  } catch {
-    errEl.textContent = t.errGeneric;
-    errEl.style.display = 'block';
-  } finally {
-    btn.disabled = false; lbl.textContent = t.changePwBtn;
-  }
 }
 
 // ─── Addresses ────────────────────────────────────────────────────────────────
@@ -811,16 +742,15 @@ function applyTranslations() {
   set('add-pm-btn', '+ ' + (isEs() ? 'Agregar' : 'Add'));
   set('title-delete', t.titleDelete);   set('text-delete', t.textDelete);
   set('lbl-name', t.lblName);           set('lbl-email', t.lblEmail);   set('lbl-phone', t.lblPhone);
-  set('lbl-cur-pw', t.lblCurPw);        set('lbl-new-pw', t.lblNewPw);  set('lbl-confirm-pw', t.lblConfirmPw);
+  set('security-info-text', t.securityInfo);
   set('lbl-addr-label', t.lblAddrLabel); set('lbl-addr-street', t.lblAddrStreet);
   set('lbl-addr-city', t.lblAddrCity);  set('lbl-addr-state', t.lblAddrState);
   set('lbl-addr-postal', t.lblAddrPostal); set('lbl-addr-default', t.lblAddrDefault);
-  set('info-save-label', t.saveBtn);    set('sec-save-label', t.changePwBtn);
+  set('info-save-label', t.saveBtn);
   set('addr-save-label', t.saveAddr);   set('addr-cancel-btn', t.cancel);
   set('add-addr-btn', document.getElementById('add-addr-form')?.classList.contains('open') ? t.cancel : t.addAddr);
   set('delete-btn', t.deleteBtn);
-  set('security-no-pw-text', t.noPwMsg);
-  set('info-success-text', t.saved);    set('sec-success-text', t.pwChanged);
+  set('info-success-text', t.saved);
   ph('info-name', t.phName);
   ph('addr-label', t.phAddrLabel);      ph('addr-street', t.phAddrStreet);
   ph('addr-city', t.phAddrCity);        ph('addr-state', t.phAddrState);
@@ -831,21 +761,63 @@ document.addEventListener('DOMContentLoaded', () => {
   guardAuth();
   applyTranslations();
 
-  // Wait for session to be restored by shared-nav.js, then fill
-  const waitForUser = (attempts) => {
-    if (window.__user) {
-      fillProfileForm();
-      initSecuritySection();
-      loadAddresses();
-      loadPaymentMethods();
-      buildNav();
-      switchSection('info');
-    } else if (attempts > 0) {
+  // Wait for session to be restored, then verify token is valid via backend
+  const waitForUser = async (attempts) => {
+    // Wait for window.__user to appear (set by shared-nav restoreSession or Firebase onAuthStateChanged)
+    if (!window.__user && attempts > 0) {
       setTimeout(() => waitForUser(attempts - 1), 100);
-    } else {
-      // Firebase onAuthStateChanged exhausted — no session, redirect home
-      window.location.replace('/');
+      return;
     }
+    if (!window.__user) {
+      window.location.replace('/');
+      return;
+    }
+
+    // If a backend sync is in progress (Firebase just fired), wait for it
+    if (window.__syncPromise) {
+      try { await window.__syncPromise; } catch (_) {}
+    }
+
+    // Verify token is valid by calling backend
+    const token = window.getSessionToken ? window.getSessionToken() : null;
+    if (!token) {
+      // No JWT — user appears logged in from Firebase but backend sync failed
+      localStorage.removeItem('servi_user_session');
+      window.__user = null;
+      window.location.replace('/');
+      return;
+    }
+
+    try {
+      const res = await fetch(API + '/api/auth/me', { headers: authHeaders() });
+      if (res.status === 401 || res.status === 403) {
+        // Token is definitively invalid — force re-auth
+        localStorage.removeItem('servi_user_session');
+        window.__user = null;
+        window.location.replace('/');
+        return;
+      }
+      if (res.ok) {
+        // Refresh window.__user with authoritative backend data
+        const d = await res.json();
+        if (d.user) {
+          window.__user = Object.assign(window.__user, d.user);
+        }
+      }
+      // For 5xx or other errors, continue with cached data
+    } catch (_) {
+      // Network error — allow offline access with cached data
+    }
+
+    fillProfileForm();
+    initSecuritySection();
+    loadAddresses();
+    loadPaymentMethods();
+    buildNav();
+
+    // Handle section from URL param (e.g., ?section=security for recovery flow)
+    const urlSection = new URLSearchParams(window.location.search).get('section');
+    switchSection(SECTIONS.includes(urlSection) ? urlSection : 'info');
   };
   waitForUser(20); // 20 × 100ms = 2s, enough for Firebase to resolve
 
