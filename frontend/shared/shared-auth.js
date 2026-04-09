@@ -267,18 +267,14 @@
 
       errorBox() +
 
-      // Phone input with country dropdown
-      '<div style="display:flex;margin-bottom:12px;border:1.5px solid #e8e8e8;border-radius:10px;overflow:hidden">' +
-        countrySelect() +
+      // Unified phone/email input — country dropdown shows for phone, hides for email
+      '<div id="usl-input-wrap" style="display:flex;margin-bottom:12px;border:1.5px solid #e8e8e8;border-radius:10px;overflow:hidden">' +
+        '<div id="usl-country-wrap">' + countrySelect() + '</div>' +
         '<input id="auth-identifier" type="tel" inputmode="numeric" ' +
-          'placeholder="' + (es ? '55 1234 5678' : '55 1234 5678') + '" ' +
+          'placeholder="' + (es ? 'Teléfono o correo electrónico' : 'Phone number or email') + '" ' +
           'style="flex:1;border:none;padding:12px;font-size:15px;font-family:\'DM Sans\',sans-serif;outline:none" ' +
           'onkeydown="if(event.key===\'Enter\') window.__uslSubmitIdentifier()">' +
       '</div>' +
-
-      '<p style="font-size:12px;color:#888;margin-bottom:16px;text-align:center">' +
-        (es ? 'También puedes ingresar tu correo electrónico' : 'You can also enter your email address') +
-      '</p>' +
 
       '<button class="btn-primary" onclick="window.__uslSubmitIdentifier()" id="usl-continue-btn" style="width:100%;justify-content:center">' +
         (es ? 'Continuar' : 'Continue') +
@@ -289,17 +285,15 @@
 
     document.body.style.overflow = 'hidden';
     var inp = document.getElementById('auth-identifier');
+    var countryWrap = document.getElementById('usl-country-wrap');
     if (inp) {
       inp.focus();
-      // If user types @ switch to email mode placeholder
+      // Dynamically switch between phone and email mode
       inp.addEventListener('input', function () {
-        if (inp.value.includes('@')) {
-          inp.setAttribute('type', 'email');
-          inp.setAttribute('inputmode', 'email');
-        } else {
-          inp.setAttribute('type', 'tel');
-          inp.setAttribute('inputmode', 'numeric');
-        }
+        var isEmail = inp.value.includes('@');
+        inp.setAttribute('type', isEmail ? 'email' : 'tel');
+        inp.setAttribute('inputmode', isEmail ? 'email' : 'numeric');
+        if (countryWrap) countryWrap.style.display = isEmail ? 'none' : '';
       });
     }
     ensureFirebase().then(setupRecaptchaInner);
