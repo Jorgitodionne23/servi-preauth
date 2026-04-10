@@ -68,6 +68,23 @@ test('5.6 Stale session (no token, no firebaseUid) is cleared', async ({ page })
   await expect(page.locator('.nav-login-btn')).toBeVisible();
 });
 
+test('5.7 Logout clears session and shows login buttons', async ({ page }) => {
+  await injectFakeSession(page, { name: 'Logout Test' });
+  await page.goto('/');
+  await page.waitForTimeout(1000);
+  await expect(page.locator('.user-menu-trigger')).toBeVisible();
+
+  await page.locator('.user-menu-trigger').click();
+  await page.waitForSelector('.user-menu-dropdown--open');
+  await page.locator('.user-menu-item--danger').click();
+  await page.waitForTimeout(1500);
+
+  await expect(page.locator('.nav-login-btn')).toBeVisible();
+
+  const session = await page.evaluate(() => localStorage.getItem('servi_user_session'));
+  expect(session).toBeNull();
+});
+
 test('5.8 syncWithBackend clears session on 401 token_revoked response', async ({ page }) => {
   // Inject a fake session so the user appears logged in (Firebase mock fires onAuthStateChanged)
   await injectFakeSession(page, { name: 'Revoked User' });
@@ -86,8 +103,11 @@ test('5.8 syncWithBackend clears session on 401 token_revoked response', async (
   // directly simulate the 401 token_revoked path via evaluate to verify the session-clearing logic.
   const sessionAfterLoad = await page.evaluate(() => localStorage.getItem('servi_user_session'));
   if (sessionAfterLoad !== null) {
-    // syncWithBackend didn't run via onAuthStateChanged; exercise the clearing logic directly.
-    // This covers the case where the test env can't fully simulate Firebase init + sync.
+    // Fallback: Firebase onAuthStateChanged may not fire in the test environment
+    // (no real Firebase SDK). We exercise the session-clearing code path directly
+    // via page.evaluate to verify that the logic in syncWithBackend works correctly
+    // when invoked. This does not cover the full onAuthStateChanged→syncWithBackend
+    // integration path.
     await page.evaluate(async () => {
       // Simulate what syncWithBackend does on 401 token_revoked
       const res = await fetch(window.CONFIG.API_BASE + '/api/auth/firebase', {
@@ -108,23 +128,6 @@ test('5.8 syncWithBackend clears session on 401 token_revoked response', async (
   }
 
   // After a token_revoked 401, session should be cleared
-  const session = await page.evaluate(() => localStorage.getItem('servi_user_session'));
-  expect(session).toBeNull();
-});
-
-test('5.7 Logout clears session and shows login buttons', async ({ page }) => {
-  await injectFakeSession(page, { name: 'Logout Test' });
-  await page.goto('/');
-  await page.waitForTimeout(1000);
-  await expect(page.locator('.user-menu-trigger')).toBeVisible();
-
-  await page.locator('.user-menu-trigger').click();
-  await page.waitForSelector('.user-menu-dropdown--open');
-  await page.locator('.user-menu-item--danger').click();
-  await page.waitForTimeout(1500);
-
-  await expect(page.locator('.nav-login-btn')).toBeVisible();
-
   const session = await page.evaluate(() => localStorage.getItem('servi_user_session'));
   expect(session).toBeNull();
 });
