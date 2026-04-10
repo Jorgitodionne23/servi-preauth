@@ -272,6 +272,7 @@ const TX = {
     confirmDeletePlaceholder: 'ELIMINAR', confirmDeleteBtn: 'Confirmar eliminación', cancelBtn: 'Cancelar',
     errNoStreet: 'La calle es obligatoria.',
     errConflict: 'Ese correo o teléfono ya está en uso.',
+    errPhoneExists: 'Este número de teléfono ya está registrado con otra cuenta.',
     errGeneric: 'Ocurrió un error. Inténtalo de nuevo.',
     errDeleteFailed: 'No se pudo eliminar la cuenta. Intenta de nuevo.',
     phName: 'Tu nombre', phAddrLabel: 'Casa, Trabajo...', phAddrStreet: 'Calle, número ext/int', phAddrCity: 'Ciudad de México', phAddrState: 'CDMX',
@@ -299,6 +300,7 @@ const TX = {
     confirmDeletePlaceholder: 'DELETE', confirmDeleteBtn: 'Confirm deletion', cancelBtn: 'Cancel',
     errNoStreet: 'Street is required.',
     errConflict: 'That email or phone is already in use.',
+    errPhoneExists: 'This phone number is already registered to another account.',
     errGeneric: 'An error occurred. Please try again.',
     errDeleteFailed: 'Could not delete account. Please try again.',
     phName: 'Your name', phAddrLabel: 'Home, Work...', phAddrStreet: 'Street, ext/int number', phAddrCity: 'City', phAddrState: 'State',
@@ -387,7 +389,8 @@ async function saveProfile() {
     });
     const d = await res.json();
     if (!res.ok) {
-      if (res.status === 409) { errEl.textContent = t.errConflict; }
+      if (res.status === 409 && d.error === 'phone_exists') { errEl.textContent = t.errPhoneExists; }
+      else if (res.status === 409) { errEl.textContent = t.errConflict; }
       else { errEl.textContent = d.message || t.errGeneric; }
       errEl.style.display = 'block';
       return;

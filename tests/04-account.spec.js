@@ -230,3 +230,19 @@ test('4.14 account.html Security section has no change-password form', async ({ 
   const hasFirebaseAuthMention = lowerHtml.includes('teléfono') || lowerHtml.includes('google') || lowerHtml.includes('phone');
   expect(hasFirebaseAuthMention).toBeTruthy();
 });
+
+test('4.15 Save profile: phone_exists 409 shows phone-specific error', async ({ page }) => {
+  // Verify the account.html source contains the new errPhoneExists string for both languages
+  const response = await page.request.get('/account');
+  expect(response.ok()).toBeTruthy();
+  const html = await response.text();
+
+  // Check Spanish version contains the new error message
+  expect(html).toContain('Este número de teléfono ya está registrado con otra cuenta');
+  // Check English version contains the new error message
+  expect(html).toContain('This phone number is already registered to another account');
+
+  // Verify the saveProfile function checks for phone_exists error
+  expect(html).toContain('d.error === \'phone_exists\'');
+  expect(html).toContain('t.errPhoneExists');
+});
