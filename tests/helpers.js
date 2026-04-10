@@ -83,30 +83,36 @@ export async function injectFakeSession(page, user = {}) {
 
   const mockAuth = makeMockAuth();
 
+  // Patch a firebase object with the mock auth
+  function patchFirebase(val) {
+    if (!val || typeof val !== 'object') return;
+    val.auth = function() { return mockAuth; };
+    val.auth.GoogleAuthProvider = function() { return { addScope: function() {} }; };
+    val.auth.RecaptchaVerifier = function() {
+      return { clear: function() {}, render: async function() { return 0; } };
+    };
+    val.auth.PhoneAuthProvider = function() {};
+    // Ensure apps array is populated so ensureFirebase() doesn't reinitialize
+    if (!val.apps) val.apps = [{}];
+    const origInit = val.initializeApp;
+    val.initializeApp = function(cfg) {
+      if (!val.apps || val.apps.length === 0) {
+        if (origInit) origInit.call(val, cfg);
+      }
+    };
+  }
+
   // When firebase-app-compat sets window.firebase, we patch the auth getter
   let _firebase = window.firebase;
+  // If firebase is already set (loaded synchronously), patch it immediately
+  if (_firebase) patchFirebase(_firebase);
+
   Object.defineProperty(window, 'firebase', {
     configurable: true,
     get: function() { return _firebase; },
     set: function(val) {
       _firebase = val;
-      // Override auth() to return our mock
-      if (val && typeof val === 'object') {
-        val.auth = function() { return mockAuth; };
-        val.auth.GoogleAuthProvider = function() { return { addScope: function() {} }; };
-        val.auth.RecaptchaVerifier = function() {
-          return { clear: function() {}, render: async function() { return 0; } };
-        };
-        val.auth.PhoneAuthProvider = function() {};
-        // Ensure apps array is populated so ensureFirebase() doesn't reinitialize
-        if (!val.apps) val.apps = [{}];
-        const origInit = val.initializeApp;
-        val.initializeApp = function(cfg) {
-          if (!val.apps || val.apps.length === 0) {
-            if (origInit) origInit.call(val, cfg);
-          }
-        };
-      }
+      patchFirebase(val);
     }
   });
 })();
