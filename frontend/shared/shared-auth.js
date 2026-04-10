@@ -127,7 +127,7 @@
       var res = await fetch(API() + '/api/auth/firebase', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + idToken },
-        body: JSON.stringify({ name: firebaseUser.displayName, phone: firebaseUser.phoneNumber, email: firebaseUser.email })
+        body: JSON.stringify({ name: firebaseUser.displayName, phone: firebaseUser.phoneNumber, email: firebaseUser.email || (uslNewUserData && uslNewUserData.email) || null })
       });
       if (res.ok) {
         var data = await res.json();
