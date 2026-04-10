@@ -600,6 +600,7 @@ const __dirname = dirname(__filename);
 const FRONTEND_DIR = path.join(__dirname, '..', 'frontend');
 
 const app = express();
+app.set('trust proxy', 1); // Render sits behind a load balancer; trust first proxy for real client IP
 
 const adminRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
