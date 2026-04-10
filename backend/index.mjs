@@ -4541,9 +4541,15 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
     // Verify the Firebase ID token
     let decoded;
     try {
-      decoded = await firebaseAdmin.auth().verifyIdToken(idToken);
+      decoded = await firebaseAdmin.auth().verifyIdToken(idToken, true);
     } catch (verifyErr) {
       console.error('[POST /api/auth/firebase] token verification failed:', verifyErr.code);
+      if (verifyErr.code === 'auth/id-token-revoked') {
+        return res.status(401).json({ error: 'token_revoked', message: 'Session has been revoked. Please sign in again.' });
+      }
+      if (verifyErr.code === 'auth/user-disabled') {
+        return res.status(401).json({ error: 'user_disabled', message: 'This account has been disabled.' });
+      }
       return res.status(401).json({ error: 'invalid_token', message: 'Firebase token verification failed' });
     }
 
