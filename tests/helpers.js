@@ -122,6 +122,33 @@ export async function injectFakeSession(page, user = {}) {
   await page.route('**/firebase-auth-compat.js', async (route) => {
     await route.fulfill({ contentType: 'application/javascript', body: '// firebase-auth-compat mocked' });
   });
+
+  // 3. Intercept GET /api/auth/me so the account-page auth guard doesn't redirect.
+  //    Only mock GET and POST /api/auth/firebase — let DELETE and PATCH through to real backend or test-specific routes.
+  await page.route('**/api/auth/me', async (route) => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ user: { id: u.id, email: u.email, name: u.name, phone: u.phone, auth_provider: u.auth_provider || 'phone' } }),
+      });
+    } else {
+      await route.continue();
+    }
+  });
+
+  // 4. Intercept POST /api/auth/firebase so the Firebase sync doesn't fail.
+  await page.route('**/api/auth/firebase', async (route) => {
+    if (route.request().method() === 'POST') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ token: fakeToken, user: u }),
+      });
+    } else {
+      await route.continue();
+    }
+  });
 }
 
 /**

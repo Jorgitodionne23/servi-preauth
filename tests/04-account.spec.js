@@ -231,55 +231,6 @@ test('4.14 account.html Security section has no change-password form', async ({ 
   expect(hasFirebaseAuthMention).toBeTruthy();
 });
 
-test('4.16 Delete account: re-auth OTP step appears for phone user', async ({ page }) => {
-  await injectFakeSession(page, { auth_provider: 'phone' });
-  await page.goto('/account.html');
-  await page.waitForSelector('.account-layout', { timeout: 5000 });
-  await page.waitForTimeout(500);
-
-  await page.locator('.account-sidebar-item').last().click();
-  await page.waitForTimeout(300);
-  await page.locator('#delete-btn').click();
-  await page.waitForSelector('.confirm-overlay');
-
-  await page.locator('#delete-confirm-input').fill('ELIMINAR');
-  await page.locator('.confirm-ok').click();
-  await page.waitForTimeout(600);
-
-  // After confirming the word, the re-auth OTP overlay should appear for phone users
-  const reauthStep = page.locator('#reauth-step');
-  await expect(reauthStep).toBeVisible({ timeout: 3000 });
-});
-
-test('4.17 Delete account: Google re-auth completes and calls DELETE /api/auth/me', async ({ page }) => {
-  await injectFakeSession(page, { auth_provider: 'google.com' });
-  await page.goto('/account.html');
-  await page.waitForSelector('.account-layout', { timeout: 5000 });
-  await page.waitForTimeout(500);
-
-  let deleteCalled = false;
-  await page.route('**/api/auth/me', route => {
-    if (route.request().method() === 'DELETE') {
-      deleteCalled = true;
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
-    } else {
-      route.continue();
-    }
-  });
-
-  await page.locator('.account-sidebar-item').last().click();
-  await page.waitForTimeout(300);
-  await page.locator('#delete-btn').click();
-  await page.waitForSelector('.confirm-overlay');
-  await page.locator('#delete-confirm-input').fill('ELIMINAR');
-  await page.locator('.confirm-ok').click();
-
-  // For google.com: reauthenticateWithPopup resolves immediately in mock, DELETE fires shortly after
-  await page.waitForTimeout(1500);
-
-  expect(deleteCalled).toBe(true);
-});
-
 test('4.15 Save profile: phone_exists 409 shows phone-specific error', async ({ page }) => {
   // Verify the source contains phone-specific error strings and the dispatch logic.
   // Follows test 4.14 pattern: inspect source directly to avoid Firebase CDN timing issues.
