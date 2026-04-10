@@ -47,7 +47,11 @@ export async function injectFakeSession(page, user = {}) {
 (function() {
   'use strict';
   const FAKE_USER = ${JSON.stringify(fakeFirebaseUser)};
-  FAKE_USER.getIdToken = function() { return Promise.resolve('mock-firebase-id-token'); };
+  FAKE_USER.getIdToken = function() { return Promise.resolve('fake-token'); };
+  FAKE_USER.reauthenticateWithPopup = async function() { return { user: FAKE_USER }; };
+  FAKE_USER.reauthenticateWithPhoneNumber = async function() {
+    return { confirm: async () => ({ user: FAKE_USER }) };
+  };
 
   // Build mock auth instance
   function makeMockAuth() {

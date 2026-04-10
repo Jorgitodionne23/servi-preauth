@@ -686,6 +686,106 @@ async function confirmAddPayment() {
   await loadPaymentMethods();
 }
 
+// ─── Re-authentication helper ──────────────────────────────────────────────────
+async function reauthenticate() {
+  const provider = window.__user?.auth_provider || (
+    await (async () => {
+      try {
+        const r = await fetch(API + '/api/auth/me', { headers: authHeaders() });
+        if (!r.ok) return 'phone';
+        const d = await r.json();
+        return d.user?.auth_provider || 'phone';
+      } catch { return 'phone'; }
+    })()
+  );
+
+  const firebase = window.firebase;
+  const auth = firebase ? firebase.auth() : null;
+  if (!auth || !auth.currentUser) throw { code: 'reauth_no_user' };
+
+  if (provider === 'google.com') {
+    const googleProvider = new firebase.auth.GoogleAuthProvider();
+    await auth.currentUser.reauthenticateWithPopup(googleProvider);
+  } else {
+    await new Promise((resolve, reject) => {
+      showReauthOtpStep(auth, resolve, reject);
+    });
+  }
+
+  return await auth.currentUser.getIdToken(true);
+}
+
+function showReauthOtpStep(auth, resolve, reject) {
+  const es = isEs();
+  const overlay = document.createElement('div');
+  overlay.id = 'reauth-step';
+  overlay.className = 'confirm-overlay';
+  overlay.innerHTML = `
+    <div class="confirm-box">
+      <h3>${es ? 'Verifica tu identidad' : 'Verify your identity'}</h3>
+      <p style="font-size:14px;color:#555;margin-bottom:12px">
+        ${es ? 'Te enviaremos un SMS de confirmación a tu número registrado.' : "We'll send a confirmation SMS to your registered phone."}
+      </p>
+      <div id="reauth-recaptcha-inline" style="margin-bottom:12px"></div>
+      <button id="reauth-send-btn" class="confirm-ok" style="margin-bottom:10px;width:100%">
+        ${es ? 'Enviar código' : 'Send code'}
+      </button>
+      <input class="form-input" id="reauth-otp-input" type="text" inputmode="numeric"
+        placeholder="${es ? 'Código de 6 dígitos' : '6-digit code'}" style="display:none;margin-bottom:10px">
+      <div id="reauth-error" style="font-size:13px;color:#dc2626;min-height:16px;margin-bottom:8px"></div>
+      <div class="confirm-row">
+        <button class="confirm-cancel" id="reauth-cancel-btn">${es ? 'Cancelar' : 'Cancel'}</button>
+        <button class="confirm-ok" id="reauth-confirm-btn" style="display:none">${es ? 'Confirmar' : 'Confirm'}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  let confirmationResult = null;
+  let recaptchaVerifier = null;
+
+  document.getElementById('reauth-cancel-btn').addEventListener('click', () => {
+    overlay.remove();
+    if (recaptchaVerifier) { try { recaptchaVerifier.clear(); } catch (_) {} }
+    reject({ code: 'reauth_cancelled' });
+  });
+
+  document.getElementById('reauth-send-btn').addEventListener('click', async () => {
+    const sendBtn = document.getElementById('reauth-send-btn');
+    const errEl = document.getElementById('reauth-error');
+    sendBtn.disabled = true;
+    errEl.textContent = '';
+    try {
+      recaptchaVerifier = new firebase.auth.RecaptchaVerifier('reauth-recaptcha-inline', { size: 'invisible' });
+      const user = auth.currentUser;
+      confirmationResult = await user.reauthenticateWithPhoneNumber(user.phoneNumber, recaptchaVerifier);
+      document.getElementById('reauth-otp-input').style.display = '';
+      document.getElementById('reauth-confirm-btn').style.display = '';
+      sendBtn.style.display = 'none';
+    } catch (err) {
+      sendBtn.disabled = false;
+      errEl.textContent = isEs() ? 'No se pudo enviar el código. Intenta de nuevo.' : 'Could not send code. Please try again.';
+      if (recaptchaVerifier) { try { recaptchaVerifier.clear(); } catch (_) {} }
+    }
+  });
+
+  document.getElementById('reauth-confirm-btn').addEventListener('click', async () => {
+    const confirmBtn = document.getElementById('reauth-confirm-btn');
+    const errEl = document.getElementById('reauth-error');
+    const code = (document.getElementById('reauth-otp-input') || {}).value?.trim();
+    if (!code || code.length < 6) { errEl.textContent = isEs() ? 'Ingresa el código de 6 dígitos.' : 'Enter the 6-digit code.'; return; }
+    confirmBtn.disabled = true;
+    errEl.textContent = '';
+    try {
+      await confirmationResult.confirm(code);
+      overlay.remove();
+      resolve();
+    } catch (err) {
+      confirmBtn.disabled = false;
+      errEl.textContent = isEs() ? 'Código incorrecto. Intenta de nuevo.' : 'Incorrect code. Please try again.';
+    }
+  });
+}
+
 // ─── Delete account ───────────────────────────────────────────────────────────
 function confirmDeleteAccount() {
   const t = tr();
@@ -699,26 +799,46 @@ function confirmDeleteAccount() {
       <div id="delete-modal-error" style="font-size:13px;color:#dc2626;margin-bottom:12px;min-height:16px"></div>
       <div class="confirm-row">
         <button class="confirm-cancel" onclick="this.closest('.confirm-overlay').remove()">${t.cancelBtn}</button>
-        <button class="confirm-ok" onclick="executeDeleteAccount(this)">${t.confirmDeleteBtn}</button>
+        <button class="confirm-ok" onclick="confirmDeleteAccountStep2(this)">${t.confirmDeleteBtn}</button>
       </div>
     </div>`;
   document.body.appendChild(overlay);
   document.getElementById('delete-confirm-input')?.focus();
 }
 
-async function executeDeleteAccount(btn) {
+function confirmDeleteAccountStep2(btn) {
   const t = tr();
   const expected = isEs() ? 'ELIMINAR' : 'DELETE';
   const val = document.getElementById('delete-confirm-input')?.value?.trim();
-  const errEl = document.getElementById('delete-modal-error');
   if (val !== expected) {
     document.getElementById('delete-confirm-input').style.borderColor = '#dc2626';
     return;
   }
+  executeDeleteAccount(btn);
+}
+
+async function executeDeleteAccount(btn) {
+  const t = tr();
+  const errEl = document.getElementById('delete-modal-error');
   btn.disabled = true; btn.textContent = '...';
   if (errEl) errEl.textContent = '';
+
+  let reauthToken;
   try {
-    const res = await fetch(API + '/api/auth/me', { method: 'DELETE', headers: authHeaders() });
+    reauthToken = await reauthenticate();
+  } catch (err) {
+    btn.disabled = false; btn.textContent = t.confirmDeleteBtn;
+    if (err?.code !== 'reauth_cancelled' && errEl) {
+      errEl.textContent = t.errDeleteFailed;
+    }
+    return;
+  }
+
+  try {
+    const res = await fetch(API + '/api/auth/me', {
+      method: 'DELETE',
+      headers: { ...authHeaders(), 'X-Firebase-Reauth-Token': reauthToken },
+    });
     if (!res.ok) {
       btn.disabled = false; btn.textContent = t.confirmDeleteBtn;
       if (errEl) errEl.textContent = t.errDeleteFailed;

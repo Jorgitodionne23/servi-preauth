@@ -4665,6 +4665,33 @@ function requireUserAuth(req, res) {
   return payload;
 }
 
+// Requires a fresh Firebase ID token (auth_time within maxAgeSecs) on sensitive operations.
+// Client must include the token in X-Firebase-Reauth-Token header.
+async function requireRecentAuth(req, res, maxAgeSecs = 300) {
+  const rawToken = req.headers['x-firebase-reauth-token'] || '';
+  if (!rawToken) {
+    res.status(401).json({ error: 'reauth_required', message: 'Re-authentication required. Please verify your identity again.' });
+    return false;
+  }
+  try {
+    const decoded = await firebaseAdmin.auth().verifyIdToken(rawToken, true);
+    const now = Math.floor(Date.now() / 1000);
+    if ((now - decoded.auth_time) > maxAgeSecs) {
+      res.status(401).json({ error: 'reauth_too_old', message: 'Re-authentication expired. Please verify your identity again.' });
+      return false;
+    }
+    return true;
+  } catch (err) {
+    const code = err.code || '';
+    if (code === 'auth/id-token-revoked') {
+      res.status(401).json({ error: 'token_revoked' });
+    } else {
+      res.status(401).json({ error: 'invalid_reauth_token' });
+    }
+    return false;
+  }
+}
+
 // PATCH /api/auth/me — update profile
 app.patch('/api/auth/me', publicFormLimit, async (req, res) => {
   const payload = requireUserAuth(req, res);
@@ -4709,6 +4736,8 @@ app.post('/api/auth/change-password', publicFormLimit, (req, res) => {
 app.delete('/api/auth/me', publicFormLimit, async (req, res) => {
   const payload = requireUserAuth(req, res);
   if (!payload) return;
+  const reauthed = await requireRecentAuth(req, res);
+  if (!reauthed) return;
   try {
     // Fetch firebase_uid before deleting the row
     const { rows } = await pool.query('SELECT firebase_uid FROM auth_users WHERE id = $1', [payload.user_id]);
