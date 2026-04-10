@@ -214,3 +214,27 @@ test('4.13 Account page input placeholder translates (ES → EN)', async ({ page
   expect(enPlaceholder).not.toBe(esPlaceholder);
   expect(enPlaceholder?.toLowerCase()).toContain('name');
 });
+
+test('4.14 account.html Security section has no change-password form', async ({ page }) => {
+  // Fetch account.html source and verify Security section exists but has no password inputs
+  const response = await page.request.get('https://servi-preauth.pages.dev/account.html');
+  const html = await response.text();
+
+  // Verify Security section exists
+  expect(html).toContain('section-security');
+  expect(html).toContain('security-info');
+
+  // Find the Security section HTML
+  const securityStart = html.indexOf('id="section-security"');
+  const nextSectionStart = html.indexOf('id="section-', securityStart + 10);
+  const securitySection = html.slice(securityStart, nextSectionStart);
+
+  // Verify no password input fields in Security section
+  expect(securitySection).not.toContain('type="password"');
+  expect(securitySection).not.toContain('currentPassword');
+  expect(securitySection).not.toContain('newPassword');
+
+  // Verify it explains Firebase-only auth
+  expect(securitySection.toLowerCase()).toContain('google');
+  expect(securitySection.toLowerCase()).toContain('teléfono');
+});

@@ -4693,25 +4693,9 @@ app.patch('/api/auth/me', publicFormLimit, async (req, res) => {
   }
 });
 
-// POST /api/auth/change-password
-app.post('/api/auth/change-password', publicFormLimit, async (req, res) => {
-  const payload = requireUserAuth(req, res);
-  if (!payload) return;
-  try {
-    const { currentPassword, newPassword } = req.body || {};
-    if (!currentPassword || !newPassword) return res.status(400).json({ error: 'missing_fields' });
-    if (String(newPassword).length < 6) return res.status(400).json({ error: 'weak_password', message: 'La contraseña debe tener al menos 6 caracteres.' });
-    const { rows } = await pool.query('SELECT password_hash FROM auth_users WHERE id = $1', [payload.user_id]);
-    const user = rows[0];
-    if (!user?.password_hash) return res.status(400).json({ error: 'no_password', message: 'Tu cuenta no usa contraseña.' });
-    if (!verifyPassword(currentPassword, user.password_hash)) return res.status(401).json({ error: 'wrong_password', message: 'Contraseña actual incorrecta.' });
-    const newHash = hashPassword(newPassword);
-    await pool.query('UPDATE auth_users SET password_hash = $1 WHERE id = $2', [newHash, payload.user_id]);
-    return res.json({ ok: true });
-  } catch (err) {
-    console.error('[POST /api/auth/change-password]', err);
-    return res.status(500).json({ error: 'internal_error' });
-  }
+// POST /api/auth/change-password — deprecated (Firebase-only auth, no passwords)
+app.post('/api/auth/change-password', publicFormLimit, (req, res) => {
+  return res.status(410).json({ error: 'deprecated', message: 'Password-based authentication is not supported. Use phone OTP or Google sign-in.' });
 });
 
 // DELETE /api/auth/me — delete account
