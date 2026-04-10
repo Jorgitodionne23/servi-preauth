@@ -123,7 +123,7 @@
 
   async function syncWithBackend(firebaseUser) {
     try {
-      var idToken = await firebaseUser.getIdToken();
+      var idToken = await firebaseUser.getIdToken(true);
       var res = await fetch(API() + '/api/auth/firebase', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + idToken },
@@ -146,7 +146,14 @@
       } else {
         var errData = {};
         try { errData = await res.json(); } catch (_) {}
-        if (res.status === 409 && errData.error === 'phone_exists') {
+        if (res.status === 401 && (errData.error === 'token_revoked' || errData.error === 'user_disabled')) {
+          // Token was revoked or account disabled server-side — sign out immediately
+          localStorage.removeItem('servi_user_session');
+          window.__user = null;
+          try { await auth.signOut(); } catch (_) {}
+          if (window.buildNavbar) window.buildNavbar();
+          window.__syncError = { code: errData.error, status: 401 };
+        } else if (res.status === 409 && errData.error === 'phone_exists') {
           window.__syncError = { code: 'phone_exists', message: errData.message };
         } else {
           window.__syncError = { code: 'backend_sync_failed', status: res.status, message: errData.message };
