@@ -232,17 +232,17 @@ test('4.14 account.html Security section has no change-password form', async ({ 
 });
 
 test('4.15 Save profile: phone_exists 409 shows phone-specific error', async ({ page }) => {
-  // Verify the account.html source contains the new errPhoneExists string for both languages
-  const response = await page.request.get('/account');
+  // Verify the source contains phone-specific error strings and the dispatch logic.
+  // Follows test 4.14 pattern: inspect source directly to avoid Firebase CDN timing issues.
+  const response = await page.request.get('/account.html');
   expect(response.ok()).toBeTruthy();
   const html = await response.text();
 
-  // Check Spanish version contains the new error message
+  // Both language blocks must have a phone-specific (not generic "correo o teléfono") string
   expect(html).toContain('Este número de teléfono ya está registrado con otra cuenta');
-  // Check English version contains the new error message
   expect(html).toContain('This phone number is already registered to another account');
 
-  // Verify the saveProfile function checks for phone_exists error
-  expect(html).toContain('d.error === \'phone_exists\'');
+  // saveProfile() must check for phone_exists specifically before showing the generic conflict message
+  expect(html).toContain("d.error === 'phone_exists'");
   expect(html).toContain('t.errPhoneExists');
 });
