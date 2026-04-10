@@ -52,8 +52,10 @@ if (!firebaseAdmin.apps.length) {
 
 // --- Auth Helpers ---
 // Use dedicated JWT_SECRET if available; fall back to existing secrets for backward compat.
-// TODO: Set JWT_SECRET as a dedicated env var on Render to decouple from Stripe webhook secret rotation.
 const JWT_SECRET = process.env.JWT_SECRET || process.env.STRIPE_WEBHOOK_SECRET || process.env.ADMIN_API_TOKEN || 'servi-fallback-auth-secret';
+if (!process.env.JWT_SECRET) {
+  console.warn('[STARTUP WARNING] JWT_SECRET env var is not set. Session tokens are signed with a fallback secret. Set JWT_SECRET on Render to decouple from Stripe webhook secret rotation.');
+}
 
 function signSessionToken(payload) {
   const now = Math.floor(Date.now() / 1000);
