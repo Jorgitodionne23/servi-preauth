@@ -45,9 +45,13 @@ const upload = multer({
 
 // --- Firebase Admin Init ---
 if (!firebaseAdmin.apps.length) {
-  firebaseAdmin.initializeApp({
-    projectId: process.env.FIREBASE_PROJECT_ID || 'servi-bec91',
-  });
+  const firebaseInitConfig = process.env.FIREBASE_SERVICE_ACCOUNT_JSON
+    ? { credential: firebaseAdmin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON)) }
+    : { projectId: process.env.FIREBASE_PROJECT_ID || 'servi-bec91' };
+  firebaseAdmin.initializeApp(firebaseInitConfig);
+  if (!process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+    console.warn('[STARTUP WARNING] FIREBASE_SERVICE_ACCOUNT_JSON is not set. checkRevoked will fail — token revocation checks are disabled.');
+  }
 }
 
 // --- Auth Helpers ---
