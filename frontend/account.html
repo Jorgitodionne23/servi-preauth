@@ -688,16 +688,8 @@ async function confirmAddPayment() {
 
 // ─── Re-authentication helper ──────────────────────────────────────────────────
 async function reauthenticate() {
-  const provider = window.__user?.auth_provider || (
-    await (async () => {
-      try {
-        const r = await fetch(API + '/api/auth/me', { headers: authHeaders() });
-        if (!r.ok) return 'phone';
-        const d = await r.json();
-        return d.user?.auth_provider || 'phone';
-      } catch { return 'phone'; }
-    })()
-  );
+  // window.__user is always populated by guardAuth() before the delete button is reachable
+  const provider = window.__user?.auth_provider || 'phone';
 
   const firebase = window.firebase;
   const auth = firebase ? firebase.auth() : null;

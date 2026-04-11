@@ -165,10 +165,11 @@
       // was originally stored (e.g. phone) are picked up on the next page load.
       const base = session.user || {};
       window.__user = {
-        id:    base.id    || tokenPayload?.user_id || null,
-        email: base.email || tokenPayload?.email   || null,
-        name:  base.name  || tokenPayload?.name    || null,
-        phone: base.phone || tokenPayload?.phone   || null,
+        id:            base.id            || tokenPayload?.user_id || null,
+        email:         base.email         || tokenPayload?.email   || null,
+        name:          base.name          || tokenPayload?.name    || null,
+        phone:         base.phone         || tokenPayload?.phone   || null,
+        auth_provider: base.auth_provider || null,
       };
       if (!window.__user.id) { window.__user = null; }
       console.log('[SERVI] session restored:', window.__user);

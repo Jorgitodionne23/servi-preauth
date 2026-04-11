@@ -255,17 +255,11 @@ test('4.17 Delete account: Google re-auth completes and calls DELETE /api/auth/m
   await injectFakeSession(page, { auth_provider: 'google.com' });
   await page.goto('/account.html');
   await page.waitForSelector('.account-layout', { timeout: 5000 });
-  await page.waitForTimeout(500);
+  // Wait for syncWithBackend to populate auth_provider (not set by restoreSession)
+  await page.waitForFunction(() => window.__user?.auth_provider, { timeout: 5000 });
 
-  // Ensure window.__user.auth_provider is set correctly for the google re-auth path
-  await page.evaluate(() => {
-    if (window.__user) window.__user.auth_provider = 'google.com';
-  });
-
-  let deleteCalled = false;
   await page.route('**/api/auth/me', route => {
     if (route.request().method() === 'DELETE') {
-      deleteCalled = true;
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
     } else {
       route.continue();
@@ -277,12 +271,14 @@ test('4.17 Delete account: Google re-auth completes and calls DELETE /api/auth/m
   await page.locator('#delete-btn').click();
   await page.waitForSelector('.confirm-overlay');
   await page.locator('#delete-confirm-input').fill('ELIMINAR');
+
+  const responsePromise = page.waitForResponse(
+    resp => resp.url().includes('/api/auth/me') && resp.request().method() === 'DELETE',
+    { timeout: 5000 }
+  );
   await page.locator('.confirm-ok').click();
-
-  // For google.com: reauthenticateWithPopup resolves immediately in mock, DELETE fires shortly after
-  await page.waitForTimeout(1500);
-
-  expect(deleteCalled).toBe(true);
+  const deleteResponse = await responsePromise;
+  expect(deleteResponse.status()).toBe(200);
 });
 
 test('4.15 Save profile: phone_exists 409 shows phone-specific error', async ({ page }) => {
