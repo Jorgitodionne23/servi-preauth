@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Correo verificado — SERVI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,700&family=Syne:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/shared/shared-styles.css">
+  <style>
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 20px;
+      background: linear-gradient(135deg, #fafafa 0%, #f0fdf4 100%);
+    }
+    .verification-card {
+      background: white;
+      border-radius: 16px;
+      padding: 40px;
+      max-width: 480px;
+      text-align: center;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
+    }
+    .success-icon {
+      width: 64px;
+      height: 64px;
+      margin: 0 auto 24px;
+      background: #d1fae5;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #10b981;
+      font-size: 32px;
+    }
+    .verification-card h1 {
+      font-family: 'Syne', sans-serif;
+      font-size: 24px;
+      font-weight: 700;
+      color: #0a0a0a;
+      margin: 0 0 12px;
+      letter-spacing: -0.02em;
+    }
+    .verification-card p {
+      font-size: 15px;
+      color: #666;
+      margin: 0 0 32px;
+      line-height: 1.5;
+    }
+    .countdown {
+      font-size: 13px;
+      color: #999;
+      margin-bottom: 20px;
+    }
+    .close-btn {
+      display: inline-block;
+      padding: 12px 28px;
+      background: #0a0a0a;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+    .close-btn:hover {
+      opacity: 0.8;
+    }
+  </style>
+  <script src="/config.js"></script>
+  <script src="/shared/i18n.js"></script>
+  <script src="/shared/shared-auth.js"></script>
+</head>
+<body>
+
+<div class="verification-card">
+  <div class="success-icon">✓</div>
+  <h1 id="title-es" style="display: none">Correo verificado</h1>
+  <h1 id="title-en" style="display: none">Email verified</h1>
+  <p id="msg-es" style="display: none">Tu correo ha sido verificado. Si abriste una solicitud de registro, se continuará en tu navegador.</p>
+  <p id="msg-en" style="display: none">Your email has been verified. If you opened a sign-up request, it will continue in your browser.</p>
+  <div class="countdown">
+    <span id="countdown-es" style="display: none">Cerrando en <span id="countdown-num">3</span> segundos...</span>
+    <span id="countdown-en" style="display: none">Closing in <span id="countdown-num-en">3</span> seconds...</span>
+  </div>
+  <button class="close-btn" onclick="window.close()">
+    <span id="close-btn-es" style="display: none">Cerrar</span>
+    <span id="close-btn-en" style="display: none">Close</span>
+  </button>
+</div>
+
+<script>
+  (async function() {
+    // Determine language
+    var es = localStorage.getItem('servi_lang') === 'es' || !localStorage.getItem('servi_lang');
+
+    // Show language-specific text
+    document.getElementById(es ? 'title-es' : 'title-en').style.display = 'block';
+    document.getElementById(es ? 'msg-es' : 'msg-en').style.display = 'block';
+    document.getElementById(es ? 'countdown-es' : 'countdown-en').style.display = 'block';
+
+    // Update button text for close
+    document.querySelector('.close-btn').innerHTML = es ? 'Cerrar' : 'Close';
+
+    // Auto-close countdown (only if window was opened by parent)
+    var countdownNum = 3;
+    if (window.opener) {
+      var interval = setInterval(function() {
+        countdownNum--;
+        if (es) {
+          document.getElementById('countdown-num').textContent = countdownNum;
+        } else {
+          document.getElementById('countdown-num-en').textContent = countdownNum;
+        }
+        if (countdownNum <= 0) {
+          clearInterval(interval);
+          window.close();
+        }
+      }, 1000);
+    } else {
+      // Not opened by parent window, hide countdown
+      document.querySelector('.countdown').style.display = 'none';
+    }
+  })();
+</script>
+
+</body>
+</html>
