@@ -869,21 +869,10 @@ async function executeDeleteAccount(btn) {
   btn.disabled = true; btn.textContent = '...';
   if (errEl) errEl.textContent = '';
 
-  let reauthToken;
-  try {
-    reauthToken = await reauthenticate();
-  } catch (err) {
-    btn.disabled = false; btn.textContent = t.confirmDeleteBtn;
-    if (err?.code !== 'reauth_cancelled' && errEl) {
-      errEl.textContent = t.errDeleteFailed;
-    }
-    return;
-  }
-
   try {
     const res = await fetch(API + '/api/auth/me', {
       method: 'DELETE',
-      headers: { ...authHeaders(), 'X-Firebase-Reauth-Token': reauthToken },
+      headers: authHeaders(),
     });
     if (!res.ok) {
       btn.disabled = false; btn.textContent = t.confirmDeleteBtn;
