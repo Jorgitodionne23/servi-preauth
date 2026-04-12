@@ -1076,18 +1076,16 @@
       }
 
       if (uslIsNew && uslFirstIdentifierType === 'email') {
-        // Email-first new signup: mark email verified, then check mismatch, then show name screen
+        // Email-first new signup: mark email verified and show success screen
         uslNewUserData.email = email;
         uslNewUserData.email_verified = true;
         // Wait for auto-sync (onAuthStateChanged fired)
         if (window.__syncPromise) { try { await window.__syncPromise; } catch (_) {} }
-        // Open auth modal for name collection (page may have no modal open after redirect)
-        document.getElementById('auth-modal-global').innerHTML = '';
-        openAuthModal._skipReset = true;
-        document.getElementById('auth-modal-global').innerHTML = modalShell(isEs() ? 'Tu nombre' : 'Your name', false, '');
-        document.body.style.overflow = 'hidden';
-        // Check for identifier mismatch before showing name screen
-        await checkIdentifierMismatch();
+        // Broadcast to any listening modal that email was verified
+        window.__broadcastEmailVerified();
+        // Show success screen instead of trying to reopen modal on this page
+        window.__handleEmailLinkAsScreen();
+        return;
       } else if (uslIsNew && uslFirstIdentifierType === 'phone') {
         // Secondary email for phone-first signup: mark email verified
         uslNewUserData.email = email;
