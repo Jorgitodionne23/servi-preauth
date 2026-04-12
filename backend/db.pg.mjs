@@ -376,6 +376,19 @@ export async function initDb() {
 
     ALTER TABLE auth_users ALTER COLUMN email DROP NOT NULL;
 
+    ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS phone_verified BOOLEAN DEFAULT false;
+    ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT false;
+    ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS first_identifier_type VARCHAR(10);
+
+    -- Backfill: existing phone-OTP users are phone-verified
+    UPDATE auth_users SET phone_verified = true, first_identifier_type = 'phone'
+    WHERE phone IS NOT NULL AND firebase_uid IS NOT NULL AND phone_verified = false;
+
+    -- Backfill: Google / email-link users are email-verified
+    UPDATE auth_users SET email_verified = true, first_identifier_type = 'email'
+    WHERE email IS NOT NULL AND auth_provider IN ('google.com', 'email', 'password')
+      AND email_verified = false AND phone_verified = false;
+
     CREATE TABLE IF NOT EXISTS user_addresses (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,

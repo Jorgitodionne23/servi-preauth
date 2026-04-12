@@ -4416,6 +4416,24 @@ app.post('/api/service-requests', publicFormLimit, async (req, res) => {
     if (!category || !clientName || !clientPhone) {
       return res.status(400).json({ error: 'missing_required_fields', message: 'category, clientName, and clientPhone are required' });
     }
+
+    // If the request comes from an authenticated user, enforce both identifiers verified
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+    const userPayload = token ? verifySessionToken(token) : null;
+    if (userPayload?.user_id) {
+      const { rows: vRows } = await pool.query(
+        'SELECT phone_verified, email_verified FROM auth_users WHERE id = $1',
+        [userPayload.user_id]
+      );
+      const v = vRows[0];
+      if (v && !v.email_verified) {
+        return res.status(409).json({ error: 'email_required', message: 'Verifica tu correo electrónico para confirmar tu solicitud.' });
+      }
+      if (v && !v.phone_verified) {
+        return res.status(409).json({ error: 'phone_required', message: 'Verifica tu número de teléfono para confirmar tu solicitud.' });
+      }
+    }
     const attachmentsStr = Array.isArray(attachments) ? attachments.join(',') : (attachments || null);
     const id = randomUUID();
     await pool.query(
@@ -4493,12 +4511,16 @@ app.get('/api/auth/me', async (req, res) => {
   if (!payload?.user_id) return res.status(401).json({ error: 'unauthorized' });
   try {
     const { rows } = await pool.query(
-      'SELECT id, email, name, phone, auth_provider FROM auth_users WHERE id = $1',
+      'SELECT id, email, name, phone, auth_provider, phone_verified, email_verified FROM auth_users WHERE id = $1',
       [payload.user_id]
     );
     const user = rows[0];
     if (!user) return res.status(404).json({ error: 'not_found' });
-    return res.json({ user: { id: user.id, email: user.email, name: user.name, phone: user.phone || null, auth_provider: user.auth_provider || null } });
+    return res.json({ user: {
+      id: user.id, email: user.email, name: user.name,
+      phone: user.phone || null, auth_provider: user.auth_provider || null,
+      phone_verified: !!user.phone_verified, email_verified: !!user.email_verified,
+    }});
   } catch (err) {
     console.error('[GET /api/auth/me]', err);
     return res.status(500).json({ error: 'internal_error' });
@@ -4518,20 +4540,26 @@ app.post('/api/auth/check-identifier', publicFormLimit, async (req, res) => {
 
     const isEmail = identifier.includes('@');
     let exists = false;
+    let provider = null;
 
     if (isEmail) {
       const emailNorm = identifier.toLowerCase().trim();
-      const { rows } = await pool.query('SELECT id FROM auth_users WHERE email = $1', [emailNorm]);
-      exists = rows.length > 0;
+      const { rows } = await pool.query('SELECT id, auth_provider FROM auth_users WHERE email = $1', [emailNorm]);
+      if (rows.length > 0) { exists = true; provider = rows[0].auth_provider || 'email'; }
     } else {
       const phoneNorm = normalizePhoneToE164(identifier);
       if (phoneNorm) {
-        const { rows } = await pool.query('SELECT id FROM auth_users WHERE phone = $1', [phoneNorm]);
-        exists = rows.length > 0;
+        const { rows } = await pool.query('SELECT id, auth_provider FROM auth_users WHERE phone = $1', [phoneNorm]);
+        if (rows.length > 0) { exists = true; provider = rows[0].auth_provider || 'phone'; }
       }
     }
 
-    return res.json({ exists });
+    // Normalise provider to the three values the frontend needs
+    if (provider && provider.includes('google')) provider = 'google';
+    else if (provider && (provider === 'phone' || provider === 'phone')) provider = 'phone';
+    else if (provider) provider = 'email';
+
+    return res.json({ exists, provider });
   } catch (err) {
     console.error('[POST /api/auth/check-identifier]', err);
     return res.status(500).json({ error: 'internal_error' });
@@ -4565,6 +4593,10 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
     const name = decoded.name || req.body.name || null;
     const phone = decoded.phone_number || req.body.phone || null;
     const provider = decoded.firebase?.sign_in_provider || 'unknown';
+    // Verification flags forwarded by frontend after OTP steps
+    const phoneVerified = req.body.phone_verified != null ? !!req.body.phone_verified : (decoded.phone_number ? true : null);
+    const emailVerified = req.body.email_verified != null ? !!req.body.email_verified : (decoded.email_verified || decoded.email ? true : null);
+    const firstIdentifierType = req.body.first_identifier_type || null;
 
     // Look up existing user by firebase_uid, then email, then phone (for phone-only OTP users)
     let { rows } = await pool.query('SELECT * FROM auth_users WHERE firebase_uid = $1', [firebaseUid]);
@@ -4605,11 +4637,14 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
       const phoneNorm = phone ? normalizePhoneToE164(phone) : null;
       try {
         await pool.query(
-          `INSERT INTO auth_users (id, email, name, phone, firebase_uid, auth_provider)
-           VALUES ($1, $2, $3, $4, $5, $6)`,
-          [id, emailNorm, name, phoneNorm, firebaseUid, provider]
+          `INSERT INTO auth_users (id, email, name, phone, firebase_uid, auth_provider, phone_verified, email_verified, first_identifier_type)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          [id, emailNorm, name, phoneNorm, firebaseUid, provider,
+           phoneVerified !== null ? phoneVerified : !!phoneNorm,
+           emailVerified !== null ? emailVerified : !!emailNorm,
+           firstIdentifierType]
         );
-        user = { id, email: emailNorm, name, phone: phoneNorm };
+        user = { id, email: emailNorm, name, phone: phoneNorm, phone_verified: !!phoneNorm, email_verified: !!emailNorm };
         console.log('[POST /api/auth/firebase] new user created:', id, emailNorm || phoneNorm);
       } catch (insertErr) {
         if (insertErr.code === '23505') {
@@ -4624,8 +4659,20 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
         if (!user) throw insertErr;
       }
     } else {
-      await pool.query('UPDATE auth_users SET last_login = NOW() WHERE id = $1', [user.id]);
+      // Update last_login and persist any newly-provided verification flags
+      const vSets = ['last_login = NOW()'];
+      const vParams = [];
+      if (phoneVerified !== null) { vParams.push(phoneVerified); vSets.push(`phone_verified = $${vParams.length}`); }
+      if (emailVerified !== null) { vParams.push(emailVerified); vSets.push(`email_verified = $${vParams.length}`); }
+      if (firstIdentifierType && !user.first_identifier_type) { vParams.push(firstIdentifierType); vSets.push(`first_identifier_type = $${vParams.length}`); }
+      if (name && !user.name) { vParams.push(name); vSets.push(`name = $${vParams.length}`); }
+      vParams.push(user.id);
+      await pool.query(`UPDATE auth_users SET ${vSets.join(', ')} WHERE id = $${vParams.length}`, vParams);
     }
+
+    // Re-fetch to get canonical verified state
+    ({ rows } = await pool.query('SELECT phone_verified, email_verified FROM auth_users WHERE id = $1', [user.id]));
+    const verifiedState = rows[0] || {};
 
     // Resolve Stripe customer if applicable
     if (user.email) {
@@ -4647,10 +4694,128 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
 
     return res.json({
       token,
-      user: { id: user.id, email: user.email, name: user.name || name, phone: user.phone || phone || null },
+      user: {
+        id: user.id, email: user.email, name: user.name || name,
+        phone: user.phone || phone || null,
+        phone_verified: !!verifiedState.phone_verified,
+        email_verified: !!verifiedState.email_verified,
+      },
     });
   } catch (err) {
     console.error('[POST /api/auth/firebase]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// POST /api/auth/add-email — add + verify email for an authenticated phone-first user
+app.post('/api/auth/add-email', publicFormLimit, async (req, res) => {
+  const payload = requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const { email, firebase_id_token } = req.body || {};
+    if (!email || !firebase_id_token) return res.status(400).json({ error: 'missing_fields' });
+    const emailNorm = normalizeEmail(email);
+    if (!emailNorm) return res.status(400).json({ error: 'invalid_email' });
+
+    // Verify Firebase token proves ownership of this email
+    let decoded;
+    try { decoded = await firebaseAdmin.auth().verifyIdToken(firebase_id_token, true); }
+    catch (e) { return res.status(401).json({ error: 'invalid_token' }); }
+    if (!decoded.email || decoded.email.toLowerCase() !== emailNorm) {
+      return res.status(400).json({ error: 'email_mismatch', message: 'Token email does not match supplied email.' });
+    }
+
+    // Check not already taken by another account
+    const { rows: existing } = await pool.query('SELECT id FROM auth_users WHERE email = $1', [emailNorm]);
+    if (existing.length && existing[0].id !== payload.user_id) {
+      return res.status(409).json({ error: 'email_taken', message: 'Este correo ya está registrado con otra cuenta.' });
+    }
+
+    await pool.query(
+      'UPDATE auth_users SET email = $1, email_verified = true WHERE id = $2',
+      [emailNorm, payload.user_id]
+    );
+    console.log('[POST /api/auth/add-email] email verified for user:', payload.user_id, emailNorm);
+    return res.json({ ok: true, email_verified: true, email: emailNorm });
+  } catch (err) {
+    console.error('[POST /api/auth/add-email]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// POST /api/auth/add-phone — add + verify phone for an authenticated email-first user
+app.post('/api/auth/add-phone', publicFormLimit, async (req, res) => {
+  const payload = requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const { phone, firebase_id_token } = req.body || {};
+    if (!phone || !firebase_id_token) return res.status(400).json({ error: 'missing_fields' });
+    const phoneNorm = normalizePhoneToE164(phone);
+    if (!phoneNorm) return res.status(400).json({ error: 'invalid_phone' });
+
+    // Verify Firebase token proves ownership of this phone number
+    let decoded;
+    try { decoded = await firebaseAdmin.auth().verifyIdToken(firebase_id_token, true); }
+    catch (e) { return res.status(401).json({ error: 'invalid_token' }); }
+    if (!decoded.phone_number || decoded.phone_number !== phoneNorm) {
+      return res.status(400).json({ error: 'phone_mismatch', message: 'Token phone does not match supplied phone.' });
+    }
+
+    // Check not already taken by another account
+    const { rows: existing } = await pool.query('SELECT id FROM auth_users WHERE phone = $1', [phoneNorm]);
+    if (existing.length && existing[0].id !== payload.user_id) {
+      return res.status(409).json({ error: 'phone_taken', message: 'Este número ya está registrado con otra cuenta.' });
+    }
+
+    await pool.query(
+      'UPDATE auth_users SET phone = $1, phone_verified = true WHERE id = $2',
+      [phoneNorm, payload.user_id]
+    );
+    console.log('[POST /api/auth/add-phone] phone verified for user:', payload.user_id, phoneNorm);
+    return res.json({ ok: true, phone_verified: true, phone: phoneNorm });
+  } catch (err) {
+    console.error('[POST /api/auth/add-phone]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// POST /api/auth/resolve-identifier-mismatch — detect orphaned phone account for an email that isn't registered.
+// Requires a valid Firebase ID token proving ownership of the email BEFORE returning any hint.
+// Rate-limited via publicFormLimit (5/min per IP from express-rate-limit config).
+app.post('/api/auth/resolve-identifier-mismatch', publicFormLimit, async (req, res) => {
+  try {
+    const { identifier, firebase_id_token } = req.body || {};
+    if (!identifier || !firebase_id_token) return res.status(400).json({ error: 'missing_fields' });
+
+    // Must prove email ownership before we reveal anything
+    let decoded;
+    try { decoded = await firebaseAdmin.auth().verifyIdToken(firebase_id_token, true); }
+    catch (e) { return res.status(401).json({ error: 'invalid_token' }); }
+
+    const emailNorm = normalizeEmail(identifier);
+    if (!emailNorm) return res.status(400).json({ error: 'invalid_email' });
+    if (!decoded.email || decoded.email.toLowerCase() !== emailNorm) {
+      return res.status(400).json({ error: 'email_mismatch' });
+    }
+
+    // Look for a phone-only account that has no email (potential orphan)
+    const { rows } = await pool.query(
+      `SELECT id, name FROM auth_users
+       WHERE email IS NULL AND phone IS NOT NULL AND phone_verified = true
+       LIMIT 1`,
+      []
+    );
+
+    if (!rows.length) {
+      return res.json({ resolution: 'new_account' });
+    }
+
+    // Return a 2-char name hint so UI can guide name validation — not enough to enumerate
+    // _candidate_id is intentionally NOT exposed; the backend re-resolves it at merge time
+    const hint = (rows[0].name || '').slice(0, 2);
+    return res.json({ resolution: 'link_to_phone', hint });
+  } catch (err) {
+    console.error('[POST /api/auth/resolve-identifier-mismatch]', err);
     return res.status(500).json({ error: 'internal_error' });
   }
 });
@@ -4717,9 +4882,13 @@ app.patch('/api/auth/me', publicFormLimit, async (req, res) => {
     if (!sets.length) return res.status(400).json({ error: 'no_fields' });
     params.push(payload.user_id);
     await pool.query(`UPDATE auth_users SET ${sets.join(', ')} WHERE id = $${params.length}`, params);
-    const { rows } = await pool.query('SELECT id, email, name, phone, auth_provider FROM auth_users WHERE id = $1', [payload.user_id]);
+    const { rows } = await pool.query('SELECT id, email, name, phone, auth_provider, phone_verified, email_verified FROM auth_users WHERE id = $1', [payload.user_id]);
     const u = rows[0];
-    return res.json({ user: { id: u.id, email: u.email, name: u.name, phone: u.phone || null, auth_provider: u.auth_provider || null } });
+    return res.json({ user: {
+      id: u.id, email: u.email, name: u.name, phone: u.phone || null,
+      auth_provider: u.auth_provider || null,
+      phone_verified: !!u.phone_verified, email_verified: !!u.email_verified,
+    }});
   } catch (err) {
     if (err.code === '23505') return res.status(409).json({ error: 'conflict', message: 'Ese dato ya está en uso.' });
     console.error('[PATCH /api/auth/me]', err);
