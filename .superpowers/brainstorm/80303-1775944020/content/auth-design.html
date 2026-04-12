@@ -1,0 +1,1224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SERVI Auth Redesign — Visual Spec</title>
+<style>
+  :root {
+    --bg: #0f0f10;
+    --surface: #1a1a1e;
+    --surface2: #222228;
+    --border: #2e2e38;
+    --text: #f0f0f2;
+    --muted: #888898;
+    --green: #10b981;
+    --green-dim: #064e3b;
+    --yellow: #f59e0b;
+    --red: #ef4444;
+    --blue: #3b82f6;
+    --purple: #8b5cf6;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'DM Sans', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  /* ── Navigation ── */
+  .toc {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: #0f0f10ee;
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    gap: 4px;
+    padding: 10px 24px;
+    overflow-x: auto;
+  }
+  .toc a {
+    text-decoration: none;
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 500;
+    padding: 6px 12px;
+    border-radius: 6px;
+    white-space: nowrap;
+    transition: all .15s;
+  }
+  .toc a:hover { background: var(--surface2); color: var(--text); }
+
+  /* ── Page layout ── */
+  .page { max-width: 1200px; margin: 0 auto; padding: 0 24px 80px; }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 48px 0 24px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 32px;
+  }
+  .section-num {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: var(--green);
+    color: #000;
+    font-weight: 800;
+    font-size: 15px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .section-header h2 { font-size: 22px; font-weight: 700; }
+  .section-header p { color: var(--muted); font-size: 14px; margin-top: 2px; }
+
+  /* ── State Machine ── */
+  .flow-container {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 32px;
+    overflow-x: auto;
+  }
+
+  .flow {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    min-width: 700px;
+  }
+
+  .flow-node {
+    padding: 10px 20px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 600;
+    text-align: center;
+    white-space: nowrap;
+    position: relative;
+  }
+  .node-start { background: var(--green); color: #000; border-radius: 20px; }
+  .node-screen { background: var(--surface2); border: 1.5px solid var(--border); color: var(--text); }
+  .node-api { background: #1e2a3a; border: 1.5px solid #2563eb44; color: #93c5fd; }
+  .node-decision { background: #2a1e3a; border: 1.5px solid #7c3aed44; color: #c4b5fd; border-radius: 6px; padding: 8px 16px; transform: rotate(0deg); }
+  .node-end { background: var(--green-dim); border: 1.5px solid var(--green); color: var(--green); border-radius: 20px; }
+  .node-gate { background: #3a2000; border: 1.5px solid #d97706; color: var(--yellow); }
+
+  .flow-arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    color: var(--muted);
+    font-size: 11px;
+    padding: 4px 0;
+    gap: 2px;
+  }
+  .flow-arrow-line {
+    width: 2px;
+    height: 20px;
+    background: var(--border);
+  }
+  .flow-arrow-head { color: var(--muted); line-height: 1; }
+  .flow-label {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  /* Branch layout */
+  .flow-branches {
+    display: flex;
+    gap: 40px;
+    align-items: flex-start;
+    width: 100%;
+    justify-content: center;
+  }
+  .flow-branch {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    flex: 1;
+    max-width: 280px;
+  }
+  .branch-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    padding: 4px 10px;
+    border-radius: 4px;
+    margin-bottom: 8px;
+  }
+  .branch-signup { background: #1a3a2a; color: var(--green); border: 1px solid #064e3b; }
+  .branch-login { background: #1a2a3a; color: #60a5fa; border: 1px solid #1e40af44; }
+
+  /* connector line from decision */
+  .branch-connector {
+    display: flex;
+    justify-content: center;
+    gap: 0;
+    width: 100%;
+    position: relative;
+    margin: 0;
+    height: 32px;
+  }
+  .branch-connector::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: calc(50% - 40px);
+    height: 2px;
+    background: var(--border);
+    transform: translateX(-100%);
+  }
+  .branch-connector::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: calc(50% - 40px - 140px);
+    width: calc(50% - 40px);
+    height: 2px;
+    background: var(--border);
+  }
+
+  /* ── UI Mockups ── */
+  .mockups-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 24px;
+  }
+
+  .screen-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+  }
+  .screen-label {
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 16px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .screen-badge {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--green);
+  }
+  .screen-badge.yellow { background: var(--yellow); }
+  .screen-badge.blue { background: var(--blue); }
+  .screen-badge.purple { background: var(--purple); }
+  .screen-badge.red { background: var(--red); }
+
+  /* Phone frame mockup */
+  .phone-frame {
+    padding: 20px;
+    background: #fafafa;
+    color: #0a0a0a;
+    font-family: 'DM Sans', system-ui, sans-serif;
+  }
+  .phone-logo {
+    font-weight: 800;
+    font-size: 18px;
+    color: #0a0a0a;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+  .phone-logo span { color: #10b981; }
+  .phone-title {
+    font-size: 20px;
+    font-weight: 800;
+    color: #0a0a0a;
+    margin-bottom: 4px;
+    font-family: 'Syne', system-ui, sans-serif;
+  }
+  .phone-subtitle {
+    font-size: 13px;
+    color: #666;
+    margin-bottom: 20px;
+    line-height: 1.5;
+  }
+  .phone-input {
+    border: 1.5px solid #e8e8e8;
+    border-radius: 10px;
+    padding: 12px;
+    font-size: 14px;
+    color: #0a0a0a;
+    background: #fff;
+    width: 100%;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .phone-input.active { border-color: #0a0a0a; }
+  .phone-input-flag { font-size: 18px; flex-shrink: 0; }
+  .phone-input-text { color: #aaa; font-size: 13px; }
+  .phone-input-val { color: #0a0a0a; font-size: 14px; }
+  .phone-btn {
+    background: #0a0a0a;
+    color: #fff;
+    border: none;
+    border-radius: 12px;
+    padding: 13px;
+    font-size: 14px;
+    font-weight: 600;
+    width: 100%;
+    text-align: center;
+    margin-bottom: 12px;
+    cursor: pointer;
+  }
+  .phone-btn.secondary {
+    background: transparent;
+    color: #0a0a0a;
+    border: 1.5px solid #e8e8e8;
+  }
+  .phone-btn.skip {
+    background: transparent;
+    color: #888;
+    border: none;
+    font-weight: 400;
+    text-decoration: underline;
+  }
+  .phone-btn.google {
+    background: #fff;
+    color: #0a0a0a;
+    border: 1.5px solid #e0e0e0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+  .phone-divider {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 12px 0;
+    color: #aaa;
+    font-size: 12px;
+  }
+  .phone-divider::before, .phone-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: #eee;
+  }
+  .otp-boxes {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+    justify-content: center;
+  }
+  .otp-box {
+    width: 44px;
+    height: 52px;
+    border: 1.5px solid #e8e8e8;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    font-weight: 700;
+    color: #0a0a0a;
+    background: #fff;
+  }
+  .otp-box.active { border-color: #0a0a0a; background: #f8f8f8; }
+  .otp-box.filled { border-color: #10b981; }
+  .phone-info-banner {
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-size: 12px;
+    color: #166534;
+    margin-bottom: 12px;
+    line-height: 1.5;
+  }
+  .phone-warn-banner {
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-size: 12px;
+    color: #92400e;
+    margin-bottom: 12px;
+    line-height: 1.5;
+  }
+  .name-fields {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .phone-link {
+    color: #10b981;
+    font-size: 13px;
+    text-align: center;
+    display: block;
+    margin-top: 8px;
+    cursor: pointer;
+  }
+  .phone-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    border-radius: 20px;
+    padding: 3px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #166534;
+    margin-bottom: 12px;
+  }
+  .phone-progress {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 16px;
+  }
+  .prog-dot {
+    flex: 1;
+    height: 3px;
+    border-radius: 2px;
+    background: #e8e8e8;
+  }
+  .prog-dot.done { background: #0a0a0a; }
+  .prog-dot.active { background: #10b981; }
+  .back-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: #666;
+    margin-bottom: 16px;
+    cursor: pointer;
+  }
+
+  /* ── DB Schema ── */
+  .schema-box {
+    background: #0a0d12;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .schema-header {
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 20px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--muted);
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .schema-dot { width: 8px; height: 8px; border-radius: 50%; }
+  pre {
+    padding: 20px;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 12.5px;
+    line-height: 1.7;
+    overflow-x: auto;
+    tab-size: 2;
+  }
+  .kw { color: #c792ea; }
+  .ty { color: #82aaff; }
+  .cm { color: #546e7a; font-style: italic; }
+  .st { color: #c3e88d; }
+  .nm { color: #ffcb6b; }
+  .op { color: #89ddff; }
+  .new-col { background: #10b98122; border-left: 2px solid #10b981; margin-left: -20px; padding-left: 18px; display: block; }
+
+  /* ── API Spec ── */
+  .api-table {
+    width: 100%;
+    border-collapse: collapse;
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--surface);
+    border: 1px solid var(--border);
+  }
+  .api-table th {
+    background: var(--surface2);
+    padding: 10px 16px;
+    text-align: left;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+  }
+  .api-table td {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .api-table tr:last-child td { border-bottom: none; }
+  .api-table tr:hover td { background: var(--surface2); }
+  .method {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 700;
+    font-family: monospace;
+    letter-spacing: .03em;
+  }
+  .get { background: #064e3b; color: #6ee7b7; }
+  .post { background: #1e3a5f; color: #93c5fd; }
+  .patch { background: #3a2000; color: #fcd34d; }
+  .route { font-family: monospace; font-size: 12px; color: #e2e8f0; }
+  .status-new { background: #10b98122; color: var(--green); border: 1px solid #064e3b; border-radius: 4px; padding: 1px 6px; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+  .status-mod { background: #f59e0b22; color: var(--yellow); border: 1px solid #92400e; border-radius: 4px; padding: 1px 6px; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+
+  code {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-family: monospace;
+    font-size: 12px;
+    color: #c3e88d;
+  }
+
+  /* ── Flow detailed ── */
+  .flow-detail {
+    display: flex;
+    gap: 32px;
+    margin-top: 32px;
+  }
+  .flow-column {
+    flex: 1;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .flow-column-header {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+  }
+  .flow-column-header.signup { color: var(--green); background: #0a1a12; }
+  .flow-column-header.login { color: #60a5fa; background: #0a1220; }
+  .flow-column-header.gate { color: var(--yellow); background: #1a1200; }
+  .flow-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .flow-step:last-child { border-bottom: none; }
+  .step-num {
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    font-size: 11px;
+    font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+  .step-num.green { background: var(--green-dim); color: var(--green); }
+  .step-num.blue { background: #1e3a5f; color: #60a5fa; }
+  .step-num.yellow { background: #3a2000; color: var(--yellow); }
+  .step-title { font-weight: 600; margin-bottom: 2px; }
+  .step-detail { font-size: 12px; color: var(--muted); line-height: 1.5; }
+  .step-key { font-family: monospace; font-size: 11px; color: #c3e88d; background: var(--surface2); padding: 1px 5px; border-radius: 3px; }
+
+  /* ── localStorage key doc ── */
+  .keys-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 12px;
+    margin-top: 20px;
+  }
+  .key-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .key-name { font-family: monospace; font-size: 13px; color: #c3e88d; font-weight: 700; margin-bottom: 4px; }
+  .key-values { font-size: 12px; color: var(--muted); }
+
+  /* Summary banner */
+  .summary-banner {
+    background: linear-gradient(135deg, #064e3b, #1e3a5f);
+    border: 1px solid #10b98144;
+    border-radius: 16px;
+    padding: 24px 28px;
+    margin-top: 32px;
+    margin-bottom: 16px;
+  }
+  .summary-banner h3 { color: var(--green); font-size: 16px; margin-bottom: 12px; }
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 12px;
+  }
+  .summary-item {
+    background: rgba(0,0,0,.3);
+    border-radius: 10px;
+    padding: 10px 14px;
+  }
+  .summary-item strong { display: block; font-size: 12px; color: var(--green); margin-bottom: 4px; }
+  .summary-item span { font-size: 13px; color: var(--text); }
+</style>
+</head>
+<body>
+
+<nav class="toc">
+  <a href="#state-machine">① State Machine</a>
+  <a href="#screens">② UI Screens</a>
+  <a href="#db">③ DB Schema</a>
+  <a href="#api">④ API Endpoints</a>
+  <a href="#localstorage">⑤ LocalStorage Keys</a>
+</nav>
+
+<div class="page">
+
+  <!-- ════════════════════════════════════════════════════
+       SECTION 1: STATE MACHINE
+  ════════════════════════════════════════════════════ -->
+  <div class="section-header" id="state-machine">
+    <div class="section-num">1</div>
+    <div>
+      <h2>Auth State Machine</h2>
+      <p>Full flow: identifier entry → backend check → signup or login → booking gate</p>
+    </div>
+  </div>
+
+  <div class="flow-container">
+    <div class="flow">
+
+      <!-- Entry -->
+      <div class="flow-node node-start">User clicks "Log in" or reaches Booking Step 3</div>
+      <div class="flow-arrow"><div class="flow-arrow-line"></div><div class="flow-arrow-head">▼</div></div>
+
+      <div class="flow-node node-screen">📱 Screen 1 — Identifier Input<br><small style="font-weight:400;color:#aaa">Unified phone/email field · Google button · auto-detect @ symbol</small></div>
+      <div class="flow-arrow"><div class="flow-arrow-line"></div><div class="flow-arrow-head">▼</div></div>
+
+      <div class="flow-node node-api">POST /api/auth/check-identifier<br><small style="color:#93c5fd88">→ { exists: bool, provider: string }</small></div>
+      <div class="flow-arrow"><div class="flow-arrow-line"></div><div class="flow-arrow-head">▼</div></div>
+
+      <div class="flow-node node-decision">⬦ &nbsp; New user?</div>
+
+    </div>
+
+    <!-- Branches -->
+    <div style="display:flex;gap:60px;justify-content:center;margin-top:0;padding:0 40px">
+
+      <!-- SIGNUP BRANCH -->
+      <div style="flex:1;max-width:320px;display:flex;flex-direction:column;align-items:center;gap:0">
+        <div style="display:flex;flex-direction:column;align-items:center">
+          <div style="height:24px;width:2px;background:#2e2e38"></div>
+          <div class="branch-label branch-signup">YES → Signup</div>
+        </div>
+        <div class="flow-node node-screen" style="border-color:#10b98144">📱 Screen 2a — Phone OTP<br><small style="font-weight:400;color:#aaa">Send SMS · Verify 6-digit code · reCAPTCHA</small></div>
+        <div class="flow-arrow"><div class="flow-arrow-line"></div><div class="flow-arrow-head">▼</div></div>
+        <div class="flow-node node-api" style="border-color:#10b98144">Firebase: signInWithPhoneNumber()</div>
+        <div class="flow-arrow"><div class="flow-arrow-line"></div><div class="flow-arrow-head">▼</div></div>
+        <div class="flow-node node-screen" style="border-color:#10b98144">📝 Screen 2b — Name Collection<br><small style="font-weight:400;color:#aaa">First name + Last name (required)<br>Cannot skip — needed for bookings</small></div>
+        <div class="flow-arrow"><div class="flow-arrow-line"></div><div class="flow-arrow-head">▼</div></div>
+        <div class="flow-node node-screen" style="border-color:#10b98144">📧 Screen 2c — Email Collection<br><small style="font-weight:400;color:#aaa">Optional · "Skip for now" link<br>Sets localStorage: servi_email_skipped=1</small></div>
+        <div class="flow-arrow"><div class="flow-arrow-line"></div><div class="flow-arrow-head">▼</div></div>
+
+        <!-- Sub-branch: email provided or skipped -->
+        <div style="display:flex;gap:20px;width:100%;justify-content:center">
+          <div style="flex:1;display:flex;flex-direction:column;align-items:center;max-width:140px">
+            <div style="font-size:11px;color:#10b981;font-weight:700;margin-bottom:6px">Email given</div>
+            <div class="flow-node node-screen" style="font-size:12px;border-color:#10b98144;padding:8px 12px">📧 Screen 2d<br>Email OTP<br><small style="color:#aaa">6-digit code to email</small></div>
+          </div>
+          <div style="flex:1;display:flex;flex-direction:column;align-items:center;max-width:140px">
+            <div style="font-size:11px;color:#888;font-weight:700;margin-bottom:6px">Skipped</div>
+            <div class="flow-node node-screen" style="font-size:12px;padding:8px 12px">Skip →<br>no email_verified</div>
+          </div>
+        </div>
+
+        <div class="flow-arrow" style="margin-top:8px"><div class="flow-arrow-line"></div><div class="flow-arrow-head">▼</div></div>
+        <div class="flow-node node-api" style="border-color:#10b98144">POST /api/auth/firebase<br><small style="color:#6ee7b7">Creates auth_users row · phone_verified=true · email_verified=true/false</small></div>
+        <div class="flow-arrow"><div class="flow-arrow-line"></div><div class="flow-arrow-head">▼</div></div>
+        <div class="flow-node node-end">✓ Account created · Logged in</div>
+      </div>
+
+      <!-- LOGIN BRANCH -->
+      <div style="flex:1;max-width:260px;display:flex;flex-direction:column;align-items:center;gap:0">
+        <div style="display:flex;flex-direction:column;align-items:center">
+          <div style="height:24px;width:2px;background:#2e2e38"></div>
+          <div class="branch-label branch-login">NO → Login</div>
+        </div>
+        <div class="flow-node node-screen" style="border-color:#3b82f644">📱 Screen 2a — Phone OTP<br><small style="font-weight:400;color:#aaa">Same screen · recovery link shown<br>"Can't access phone?" → email link</small></div>
+        <div class="flow-arrow"><div class="flow-arrow-line"></div><div class="flow-arrow-head">▼</div></div>
+        <div class="flow-node node-api" style="border-color:#3b82f644">Firebase: signInWithPhoneNumber()</div>
+        <div class="flow-arrow"><div class="flow-arrow-line"></div><div class="flow-arrow-head">▼</div></div>
+        <div class="flow-node node-api" style="border-color:#3b82f644">POST /api/auth/firebase<br><small style="color:#93c5fd">Updates last_login · returns JWT</small></div>
+        <div class="flow-arrow"><div class="flow-arrow-line"></div><div class="flow-arrow-head">▼</div></div>
+        <div class="flow-node node-end" style="border-color:#3b82f6;color:#60a5fa;background:#0a1220">✓ Logged in</div>
+      </div>
+
+    </div>
+
+    <!-- Booking Gate -->
+    <div class="flow" style="margin-top:48px">
+      <div style="font-size:12px;color:#f59e0b;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;border-top:1px dashed #f59e0b44;padding-top:20px;width:100%;text-align:center">Booking Step 3 Gate (separate trigger)</div>
+      <div class="flow-node node-gate">⚠️ Booking Step 3 — Pre-confirmation check</div>
+      <div class="flow-arrow"><div class="flow-arrow-line"></div><div class="flow-arrow-head">▼</div></div>
+      <div class="flow-node node-api">GET /api/auth/me → check phone_verified, email_verified</div>
+      <div class="flow-arrow"><div class="flow-arrow-line"></div><div class="flow-arrow-head">▼</div></div>
+      <div class="flow-node node-decision">⬦ &nbsp; email_verified = false?</div>
+      <div class="flow-arrow"><div class="flow-arrow-line"></div><div class="flow-label">YES</div><div class="flow-arrow-head">▼</div></div>
+      <div class="flow-node node-gate">📧 Screen 3 — Booking Gate<br><small style="font-weight:400;color:#aaa">Inline banner: "Complete your profile to confirm"<br>Collect email → Email OTP → sets email_verified=true</small></div>
+      <div class="flow-arrow"><div class="flow-arrow-line"></div><div class="flow-arrow-head">▼</div></div>
+      <div class="flow-node node-end">✓ Proceed to booking confirmation</div>
+    </div>
+  </div>
+
+  <!-- Step-by-step branch details -->
+  <div class="flow-detail">
+    <div class="flow-column">
+      <div class="flow-column-header signup">Signup Branch — Step by Step</div>
+      <div class="flow-step">
+        <div class="step-num green">1</div>
+        <div><div class="step-title">Identifier Entry</div><div class="step-detail">Phone (with country picker) or email auto-detected. Google OAuth always available as shortcut.</div></div>
+      </div>
+      <div class="flow-step">
+        <div class="step-num green">2</div>
+        <div><div class="step-title">Phone OTP Verification</div><div class="step-detail">Firebase <code>signInWithPhoneNumber()</code>. Invisible reCAPTCHA. Verify 6-digit SMS code.</div></div>
+      </div>
+      <div class="flow-step">
+        <div class="step-num green">3</div>
+        <div><div class="step-title">Name Collection</div><div class="step-detail">First name + Last name fields. <strong>Required.</strong> Cannot be skipped — needed for booking invoices.</div></div>
+      </div>
+      <div class="flow-step">
+        <div class="step-num green">4</div>
+        <div><div class="step-title">Email Collection (optional)</div><div class="step-detail">Explain why email helps (booking confirmations, recovery). "Skip for now" link available. Sets <span class="step-key">servi_email_skipped=1</span>.</div></div>
+      </div>
+      <div class="flow-step">
+        <div class="step-num green">5</div>
+        <div><div class="step-title">Email OTP (if email given)</div><div class="step-detail">Firebase sends 6-digit code to email. On verify: <code>email_verified=true</code> saved to DB.</div></div>
+      </div>
+      <div class="flow-step">
+        <div class="step-num green">6</div>
+        <div><div class="step-title">Backend Sync</div><div class="step-detail">POST /api/auth/firebase: creates auth_users row with <code>phone_verified=true</code>, <code>email_verified=true/false</code>, <code>first_identifier_type='phone'</code>.</div></div>
+      </div>
+    </div>
+
+    <div class="flow-column">
+      <div class="flow-column-header login">Login Branch — Step by Step</div>
+      <div class="flow-step">
+        <div class="step-num blue">1</div>
+        <div><div class="step-title">Identifier Entry</div><div class="step-detail">Same screen. Backend confirms account exists → route to login.</div></div>
+      </div>
+      <div class="flow-step">
+        <div class="step-num blue">2</div>
+        <div><div class="step-title">Phone OTP</div><div class="step-detail">Same reCAPTCHA + SMS flow. Recovery link visible: "Can't access your phone?" → sends email magic link.</div></div>
+      </div>
+      <div class="flow-step">
+        <div class="step-num blue">3</div>
+        <div><div class="step-title">Backend Sync</div><div class="step-detail">POST /api/auth/firebase: updates <code>last_login</code>, returns existing JWT. No name/email collection.</div></div>
+      </div>
+      <div class="flow-step">
+        <div class="step-num blue">4</div>
+        <div><div class="step-title">Done</div><div class="step-detail">Auth modal closes. Navbar shows user name. Booking step 3 may then check email_verified if missing.</div></div>
+      </div>
+    </div>
+
+    <div class="flow-column">
+      <div class="flow-column-header gate">Booking Gate — Step by Step</div>
+      <div class="flow-step">
+        <div class="step-num yellow">1</div>
+        <div><div class="step-title">User reaches Step 3</div><div class="step-detail">Already logged in. Frontend calls GET /api/auth/me to check <code>email_verified</code>.</div></div>
+      </div>
+      <div class="flow-step">
+        <div class="step-num yellow">2</div>
+        <div><div class="step-title">Missing email?</div><div class="step-detail">Show inline banner inside booking panel: "Add your email to confirm this request." Not a full modal.</div></div>
+      </div>
+      <div class="flow-step">
+        <div class="step-num yellow">3</div>
+        <div><div class="step-title">Email OTP inline</div><div class="step-detail">Small form embedded in booking step 3: email field → "Send code" → 6-digit OTP → verify. On success: <code>email_verified=true</code>.</div></div>
+      </div>
+      <div class="flow-step">
+        <div class="step-num yellow">4</div>
+        <div><div class="step-title">Proceed</div><div class="step-detail">PATCH /api/auth/me or /api/auth/add-email sets email + email_verified. Booking confirmation unlocked.</div></div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ════════════════════════════════════════════════════
+       SECTION 2: UI SCREENS
+  ════════════════════════════════════════════════════ -->
+  <div class="section-header" id="screens" style="margin-top:32px">
+    <div class="section-num">2</div>
+    <div>
+      <h2>UI Screen Mockups</h2>
+      <p>6 screens — auth modal + booking gate inline form</p>
+    </div>
+  </div>
+
+  <div class="mockups-grid">
+
+    <!-- Screen 1: Identifier -->
+    <div class="screen-card">
+      <div class="screen-label"><div class="screen-badge"></div>Screen 1 — Identifier Input</div>
+      <div class="phone-frame">
+        <div class="phone-logo">SERVI<span>.</span></div>
+        <div class="phone-title">Ingresa a SERVI</div>
+        <div class="phone-subtitle">Escribe tu número o correo para continuar</div>
+        <div class="phone-btn google">
+          <svg width="16" height="16" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+          Continuar con Google
+        </div>
+        <div class="phone-divider">o</div>
+        <div class="phone-input active">
+          <div class="phone-input-flag">🇲🇽</div>
+          <span style="color:#ccc;font-size:13px">▼ &nbsp;</span>
+          <span class="phone-input-val">55 1234 5678</span>
+        </div>
+        <div class="phone-btn">Continuar →</div>
+        <div style="font-size:11px;color:#aaa;text-align:center;line-height:1.6">
+          Si usas correo, el ícono de bandera desaparecerá automáticamente
+        </div>
+      </div>
+    </div>
+
+    <!-- Screen 2a: Phone OTP -->
+    <div class="screen-card">
+      <div class="screen-label"><div class="screen-badge blue"></div>Screen 2a — Phone OTP</div>
+      <div class="phone-frame">
+        <div class="phone-logo">SERVI<span>.</span></div>
+        <div class="back-row">← Volver</div>
+        <div class="phone-progress">
+          <div class="prog-dot done"></div>
+          <div class="prog-dot active"></div>
+          <div class="prog-dot"></div>
+          <div class="prog-dot"></div>
+        </div>
+        <div class="phone-title">Verificar teléfono</div>
+        <div class="phone-subtitle">Enviamos un código SMS a <strong>+52 55 1234 5678</strong></div>
+        <div class="otp-boxes">
+          <div class="otp-box filled">3</div>
+          <div class="otp-box filled">8</div>
+          <div class="otp-box filled">4</div>
+          <div class="otp-box active"></div>
+          <div class="otp-box"></div>
+          <div class="otp-box"></div>
+        </div>
+        <div class="phone-btn">Verificar</div>
+        <div class="phone-link">Reenviar código</div>
+        <div class="phone-link" style="color:#aaa;font-size:12px;text-decoration:underline;margin-top:8px">¿No tienes acceso a tu teléfono?</div>
+      </div>
+    </div>
+
+    <!-- Screen 2b: Name Collection -->
+    <div class="screen-card">
+      <div class="screen-label"><div class="screen-badge"></div>Screen 2b — Name Collection</div>
+      <div class="phone-frame">
+        <div class="phone-logo">SERVI<span>.</span></div>
+        <div class="back-row">← Volver</div>
+        <div class="phone-progress">
+          <div class="prog-dot done"></div>
+          <div class="prog-dot done"></div>
+          <div class="prog-dot active"></div>
+          <div class="prog-dot"></div>
+        </div>
+        <div class="phone-info-banner">✓ Número verificado</div>
+        <div class="phone-title">¿Cuál es tu nombre?</div>
+        <div class="phone-subtitle">Lo usamos para personalizar tus solicitudes de servicio</div>
+        <div class="name-fields">
+          <div class="phone-input active" style="flex:1">
+            <span class="phone-input-val">Juan</span>
+          </div>
+          <div class="phone-input" style="flex:1">
+            <span class="phone-input-text">Apellido</span>
+          </div>
+        </div>
+        <div class="phone-btn" style="margin-top:4px">Continuar →</div>
+      </div>
+    </div>
+
+    <!-- Screen 2c: Email collection (optional) -->
+    <div class="screen-card">
+      <div class="screen-label"><div class="screen-badge yellow"></div>Screen 2c — Email Collection (optional)</div>
+      <div class="phone-frame">
+        <div class="phone-logo">SERVI<span>.</span></div>
+        <div class="back-row">← Volver</div>
+        <div class="phone-progress">
+          <div class="prog-dot done"></div>
+          <div class="prog-dot done"></div>
+          <div class="prog-dot done"></div>
+          <div class="prog-dot active"></div>
+        </div>
+        <div class="phone-title">Agrega tu correo</div>
+        <div class="phone-subtitle">Recibe confirmaciones y facilita la recuperación de tu cuenta</div>
+        <div class="phone-input">
+          <span class="phone-input-text">correo@ejemplo.com</span>
+        </div>
+        <div class="phone-btn">Verificar correo →</div>
+        <div class="phone-btn skip">Omitir por ahora</div>
+        <div style="font-size:11px;color:#aaa;line-height:1.6;text-align:center">
+          Necesitarás un correo verificado para confirmar solicitudes de servicio
+        </div>
+      </div>
+    </div>
+
+    <!-- Screen 2d: Email OTP -->
+    <div class="screen-card">
+      <div class="screen-label"><div class="screen-badge purple"></div>Screen 2d — Email OTP</div>
+      <div class="phone-frame">
+        <div class="phone-logo">SERVI<span>.</span></div>
+        <div class="back-row">← Volver</div>
+        <div class="phone-title">Verificar correo</div>
+        <div class="phone-subtitle">Enviamos un código de 6 dígitos a <strong>juan@gmail.com</strong></div>
+        <div class="otp-boxes">
+          <div class="otp-box active"></div>
+          <div class="otp-box"></div>
+          <div class="otp-box"></div>
+          <div class="otp-box"></div>
+          <div class="otp-box"></div>
+          <div class="otp-box"></div>
+        </div>
+        <div class="phone-btn">Verificar</div>
+        <div class="phone-link">Reenviar código</div>
+        <div class="phone-link" style="color:#aaa;font-size:12px;text-decoration:none;margin-top:8px">Código válido por 10 minutos</div>
+      </div>
+    </div>
+
+    <!-- Screen 3: Booking Gate -->
+    <div class="screen-card">
+      <div class="screen-label"><div class="screen-badge red"></div>Screen 3 — Booking Gate (inline)</div>
+      <div class="phone-frame">
+        <div class="phone-logo">SERVI<span>.</span></div>
+        <div style="font-size:13px;font-weight:700;color:#0a0a0a;margin-bottom:4px">Paso 3 — Confirmar solicitud</div>
+        <div style="font-size:12px;color:#888;margin-bottom:12px">Limpieza de hogar · Lo antes posible</div>
+        <div class="phone-warn-banner">
+          <strong style="display:block;margin-bottom:3px">⚠️ Completa tu perfil para continuar</strong>
+          Necesitas un correo verificado para confirmar solicitudes. Solo toma un momento.
+        </div>
+        <div style="background:#fff;border:1.5px solid #f59e0b44;border-radius:10px;padding:12px;margin-bottom:10px">
+          <div style="font-size:12px;font-weight:600;margin-bottom:8px;color:#92400e">Agrega tu correo electrónico</div>
+          <div class="phone-input" style="margin-bottom:8px;font-size:13px">
+            <span class="phone-input-text">correo@ejemplo.com</span>
+          </div>
+          <div class="phone-btn" style="margin-bottom:0;font-size:13px;padding:10px">Enviar código →</div>
+        </div>
+        <div style="opacity:0.4;pointer-events:none">
+          <div class="phone-btn secondary" style="font-size:13px">Confirmar solicitud (bloqueado)</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+
+  <!-- ════════════════════════════════════════════════════
+       SECTION 3: DATABASE SCHEMA
+  ════════════════════════════════════════════════════ -->
+  <div class="section-header" id="db" style="margin-top:32px">
+    <div class="section-num">3</div>
+    <div>
+      <h2>Database Schema Changes</h2>
+      <p>Three new columns on auth_users · no table drops</p>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px">
+
+    <div>
+      <div style="font-size:12px;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.05em;margin-bottom:12px">Migration SQL (db.pg.mjs additions)</div>
+      <div class="schema-box">
+        <div class="schema-header">
+          <div class="schema-dot" style="background:#10b981"></div>
+          <div class="schema-dot" style="background:#f59e0b"></div>
+          <div class="schema-dot" style="background:#ef4444"></div>
+          db.pg.mjs — ALTER statements
+        </div>
+        <pre><span class="cm">-- Add verification tracking columns</span>
+<span class="kw">ALTER TABLE</span> <span class="nm">auth_users</span>
+  <span class="kw">ADD COLUMN IF NOT EXISTS</span>
+  <span class="nm new-col">phone_verified  <span class="ty">BOOLEAN</span> <span class="kw">DEFAULT</span> <span class="op">false</span>;</span>
+
+<span class="kw">ALTER TABLE</span> <span class="nm">auth_users</span>
+  <span class="kw">ADD COLUMN IF NOT EXISTS</span>
+  <span class="nm new-col">email_verified  <span class="ty">BOOLEAN</span> <span class="kw">DEFAULT</span> <span class="op">false</span>;</span>
+
+<span class="kw">ALTER TABLE</span> <span class="nm">auth_users</span>
+  <span class="kw">ADD COLUMN IF NOT EXISTS</span>
+  <span class="nm new-col">first_identifier_type <span class="ty">VARCHAR(10)</span>;</span>
+<span class="cm">-- 'phone' | 'email'</span>
+
+<span class="cm">-- Backfill existing phone users</span>
+<span class="kw">UPDATE</span> <span class="nm">auth_users</span>
+<span class="kw">SET</span> phone_verified <span class="op">=</span> <span class="op">true</span>
+<span class="kw">WHERE</span> phone <span class="op">IS NOT NULL</span>
+  <span class="kw">AND</span> firebase_uid <span class="op">IS NOT NULL</span>;</pre>
+      </div>
+    </div>
+
+    <div>
+      <div style="font-size:12px;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.05em;margin-bottom:12px">auth_users table after migration</div>
+      <div class="schema-box">
+        <div class="schema-header">
+          <div class="schema-dot" style="background:#10b981"></div>
+          <div class="schema-dot" style="background:#f59e0b"></div>
+          <div class="schema-dot" style="background:#ef4444"></div>
+          auth_users — full schema
+        </div>
+        <pre><span class="kw">CREATE TABLE</span> <span class="nm">auth_users</span> (
+  <span class="nm">id</span>                   <span class="ty">TEXT</span> <span class="kw">PRIMARY KEY</span>,
+  <span class="nm">email</span>                <span class="ty">TEXT</span> <span class="kw">UNIQUE</span>,
+  <span class="nm">phone</span>                <span class="ty">TEXT</span> <span class="kw">UNIQUE</span>,
+  <span class="nm">name</span>                 <span class="ty">TEXT</span>,
+  <span class="nm">firebase_uid</span>         <span class="ty">TEXT</span> <span class="kw">UNIQUE</span>,
+  <span class="nm">auth_provider</span>        <span class="ty">TEXT</span>,
+  <span class="nm">stripe_customer_id</span>   <span class="ty">TEXT</span>,
+  <span class="nm">google_id</span>            <span class="ty">TEXT</span>,
+  <span class="nm">last_login</span>           <span class="ty">TIMESTAMPTZ</span>,
+  <span class="cm new-col">-- NEW: verification tracking</span>
+  <span class="nm new-col">phone_verified       <span class="ty">BOOLEAN</span> <span class="kw">DEFAULT</span> <span class="op">false</span>,</span>
+  <span class="nm new-col">email_verified       <span class="ty">BOOLEAN</span> <span class="kw">DEFAULT</span> <span class="op">false</span>,</span>
+  <span class="nm new-col">first_identifier_type <span class="ty">VARCHAR(10)</span>,</span>
+  <span class="nm">created_at</span>           <span class="ty">TIMESTAMPTZ</span> <span class="kw">DEFAULT</span> NOW()
+);</pre>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top:20px">
+    <div style="font-size:12px;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.05em;margin-bottom:12px">Sample row — user who skipped email</div>
+    <div class="schema-box">
+      <div class="schema-header">
+        <div class="schema-dot" style="background:#10b981"></div>
+        <div class="schema-dot" style="background:#f59e0b"></div>
+        <div class="schema-dot" style="background:#ef4444"></div>
+        Example data
+      </div>
+      <pre><span class="cm">-- Signup via phone, skipped email</span>
+{ <span class="nm">id</span>: <span class="st">"usr_abc123"</span>,  <span class="nm">phone</span>: <span class="st">"+525512345678"</span>,  <span class="nm">email</span>: <span class="op">null</span>,
+  <span class="nm">name</span>: <span class="st">"Juan García"</span>,  <span class="nm new-col">phone_verified: <span class="op">true</span>,  email_verified: <span class="op">false</span>,  first_identifier_type: <span class="st">'phone'</span></span> }
+
+<span class="cm">-- Signup via phone, verified email too</span>
+{ <span class="nm">id</span>: <span class="st">"usr_def456"</span>,  <span class="nm">phone</span>: <span class="st">"+525587654321"</span>,  <span class="nm">email</span>: <span class="st">"juan@gmail.com"</span>,
+  <span class="nm">name</span>: <span class="st">"Juan García"</span>,  <span class="nm new-col">phone_verified: <span class="op">true</span>,  email_verified: <span class="op">true</span>,  first_identifier_type: <span class="st">'phone'</span></span> }
+
+<span class="cm">-- Google signup (email is primary, phone pending)</span>
+{ <span class="nm">id</span>: <span class="st">"usr_ghi789"</span>,  <span class="nm">email</span>: <span class="st">"maria@gmail.com"</span>,  <span class="nm">phone</span>: <span class="op">null</span>,
+  <span class="nm">name</span>: <span class="st">"Maria Lopez"</span>,  <span class="nm new-col">phone_verified: <span class="op">false</span>,  email_verified: <span class="op">true</span>,  first_identifier_type: <span class="st">'email'</span></span> }</pre>
+    </div>
+  </div>
+
+
+  <!-- ════════════════════════════════════════════════════
+       SECTION 4: API ENDPOINTS
+  ════════════════════════════════════════════════════ -->
+  <div class="section-header" id="api" style="margin-top:32px">
+    <div class="section-num">4</div>
+    <div>
+      <h2>Backend API Endpoints</h2>
+      <p>2 new routes · 2 modified routes</p>
+    </div>
+  </div>
+
+  <table class="api-table">
+    <thead>
+      <tr>
+        <th>Method + Route</th>
+        <th>Status</th>
+        <th>Auth</th>
+        <th>Request body</th>
+        <th>Response</th>
+        <th>Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>
+          <span class="method post">POST</span><br>
+          <span class="route">/api/auth/check-identifier</span>
+        </td>
+        <td><span class="status-mod">modified</span></td>
+        <td>Public</td>
+        <td><code>{ identifier }</code></td>
+        <td><code>{ exists, provider }</code><br><span style="font-size:11px;color:var(--muted)">provider: 'phone'|'google'|'email'</span></td>
+        <td>Already exists. Add <code>provider</code> field to response so frontend knows which OTP type to offer.</td>
+      </tr>
+      <tr>
+        <td>
+          <span class="method post">POST</span><br>
+          <span class="route">/api/auth/firebase</span>
+        </td>
+        <td><span class="status-mod">modified</span></td>
+        <td>Firebase ID token</td>
+        <td><code>{ name, phone, email, phone_verified, email_verified, first_identifier_type }</code></td>
+        <td><code>{ token, user }</code><br>user includes <code>phone_verified</code>, <code>email_verified</code></td>
+        <td>Accept and persist new fields. Return verification status in user object so frontend knows state immediately after sync.</td>
+      </tr>
+      <tr>
+        <td>
+          <span class="method post">POST</span><br>
+          <span class="route">/api/auth/add-email</span>
+        </td>
+        <td><span class="status-new">new</span></td>
+        <td>JWT Bearer</td>
+        <td><code>{ email, firebase_id_token }</code></td>
+        <td><code>{ ok: true, email_verified: true }</code></td>
+        <td>Called after email OTP verified in booking gate. Verifies the Firebase ID token confirms email ownership, then sets <code>email=email</code>, <code>email_verified=true</code> on the user row.</td>
+      </tr>
+      <tr>
+        <td>
+          <span class="method get">GET</span><br>
+          <span class="route">/api/auth/me</span>
+        </td>
+        <td><span class="status-mod">modified</span></td>
+        <td>JWT Bearer</td>
+        <td>—</td>
+        <td><code>{ id, name, email, phone, phone_verified, email_verified, ... }</code></td>
+        <td>Add <code>phone_verified</code> and <code>email_verified</code> to response. Booking step 3 calls this to decide if gate is needed.</td>
+      </tr>
+      <tr>
+        <td>
+          <span class="method post">POST</span><br>
+          <span class="route">/api/service-requests</span>
+        </td>
+        <td><span class="status-mod">modified</span></td>
+        <td>JWT Bearer (required at step 3)</td>
+        <td><code>{ category, description, ... }</code></td>
+        <td><code>{ id, status }</code> or <code>409 { error: 'email_required' }</code></td>
+        <td>If authenticated user has <code>email_verified=false</code>: return 409 <code>{ error: 'email_required', message: 'Verifica tu correo para confirmar' }</code>. Frontend shows booking gate.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div style="margin-top:20px">
+    <div style="font-size:12px;font-weight:700;text-transform:uppercase;color:var(--muted);letter-spacing:.05em;margin-bottom:12px">POST /api/service-requests — gate logic (pseudocode)</div>
+    <div class="schema-box">
+      <div class="schema-header">
+        <div class="schema-dot" style="background:#10b981"></div>
+        <div class="schema-dot" style="background:#f59e0b"></div>
+        <div class="schema-dot" style="background:#ef4444"></div>
+        index.mjs — booking gate
+      </div>
+      <pre><span class="cm">// Inside POST /api/service-requests, after auth check:</span>
+
+<span class="kw">if</span> (req.user) {
+  <span class="cm">// Authenticated user — enforce email verification</span>
+  <span class="kw">const</span> <span class="nm">{ email_verified }</span> <span class="op">=</span> <span class="kw">await</span> pool.query(
+    <span class="st">'SELECT email_verified FROM auth_users WHERE id = $1'</span>,
+    [req.user.id]
+  );
+
+  <span class="kw">if</span> (!email_verified) {
+    <span class="kw">return</span> res.status(<span class="op">409</span>).json({
+      error: <span class="st">'email_required'</span>,
+      message: <span class="st">'Verifica tu correo para confirmar tu solicitud'</span>
+    });
+  }
+}
+
+<span class="cm">// Continue with service request creation...</span></pre>
+    </div>
+  </div>
+
+
+  <!-- ════════════════════════════════════════════════════
+       SECTION 5: LOCALSTORAGE KEYS
+  ════════════════════════════════════════════════════ -->
+  <div class="section-header" id="localstorage" style="margin-top:32px">
+    <div class="section-num">5</div>
+    <div>
+      <h2>LocalStorage Keys</h2>
+      <p>Complete inventory — existing + new</p>
+    </div>
+  </div>
+
+  <div class="keys-grid">
+    <div class="key-card">
+      <div class="key-name">servi_user_session</div>
+      <div class="key-values">Existing · <code>{ token, user, firebaseUid }</code><br>user now includes <code>phone_verified</code>, <code>email_verified</code></div>
+    </div>
+    <div class="key-card" style="border-color:#10b98144">
+      <div class="key-name">servi_email_skipped</div>
+      <div class="key-values" style="color:var(--green)">NEW · <code>"1"</code> when user clicked "Skip for now" on Screen 2c<br>Cleared when email is later verified</div>
+    </div>
+    <div class="key-card">
+      <div class="key-name">servi_email_link_target</div>
+      <div class="key-values">Existing · email address for sign-in link flow</div>
+    </div>
+    <div class="key-card">
+      <div class="key-name">servi_recovery_mode</div>
+      <div class="key-values">Existing · <code>"1"</code> during phone recovery via email link</div>
+    </div>
+    <div class="key-card">
+      <div class="key-name">servi_pending_logout</div>
+      <div class="key-values">Existing · deferred Firebase signOut across pages</div>
+    </div>
+    <div class="key-card" style="border-color:#10b98144">
+      <div class="key-name">servi_usl_state</div>
+      <div class="key-values" style="color:var(--green)">NEW (optional) · persist USL flow state across OTP confirmation page load if needed<br><code>{ identifier, identifierType, isNew, newUserData }</code></div>
+    </div>
+  </div>
+
+  <!-- Summary -->
+  <div class="summary-banner">
+    <h3>Design Summary</h3>
+    <div class="summary-grid">
+      <div class="summary-item">
+        <strong>Files changed</strong>
+        <span>shared-auth.js · db.pg.mjs · index.mjs</span>
+      </div>
+      <div class="summary-item">
+        <strong>New screens</strong>
+        <span>Screen 2b (name) · Screen 2c (email opt) · Screen 2d (email OTP) · Screen 3 (booking gate)</span>
+      </div>
+      <div class="summary-item">
+        <strong>New DB columns</strong>
+        <span>phone_verified · email_verified · first_identifier_type</span>
+      </div>
+      <div class="summary-item">
+        <strong>New endpoints</strong>
+        <span>POST /api/auth/add-email</span>
+      </div>
+      <div class="summary-item">
+        <strong>Modified endpoints</strong>
+        <span>check-identifier · /api/auth/firebase · GET /api/auth/me · POST /api/service-requests</span>
+      </div>
+      <div class="summary-item">
+        <strong>New localStorage keys</strong>
+        <span>servi_email_skipped · servi_usl_state</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

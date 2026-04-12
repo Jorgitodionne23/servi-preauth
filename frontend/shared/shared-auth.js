@@ -416,16 +416,18 @@
       var eBtn = document.getElementById('send-email-link-btn');
       if (eBtn) { eBtn.disabled = true; eBtn.textContent = '...'; }
       try {
+        // Normalize email: lowercase for Firebase consistency
+        var emailNorm = uslIdentifier.toLowerCase();
         // Persist USL state so handleEmailLinkSignIn can restore after redirect
-        localStorage.setItem('servi_email_link_target', uslIdentifier);
+        localStorage.setItem('servi_email_link_target', emailNorm);
         localStorage.setItem('servi_usl_state', JSON.stringify({
-          identifier: uslIdentifier,
+          identifier: emailNorm,
           identifierType: uslIdentifierType,
           firstIdentifierType: uslFirstIdentifierType,
           isNew: uslIsNew,
           newUserData: uslNewUserData,
         }));
-        await auth.sendSignInLinkToEmail(uslIdentifier, { url: window.location.href, handleCodeInApp: true });
+        await auth.sendSignInLinkToEmail(emailNorm, { url: window.location.href, handleCodeInApp: true });
         setScreen(
           '<div style="text-align:center;padding:16px 0">' +
             '<div style="font-size:40px;margin-bottom:12px">📧</div>' +
@@ -855,6 +857,20 @@
     renderIdentifierScreen();
   };
 
+  // ── Send email verification (for account page) ─────────────────────────────────
+  window.__sendEmailVerification = async function (email) {
+    if (!email) return false;
+    var ok = await ensureFirebase();
+    if (!ok) return false;
+    try {
+      await auth.sendSignInLinkToEmail(email.toLowerCase(), { url: window.location.href, handleCodeInApp: true });
+      return true;
+    } catch (err) {
+      console.error('[sendEmailVerification]', err);
+      return false;
+    }
+  };
+
   // ══════════════════════════════════════════════════════════════════════════════
   // EMAIL LINK SIGN-IN (handles link clicks on page load)
   // ══════════════════════════════════════════════════════════════════════════════
@@ -884,6 +900,9 @@
     var isRecovery = localStorage.getItem('servi_recovery_mode');
     localStorage.removeItem('servi_recovery_mode');
 
+    var isEmailVerification = localStorage.getItem('servi_email_verification_mode');
+    localStorage.removeItem('servi_email_verification_mode');
+
     try {
       // If already signed in with phone, link email rather than sign in fresh
       if (auth.currentUser && auth.currentUser.phoneNumber) {
@@ -895,6 +914,23 @@
 
       localStorage.removeItem('servi_email_link_target');
       window.history.replaceState({}, document.title, window.location.pathname);
+
+      if (isEmailVerification) {
+        // Email verification from account page: just update the session and return to account page
+        if (window.__syncPromise) { try { await window.__syncPromise; } catch (_) {} }
+        if (window.__user) window.__user.email_verified = true;
+        var raw = localStorage.getItem('servi_user_session');
+        if (raw) {
+          try {
+            var sess = JSON.parse(raw);
+            if (sess.user) sess.user.email_verified = true;
+            localStorage.setItem('servi_user_session', JSON.stringify(sess));
+          } catch (_) {}
+        }
+        if (window.buildNavbar) window.buildNavbar();
+        window.location.href = '/account.html?section=info';
+        return;
+      }
 
       if (isRecovery) {
         // Wait for sync then redirect to account security section
