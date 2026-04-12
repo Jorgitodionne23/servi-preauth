@@ -4,7 +4,7 @@ This file is the active execution board for new changes, fixes, implementations,
 
 ## Current Objective
 
-Phase 3 complete — QA and deploy.
+Auth USL redesign deployed. Next: QA sessions + design system overhaul.
 
 ## In Progress
 
@@ -15,12 +15,31 @@ Phase 3 complete — QA and deploy.
 
 ## Planned Next
 
-- [ ] Manual QA by user: phone OTP flow, Google OAuth, end-to-end booking submission, account profile save, payment flow regression (pay.html / book.html / success.html)
+- [ ] **QA Session 2 — Country Code UX** — Phone field: reorder country picker, dropdown trigger behavior, Mexico (+52) default pre-selected, test on iOS + Android
+- [ ] **QA Session 3 — Design System Overhaul** — Augen.pro editorial minimalism style: typography scale, spacing, component tokens; update shared-styles.css and landing/booking panels
+- [ ] **Manual user testing** — Full end-to-end on real iOS/Android devices: phone OTP, email magic link, Google OAuth, booking gate (both `email_required` + `phone_required` paths), account management
 - [ ] Fix any bugs found during manual QA (batch fix after user reports)
 - [ ] VirusTotal malware scanning on uploads (Phase 3A hardening)
 - [ ] Admin order detail: web submission attachments visible in panel
+- [ ] **Booking gate inline UI** — Frontend HTML in `index.html` step 3 needs inline email/phone collection + OTP entry (backend endpoints `add-email`/`add-phone` exist; only frontend UI is missing)
+- [ ] **Playwright test suite update** — `tests/03-auth-otp.spec.js` test 3.3 expects name+email on same screen; new flow separates them; `injectFakeSession` needs `phone_verified`/`email_verified` in mock user
 
 ## Completed (Recent)
+
+### 2026-04-11 — Auth USL Redesign (phone-first unified sign-up/login)
+
+- ✅ **Unified identifier input** — single phone/email field, auto-detects @ for email mode, country picker hides on email entry
+- ✅ **Single `renderOTPScreen(type, isLogin)`** — replaces 3 former OTP/signup screens; handles phone SMS + email magic link in one component
+- ✅ **Name collection post-OTP** (`renderNameCollectionScreen`) — first + last name required after primary OTP, before secondary identifier
+- ✅ **Optional secondary identifier** (`renderSecondaryIdentifierScreen`) — email skip → `servi_email_skipped=1`; phone skip → `servi_phone_skipped=1`
+- ✅ **Cross-identifier recovery** — `POST /api/auth/resolve-identifier-mismatch` detects orphaned phone-only accounts; name-validation + phone OTP merge flow
+- ✅ **Booking gate enforcement** — `POST /api/service-requests` returns 409 `email_required` / `phone_required` for users missing verified identifiers
+- ✅ **7 backend endpoints added/modified:** `check-identifier` (+ `provider` field), `firebase` (accepts + returns `phone_verified`/`email_verified`/`first_identifier_type`), `me` GET + PATCH (+ verification flags), `add-email`, `add-phone`, `resolve-identifier-mismatch`, `service-requests` (+ gate)
+- ✅ **7 localStorage keys:** `servi_user_session` (updated), `servi_email_skipped`, `servi_phone_skipped` (new), `servi_usl_state` (new), `servi_email_link_target`, `servi_recovery_mode`, `servi_pending_logout`
+- ✅ **DB schema:** `phone_verified BOOLEAN`, `email_verified BOOLEAN`, `first_identifier_type VARCHAR(10)` added to `auth_users`; backfill SQL for existing phone and Google/email users
+- ✅ **Code-Simplifier pass:** `normalizeEmail()` applied in `resolve-identifier-mismatch`; `_candidate_id` removed from public response
+- Files: `frontend/shared/shared-auth.js` (full rewrite, ~950 lines), `backend/index.mjs`, `backend/db.pg.mjs`
+- Spec: `docs/specs/2026-04-11-auth-usl-redesign.md`
 
 ### 2026-04-08 — Phase 2.5 (Auth stabilization + Playwright test suite)
 
@@ -65,6 +84,13 @@ Phase 3 complete — QA and deploy.
 - Env vars needed on Render: `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`, `R2_PUBLIC_URL`
 
 ## Bugs / Hotfix Queue
+
+### Medium priority (from Auth USL implementation, 2026-04-11)
+
+- [ ] **Booking gate — no inline UI** (`index.html`, medium) — Backend enforces `email_required`/`phone_required` at step 3 but `index.html` doesn't yet render the inline verification form. Confirm button silently fails. Expected: inline email/phone + OTP entry appears. Fix: add booking gate HTML+JS to step 3 panel (~2–3 hours)
+- [ ] **Playwright test 3.3 regression** (`tests/03-auth-otp.spec.js`, low) — Test expects `#signup-name` and `#signup-email` on same screen; new flow separates them (name screen after OTP, email screen later). Expected: test passes. Fix: update assertions + add `phone_verified`/`email_verified` to `injectFakeSession` mock (~1 hour)
+- [ ] **`resolve-identifier-mismatch` — no phone filter** (`backend/index.mjs`, medium) — Query returns first phone-only account by insertion order if multiple orphans exist. Could merge wrong account in edge case. Expected: filter by candidate phone. Current blocker: phone not known at this step in the flow — needs UX decision on whether to collect phone before calling this endpoint (~30 min to decide + implement)
+- [ ] **Email magic link OTP UI** (`shared-auth.js`, low) — Email path shows "check your inbox" instead of 6-box code entry. Some users may expect a code. Currently working correctly per Firebase capability (email OTP codes not supported by Firebase natively) — document as intentional UX decision if confirmed
 
 ### Low priority (from Phase 3C audit, 2026-04-07)
 

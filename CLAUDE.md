@@ -277,7 +277,7 @@ This is NOT a simple payment form. It's a complete **admin-driven order manageme
 ✓ **All 25+ HTML pages** — Landing, Help Center (hub + forms + about + contact), Legal (tabbed), Partners (landing + signup), Handbook (hub + 6 articles)
 ✓ **All backend API endpoints** — Auth (Firebase sync, token issuance), service requests, reports, partner applications, account management (profile, addresses), admin queries
 ✓ **All database tables** — `auth_users` (firebase_uid, auth_provider), `service_requests`, `service_reports`, `partner_applications`, `user_addresses` (plus existing `all_bookings`, `saved_servi_users`, etc.)
-✓ **Authentication system** — Firebase-only (phone OTP, Google OAuth, no password), custom JWT token issuance, session storage in localStorage
+✓ **Authentication system** — Firebase-only passwordless, phone-first USL flow: unified identifier input, single `renderOTPScreen(type)`, name collection post-OTP, optional secondary identifier, cross-identifier recovery, booking gate enforcement; `phone_verified`/`email_verified`/`first_identifier_type` tracked in DB
 ✓ **Booking auth gate** — Browse 2 steps without login, login required to confirm step 3
 ✓ **Account page** — Profile, address management, payment methods, delete account with confirmation (all fully bilingual)
 ✓ **Shared components** — Navbar (auth modal, user menu dropdown), footer, i18n (ES/EN toggle with live translation), design system (Syne + DM Sans, colors, cards, buttons)
@@ -299,25 +299,45 @@ This is NOT a simple payment form. It's a complete **admin-driven order manageme
 
 ### Current Implementation
 
-- **Frontend auth:** Firebase-only (passwordless)
-  - Phone OTP via reCAPTCHA (Firebase `signInWithPhoneNumber`)
-  - Google OAuth via popup (Firebase `signInWithPopup`)
-  - No email/password signup or login
+> **Verified 2026-04-11** — USL redesign live: phone OTP → name → email skip → booking gate → cross-identifier merge
+
+- **Frontend auth:** Firebase-only (passwordless), phone-first USL (Unified Sign-up/Login) flow
+  - **Unified identifier input** — single field, auto-detects phone vs email (@ triggers email mode)
+  - **Phone OTP** via invisible reCAPTCHA (`signInWithPhoneNumber`)
+  - **Email magic link** via Firebase `sendSignInLinkToEmail` (email path — no 6-digit codes)
+  - **Google OAuth** via popup (`signInWithPopup`) — bypasses all OTP screens
+  - No email/password auth (passwordless Firebase-only)
 - **Backend:** `POST /api/auth/firebase` syncs Firebase ID token → issues custom JWT (30-day HS256)
-- **Session storage:** localStorage (`servi_user_session` key) stores `{ token, user, firebaseUid }`
+- **Session storage:** localStorage (`servi_user_session`) stores `{ token, user, firebaseUid }` where `user` includes `phone_verified`, `email_verified`
+- **Verification tracking:** `auth_users` table has `phone_verified`, `email_verified`, `first_identifier_type` columns
+- **Booking gate:** `POST /api/service-requests` enforces `email_verified=true` + `phone_verified=true` for authenticated users; returns 409 with `email_required` or `phone_required` error code
+- **Cross-identifier recovery:** `POST /api/auth/resolve-identifier-mismatch` detects orphaned phone-only accounts when an unrecognised email is submitted — triggers name-validation + phone OTP merge flow
 - **Account page:** Fully bilingual, edit profile, manage addresses, delete account
 - **Navbar:** Shows logged-in user's name + avatar + dropdown menu with My Account / Logout
 
 ### Auth Flow
 
-1. User clicks "Log in" → auth modal opens
-2. Choose phone OTP or Google
-3. Phone OTP: Enter phone → receive SMS code → verify
-4. Google: Click button → popup → select account
-5. Firebase verifies identity → frontend calls `POST /api/auth/firebase` with ID token
-6. Backend returns custom JWT + user data
-7. Frontend stores token in localStorage
-8. User can now book services and access account page
+**Signup (phone-first):**
+1. User enters phone number in unified identifier field → `POST /api/auth/check-identifier` → `{ exists: false }`
+2. Phone OTP screen — enter SMS code → Firebase verifies
+3. Name collection screen — first + last name (required) + terms checkbox
+4. Secondary identifier screen — add email (optional, skip available → sets `servi_email_skipped=1`)
+5. If email entered → Firebase magic link sent → after click, email verified → `POST /api/auth/add-email`
+6. `POST /api/auth/firebase` creates account with `phone_verified=true`, `first_identifier_type='phone'`
+7. JWT stored in localStorage, modal closes
+
+**Login:**
+1. User enters phone or email → `POST /api/auth/check-identifier` → `{ exists: true, provider }`
+2. OTP screen rendered for provider's type (`'phone'` or `'email'`)
+3. Verify → `POST /api/auth/firebase` → JWT refreshed, modal closes
+
+**Google OAuth (all paths):**
+- Google popup → Firebase → `POST /api/auth/firebase` with `email_verified=true`, `phone_verified=false`
+- Booking gate will request phone at step 3
+
+**Email-first signup:** symmetric to phone-first — email OTP → name → phone optional → `POST /api/auth/add-phone`
+
+**Cross-identifier recovery:** unrecognised email + existing phone-only account → `POST /api/auth/resolve-identifier-mismatch` → name validation → phone OTP → account merged with `email_verified=true`
 
 ### Logged-In User Benefits
 
@@ -647,7 +667,8 @@ Web-based admin panel protected by `ADMIN_API_TOKEN`. Replaces Google Forms + st
 Before launching to production, verify:
 
 - [ ] **Booking flow:** End-to-end from landing CTA to `service_requests` table to order creation
-- [ ] **Auth flow:** Signup/login → session token → navbar shows user name → pre-filled info on return
+- [x] **Auth flow:** USL redesign implemented — phone-first signup, email optional, cross-identifier recovery, booking gate (2026-04-11)
+- [ ] **Auth flow QA:** End-to-end manual test on real iOS/Android devices (phone OTP, Google OAuth, email magic link, booking gate)
 - [ ] **All 25 pages:** Content complete, mobile responsive, bilingual (ES/EN)
 - [ ] **Form submissions:** Reports, suggestions, partner apps all submit to backend + Sheets webhook
 - [ ] **Admin dashboard:** Login works, Inbox shows all types (reports, suggestions, apps), Orders tab shows all orders, filters work, can update status
