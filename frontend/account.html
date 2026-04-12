@@ -359,9 +359,11 @@ function switchSection(id) {
 }
 
 // ─── Pre-fill personal info ───────────────────────────────────────────────────
+let _originalPhone = null;
 function fillProfileForm() {
   const u = window.__user;
   if (!u) return;
+  _originalPhone = u.phone || '';
   document.getElementById('info-name').value  = u.name  || '';
   document.getElementById('info-email').value = u.email || '';
   document.getElementById('info-phone').value = u.phone || '';
@@ -383,8 +385,23 @@ async function saveProfile() {
 
   btn.disabled = true; lbl.textContent = t.saving;
   try {
+    let reauthToken = null;
+    const phoneChanged = phone && phone !== (_originalPhone || '');
+    if (phoneChanged) {
+      try {
+        reauthToken = await reauthenticate();
+      } catch (err) {
+        if (err.code === 'reauth_cancelled') { btn.disabled = false; lbl.textContent = t.saveBtn; return; }
+        errEl.textContent = t.errGeneric;
+        errEl.style.display = 'block';
+        btn.disabled = false; lbl.textContent = t.saveBtn;
+        return;
+      }
+    }
+    const headers = { ...authHeaders() };
+    if (reauthToken) headers['X-Firebase-Reauth-Token'] = reauthToken;
     const res = await fetch(API + '/api/auth/me', {
-      method: 'PATCH', headers: authHeaders(),
+      method: 'PATCH', headers,
       body: JSON.stringify({ name: name || undefined, email: email || undefined, phone: phone || undefined })
     });
     const d = await res.json();

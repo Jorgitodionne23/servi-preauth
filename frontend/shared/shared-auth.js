@@ -404,7 +404,11 @@
         if (otpInput) otpInput.focus();
       } catch (err) {
         if (btn) { btn.disabled = false; btn.textContent = isEs() ? 'Enviar código SMS' : 'Send SMS code'; }
-        setError(firebaseErrorMessage(err.code));
+        if (err.code === 'auth/too-many-requests') {
+          setError(isEs() ? 'Demasiados intentos. Espera unos minutos.' : 'Too many attempts. Wait a few minutes.');
+        } else {
+          setError(firebaseErrorMessage(err.code));
+        }
         setupRecaptchaInner();
       }
     } else {
@@ -631,6 +635,10 @@
       if (data.error === 'name_mismatch') {
         if (btn) { btn.disabled = false; btn.textContent = es ? 'Confirmar' : 'Confirm'; }
         setError(es ? 'El nombre no coincide. Intenta de nuevo.' : 'Name does not match. Try again.');
+        return;
+      }
+      if (data.resolution === 'new_account') {
+        renderSecondaryIdentifierScreen();
         return;
       }
       // Name validated — now go to phone OTP to prove phone ownership and complete merge
@@ -932,6 +940,17 @@
       }
     } catch (err) {
       console.error('[SERVI] Email link sign-in failed:', err);
+      if (err.code === 'auth/invalid-action-code') {
+        var es = isEs();
+        document.getElementById('auth-modal-global').innerHTML = modalShell(es ? 'Enlace inválido' : 'Invalid link', false, '');
+        document.body.style.overflow = 'hidden';
+        renderOTPScreen('email', false);
+        setTimeout(function () {
+          setError(es
+            ? 'Este enlace ya fue usado o expiró. Solicita uno nuevo.'
+            : 'This link was already used or has expired. Request a new one.');
+        }, 50);
+      }
     }
   }
 

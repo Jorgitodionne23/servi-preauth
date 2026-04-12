@@ -20,11 +20,11 @@ export async function injectFakeSession(page, user = {}) {
   };
   const u = { ...defaultUser, ...user };
 
-  // Build a fake JWT (exp = 30 days from now)
+  // Build a fake JWT (exp = 7 days from now)
   const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
   const payload = btoa(JSON.stringify({
     user_id: u.id, email: u.email, name: u.name, phone: u.phone,
-    exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 30,
+    exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7,
     iat: Math.floor(Date.now() / 1000),
   }));
   const fakeToken = `${header}.${payload}.fakesig`;
@@ -136,7 +136,7 @@ export async function injectFakeSession(page, user = {}) {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ user: { id: u.id, email: u.email, name: u.name, phone: u.phone, auth_provider: u.auth_provider || 'phone' } }),
+        body: JSON.stringify({ user: { id: u.id, email: u.email, name: u.name, phone: u.phone, auth_provider: u.auth_provider || 'phone', phone_verified: u.phone_verified ?? true, email_verified: u.email_verified ?? true } }),
       });
     } else {
       await route.continue();

@@ -51,7 +51,7 @@ test('3.2 Phone OTP: existing user goes directly to OTP screen', async ({ page }
   await expect(page.locator('#send-otp-btn')).toBeVisible();
 });
 
-test('3.3 Phone OTP: new user goes to signup email collection', async ({ page }) => {
+test('3.3 Phone OTP: new user goes to OTP screen first', async ({ page }) => {
   await page.goto('/');
   await page.waitForTimeout(2000);
 
@@ -66,13 +66,17 @@ test('3.3 Phone OTP: new user goes to signup email collection', async ({ page })
   await page.locator('#auth-identifier').fill('5512025121');
   await page.locator('#usl-continue-btn').click();
 
-  // Should land on signup screen asking for name + email
-  await page.waitForSelector('#signup-name', { timeout: 8000 });
-  await expect(page.locator('#signup-name')).toBeVisible();
-  await expect(page.locator('#signup-email')).toBeVisible();
+  // USL flow: new phone users go to OTP screen first; name collection comes AFTER OTP verification
+  await page.waitForSelector('#send-otp-btn', { timeout: 8000 });
+  await expect(page.locator('#send-otp-btn')).toBeVisible();
+  // Name/email fields should NOT be present on the OTP screen
+  await expect(page.locator('#signup-name')).toHaveCount(0);
 });
 
-test('3.4 Signup: terms screen appears after collecting counterpart', async ({ page }) => {
+test('3.4 Signup: new user OTP screen has send-otp-btn and no name form yet', async ({ page }) => {
+  // NOTE: Name collection (renderNameCollectionScreen with #signup-first-name / #signup-last-name)
+  // only appears AFTER OTP is verified. Testing that step end-to-end requires a real Firebase
+  // test phone number. This test verifies the state just before OTP — the OTP screen itself.
   await page.goto('/');
   await page.waitForTimeout(2000);
 
@@ -85,14 +89,22 @@ test('3.4 Signup: terms screen appears after collecting counterpart', async ({ p
   await page.locator('#auth-identifier').fill('5512025121');
   await page.locator('#usl-continue-btn').click();
 
-  await page.waitForSelector('#signup-name', { timeout: 8000 });
-  await page.locator('#signup-name').fill('QA Tester');
-  await page.locator('#signup-email').fill('qa@playwright.local');
-  await page.locator('.btn-primary', { hasText: /Continuar|Continue/i }).click();
+  // USL flow: OTP screen appears first for both new and existing phone users
+  await page.waitForSelector('#send-otp-btn', { timeout: 8000 });
+  await expect(page.locator('#send-otp-btn')).toBeVisible();
+  // Name/terms fields are NOT present at this stage — they appear post-OTP
+  await expect(page.locator('#signup-first-name')).toHaveCount(0);
+  await expect(page.locator('#terms-check')).toHaveCount(0);
+});
 
-  // Terms screen
-  await page.waitForSelector('#terms-check', { timeout: 5000 });
-  await expect(page.locator('#terms-check')).toBeVisible();
+test('3.6 Error handling: auth/invalid-action-code string present in shared-auth source', async ({ page }) => {
+  // Source inspection: verify handleEmailLinkSignIn handles auth/invalid-action-code
+  // with a user-friendly message and option to request a new link.
+  const response = await page.request.get('/shared/shared-auth.js');
+  expect(response.ok()).toBeTruthy();
+  const src = await response.text();
+  expect(src).toContain('auth/invalid-action-code');
+  expect(src).toContain('renderOTPScreen');
 });
 
 test('3.5 Recovery: can\'t access phone flow visible for existing user', async ({ page }) => {

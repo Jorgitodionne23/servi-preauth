@@ -296,3 +296,19 @@ test('4.15 Save profile: phone_exists 409 shows phone-specific error', async ({ 
   expect(html).toContain("d.error === 'phone_exists'");
   expect(html).toContain('t.errPhoneExists');
 });
+
+test('4.18 Save profile: phone change triggers re-auth before PATCH', async ({ page }) => {
+  // Source inspection: verify saveProfile() calls reauthenticate() for phone changes
+  // and passes X-Firebase-Reauth-Token header. Uses source inspection to avoid
+  // Firebase CDN timing issues (same pattern as tests 4.14, 4.15).
+  const response = await page.request.get('/account.html');
+  expect(response.ok()).toBeTruthy();
+  const html = await response.text();
+
+  // Verify that phone change detection is present
+  expect(html).toContain('phoneChanged');
+  // Verify reauthenticate() is called for phone changes
+  expect(html).toContain('reauthenticate()');
+  // Verify the reauth token is sent as X-Firebase-Reauth-Token header
+  expect(html).toContain('X-Firebase-Reauth-Token');
+});

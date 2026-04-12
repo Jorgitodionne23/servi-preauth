@@ -63,7 +63,7 @@ if (!process.env.JWT_SECRET) {
 
 function signSessionToken(payload) {
   const now = Math.floor(Date.now() / 1000);
-  const fullPayload = { ...payload, iat: now, exp: now + (30 * 24 * 60 * 60) };
+  const fullPayload = { ...payload, iat: now, exp: now + (7 * 24 * 60 * 60) };
   const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
   const body = Buffer.from(JSON.stringify(fullPayload)).toString('base64url');
   const signature = createHmac('sha256', JWT_SECRET).update(`${header}.${body}`).digest('base64url');
@@ -4861,6 +4861,11 @@ async function requireRecentAuth(req, res, maxAgeSecs = 300) {
 app.patch('/api/auth/me', publicFormLimit, async (req, res) => {
   const payload = requireUserAuth(req, res);
   if (!payload) return;
+  // Gate phone changes behind re-auth (fresh Firebase ID token required)
+  if (req.body?.phone !== undefined) {
+    const reauthed = await requireRecentAuth(req, res);
+    if (!reauthed) return;
+  }
   try {
     const { name, email, phone } = req.body || {};
     const sets = []; const params = [];
@@ -4929,6 +4934,66 @@ app.delete('/api/auth/me', publicFormLimit, async (req, res) => {
     return res.json({ ok: true });
   } catch (err) {
     console.error('[DELETE /api/auth/me]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// POST /api/auth/refresh — silently refresh a nearly-expired or recently-expired JWT
+// Accepts tokens expired by ≤24h (86400 seconds grace period)
+app.post('/api/auth/refresh', publicFormLimit, async (req, res) => {
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+  if (!token) return res.status(401).json({ error: 'no_token' });
+
+  // Verify the token but accept it even if recently expired (≤24h grace)
+  let payload = null;
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return res.status(401).json({ error: 'invalid_token' });
+    const decoded = JSON.parse(Buffer.from(parts[1].replace(/-/g,'+').replace(/_/g,'/'), 'base64').toString('utf8'));
+
+    // Verify signature
+    const expectedSig = createHmac('sha256', JWT_SECRET).update(`${parts[0]}.${parts[1]}`).digest('base64url');
+    if (expectedSig !== parts[2]) return res.status(401).json({ error: 'invalid_signature' });
+
+    // Check expiry with grace period: allow tokens expired ≤24h ago
+    const now = Math.floor(Date.now() / 1000);
+    if (decoded.exp && decoded.exp + 86400 < now) {
+      return res.status(401).json({ error: 'token_too_old' });
+    }
+
+    payload = decoded;
+  } catch (err) {
+    return res.status(401).json({ error: 'invalid_token' });
+  }
+
+  if (!payload?.user_id) return res.status(401).json({ error: 'no_user_id' });
+
+  try {
+    // Re-fetch user from DB (don't trust JWT claims for user data)
+    const { rows } = await pool.query(
+      'SELECT id, email, name, phone, auth_provider, phone_verified, email_verified FROM auth_users WHERE id = $1',
+      [payload.user_id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'user_not_found' });
+    const u = rows[0];
+
+    const newToken = signSessionToken({
+      user_id: u.id, email: u.email, name: u.name, phone: u.phone,
+      auth_provider: u.auth_provider,
+    });
+
+    return res.json({
+      token: newToken,
+      user: {
+        id: u.id, email: u.email, name: u.name, phone: u.phone || null,
+        auth_provider: u.auth_provider || null,
+        phone_verified: !!u.phone_verified,
+        email_verified: !!u.email_verified,
+      }
+    });
+  } catch (err) {
+    console.error('[POST /api/auth/refresh]', err);
     return res.status(500).json({ error: 'internal_error' });
   }
 });

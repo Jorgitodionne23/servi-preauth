@@ -151,8 +151,49 @@
         if (parts.length === 3) {
           tokenPayload = JSON.parse(atob(parts[1].replace(/-/g,'+').replace(/_/g,'/')));
           if (tokenPayload.exp && Date.now() / 1000 > tokenPayload.exp) {
-            // Token expired — clear session. Firebase onAuthStateChanged will
-            // attempt to re-sync if the Firebase session is still valid.
+            const expiredAgo = Math.floor(Date.now() / 1000) - tokenPayload.exp;
+            if (expiredAgo <= 86400) {
+              // Token expired ≤24h ago — attempt silent refresh in background
+              // Set user from expired token for now (UI renders logged-in state optimistically)
+              const base = session.user || {};
+              window.__user = {
+                id:            base.id            || tokenPayload?.user_id || null,
+                email:         base.email         || tokenPayload?.email   || null,
+                name:          base.name          || tokenPayload?.name    || null,
+                phone:         base.phone         || tokenPayload?.phone   || null,
+                auth_provider: base.auth_provider || null,
+              };
+              if (!window.__user.id) { window.__user = null; return; }
+              // Kick off background refresh (async, non-blocking)
+              (async function tryRefresh() {
+                try {
+                  const apiBase = ((window.CONFIG && window.CONFIG.API_BASE) || '').replace(/\/+$/, '');
+                  const refreshRes = await fetch(apiBase + '/api/auth/refresh', {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + session.token }
+                  });
+                  if (refreshRes.ok) {
+                    const data = await refreshRes.json();
+                    if (data.token && data.user) {
+                      const newSession = { token: data.token, user: data.user, firebaseUid: session.firebaseUid };
+                      localStorage.setItem('servi_user_session', JSON.stringify(newSession));
+                      window.__user = data.user;
+                      if (window.buildNavbar) window.buildNavbar();
+                    }
+                  } else {
+                    // Refresh failed — clear session
+                    localStorage.removeItem('servi_user_session');
+                    window.__user = null;
+                    window.__sessionExpired = true;
+                    if (window.buildNavbar) window.buildNavbar();
+                  }
+                } catch (_) {
+                  // Network error — keep optimistic user state until next page load
+                }
+              })();
+              return; // Don't fall through to the normal session-building below
+            }
+            // Expired >24h ago — clear immediately
             localStorage.removeItem('servi_user_session');
             window.__user = null;
             window.__sessionExpired = true;

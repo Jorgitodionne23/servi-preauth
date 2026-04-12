@@ -85,7 +85,49 @@ test('5.7 Logout clears session and shows login buttons', async ({ page }) => {
   expect(session).toBeNull();
 });
 
-test.skip('5.8 syncWithBackend clears session on 401 token_revoked response', async ({ page }) => {
+test('5.8 Expired token (≤24h ago) triggers /api/auth/refresh on page load', async ({ page }) => {
+  // Build a fake session with a token that expired 1 hour ago
+  const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+  const expiredExp = Math.floor(Date.now() / 1000) - 3600; // 1 hour ago
+  const payload = btoa(JSON.stringify({
+    user_id: 'test-user-playwright-001',
+    email: 'test@playwright.local',
+    name: 'QA Tester',
+    exp: expiredExp,
+    iat: expiredExp - 3600,
+  }));
+  const fakeToken = `${header}.${payload}.fakesig`;
+  const sessionJson = JSON.stringify({
+    token: fakeToken,
+    user: { id: 'test-user-playwright-001', email: 'test@playwright.local', name: 'QA Tester' },
+    firebaseUid: 'firebase-uid-playwright'
+  });
+
+  await page.addInitScript(([s]) => {
+    try { localStorage.setItem('servi_user_session', s); } catch (e) {}
+  }, [sessionJson]);
+
+  // Track whether /api/auth/refresh was called
+  let refreshCalled = false;
+  await page.route('**/api/auth/refresh', async (route) => {
+    refreshCalled = true;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        token: fakeToken, // Return same token for simplicity
+        user: { id: 'test-user-playwright-001', email: 'test@playwright.local', name: 'QA Tester', phone_verified: true, email_verified: true }
+      })
+    });
+  });
+
+  await page.goto('/');
+  await page.waitForTimeout(2000); // Give the background refresh time to fire
+
+  expect(refreshCalled).toBe(true);
+});
+
+test.skip('5.9 syncWithBackend clears session on 401 token_revoked response', async ({ page }) => {
   // SKIPPED: Firebase onAuthStateChanged does not fire in the Playwright test environment
   // because there is no real Firebase SDK connection. Testing this flow requires either:
   // a) A Firebase emulator configured in playwright.config.js, or
