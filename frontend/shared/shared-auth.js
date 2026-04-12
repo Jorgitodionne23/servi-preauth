@@ -871,6 +871,134 @@
     }
   };
 
+  // ── Broadcast email verification completion ──────────────────────────────────
+  window.__broadcastEmailVerified = function () {
+    try {
+      localStorage.setItem('servi_email_verified_at', Date.now().toString());
+    } catch (_) {
+      // localStorage not available (private browsing)
+    }
+    if (window.opener) {
+      try {
+        window.opener.dispatchEvent(new Event('servi-email-verified'));
+      } catch (_) {
+        // Cross-origin or window closed
+      }
+    }
+  };
+
+  // ── Handle email link as success screen (instead of redirecting) ──────────────
+  window.__handleEmailLinkAsScreen = function () {
+    var isSpanish = isEs();
+    var title = isSpanish ? '¡Verificación exitosa!' : 'Verification Successful!';
+    var message = isSpanish ? 'Tu correo ha sido verificado.' : 'Your email has been verified.';
+    var closeBtnText = isSpanish ? 'Cerrar' : 'Close';
+    var closingInText = isSpanish ? 'Cerrando en' : 'Closing in';
+
+    // Clear body and set gradient background
+    document.body.innerHTML = '';
+    document.body.style.background = 'linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 100%)';
+    document.body.style.margin = '0';
+    document.body.style.padding = '0';
+    document.body.style.height = '100vh';
+    document.body.style.display = 'flex';
+    document.body.style.alignItems = 'center';
+    document.body.style.justifyContent = 'center';
+    document.body.style.fontFamily = '"DM Sans", sans-serif';
+
+    // Create card container
+    var card = document.createElement('div');
+    card.style.background = '#fafafa';
+    card.style.borderRadius = '24px';
+    card.style.padding = '48px 40px';
+    card.style.maxWidth = '400px';
+    card.style.width = '90%';
+    card.style.boxShadow = '0 20px 60px rgba(0, 0, 0, 0.3)';
+    card.style.textAlign = 'center';
+
+    // Icon (checkmark in circle)
+    var icon = document.createElement('div');
+    icon.innerHTML = '✓';
+    icon.style.fontSize = '56px';
+    icon.style.color = '#10b981';
+    icon.style.marginBottom = '24px';
+    icon.style.fontWeight = 'bold';
+    card.appendChild(icon);
+
+    // Title
+    var titleEl = document.createElement('h2');
+    titleEl.textContent = title;
+    titleEl.style.margin = '0 0 12px 0';
+    titleEl.style.fontSize = '24px';
+    titleEl.style.fontWeight = '700';
+    titleEl.style.color = '#0a0a0a';
+    titleEl.style.fontFamily = '"Syne", sans-serif';
+    card.appendChild(titleEl);
+
+    // Message
+    var messageEl = document.createElement('p');
+    messageEl.textContent = message;
+    messageEl.style.margin = '0 0 32px 0';
+    messageEl.style.fontSize = '14px';
+    messageEl.style.color = '#666';
+    messageEl.style.lineHeight = '1.6';
+    card.appendChild(messageEl);
+
+    // Countdown (only if opened by parent window)
+    var countdownEl = null;
+    if (window.opener) {
+      countdownEl = document.createElement('p');
+      countdownEl.style.margin = '0 0 24px 0';
+      countdownEl.style.fontSize = '14px';
+      countdownEl.style.color = '#999';
+      countdownEl.style.fontStyle = 'italic';
+      card.appendChild(countdownEl);
+
+      var secondsLeft = 3;
+      var updateCountdown = function () {
+        if (countdownEl) {
+          countdownEl.textContent = closingInText + ' ' + secondsLeft + '...';
+        }
+        if (secondsLeft > 0) {
+          secondsLeft--;
+          setTimeout(updateCountdown, 1000);
+        } else {
+          window.close();
+        }
+      };
+      updateCountdown();
+    }
+
+    // Close button
+    var closeBtn = document.createElement('button');
+    closeBtn.textContent = closeBtnText;
+    closeBtn.style.background = '#0a0a0a';
+    closeBtn.style.color = '#fff';
+    closeBtn.style.border = 'none';
+    closeBtn.style.borderRadius = '12px';
+    closeBtn.style.padding = '12px 32px';
+    closeBtn.style.fontSize = '14px';
+    closeBtn.style.fontWeight = '600';
+    closeBtn.style.cursor = 'pointer';
+    closeBtn.style.transition = 'opacity 0.2s';
+    closeBtn.onclick = function () {
+      window.close();
+    };
+    closeBtn.onmouseover = function () {
+      closeBtn.style.opacity = '0.8';
+    };
+    closeBtn.onmouseout = function () {
+      closeBtn.style.opacity = '1';
+    };
+    card.appendChild(closeBtn);
+
+    // Append card to body
+    document.body.appendChild(card);
+
+    // Broadcast email verified signal
+    window.__broadcastEmailVerified();
+  };
+
   // ══════════════════════════════════════════════════════════════════════════════
   // EMAIL LINK SIGN-IN (handles link clicks on page load)
   // ══════════════════════════════════════════════════════════════════════════════
