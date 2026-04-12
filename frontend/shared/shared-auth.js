@@ -1010,12 +1010,40 @@
   // ══════════════════════════════════════════════════════════════════════════════
   // EMAIL LINK SIGN-IN (handles link clicks on page load)
   // ══════════════════════════════════════════════════════════════════════════════
+  //
+  // WINDOW OPENING BEHAVIOR:
+  // When users click email verification links from Firebase in their email client:
+  // 1. Links open in a NEW WINDOW/TAB (standard browser behavior for email links)
+  // 2. This new window has window.opener pointing back to the original modal page
+  // 3. The new window processes the email link and verifies the user with Firebase
+  // 4. After verification, the email link page broadcasts signals via:
+  //    - localStorage.setItem('servi_email_verified_at', timestamp) for cross-tab detection
+  //    - window.opener.dispatchEvent(new Event('servi-email-verified')) for modal awareness
+  // 5. The original modal listens for the 'servi-email-verified' event and auto-closes
+  //
+  // STATE PRESERVATION:
+  // Before redirecting to send the email link, the auth modal saves USL state to localStorage:
+  //    - servi_usl_state: user's signup/login info (identifier, type, isNew flag, etc.)
+  //    - servi_email_link_target: the email address being verified
+  //    - servi_recovery_mode or servi_email_verification_mode: context flags
+  // When the email link page loads, it restores this state from localStorage so the
+  // signup/login flow resumes seamlessly in the modal after the user returns.
+  //
+  // This design allows:
+  // - Modal stays open in the background while user verifies email
+  // - User sees no jarring redirects or page reloads
+  // - Modal auto-closes when verification completes (via window.opener event)
+  // - Email verification from account page also works (detects servi_email_verification_mode)
+  // ══════════════════════════════════════════════════════════════════════════════
   async function handleEmailLinkSignIn() {
     var ok = await ensureFirebase();
     if (!ok) return;
     if (!auth.isSignInWithEmailLink(window.location.href)) return;
 
+    // Retrieve the email address from localStorage (saved before the link was sent)
     var email = localStorage.getItem('servi_email_link_target');
+    // Fallback: if no stored email (e.g., user opened link in a different browser/device),
+    // prompt for email address. This ensures email link verification works in edge cases.
     if (!email) {
       email = prompt(isEs() ? 'Confirma tu correo electrónico:' : 'Confirm your email address:');
       if (!email) return;
@@ -1048,6 +1076,8 @@
         await auth.signInWithEmailLink(email, window.location.href);
       }
 
+      // Clear the email link target from localStorage to prevent re-verification on subsequent page loads.
+      // Also clean up the browser history so the URL no longer shows the verification code.
       localStorage.removeItem('servi_email_link_target');
       window.history.replaceState({}, document.title, window.location.pathname);
 
