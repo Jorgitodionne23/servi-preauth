@@ -270,10 +270,10 @@
     if (inp) {
       inp.focus();
       inp.addEventListener('input', function () {
-        var isEmail = inp.value.includes('@');
-        inp.setAttribute('type', isEmail ? 'email' : 'tel');
-        inp.setAttribute('inputmode', isEmail ? 'email' : 'numeric');
-        if (countryWrap) countryWrap.style.display = isEmail ? 'none' : '';
+        var hasLetter = /[a-zA-Z]/.test(inp.value);
+        inp.setAttribute('type', hasLetter ? 'email' : 'tel');
+        inp.setAttribute('inputmode', hasLetter ? 'email' : 'numeric');
+        if (countryWrap) countryWrap.style.display = hasLetter ? 'none' : '';
       });
     }
     ensureFirebase().then(setupRecaptchaInner);
