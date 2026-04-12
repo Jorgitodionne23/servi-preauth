@@ -1117,11 +1117,34 @@
         window.__handleEmailLinkAsScreen();
         return;
       } else if (uslIsNew && uslFirstIdentifierType === 'phone') {
-        // Secondary email for phone-first signup: mark email verified
+        // ══════════════════════════════════════════════════════════════════════════════
+        // PHONE-FIRST SECONDARY EMAIL VERIFICATION
+        // ══════════════════════════════════════════════════════════════════════════════
+        //
+        // Context: Phone-first signup flow is:
+        //   1. Phone OTP verification → phone_verified = true, account created
+        //   2. Name collection (required)
+        //   3. Email offer (optional: "skip" or "add email")
+        //   4. If email provided → email verification link sent
+        //   5. User clicks link → THIS CODE BLOCK EXECUTES
+        //
+        // Why this is different from email-first:
+        // - Email-first: email is PRIMARY identifier, verification is part of signup flow
+        //   → shows success screen, tries to resume modal (user is still in modal.html)
+        // - Phone-first: email is SECONDARY (phone already verified account)
+        //   → just mark email verified on existing account, close cleanly
+        //   → user is NOT in modal anymore (already signed up)
+        //   → no need for modal resumption or success screen
+        //
+        // Behavior: Mark email verified in session + sync with backend via API call
+        // ──────────────────────────────────────────────────────────────────────────────
+
         uslNewUserData.email = email;
         uslNewUserData.email_verified = true;
         if (window.__syncPromise) { try { await window.__syncPromise; } catch (_) {} }
-        // Patch email_verified on the account
+
+        // Sync verified email with backend via /api/auth/add-email endpoint
+        // This ensures the database is updated before closing the flow
         var token = getSessionToken();
         if (token && auth.currentUser) {
           var fbToken = await auth.currentUser.getIdToken(true);
@@ -1130,8 +1153,12 @@
             headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
             body: JSON.stringify({ email: email, firebase_id_token: fbToken })
           });
+          // Clean up the 'email skipped' flag since user has now added email
           localStorage.removeItem('servi_email_skipped');
         }
+
+        // Close the link-processing flow cleanly (normal redirect, no modal resumption)
+        // User will be returned to home or account page depending on where link was clicked
         onAuthSuccess();
       } else {
         // Email login for existing user
