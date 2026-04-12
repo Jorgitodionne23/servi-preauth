@@ -866,12 +866,16 @@
       await auth.sendSignInLinkToEmail(email.toLowerCase(), { url: window.location.origin + '/', handleCodeInApp: true });
       return true;
     } catch (err) {
-      console.error('[sendEmailVerification]', err);
+      console.error('[sendEmailVerification] Firebase error:', err.code, err.message);
       return false;
     }
   };
 
   // ── Broadcast email verification completion ──────────────────────────────────
+  // Broadcast email verification to parent window.
+  // Requirements: window.opener must be accessible (same origin or opened by parent).
+  // This is a fire-and-forget function (returns undefined).
+  // Event dispatch order: localStorage written first (for backup), then custom event dispatched.
   window.__broadcastEmailVerified = function () {
     try {
       localStorage.setItem('servi_email_verified_at', Date.now().toString());
@@ -889,13 +893,14 @@
 
   // ── Handle email link as success screen (instead of redirecting) ──────────────
   window.__handleEmailLinkAsScreen = function () {
-    var isSpanish = isEs();
-    var title = isSpanish ? '¡Verificación exitosa!' : 'Verification Successful!';
-    var message = isSpanish ? 'Tu correo ha sido verificado.' : 'Your email has been verified.';
-    var closeBtnText = isSpanish ? 'Cerrar' : 'Close';
-    var closingInText = isSpanish ? 'Cerrando en' : 'Closing in';
+    var es = isEs();
+    var title = es ? '¡Verificación exitosa!' : 'Verification Successful!';
+    var message = es ? 'Tu correo ha sido verificado.' : 'Your email has been verified.';
+    var closeBtnText = es ? 'Cerrar' : 'Close';
+    var closingInText = es ? 'Cerrando en' : 'Closing in';
 
-    // Clear body and set gradient background
+    // WARNING: This function replaces the entire page (clears document.body.innerHTML).
+    // Only call on standalone email verification pages, not pages with existing content.
     document.body.innerHTML = '';
     document.body.style.background = 'linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 100%)';
     document.body.style.margin = '0';
@@ -954,15 +959,18 @@
       countdownEl.style.fontStyle = 'italic';
       card.appendChild(countdownEl);
 
-      var secondsLeft = 3;
+      var COUNTDOWN_SECONDS = 3;
+      var secondsLeft = COUNTDOWN_SECONDS;
+      var countdownTimeout = null;
       var updateCountdown = function () {
         if (countdownEl) {
           countdownEl.textContent = closingInText + ' ' + secondsLeft + '...';
         }
         if (secondsLeft > 0) {
           secondsLeft--;
-          setTimeout(updateCountdown, 1000);
+          countdownTimeout = setTimeout(updateCountdown, 1000);
         } else {
+          if (countdownTimeout) clearTimeout(countdownTimeout);
           window.close();
         }
       };
