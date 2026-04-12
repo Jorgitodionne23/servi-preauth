@@ -110,6 +110,15 @@
     // Determine language
     var es = localStorage.getItem('servi_lang') === 'es' || !localStorage.getItem('servi_lang');
 
+    // Wait for email link processing to complete
+    // The shared-auth.js script processes the email verification code
+    if (window.__syncPromise) {
+      try { await window.__syncPromise; } catch (_) {}
+    }
+
+    // Small delay to ensure auth state is updated
+    await new Promise(resolve => setTimeout(resolve, 500));
+
     // Show language-specific text
     document.getElementById(es ? 'title-es' : 'title-en').classList.remove('hidden');
     document.getElementById(es ? 'msg-es' : 'msg-en').classList.remove('hidden');
@@ -126,6 +135,10 @@
     // Auto-close countdown (only if window was opened by parent)
     var countdownNum = COUNTDOWN_DURATION;
     if (window.opener) {
+      // Notify parent that email was verified
+      if (window.__broadcastEmailVerified) {
+        window.__broadcastEmailVerified();
+      }
       var interval = setInterval(function() {
         countdownNum--;
         if (es) {

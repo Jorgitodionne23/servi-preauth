@@ -427,7 +427,7 @@
           isNew: uslIsNew,
           newUserData: uslNewUserData,
         }));
-        await auth.sendSignInLinkToEmail(emailNorm, { url: window.location.origin + '/', handleCodeInApp: true });
+        await auth.sendSignInLinkToEmail(emailNorm, { url: window.location.origin + '/email-verified.html', handleCodeInApp: true });
         setScreen(
           '<div style="text-align:center;padding:16px 0">' +
             '<div style="font-size:40px;margin-bottom:12px">📧</div>' +
@@ -830,7 +830,7 @@
       }
       var ok = await ensureFirebase();
       if (!ok) throw new Error('firebase_unavailable');
-      await auth.sendSignInLinkToEmail(email.toLowerCase(), { url: window.location.origin + '/', handleCodeInApp: true });
+      await auth.sendSignInLinkToEmail(email.toLowerCase(), { url: window.location.origin + '/email-verified.html', handleCodeInApp: true });
       localStorage.setItem('servi_email_link_target', email.toLowerCase());
       localStorage.setItem('servi_recovery_mode', '1');
       setScreen(
@@ -863,7 +863,7 @@
     var ok = await ensureFirebase();
     if (!ok) return false;
     try {
-      await auth.sendSignInLinkToEmail(email.toLowerCase(), { url: window.location.origin + '/', handleCodeInApp: true });
+      await auth.sendSignInLinkToEmail(email.toLowerCase(), { url: window.location.origin + '/email-verified.html', handleCodeInApp: true });
       return true;
     } catch (err) {
       console.error('[sendEmailVerification] Firebase error:', err.code, err.message);
