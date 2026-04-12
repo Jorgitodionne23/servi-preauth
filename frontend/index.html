@@ -728,6 +728,54 @@
     setTimeout(scrollToHash, 200);
   }
 })();
+
+<!-- ═══ EMAIL VERIFICATION LISTENER ═══ -->
+<script>
+  (function() {
+    // Listen for email verification signal from email-verified page
+    window.addEventListener('storage', function(e) {
+      if (e.key === 'servi_email_verified_at') {
+        // Email was verified in another tab/window, check if modal is open
+        handleEmailVerificationSignal();
+      }
+    });
+
+    // Also set up direct event listener for same-window opener
+    window.addEventListener('servi-email-verified', function() {
+      handleEmailVerificationSignal();
+    });
+
+    function handleEmailVerificationSignal() {
+      // Check if auth modal is open and in USL flow
+      var modalEl = document.getElementById('auth-modal-global');
+      if (!modalEl || !modalEl.innerHTML) return;
+
+      // Check if we're in email-first signup flow
+      if (window.uslIsNew && window.uslFirstIdentifierType === 'email' && window.uslNewUserData && window.uslNewUserData.email) {
+        // Modal is open and waiting for name screen after email verification
+        // Automatically advance to name collection screen
+        console.log('[SERVI] Email verified, resuming signup in modal');
+
+        // Mark email as verified in local state
+        if (window.uslNewUserData) {
+          window.uslNewUserData.email_verified = true;
+        }
+
+        // Advance modal to name screen
+        window.renderIdentifierScreen = window.renderIdentifierScreen || function() {};
+
+        // Show name collection screen
+        var es = window.isEs && window.isEs() ? true : (localStorage.getItem('servi_lang') === 'es' || !localStorage.getItem('servi_lang'));
+        var title = es ? 'Tu nombre' : 'Your name';
+
+        if (window.modalShell && modalEl) {
+          modalEl.innerHTML = window.modalShell(title, false, '');
+          window.renderNameScreen = window.renderNameScreen || function() {};
+          if (window.renderNameScreen) window.renderNameScreen();
+        }
+      }
+    }
+  })();
 </script>
 </body>
 </html>
