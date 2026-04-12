@@ -47,7 +47,7 @@
     }
     .verification-card p {
       font-size: 15px;
-      color: #666;
+      color: #555;
       margin: 0 0 32px;
       line-height: 1.5;
     }
@@ -72,6 +72,14 @@
     .close-btn:hover {
       opacity: 0.8;
     }
+    @media (max-width: 480px) {
+      .verification-card {
+        padding: 24px;
+      }
+    }
+    .hidden {
+      display: none;
+    }
   </style>
   <script src="/config.js"></script>
   <script src="/shared/i18n.js"></script>
@@ -80,36 +88,43 @@
 <body>
 
 <div class="verification-card">
-  <div class="success-icon">✓</div>
-  <h1 id="title-es" style="display: none">Correo verificado</h1>
-  <h1 id="title-en" style="display: none">Email verified</h1>
-  <p id="msg-es" style="display: none">Tu correo ha sido verificado. Si abriste una solicitud de registro, se continuará en tu navegador.</p>
-  <p id="msg-en" style="display: none">Your email has been verified. If you opened a sign-up request, it will continue in your browser.</p>
+  <div class="success-icon" role="img" aria-label="Verificación exitosa">✓</div>
+  <h1 id="title-es" class="hidden">Correo verificado</h1>
+  <h1 id="title-en" class="hidden">Email verified</h1>
+  <p id="msg-es" class="hidden">Tu correo ha sido verificado. Si abriste una solicitud de registro, se continuará en tu navegador.</p>
+  <p id="msg-en" class="hidden">Your email has been verified. If you opened a sign-up request, it will continue in your browser.</p>
   <div class="countdown">
-    <span id="countdown-es" style="display: none">Cerrando en <span id="countdown-num">3</span> segundos...</span>
-    <span id="countdown-en" style="display: none">Closing in <span id="countdown-num-en">3</span> seconds...</span>
+    <span id="countdown-es" class="hidden">Cerrando en <span id="countdown-num">3</span> segundos...</span>
+    <span id="countdown-en" class="hidden">Closing in <span id="countdown-num-en">3</span> seconds...</span>
   </div>
-  <button class="close-btn" onclick="window.close()">
-    <span id="close-btn-es" style="display: none">Cerrar</span>
-    <span id="close-btn-en" style="display: none">Close</span>
+  <button class="close-btn" id="close-btn">
+    <span id="close-btn-es" class="hidden">Cerrar</span>
+    <span id="close-btn-en" class="hidden">Close</span>
   </button>
 </div>
 
 <script>
   (async function() {
+    const COUNTDOWN_DURATION = 3;
+
     // Determine language
     var es = localStorage.getItem('servi_lang') === 'es' || !localStorage.getItem('servi_lang');
 
     // Show language-specific text
-    document.getElementById(es ? 'title-es' : 'title-en').style.display = 'block';
-    document.getElementById(es ? 'msg-es' : 'msg-en').style.display = 'block';
-    document.getElementById(es ? 'countdown-es' : 'countdown-en').style.display = 'block';
+    document.getElementById(es ? 'title-es' : 'title-en').classList.remove('hidden');
+    document.getElementById(es ? 'msg-es' : 'msg-en').classList.remove('hidden');
+    document.getElementById(es ? 'countdown-es' : 'countdown-en').classList.remove('hidden');
 
     // Update button text for close
     document.querySelector('.close-btn').innerHTML = es ? 'Cerrar' : 'Close';
 
+    // Attach close button listener
+    document.getElementById('close-btn').addEventListener('click', function() {
+      window.close();
+    });
+
     // Auto-close countdown (only if window was opened by parent)
-    var countdownNum = 3;
+    var countdownNum = COUNTDOWN_DURATION;
     if (window.opener) {
       var interval = setInterval(function() {
         countdownNum--;
@@ -125,7 +140,7 @@
       }, 1000);
     } else {
       // Not opened by parent window, hide countdown
-      document.querySelector('.countdown').style.display = 'none';
+      document.querySelector('.countdown').classList.add('hidden');
     }
   })();
 </script>
