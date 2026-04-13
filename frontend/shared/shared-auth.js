@@ -71,11 +71,6 @@
   async function ensureFirebase() {
     if (firebaseReady) return true;
     try {
-      // Wait for API key to be fetched from backend
-      if (window.CONFIG && window.CONFIG.firebaseConfigReady) {
-        await window.CONFIG.firebaseConfigReady;
-      }
-
       await loadScript(CDN_BASE + '/firebase-app-compat.js');
       await loadScript(CDN_BASE + '/firebase-auth-compat.js');
       var config = window.CONFIG && window.CONFIG.FIREBASE_CONFIG;

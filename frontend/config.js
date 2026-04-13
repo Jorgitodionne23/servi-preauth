@@ -24,15 +24,15 @@
   // Update here when the number changes; then update the href values in each HTML file.
   const WHATSAPP_NUMBER = '525525112588';
 
-  // Firebase configuration (set via window.CONFIG or global window variables before this script loads).
-  // Keep the API key out of source control — set via Cloudflare Pages environment variables or window.CONFIG before this script loads.
+  // Firebase configuration — apiKey is the Firebase Web API Key (public by design, safe to commit).
+  // Do NOT delete or rotate this key in Google Cloud Console; Firebase Auth depends on it.
   const explicitFirebase = explicit.FIREBASE_CONFIG || {};
   const FIREBASE_CONFIG = {
     apiKey:
       explicitFirebase.apiKey ||
       window.CONFIG_FIREBASE_API_KEY ||
       window.FIREBASE_API_KEY ||
-      '',
+      'AIzaSyDu2mpz4vbiwvuE7VHF0UhWCNyt_qPAz7s',
     authDomain:
       explicitFirebase.authDomain ||
       window.CONFIG_FIREBASE_AUTH_DOMAIN ||
@@ -64,17 +64,3 @@
   };
 })();
 
-// Fetch Firebase API key from backend (environment variable)
-window.CONFIG.firebaseConfigReady = (async () => {
-  try {
-    const configRes = await fetch(window.CONFIG.API_BASE + '/api/config');
-    if (configRes.ok) {
-      const data = await configRes.json();
-      if (data.FIREBASE_API_KEY) {
-        window.CONFIG.FIREBASE_CONFIG.apiKey = data.FIREBASE_API_KEY;
-      }
-    }
-  } catch (e) {
-    console.warn('Could not load Firebase API key from backend:', e.message);
-  }
-})();
