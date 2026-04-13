@@ -71,10 +71,15 @@
   async function ensureFirebase() {
     if (firebaseReady) return true;
     try {
+      // Wait for API key to be fetched from backend
+      if (window.CONFIG && window.CONFIG.firebaseConfigReady) {
+        await window.CONFIG.firebaseConfigReady;
+      }
+
       await loadScript(CDN_BASE + '/firebase-app-compat.js');
       await loadScript(CDN_BASE + '/firebase-auth-compat.js');
       var config = window.CONFIG && window.CONFIG.FIREBASE_CONFIG;
-      if (!config) { console.warn('[SERVI] No Firebase config found'); return false; }
+      if (!config || !config.apiKey) { console.warn('[SERVI] No Firebase config or API key found'); return false; }
       if (!firebase.apps.length) firebase.initializeApp(config);
       auth = firebase.auth();
       auth.languageCode = lang();

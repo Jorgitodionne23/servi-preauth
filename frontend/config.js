@@ -65,7 +65,7 @@
 })();
 
 // Fetch Firebase API key from backend (environment variable)
-(async () => {
+window.CONFIG.firebaseConfigReady = (async () => {
   try {
     const configRes = await fetch(window.CONFIG.API_BASE + '/api/config');
     if (configRes.ok) {
