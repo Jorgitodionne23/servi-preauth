@@ -1,10 +1,167 @@
-# SERVI Auth Redesign — Visual Spec
+# SERVI Auth Redesign — Visual Spec (v2)
+
+**Updated design with 3 critical refinements:**
+- ✅ Symmetric signup flow (phone-first AND email-first)
+- ✅ Cross-identifier recovery (prevents duplicate accounts)
+- ✅ Dynamic OTP screen copy (context-aware titles)
 
 **Full flow:** identifier entry → backend check → signup or login → booking gate
 
 ---
 
-## 1. Auth State Machine
+## 0. Three Critical Adjustments (v2)
+
+### ① Cross-Identifier Recovery
+**Problem:** User signs up with phone, skips email. Later tries to login with email → backend creates duplicate account.
+
+**Solution:** New endpoint `POST /api/auth/resolve-identifier-mismatch` detects and merges orphaned accounts.
+
+Flow:
+1. Email login → not found
+2. Check if phone account exists (that skipped email)
+3. If yes: Email OTP → name validation → phone OTP → merge into one record
+4. Prevents duplicate account creation
+
+### ② Dynamic OTP Screen Copy
+**Problem:** Screen 2a says "Verificar teléfono" even for email-first signup users.
+
+**Solution:** Screen titles render dynamically based on `first_identifier_type`:
+- Phone-first path: "Verificar teléfono"
+- Email-first path: "Verificar correo"
+
+No more hardcoded "Phone" copy on email paths.
+
+### ③ Symmetric Signup Flow
+**Problem:** v1 only documented phone-first.
+
+**Solution:** Email-first path mirrors phone-first with identical logic:
+- **Phone-first:** Phone OTP → Name → Email (optional) → Email OTP
+- **Email-first:** Email OTP → Name → Phone (optional) → Phone OTP
+
+Same skip mechanic applies to secondary identifier in both paths.
+
+---
+
+## 1. Symmetric Signup Flow
+
+Phone-first and email-first paths are **mirrors of each other**.
+
+### Step Comparison
+
+| Step | 📱 Phone-First | 📧 Email-First |
+|------|---|---|
+| **1. Identifier** | User enters phone. Country picker visible. `first_identifier_type = 'phone'` | User enters email. Country picker hides. `first_identifier_type = 'email'` |
+| **Check** | `POST /api/auth/check-identifier` → `{ exists: false }` → route to signup (same for both) | ↑ same |
+| **2. Primary OTP** | Phone SMS via Firebase `signInWithPhoneNumber()`. Screen: "Verificar teléfono" | Email code via Firebase `sendSignInLinkToEmail()`. Screen: "Verificar correo" |
+| **3. Name Collection** | First + Last name, required, cannot skip. (same for both paths) | ↑ same |
+| **4. Secondary (optional)** | Email input + "Omitir por ahora" link. Sets `servi_email_skipped=1` if skipped | Phone input + "Omitir por ahora" link. Sets `servi_phone_skipped=1` if skipped |
+| **5. Secondary OTP** | Email OTP → `email_verified=true` | Phone SMS → `phone_verified=true` |
+| **Final** | `POST /api/auth/firebase` → creates auth_users row (same for both) | ↑ same |
+| **Booking Gate** | Triggered if `email_verified=false` at Step 3 | Triggered if `phone_verified=false` at Step 3 |
+
+**Implementation note:** The booking gate must check BOTH flags and return either:
+- `{ error: 'email_required' }` if email_verified is false (phone-first user)
+- `{ error: 'phone_required' }` if phone_verified is false (email-first user)
+
+Frontend renders appropriate inline collection form.
+
+---
+
+## 2. Cross-Identifier Login Recovery
+
+**Scenario:** User signs up via phone, skips email. Later they try to login with that email address.
+
+**Problem:** `check-identifier` returns "not found" → system would create second account.
+
+**Solution:** New endpoint detects orphaned phone accounts and merges them.
+
+### Recovery Flow
+
+```
+Enter email
+    ↓
+POST /api/auth/check-identifier → { exists: false }
+    ↓
+POST /api/auth/resolve-identifier-mismatch [NEW]
+    ↓
+Result: orphaned phone account found?
+    ↓ YES
+Email OTP verification
+(confirm they own this email)
+    ↓
+Name validation screen
+(must match DB record ±fuzzy match)
+    ↓
+Phone OTP verification
+(confirm they own the phone)
+    ↓
+Merge: email + email_verified=true
+added to existing phone account row
+```
+
+### POST /api/auth/resolve-identifier-mismatch [NEW]
+
+**Request:**
+```json
+{
+  "identifier": "juan@gmail.com",
+  "type": "email"
+}
+```
+
+**Response A (no orphan found):**
+```json
+{
+  "orphaned": false,
+  "action": "create_new_account"
+}
+```
+
+**Response B (orphaned account found):**
+```json
+{
+  "orphaned": true,
+  "hint": {
+    "name_first_char": "J",  // Partial name, only after Email OTP verified
+    "phone_last_4": "5678"
+  }
+}
+```
+
+**Security note:** The hint (partial name) is only returned AFTER Email OTP succeeds. This prevents account enumeration attacks.
+
+---
+
+## 3. Dynamic OTP Screen Copy
+
+**Implementation:** Single function `renderOTPScreen(type)` handles both phone and email paths.
+
+```javascript
+function renderOTPScreen(type) {
+  // type: 'phone' | 'email'
+  const es = isEs();
+  
+  const title = type === 'phone'
+    ? (es ? 'Verificar teléfono' : 'Verify phone')
+    : (es ? 'Verificar correo'   : 'Verify email');
+
+  const subtitle = type === 'phone'
+    ? (es ? 'Enviamos un código SMS a ' : 'We sent an SMS to ')
+    : (es ? 'Enviamos un código de 6 dígitos a ' : 'We sent a 6-digit code to ');
+
+  // render modal with dynamic title + subtitle
+  renderOTPModal({ title, subtitle, type });
+}
+```
+
+**Tracked in:**
+- Flow state (JavaScript)
+- localStorage `servi_usl_state` (persists across page reloads)
+- DB `auth_users.first_identifier_type` (persists across sessions)
+
+---
+
+## 4. Auth State Machine
 
 ### Overview
 
@@ -183,7 +340,7 @@ Confirmar solicitud (bloqueado)
 
 ---
 
-## 3. Database Schema Changes
+## 5. Database Schema Changes
 
 Three new columns on `auth_users` · no table drops
 
@@ -225,7 +382,7 @@ CREATE TABLE auth_users (
   -- NEW: verification tracking
   phone_verified       BOOLEAN DEFAULT false,
   email_verified       BOOLEAN DEFAULT false,
-  first_identifier_type VARCHAR(10),
+  first_identifier_type VARCHAR(10),  -- 'phone' | 'email'
   
   created_at           TIMESTAMPTZ DEFAULT NOW()
 );
@@ -274,17 +431,24 @@ CREATE TABLE auth_users (
 
 ---
 
-## 4. Backend API Endpoints
+## 6. Backend API Endpoints
 
-### Endpoint Changes Summary
+### New Endpoints (v2)
 
-| Method | Route | Status | Auth | Request Body | Response | Notes |
-|--------|-------|--------|------|--------------|----------|-------|
-| POST | `/api/auth/check-identifier` | modified | Public | `{ identifier }` | `{ exists, provider }` | provider: 'phone'\|'google'\|'email'. Add provider field to response so frontend knows which OTP type to offer. |
-| POST | `/api/auth/firebase` | modified | Firebase ID token | `{ name, phone, email, phone_verified, email_verified, first_identifier_type }` | `{ token, user }` | user includes phone_verified, email_verified. Accept and persist new fields. Return verification status in user object so frontend knows state immediately after sync. |
-| POST | `/api/auth/add-email` | new | JWT Bearer | `{ email, firebase_id_token }` | `{ ok: true, email_verified: true }` | Called after email OTP verified in booking gate. Verifies the Firebase ID token confirms email ownership, then sets email=email, email_verified=true on the user row. |
-| GET | `/api/auth/me` | modified | JWT Bearer | — | `{ id, name, email, phone, phone_verified, email_verified, ... }` | Add phone_verified and email_verified to response. Booking step 3 calls this to decide if gate is needed. |
-| POST | `/api/service-requests` | modified | JWT Bearer (required at step 3) | `{ category, description, ... }` | `{ id, status }` or 409 `{ error: 'email_required' }` | If authenticated user has email_verified=false: return 409 with 'email_required' error. Frontend shows booking gate. |
+| Route | Auth | Request | Response | Purpose |
+|-------|------|---------|----------|---------|
+| **POST** `/api/auth/resolve-identifier-mismatch` | Firebase ID token | `{ identifier, type }` | `{ orphaned: bool, hint? }` | Detect orphaned phone accounts when email login fails. Returns partial name only after Email OTP verified. Prevents account enumeration. |
+| **POST** `/api/auth/add-phone` | JWT Bearer | `{ phone, firebase_id_token }` | `{ ok: true, phone_verified: true }` | Symmetric to add-email. Called after phone OTP verified in booking gate or recovery flow. Sets phone + phone_verified=true on user row. |
+
+### Modified Endpoints (v2)
+
+| Route | Status | Auth | Request | Response | Notes |
+|-------|--------|------|---------|----------|-------|
+| **POST** `/api/auth/check-identifier` | modified | Public | `{ identifier }` | `{ exists, provider }` | provider: 'phone'\|'google'\|'email'. Helps frontend know which OTP type to offer. |
+| **POST** `/api/auth/firebase` | modified | Firebase ID token | `{ name, phone, email, phone_verified, email_verified, first_identifier_type }` | `{ token, user }` | Accept and persist new verification fields + `first_identifier_type`. Return all in user object so frontend has authoritative state. |
+| **GET** `/api/auth/me` | modified | JWT Bearer | — | `{ id, name, email, phone, phone_verified, email_verified, first_identifier_type, ... }` | Return verification status + identifier type. Booking step 3 calls this to decide which gate (if any) is needed. |
+| **POST** `/api/auth/add-email` | existing | JWT Bearer | `{ email, firebase_id_token }` | `{ ok: true, email_verified: true }` | Unchanged. Called after email OTP verified in booking gate (phone-first users). |
+| **POST** `/api/service-requests` | modified | JWT Bearer (required at step 3) | `{ category, description, ... }` | `{ id, status }` or 409 `{ error: 'email_required' \| 'phone_required' }` | **v2 change:** Check BOTH phone_verified and email_verified. Return 409 with appropriate error based on what's missing. Frontend shows appropriate inline collection form. |
 
 ### POST /api/service-requests — Gate Logic (Pseudocode)
 
@@ -311,24 +475,25 @@ if (req.user) {
 
 ---
 
-## 5. LocalStorage Keys
+## 7. LocalStorage Keys
 
 Complete inventory — existing + new
 
 | Key | Status | Description |
 |-----|--------|-------------|
-| `servi_user_session` | Existing | `{ token, user, firebaseUid }` — user now includes phone_verified, email_verified |
-| `servi_email_skipped` | NEW | "1" when user clicked "Skip for now" on Screen 2c. Cleared when email is later verified |
+| `servi_user_session` | Existing | `{ token, user, firebaseUid }` — user now includes phone_verified, email_verified, first_identifier_type |
+| `servi_email_skipped` | NEW (v1) | "1" when user clicked "Skip for now" on email collection screen. Cleared when email is later verified. |
+| `servi_phone_skipped` | NEW (v2) | "1" when user clicked "Skip for now" on phone collection screen (email-first path). Cleared when phone is later verified. |
 | `servi_email_link_target` | Existing | Email address for sign-in link flow |
 | `servi_recovery_mode` | Existing | "1" during phone recovery via email link |
 | `servi_pending_logout` | Existing | Deferred Firebase signOut across pages |
-| `servi_usl_state` | NEW (optional) | Persist USL flow state across OTP confirmation page load if needed: `{ identifier, identifierType, isNew, newUserData }` |
+| `servi_usl_state` | NEW (v1) | Persist USL flow state across OTP confirmation page reload: `{ identifier, identifierType, isNew, newUserData, first_identifier_type }` |
 
 ---
 
-## 6. Step-by-Step Flow Breakdowns
+## 8. Step-by-Step Flow Breakdowns
 
-### Signup Branch — Step by Step
+### Signup Branch — Step by Step (Phone-First)
 
 **1. Identifier Entry**
 - Phone (with country picker) or email auto-detected
@@ -356,6 +521,33 @@ Complete inventory — existing + new
 **6. Backend Sync**
 - `POST /api/auth/firebase`: creates auth_users row with `phone_verified=true`, `email_verified=true/false`, `first_identifier_type='phone'`
 
+### Signup Branch — Step by Step (Email-First)
+
+**1. Identifier Entry**
+- Email auto-detected (@ symbol) or user selects email mode
+- Country picker hides
+
+**2. Email OTP Verification**
+- Firebase `sendSignInLinkToEmail()` or email OTP code
+- Verify 6-digit code
+
+**3. Name Collection**
+- First name + Last name fields
+- Required
+- Cannot be skipped — needed for booking invoices
+
+**4. Phone Collection (optional)**
+- Explain why phone helps (SMS confirmations, recovery)
+- "Skip for now" link available
+- Sets `servi_phone_skipped=1`
+
+**5. Phone OTP (if phone given)**
+- Firebase SMS code
+- On verify: `phone_verified=true` saved to DB
+
+**6. Backend Sync**
+- `POST /api/auth/firebase`: creates auth_users row with `phone_verified=true/false`, `email_verified=true`, `first_identifier_type='email'`
+
 ### Login Branch — Step by Step
 
 **1. Identifier Entry**
@@ -375,54 +567,110 @@ Complete inventory — existing + new
 - Navbar shows user name
 - Booking step 3 may then check email_verified if missing
 
+### Cross-Identifier Recovery — Step by Step
+
+**1. User attempts email login**
+- Already has phone account (from earlier signup)
+- Skipped email during signup
+
+**2. Check identifier**
+- `POST /api/auth/check-identifier` → `{ exists: false }`
+- Email not in system
+
+**3. Resolve mismatch**
+- `POST /api/auth/resolve-identifier-mismatch`
+- Backend checks: does orphaned phone account exist?
+- Returns `{ orphaned: true }`
+
+**4. Email OTP verification**
+- Frontend shows email OTP screen
+- User enters code
+- Frontend calls `POST /api/auth/firebase` with email OTP token
+
+**5. Name validation**
+- Screen asks user to enter name
+- Compare against DB record (fuzzy match allowed)
+- If matches → proceed
+
+**6. Phone OTP verification**
+- User verifies phone with SMS code
+- Firebase `signInWithPhoneNumber()`
+
+**7. Merge**
+- `POST /api/auth/firebase` with BOTH email + phone verified
+- Updates existing auth_users row
+- Sets: `email=...`, `email_verified=true`
+- Returns JWT
+
+**8. Done**
+- User is now logged in with complete profile
+- No duplicate account created
+
 ### Booking Gate — Step by Step
 
 **1. User reaches Step 3**
 - Already logged in
-- Frontend calls `GET /api/auth/me` to check email_verified
+- Frontend calls `GET /api/auth/me` to check verification status
 
-**2. Missing email?**
-- Show inline banner inside booking panel: "Add your email to confirm this request"
-- Not a full modal
+**2. Check verification status**
+- If `first_identifier_type='phone'` and `email_verified=false` → show email gate
+- If `first_identifier_type='email'` and `phone_verified=false` → show phone gate
 
-**3. Email OTP inline**
+**3. Collection form inline**
 - Small form embedded in booking step 3
-- Email field → "Send code" → 6-digit OTP → verify
-- On success: `email_verified=true`
+- Email: "Add your email" field → "Send code" → 6-digit OTP → verify
+- Phone: "Add your phone" field → Country picker → "Send code" → SMS OTP → verify
+- On success: email_verified=true (or phone_verified=true)
 
 **4. Proceed**
-- `PATCH /api/auth/me` or `/api/auth/add-email` sets email + email_verified
-- Booking confirmation unlocked
+- `POST /api/auth/add-email` (or add-phone) completes
+- User can now confirm booking
 
 ---
 
-## 7. Design Summary
+## 9. Implementation Summary
 
-### Files Changed
-- `shared-auth.js`
-- `db.pg.mjs`
-- `index.mjs`
+### v2 Changes from v1
+
+| Area | v1 | v2 |
+|------|----|----|
+| **Signup paths** | Phone-first only | Phone-first + Email-first (symmetric) |
+| **OTP screen copy** | Hardcoded | Dynamic based on first_identifier_type |
+| **Orphaned account handling** | None | New resolve-identifier-mismatch endpoint |
+| **Booking gate** | Email-only check | Dual check (email for phone-first, phone for email-first) |
+
+### Files to Modify
+- `frontend/shared/shared-auth.js` — Add email-first path, renderOTPScreen() dynamic logic
+- `backend/index.mjs` — Add POST /api/auth/resolve-identifier-mismatch, POST /api/auth/add-phone, update service-requests gate logic
+- `backend/db.pg.mjs` — No schema changes (v1 already added columns)
 
 ### New Screens
-- Screen 2b (name)
-- Screen 2c (email opt)
-- Screen 2d (email OTP)
-- Screen 3 (booking gate)
+- Screen 2a — Dynamic OTP (Phone or Email based on type)
+- Screen 2b — Name Collection (identical for both paths)
+- Screen 2c — Secondary Identifier (Email for phone-first, Phone for email-first)
+- Screen 2d — Secondary OTP (Email or Phone)
+- Screen 3 — Booking Gate (symmetric — email OR phone collection inline)
+- Recovery screen 1 — Cross-identifier name validation
 
 ### New DB Columns
-- `phone_verified`
-- `email_verified`
-- `first_identifier_type`
+- ✅ `phone_verified` (from v1)
+- ✅ `email_verified` (from v1)
+- ✅ `first_identifier_type` (from v1)
 
-### New Endpoints
-- `POST /api/auth/add-email`
+No new columns needed for v2.
 
-### Modified Endpoints
-- `check-identifier`
-- `/api/auth/firebase`
-- `GET /api/auth/me`
-- `POST /api/service-requests`
+### New Endpoints (v2)
+- `POST /api/auth/resolve-identifier-mismatch` — Detect & merge orphaned accounts
+- `POST /api/auth/add-phone` — Symmetric to add-email, for email-first users
+
+### Modified Endpoints (v2)
+- `POST /api/auth/firebase` — Already handles new fields from v1
+- `GET /api/auth/me` — Already returns verification flags from v1
+- `POST /api/service-requests` — Update gate logic: check phone_verified too, return `{ error: 'phone_required' }` if missing
 
 ### New LocalStorage Keys
-- `servi_email_skipped`
-- `servi_usl_state`
+- ✅ `servi_email_skipped` (from v1)
+- `servi_phone_skipped` — NEW (v2): "1" when email-first user skips phone
+- ✅ `servi_usl_state` (from v1)
+
+No new features needed for existing keys.

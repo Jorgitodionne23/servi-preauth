@@ -242,6 +242,90 @@
 
   window.__uslSetDial = function (val) { selectedDial = val; };
 
+  // ── Monitor for email verification in other tab ─────────────────────────────────
+  // When user clicks email link in a new tab, that tab verifies and broadcasts.
+  // This monitors for that broadcast and continues the flow in the original modal.
+  window.__monitorEmailVerification = function () {
+    var startTime = Date.now();
+    var timeout = 10 * 60 * 1000; // 10 minutes
+    var pollInterval = null;
+    var onVerificationDetected = null;
+
+    function checkVerified() {
+      // Check if email was verified timestamp exists (set by email-verified.html)
+      var verifiedTime = localStorage.getItem('servi_email_verified_at');
+      return !!verifiedTime;
+    }
+
+    function continueAfterVerification() {
+      if (pollInterval) clearInterval(pollInterval);
+      if (onVerificationDetected) window.removeEventListener('storage', onVerificationDetected);
+
+      // Wait for Firebase auth state to propagate from other tab
+      // The email-verified.html tab has already signed in the user via Firebase,
+      // and onAuthStateChanged() should fire shortly
+      var checkCount = 0;
+      var stateCheckInterval = setInterval(function () {
+        checkCount++;
+        if (checkCount > 30) { clearInterval(stateCheckInterval); return; } // 30 seconds max
+
+        // Check if window.__user was updated by onAuthStateChanged()
+        if (window.__user && window.__user.email) {
+          clearInterval(stateCheckInterval);
+
+          // User is now signed in, continue flow
+          uslNewUserData.email = window.__user.email;
+          uslNewUserData.email_verified = true;
+
+          // Continue to next step (name collection for email-first signup)
+          if (uslIsNew && uslFirstIdentifierType === 'email') {
+            renderNameCollectionScreen();
+          } else {
+            // For other flows, sync and succeed
+            onAuthSuccess();
+          }
+        }
+      }, 100); // Check every 100ms
+    }
+
+    // Listen for storage events (from other tabs setting servi_email_verified_at)
+    onVerificationDetected = function (e) {
+      if (e.key === 'servi_email_verified_at') {
+        continueAfterVerification();
+      }
+    };
+    window.addEventListener('storage', onVerificationDetected);
+
+    // Listen for page visibility changes (user returns to tab after closing email verification tab)
+    function onVisibilityChange() {
+      if (document.hidden) return;
+      if (checkVerified() && window.__user && window.__user.email) {
+        continueAfterVerification();
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    // Polling fallback (in case storage event doesn't fire, e.g., some browsers)
+    pollInterval = setInterval(function () {
+      if (Date.now() - startTime > timeout) {
+        clearInterval(pollInterval);
+        return; // Stop polling after timeout
+      }
+      if (checkVerified() && window.__user && window.__user.email) {
+        continueAfterVerification();
+      }
+    }, 500); // Check every 500ms
+
+    // Cleanup on modal close
+    var originalCloseAuthModal = window.closeAuthModal;
+    window.closeAuthModal = function () {
+      if (pollInterval) clearInterval(pollInterval);
+      if (onVerificationDetected) window.removeEventListener('storage', onVerificationDetected);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      if (originalCloseAuthModal) originalCloseAuthModal();
+    };
+  };
+
   // ══════════════════════════════════════════════════════════════════════════════
   // SCREEN 1 — Identifier Input
   // ══════════════════════════════════════════════════════════════════════════════
@@ -439,6 +523,8 @@
             '</p>' +
           '</div>'
         );
+        // Monitor for email verification completion in other tab
+        window.__monitorEmailVerification();
       } catch (err) {
         if (eBtn) { eBtn.disabled = false; eBtn.textContent = isEs() ? 'Enviar enlace' : 'Send link'; }
         setError(firebaseErrorMessage(err.code));
