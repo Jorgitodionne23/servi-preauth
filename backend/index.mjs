@@ -1749,6 +1749,13 @@ app.get('/config/stripe', (_req, res) => {
   res.send({ pk: process.env.STRIPE_PUBLISHABLE_KEY || '' });
 });
 
+// Serve Firebase config to the client (public endpoint)
+app.get('/api/config', (_req, res) => {
+  res.json({
+    FIREBASE_API_KEY: process.env.FIREBASE_API_KEY || ''
+  });
+});
+
 app.get('/admin/contact-lookup', adminRateLimit, requireAdminAuth, async (req, res) => {
   try {
     const phoneDigits = normalizePhoneDigits(req.query.phone);

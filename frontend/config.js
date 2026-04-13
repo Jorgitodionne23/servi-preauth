@@ -25,14 +25,14 @@
   const WHATSAPP_NUMBER = '525525112588';
 
   // Firebase configuration (set via window.CONFIG or global window variables before this script loads).
-  // Keep the key out of source control to avoid secret-scanning alerts.
+  // Keep the API key out of source control — set via Cloudflare Pages environment variables or window.CONFIG before this script loads.
   const explicitFirebase = explicit.FIREBASE_CONFIG || {};
   const FIREBASE_CONFIG = {
     apiKey:
       explicitFirebase.apiKey ||
       window.CONFIG_FIREBASE_API_KEY ||
       window.FIREBASE_API_KEY ||
-      'AIzaSyCJPqu_Q8jzqH-KBVGcQN1bR_M9knEGSvM',
+      '',
     authDomain:
       explicitFirebase.authDomain ||
       window.CONFIG_FIREBASE_AUTH_DOMAIN ||
@@ -62,4 +62,19 @@
     FIREBASE_CONFIG,
     GOOGLE_CLIENT_ID: '315005869570-lb1549n2f20thjsmb43neoun4vf1nc1p.apps.googleusercontent.com'
   };
+})();
+
+// Fetch Firebase API key from backend (environment variable)
+(async () => {
+  try {
+    const configRes = await fetch(window.CONFIG.API_BASE + '/api/config');
+    if (configRes.ok) {
+      const data = await configRes.json();
+      if (data.FIREBASE_API_KEY) {
+        window.CONFIG.FIREBASE_CONFIG.apiKey = data.FIREBASE_API_KEY;
+      }
+    }
+  } catch (e) {
+    console.warn('Could not load Firebase API key from backend:', e.message);
+  }
 })();
