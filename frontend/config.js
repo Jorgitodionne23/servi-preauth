@@ -32,7 +32,7 @@
       explicitFirebase.apiKey ||
       window.CONFIG_FIREBASE_API_KEY ||
       window.FIREBASE_API_KEY ||
-      '__FIREBASE_API_KEY__',
+      'AIzaSyCJPqu_Q8jzqH-KBVGcQN1bR_M9knEGSvM',
     authDomain:
       explicitFirebase.authDomain ||
       window.CONFIG_FIREBASE_AUTH_DOMAIN ||
