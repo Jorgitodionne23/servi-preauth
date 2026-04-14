@@ -250,51 +250,69 @@
     var timeout = 10 * 60 * 1000; // 10 minutes
     var pollInterval = null;
     var onVerificationDetected = null;
+    var handled = false; // guard against double-calls across storage/poll/visibility triggers
 
     function checkVerified() {
-      // Check if email was verified timestamp exists (set by email-verified.html)
-      var verifiedTime = localStorage.getItem('servi_email_verified_at');
-      return !!verifiedTime;
+      return !!localStorage.getItem('servi_email_verified_at');
     }
 
     function continueAfterVerification() {
+      if (handled) return;
+      handled = true;
       if (pollInterval) clearInterval(pollInterval);
       if (onVerificationDetected) window.removeEventListener('storage', onVerificationDetected);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
 
+      // The original tab already has the email in uslIdentifier — it was set when the user
+      // typed it and never changes. No need for Firebase cross-tab onAuthStateChanged
+      // (unreliable with Firebase v9+ IndexedDB persistence) or servi_user_session.
+      var email = null;
+      if (uslIdentifierType === 'email' && uslIdentifier) {
+        email = uslIdentifier;
+      } else if (window.__user && window.__user.email) {
+        email = window.__user.email;
+      } else {
+        try {
+          var sess = JSON.parse(localStorage.getItem('servi_user_session') || 'null');
+          if (sess && sess.user && sess.user.email) email = sess.user.email;
+        } catch (_) {}
+      }
+
+      if (email) {
+        uslNewUserData.email = email;
+        uslNewUserData.email_verified = true;
+        if (uslIsNew && uslFirstIdentifierType === 'email') {
+          renderNameCollectionScreen();
+        } else {
+          onAuthSuccess();
+        }
+        return;
+      }
+
+      // Fallback poll — only reached if email somehow not in scope (edge case)
       var checkCount = 0;
       var stateCheckInterval = setInterval(function () {
         checkCount++;
         if (checkCount > 150) { clearInterval(stateCheckInterval); return; } // 15 seconds max
 
-        // Primary: Firebase cross-tab onAuthStateChanged sets window.__user
-        var email = window.__user && window.__user.email;
-
-        // Fallback: handleEmailLinkSignIn awaits syncWithBackend BEFORE broadcasting,
-        // so servi_user_session is already written by the time this fires.
-        // This works even when Firebase cross-tab onAuthStateChanged hasn't propagated
-        // (Firebase v9+ may use IndexedDB, not localStorage, so storage events aren't guaranteed).
-        if (!email) {
+        var e = window.__user && window.__user.email;
+        if (!e) {
           try {
-            var sess = JSON.parse(localStorage.getItem('servi_user_session') || 'null');
-            if (sess && sess.user && sess.user.email) {
-              email = sess.user.email;
-              if (!window.__user) window.__user = sess.user;
-            }
+            var s = JSON.parse(localStorage.getItem('servi_user_session') || 'null');
+            if (s && s.user && s.user.email) { e = s.user.email; if (!window.__user) window.__user = s.user; }
           } catch (_) {}
         }
-
-        if (email) {
+        if (e) {
           clearInterval(stateCheckInterval);
-          uslNewUserData.email = email;
+          uslNewUserData.email = e;
           uslNewUserData.email_verified = true;
-
           if (uslIsNew && uslFirstIdentifierType === 'email') {
             renderNameCollectionScreen();
           } else {
             onAuthSuccess();
           }
         }
-      }, 100); // Check every 100ms
+      }, 100);
     }
 
     // Listen for storage events (from other tabs setting servi_email_verified_at)
@@ -305,25 +323,21 @@
     };
     window.addEventListener('storage', onVerificationDetected);
 
-    // Listen for page visibility changes (user returns to tab after closing email verification tab)
+    // Listen for page visibility changes (user returns to this tab after closing email-verified tab)
     function onVisibilityChange() {
       if (document.hidden) return;
-      if (checkVerified() && window.__user && window.__user.email) {
-        continueAfterVerification();
-      }
+      if (checkVerified()) continueAfterVerification();
     }
     document.addEventListener('visibilitychange', onVisibilityChange);
 
-    // Polling fallback (in case storage event doesn't fire, e.g., some browsers)
+    // Polling fallback (in case storage event doesn't fire in some browsers)
     pollInterval = setInterval(function () {
       if (Date.now() - startTime > timeout) {
         clearInterval(pollInterval);
-        return; // Stop polling after timeout
+        return;
       }
-      if (checkVerified() && window.__user && window.__user.email) {
-        continueAfterVerification();
-      }
-    }, 500); // Check every 500ms
+      if (checkVerified()) continueAfterVerification();
+    }, 500);
 
     // Cleanup on modal close
     var originalCloseAuthModal = window.closeAuthModal;
