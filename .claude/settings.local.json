@@ -27,7 +27,8 @@
       "mcp__plugin_context7_context7__resolve-library-id",
       "mcp__plugin_context7_context7__query-docs",
       "Bash(cd /Users/jorgedionne/.claude/plugins/cache/claude-plugins-official/superpowers/5.0.7/skills/brainstorming && bash scripts/start-server.sh --project-dir /Users/jorgedionne/stripe-preauth 2>&1)",
-      "Bash(open \"/Users/jorgedionne/stripe-preauth/.superpowers/brainstorm/80303-1775944020/content/auth-design.html\")"
+      "Bash(open \"/Users/jorgedionne/stripe-preauth/.superpowers/brainstorm/80303-1775944020/content/auth-design.html\")",
+      "Bash(python3 -m json.tool)"
     ]
   }
 }

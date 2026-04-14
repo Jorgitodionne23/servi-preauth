@@ -110,14 +110,24 @@
     // Determine language
     var es = localStorage.getItem('servi_lang') === 'es' || !localStorage.getItem('servi_lang');
 
-    // Wait for email link processing to complete
-    // The shared-auth.js script processes the email verification code
-    if (window.__syncPromise) {
+    // Wait for handleEmailLinkSignIn to complete — this ensures:
+    // 1. Firebase sign-in is done before we show success UI (so user can't close early)
+    // 2. __broadcastEmailVerified has already been called for email-first signups
+    if (window.__emailLinkProcessingPromise) {
+      try { await window.__emailLinkProcessingPromise; } catch (_) {}
+    } else if (window.__syncPromise) {
       try { await window.__syncPromise; } catch (_) {}
     }
 
-    // Small delay to ensure auth state is updated
-    await new Promise(resolve => setTimeout(resolve, 500));
+    // Broadcast unconditionally — works cross-tab via localStorage storage event
+    // regardless of whether window.opener exists (email clients open without opener).
+    if (window.__broadcastEmailVerified) {
+      window.__broadcastEmailVerified();
+    }
+
+    // If __handleEmailLinkAsScreen() already replaced the body (email-first signup path),
+    // our static elements are gone — nothing more to do.
+    if (!document.getElementById('close-btn')) return;
 
     // Show language-specific text
     document.getElementById(es ? 'title-es' : 'title-en').classList.remove('hidden');
@@ -135,10 +145,6 @@
     // Auto-close countdown (only if window was opened by parent)
     var countdownNum = COUNTDOWN_DURATION;
     if (window.opener) {
-      // Notify parent that email was verified
-      if (window.__broadcastEmailVerified) {
-        window.__broadcastEmailVerified();
-      }
       var interval = setInterval(function() {
         countdownNum--;
         if (es) {

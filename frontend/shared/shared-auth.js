@@ -267,7 +267,7 @@
       var checkCount = 0;
       var stateCheckInterval = setInterval(function () {
         checkCount++;
-        if (checkCount > 30) { clearInterval(stateCheckInterval); return; } // 30 seconds max
+        if (checkCount > 150) { clearInterval(stateCheckInterval); return; } // 15 seconds max
 
         // Check if window.__user was updated by onAuthStateChanged()
         if (window.__user && window.__user.email) {
@@ -1389,8 +1389,12 @@
   }
 
   // ── Init ──────────────────────────────────────────────────────────────────────
+  // Expose handleEmailLinkSignIn's promise so email-verified.html can await it
+  // before showing success UI, ensuring the broadcast fires before user closes the tab.
+  var _emailLinkSignInResolve;
+  window.__emailLinkProcessingPromise = new Promise(function (resolve) { _emailLinkSignInResolve = resolve; });
   ensureFirebase().then(function () {
-    handleEmailLinkSignIn();
+    handleEmailLinkSignIn().then(_emailLinkSignInResolve, _emailLinkSignInResolve);
     if (window.__sessionExpired) {
       window.__sessionExpired = false;
       setTimeout(function () { if (!window.__user) showSessionExpiredToast(); }, 2500);
