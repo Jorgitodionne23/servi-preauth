@@ -261,27 +261,36 @@
       if (pollInterval) clearInterval(pollInterval);
       if (onVerificationDetected) window.removeEventListener('storage', onVerificationDetected);
 
-      // Wait for Firebase auth state to propagate from other tab
-      // The email-verified.html tab has already signed in the user via Firebase,
-      // and onAuthStateChanged() should fire shortly
       var checkCount = 0;
       var stateCheckInterval = setInterval(function () {
         checkCount++;
         if (checkCount > 150) { clearInterval(stateCheckInterval); return; } // 15 seconds max
 
-        // Check if window.__user was updated by onAuthStateChanged()
-        if (window.__user && window.__user.email) {
-          clearInterval(stateCheckInterval);
+        // Primary: Firebase cross-tab onAuthStateChanged sets window.__user
+        var email = window.__user && window.__user.email;
 
-          // User is now signed in, continue flow
-          uslNewUserData.email = window.__user.email;
+        // Fallback: handleEmailLinkSignIn awaits syncWithBackend BEFORE broadcasting,
+        // so servi_user_session is already written by the time this fires.
+        // This works even when Firebase cross-tab onAuthStateChanged hasn't propagated
+        // (Firebase v9+ may use IndexedDB, not localStorage, so storage events aren't guaranteed).
+        if (!email) {
+          try {
+            var sess = JSON.parse(localStorage.getItem('servi_user_session') || 'null');
+            if (sess && sess.user && sess.user.email) {
+              email = sess.user.email;
+              if (!window.__user) window.__user = sess.user;
+            }
+          } catch (_) {}
+        }
+
+        if (email) {
+          clearInterval(stateCheckInterval);
+          uslNewUserData.email = email;
           uslNewUserData.email_verified = true;
 
-          // Continue to next step (name collection for email-first signup)
           if (uslIsNew && uslFirstIdentifierType === 'email') {
             renderNameCollectionScreen();
           } else {
-            // For other flows, sync and succeed
             onAuthSuccess();
           }
         }
