@@ -16,24 +16,13 @@ SERVI is an on-demand home services platform based in **Santa Fe, Cuajimalpa de 
 
 ## Design Direction
 
-### Inspiration: Uber's website
-
-- **Minimalist, black/white dominant** palette with a single bold accent color
-- **Generous whitespace**, clean information architecture
-- **Functional hero section** with clear CTA — not decorative, action-oriented
-- **Concise navigation** — simple labels, logical placement
-- **Typography-driven** hierarchy — big bold headlines, restrained body text
-- **No clutter** — every element earns its place
-
 ### Brand Identity
 
-- **Name:** SERVI (keep this name)
-- **Logo treatment:** "SERVI." with a green dot — uses Syne font, weight 800
-- **Primary color:** #0a0a0a (near-black)
-- **Accent color:** #10b981 (emerald green)
-- **Background:** #fafafa (off-white)
-- **Headline font:** Syne (Google Fonts) — weights 700, 800
-- **Body font:** DM Sans (Google Fonts) — weights 300, 400, 500, 700
+- **Name:** SERVI
+- **Headline font:** Not final
+- **Body font:** Not final
+- **Colors:** Not final
+- **Logo:** logo-servi-white.png
 - **Design philosophy:** Completely fresh redesign. Do NOT use the old Canva site's illustrations, mascots, monospace fonts, or rounded cartoon aesthetic. This is a professional, Uber-caliber product.
 
 ### UI Patterns
@@ -74,13 +63,12 @@ SERVI offers 5 main categories + a custom/catch-all option:
 
 - Users can browse and fill booking steps 1-2 without login
 - Confirming a booking (step 3) requires authentication
-- Auth methods: Phone OTP (Firebase) or Google Sign-In
+- Auth methods: Phone OTP (Firebase) or Google Sign-In (and phone OTP)
 - Logged-in users have booking data pre-filled
-- No email/password auth (passwordless Firebase-only)
 
 ### Service Booking (3-step flow)
 
-1. **Smart search or select category** — Choose from the 5 service categories or using the inteligent ccustom request (picture, video, voice message).
+1. **Smart search or select category** — Choose from the 5 service categories or using the inteligent custom request (picture, video, voice message).
 2. **Describe + Schedule** — Free-text description of the need + choose "ASAP" or schedule a specific date/time
 3. **Address + Confirm** — Enter full address, review summary, confirm request. Phone is neccesary if user does not have account or is not logged in.
 
@@ -101,25 +89,6 @@ After a request is confirmed, SERVI Admin team assigns a verified specialist bas
 1. **Choose your service** — Select a category and describe what you need
 2. **SERVI Match** — We assign the closest/available verified specialist
 3. **Done** — Your specialist arrives. We handle the rest.
-
----
-
-## Testimonials (Real customer quotes)
-
-1. **Diego Flores:** "Un proceso bastante sencillo. No me tuve que preocupar por investigar ni en contactar al especialista. Ya no tengo que estar preguntando en grupos por especialistas."
-
-2. **Patricia Espinoza:** "Mi calentador dejó de funcionar y no sabía a quién acudir. A través de SERVI me conectaron con el especialista indicado, detectó que faltaba una pieza y ellos se encargaron de conseguirla, instalarla y dejar todo funcionando. Muy práctico!"
-
-3. **Valeria Sanchez:** "¡Una alternativa más segura! Me ayudaron sustituir a mi jardinero, con quien estaba teniendo problemas. ¡Estoy más tranquila sabiendo que tengo el respaldo de un intermediario por cualquier cosa!"
-
----
-
-## Stats (for landing page)
-
-- 500+ services completed
-- 98% satisfaction rate
-- 50+ verified specialists
-- 24h average response time
 
 ---
 
@@ -246,45 +215,6 @@ This is NOT a simple payment form. It's a complete **admin-driven order manageme
 
 ---
 
-## Current State: Production Readiness Phase
-
-**Status:**
-
-- ✅ **Phase 1 (Quick Wins) — COMPLETE**
-  - Report/suggestion form success messages ✓
-  - Pre-filled user info for logged-in users ✓
-  - Navbar text contrast fixed ✓
-  - Partner button visual differentiation ✓
-  - Navbar link reordering ✓
-
-- ✅ **Phase 2 (Firebase Auth + Account Management) — COMPLETE**
-  - Firebase auth setup: Phone OTP + Google Sign-In (passwordless)
-  - Legacy email/password auth removed
-  - Booking auth gate: browse without login, confirm with login
-  - Shared auth modal deployed across public pages
-  - Account page implemented (profile, addresses, payment methods, delete account)
-  - Account page full i18n (ES/EN) with lang-toggle translation
-  - Backend auth/account endpoints implemented with proper token issuance
-
-- 📋 **Phase 3 (Booking & Provider Redesign) — PLANNED**
-  - Custom-first booking with service examples
-  - Image/video/voice upload
-  - Providers admin tab + detail view
-  - Partner form improvements
-
-### What's Complete
-
-✓ **All 25+ HTML pages** — Landing, Help Center (hub + forms + about + contact), Legal (tabbed), Partners (landing + signup), Handbook (hub + 6 articles)
-✓ **All backend API endpoints** — Auth (Firebase sync, token issuance), service requests, reports, partner applications, account management (profile, addresses), admin queries
-✓ **All database tables** — `auth_users` (firebase_uid, auth_provider), `service_requests`, `service_reports`, `partner_applications`, `user_addresses` (plus existing `all_bookings`, `saved_servi_users`, etc.)
-✓ **Authentication system** — Firebase-only passwordless, phone-first USL flow: unified identifier input, single `renderOTPScreen(type)`, name collection post-OTP, optional secondary identifier, cross-identifier recovery, booking gate enforcement; `phone_verified`/`email_verified`/`first_identifier_type` tracked in DB
-✓ **Booking auth gate** — Browse 2 steps without login, login required to confirm step 3
-✓ **Account page** — Profile, address management, payment methods, delete account with confirmation (all fully bilingual)
-✓ **Shared components** — Navbar (auth modal, user menu dropdown), footer, i18n (ES/EN toggle with live translation), design system (Syne + DM Sans, colors, cards, buttons)
-✓ **Bilingual i18n** — Full Spanish/English translation for all pages including account page with lang-change event support
-✓ **Mobile-responsive design** — Hamburger menu at 900px, grid layouts
-✓ **Existing payment flows untouched** — `pay.html`, `book.html`, `success.html`, `save.html` continue working
-
 ### What's Incomplete / In Progress
 
 ⚠️ **End-to-end QA testing** — All flows need testing on live domain (phone OTP, Google OAuth, booking, account management)
@@ -298,8 +228,6 @@ This is NOT a simple payment form. It's a complete **admin-driven order manageme
 ## Authentication & User Accounts
 
 ### Current Implementation
-
-> **Verified 2026-04-11** — USL redesign live: phone OTP → name → email skip → booking gate → cross-identifier merge
 
 - **Frontend auth:** Firebase-only (passwordless), phone-first USL (Unified Sign-up/Login) flow
   - **Unified identifier input** — single field, auto-detects phone vs email (@ triggers email mode)
@@ -318,6 +246,7 @@ This is NOT a simple payment form. It's a complete **admin-driven order manageme
 ### Auth Flow
 
 **Signup (phone-first):**
+
 1. User enters phone number in unified identifier field → `POST /api/auth/check-identifier` → `{ exists: false }`
 2. Phone OTP screen — enter SMS code → Firebase verifies
 3. Name collection screen — first + last name (required) + terms checkbox
@@ -327,15 +256,17 @@ This is NOT a simple payment form. It's a complete **admin-driven order manageme
 7. JWT stored in localStorage, modal closes
 
 **Login:**
+
 1. User enters phone or email → `POST /api/auth/check-identifier` → `{ exists: true, provider }`
 2. OTP screen rendered for provider's type (`'phone'` or `'email'`)
 3. Verify → `POST /api/auth/firebase` → JWT refreshed, modal closes
 
 **Google OAuth (all paths):**
+
 - Google popup → Firebase → `POST /api/auth/firebase` with `email_verified=true`, `phone_verified=false`
 - Booking gate will request phone at step 3
 
-**Email-first signup:** symmetric to phone-first — email OTP → name → phone optional → `POST /api/auth/add-phone`
+**Email-first signup:** symmetric to phone-first — email OTP → name → phone → `POST /api/auth/add-phone`
 
 **Cross-identifier recovery:** unrecognised email + existing phone-only account → `POST /api/auth/resolve-identifier-mismatch` → name validation → phone OTP → account merged with `email_verified=true`
 
@@ -346,16 +277,10 @@ This is NOT a simple payment form. It's a complete **admin-driven order manageme
 - **Account page access** — Edit profile, manage addresses, manage payment methods, delete account
 - **Secure bookings** — All API calls use Bearer token for authorization
 
-### Future Vision
-
-- All customers MUST have an account + saved payment method to order services
-- For now, accounts are optional for convenience; guests can still order
-
 ### Payment Method Logic
 
 - **Pre-authorization:** Existing logic in `backend/pricing.mjs` already handles pre-auth timing. Depends on order nature (24h before service, early pre-auth if ≤72h, etc.). **Do not redesign this.**
 - **Saved cards:** When a user saves a card, it's validated and stored. Pre-auth happens according to the order's schedule.
-- **Reference:** Study Uber's auth/account flow for UX inspiration.
 
 ---
 
@@ -407,54 +332,6 @@ CREATE TABLE IF NOT EXISTS service_requests (
 );
 ```
 
----
-
-## Admin Dashboard
-
-**File:** `frontend/admin.html` — Web-based admin panel protected by `ADMIN_API_TOKEN`
-
-### Tabs Overview
-
-#### 1. **Inbox Tab**
-
-Shows: **Reports + Suggestions + Partner Applications** (service requests are handled from Orders tab)
-
-**Workflow:** Each submission type has different resolution path (see below)
-
-**UI Reference:** `dashboard.jsx` REPORTS section shows Uber/DoorDash/Rappi pattern:
-
-- Stats cards at top (Open Issues, In Review, Resolved, Suggestions)
-- Filters by type and table-level status values used by each submission type
-- Report cards list with subject, customer, type badge, priority badge, status badge
-- Click card → detail side panel opens
-- Detail panel shows: customer info, subject, description, linked order (if applicable), resolution notes textarea, action buttons
-- Bottom: "How Big Platforms Handle This" info box with real-world examples
-
-**Actions by Type:**
-
-- **Reports (Complaints):** Mark `new` → `reviewed` → `resolved` with admin notes.
-- **Suggestions:** Mark `new` → `reviewed` → `resolved` as needed.
-- **Partner Applications:** Review and update status (`pending`, `reviewed`, `verified`, `rejected`).
-
-**Database Tables:**
-
-- `service_reports` (type: 'incident' or 'suggestion', status: new/reviewed/resolved)
-- `partner_applications` (status: pending/reviewed/verified/rejected)
-
-#### 2. **Orders Tab**
-
-Shows: All orders from `all_bookings`
-
-**Display:** Order ID, customer name, service, amount, status, service date, provider
-**Status badges:** Pending, Setup required, Scheduled, Confirmed, Captured, Declined, Canceled, etc.
-**Actions:** View details, capture, cancel, refund
-**Filters:** By status, search by name/phone/order ID, sort by date
-
-#### 3. **Auth Gate**
-
-- Login screen → enter `ADMIN_API_TOKEN` → stored in `sessionStorage`
-- All API calls use `Authorization: Bearer {token}`
-
 ### Admin Backend Endpoints
 
 - `GET /api/admin/orders` — List orders with pagination, filtering, search
@@ -504,10 +381,10 @@ All public-facing pages share these elements (implement as reusable JS includes 
 **Customer-facing pages (landing, help center, partners, handbook, legal):**
 
 - Uber-inspired: minimalist, generous whitespace, typography-driven
-- **Headline font:** Syne (Google Fonts) — 700, 800
-- **Body font:** DM Sans (Google Fonts) — 300, 400, 500, 700
-- **Colors:** Primary #0a0a0a, Accent #10b981 (emerald green), Background #fafafa
-- **Logo:** "SERVI." with green dot, Syne 800
+- **Headline font:** Not final
+- **Body font:** Not final
+- **Colors:** Not final
+- **Logo:** logo-servi-white.png
 - Light theme throughout
 - Sticky navbar with scroll-aware blur, mobile hamburger at 900px
 - Cards with subtle borders (#e8e8e8), 16px radius, hover lift + shadow
@@ -533,94 +410,15 @@ All public-facing pages share these elements (implement as reusable JS includes 
 
 **Customer flow:**
 
-1. Click "Solicitar servicio" on landing page
-2. _(Optional)_ Log in or create account — OR continue as guest
-3. Select service category (6 categories)
-4. Describe what they need (free text)
+1. _(Optional)_ Log in or create account — OR continue as guest
+2. Click "Solicitar servicio" on landing page
+3. Describe request directly or select service category (6 categories)
+4. Details of what they need (free text)
 5. Choose when: "Lo antes posible" (ASAP) or schedule date/time
 6. Enter address
-7. Enter contact info: name, phone (required), email
+7. Enter contact info if not already logged in: name, phone (required), email
 8. Review summary → Submit
 9. Confirmation: "¡Solicitud enviada! Te contactaremos pronto por WhatsApp."
-
-**Auth model: Optional account creation**
-
-- Guests submit with name + phone + email (no password)
-- Optionally create account (email + password) for faster future requests
-- Logged-in users get info pre-filled
-- Integrates with existing `saved_servi_users` table
-
-**New database table: `service_requests`**
-
-```sql
-CREATE TABLE IF NOT EXISTS service_requests (
-  id TEXT PRIMARY KEY,
-  category TEXT NOT NULL,
-  description TEXT,
-  preferred_date TEXT,
-  preferred_time TEXT,
-  is_asap BOOLEAN DEFAULT FALSE,
-  service_address TEXT,
-  client_name TEXT NOT NULL,
-  client_phone TEXT NOT NULL,
-  client_email TEXT,
-  customer_id TEXT,
-  status TEXT DEFAULT 'pending',
-  converted_order_id TEXT,
-  lang TEXT DEFAULT 'es',
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-```
-
-**New database table: `service_reports`** (for incidents + suggestions)
-
-```sql
-CREATE TABLE IF NOT EXISTS service_reports (
-  id TEXT PRIMARY KEY,
-  type TEXT NOT NULL,              -- 'incident' or 'suggestion'
-  category TEXT,                   -- incident type or suggestion category
-  name TEXT,
-  email TEXT,
-  phone TEXT,
-  description TEXT NOT NULL,
-  incident_date TEXT,              -- for incidents only
-  status TEXT DEFAULT 'new',       -- new, reviewed, resolved, archived
-  admin_notes TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-```
-
-**New database table: `partner_applications`**
-
-```sql
-CREATE TABLE IF NOT EXISTS partner_applications (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  phone TEXT NOT NULL,
-  email TEXT,
-  specialty TEXT,
-  city TEXT,
-  experience TEXT,
-  status TEXT DEFAULT 'pending',   -- pending, reviewed, verified, rejected
-  admin_notes TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-```
-
-**New backend endpoints:**
-
-- `POST /api/service-requests` — Create service request (public, rate-limited)
-- `GET /api/service-requests` — List all requests (admin auth)
-- `PATCH /api/service-requests/:id` — Update status (admin auth)
-- `POST /api/reports` — Submit incident report or suggestion (public, rate-limited)
-- `GET /api/reports` — List all reports/suggestions (admin auth)
-- `PATCH /api/reports/:id` — Update status/notes (admin auth)
-- `POST /api/partner-applications` — Submit partner application (public, rate-limited)
-- `GET /api/partner-applications` — List all applications (admin auth)
-- `PATCH /api/partner-applications/:id` — Update status (admin auth)
-
-**Notification:** All form submissions POST to `SHEETS_WEBHOOK_URL` so the team sees them in Google Sheets immediately (types: `service_request.created`, `report.created`, `partner_application.created`).
 
 ---
 
@@ -661,99 +459,6 @@ Web-based admin panel protected by `ADMIN_API_TOKEN`. Replaces Google Forms + st
 - Existing capture/cancel/refund endpoints already work — dashboard just calls them
 
 ---
-
-## Production Readiness Checklist
-
-Before launching to production, verify:
-
-- [ ] **Booking flow:** End-to-end from landing CTA to `service_requests` table to order creation
-- [x] **Auth flow:** USL redesign implemented — phone-first signup, email optional, cross-identifier recovery, booking gate (2026-04-11)
-- [ ] **Auth flow QA:** End-to-end manual test on real iOS/Android devices (phone OTP, Google OAuth, email magic link, booking gate)
-- [ ] **All 25 pages:** Content complete, mobile responsive, bilingual (ES/EN)
-- [ ] **Form submissions:** Reports, suggestions, partner apps all submit to backend + Sheets webhook
-- [ ] **Admin dashboard:** Login works, Inbox shows all types (reports, suggestions, apps), Orders tab shows all orders, filters work, can update status
-- [ ] **Legal page:** All 5 placeholders filled with actual legal text
-- [ ] **Manage Account page:** Designed and functional (name, phone, email, addresses, payment methods, preferences)
-- [ ] **Integration testing:** Full end-to-end flows verified (see checklist below)
-- [ ] **Deployment:** Merged to `main`, Render auto-deploys, Cloudflare Pages live, no errors in console
-
----
-
-## Integration Testing Checklist (Before Launch)
-
-### Guest User Flow
-
-- [ ] Load homepage, click "Solicitar servicio"
-- [ ] Booking modal appears, category select visible
-- [ ] Navigate through all 5 steps (category → describe → schedule → address → confirm)
-- [ ] Form submits successfully, request appears in database
-- [ ] Admin sees pending request in Orders as web intake row
-- [ ] Sheets webhook fires (check Google Sheet for new row)
-- [ ] Confirmation page shows success message
-
-### Authenticated User Flow
-
-- [ ] Click Login/Signup on navbar
-- [ ] Auth modal opens
-- [ ] Signup: Enter email, phone, password → account created → redirected to home, navbar shows name
-- [ ] Return to booking → info is pre-filled (name, email, phone)
-- [ ] Submit booking while logged in
-- [ ] Can access "Manage Account" page → can edit info
-
-### Report Submission Flow
-
-- [ ] Go to Help Center → click "Reportar Incidente o Problema"
-- [ ] Report form opens, fill fields (name, email, phone, incident type, description, date)
-- [ ] Submit → success confirmation
-- [ ] Admin logs into dashboard → Inbox tab shows report
-- [ ] Admin can mark `reviewed`, write resolution notes, then mark `resolved`
-- [ ] Report status updates in admin dashboard
-
-### Suggestion Submission Flow
-
-- [ ] Go to Help Center → click "Compartir Sugerencia o Idea"
-- [ ] Suggestion form opens, fill fields (name, email optional, category, description)
-- [ ] Submit → success confirmation
-- [ ] Admin sees in Inbox tab (filtered as "Suggestion")
-- [ ] Admin can mark as reviewed
-
-### Partner Application Flow
-
-- [ ] Go to Partners page → click "Regístrate a SERVI"
-- [ ] Registration form opens (name, phone, email, specialty, city, experience)
-- [ ] Submit → success confirmation
-- [ ] Admin logs in → Inbox shows partner application
-- [ ] Admin extracts phone number → contacts via WhatsApp with pre-built message
-- [ ] Admin marks `reviewed` → after interview → `verified` or `rejected`
-
-### Admin Dashboard
-
-- [ ] Login with ADMIN_API_TOKEN works
-- [ ] Inbox tab loads, shows all submission types
-- [ ] Filters work for current report/app status values and type selections
-- [ ] Can update report status (`new`/`reviewed`/`resolved`) and partner app status (`pending`/`reviewed`/`verified`/`rejected`)
-- [ ] Orders tab shows all orders from all_bookings
-- [ ] Can view order details, capture/cancel buttons present
-- [ ] Search/filter by status, customer name, order ID works
-
-### Existing Payment Flows (Must Not Break)
-
-- [ ] `pay.html` still works (new card payment)
-- [ ] `book.html` still works (saved card 1-click)
-- [ ] `success.html` displays correctly
-- [ ] Stripe webhooks still fire
-- [ ] Google Apps Script still receives status updates
-- [ ] Capture/cancel/refund from Sheets still works
-
----
-
-## Known Blockers / Issues
-
-### ✅ RESOLVED
-
-### 🟡 PENDING TESTING
-
-_[Test these flows and report back if you encounter issues. Format: Issue name (component, severity) — description, expected vs. actual behavior, estimated fix time]_
 
 ## Reference Files & Resources
 
