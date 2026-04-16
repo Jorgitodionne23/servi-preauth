@@ -1,10 +1,28 @@
 // Runtime config for the static frontend. Edit this file (or set window.CONFIG before it loads)
 // to point the UI at the correct backend and Stripe publishable key.
+//
+// HOW ENVIRONMENT SWITCHING WORKS:
+// - Local dev  : placeholders are token strings → rawApi falls back to window.location.origin
+//                (backend serves frontend on the same port), Stripe uses the test key below.
+// - Production : Cloudflare Pages middleware (_middleware.js) replaces __API_BASE__ and
+//                __STRIPE_PK__ with the real values from Cloudflare env vars before serving
+//                this file. Set API_BASE and STRIPE_PUBLISHABLE_KEY in the Cloudflare Pages
+//                dashboard → Settings → Environment variables.
 (function bootstrapConfig() {
-  const placeholderApi = 'https://servi-preauth.onrender.com';
-  const placeholderPk = 'pk_live_51QzK6tG7utWo2rQv6la6tTL3pXXWiw2cUXUfnPeMtNEzywIa7AmQiRZgFFFxSmSTYdHoaD8Mel6gTQBHi5c7oINm00Tu5bdEHo';
+  // Token replaced by Cloudflare middleware in production. Locally, rawApi falls through to
+  // window.location.origin (Express backend serves frontend on the same port).
+  const placeholderApi = '__API_BASE__';
+
+  // Token replaced by Cloudflare middleware in production with the live key.
+  // Locally the middleware never runs, so we fall back to the test publishable key below.
+  // Publishable keys are NOT secret — they are safe to commit.
+  const placeholderPk = '__STRIPE_PK__';
+  const localTestPk   = 'pk_test_51QzK6tG7utWo2rQvhFzSBxh59IMDentv5zN7jfKWtf5vkFiGkcuEENhumOpKGjkf33tGqrL3b3o05pp0DDvcJn4r00pQcvaQXR';
 
   const explicit = window.CONFIG || {};
+  // If the middleware replaced __API_BASE__ with a real URL, use it.
+  // Otherwise (local dev) fall through to window.location.origin — which equals the
+  // backend URL because Express serves the frontend on the same port.
   const rawApi =
     explicit.API_BASE ||
     window.CONFIG_API_BASE ||
@@ -13,11 +31,13 @@
     '';
   const normalizedApi = (rawApi || '').replace(/\/+$/, '') || window.location.origin;
 
+  // If the middleware replaced __STRIPE_PK__ with the live key, use it.
+  // Otherwise (local dev) use the test publishable key — safe to commit, not a secret.
   const rawPk =
     explicit.STRIPE_PUBLISHABLE_KEY ||
     window.CONFIG_STRIPE_PUBLISHABLE_KEY ||
     window.STRIPE_PUBLISHABLE_KEY ||
-    placeholderPk ||
+    (placeholderPk !== '__STRIPE_PK__' ? placeholderPk : localTestPk) ||
     '';
 
   // Single source of truth for the WhatsApp support number.
