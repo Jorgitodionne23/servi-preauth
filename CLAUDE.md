@@ -4,7 +4,7 @@
 
 SERVI is an on-demand home services platform based in **Santa Fe, Cuajimalpa de Morelos, Ciudad de México, CDMX**. Think of it as "Uber for home services" — users request services like cleaning, plumbing, electrical work, personal care, and more. SERVI matches them with verified specialists ("SERVI Partners").
 
-**Current state:** The business currently operates via a Canva-hosted website that redirects users to WhatsApp for ordering. We are building the actual web application to replace this — a real on-demand service platform with authentication, booking, payments, and provider management.
+**Current state:** The web application is live with authentication, service request booking, an admin dashboard, and Stripe payment processing (pre-authorization model). Admin still manually matches providers and creates payment links.
 
 **Contact info:**
 
@@ -59,18 +59,22 @@ SERVI offers 5 main categories + a custom/catch-all option:
 
 ## Core User Flows
 
-### Authentication (Required for booking confirmation)
-
-- Users can browse and fill booking steps 1-2 without login
-- Confirming a booking (step 3) requires authentication
-- Auth methods: Phone OTP (Firebase) or Google Sign-In (and phone OTP)
-- Logged-in users have booking data pre-filled
-
 ### Service Booking (3-step flow)
 
-1. **Smart search or select category** — Choose from the 5 service categories or using the inteligent custom request (picture, video, voice message).
-2. **Describe + Schedule** — Free-text description of the need + choose "ASAP" or schedule a specific date/time
-3. **Address + Confirm** — Enter full address, review summary, confirm request. Phone is neccesary if user does not have account or is not logged in.
+1. **Smart search or select category** — Choose from the 6 service categories or use the intelligent custom request (picture, video, voice message). No login required.
+2. **Describe + Schedule** — Free-text description + choose "ASAP" or schedule a specific date/time. No login required.
+3. **Address + Confirm** — Enter full address, review summary, confirm. **Login required** (Firebase phone OTP, email magic link, or Google Sign-In). Logged-in users get name/phone/email pre-filled.
+
+After confirmation: "¡Solicitud enviada! Te contactaremos pronto por WhatsApp." Admin manually matches a provider and creates a payment link.
+
+### Authentication
+
+- Auth methods: Phone OTP (Firebase), Email magic link (Firebase), Google Sign-In (popup)
+- Unified identifier input — single field, auto-detects phone vs email
+- Signup collects: phone or email (primary) → name → secondary identifier (optional)
+- Backend syncs Firebase ID token → issues custom JWT (30-day HS256)
+- Booking gate enforces both `email_verified=true` + `phone_verified=true`
+- Cross-identifier recovery merges orphaned phone-only accounts when email is added
 
 ### SERVI Match
 
@@ -79,7 +83,7 @@ After a request is confirmed, SERVI Admin team assigns a verified specialist bas
 ### Provider Onboarding
 
 - Separate section/flow for service providers ("SERVI Partners")
-- Partners can apply for free to offer their services through SERVI.
+- Partners can apply for free to offer their services through SERVI
 - Links: "Guide to earning with SERVI" and "Apply as a Partner"
 
 ---
@@ -118,40 +122,40 @@ After a request is confirmed, SERVI Admin team assigns a verified specialist bas
 
 This is NOT a simple payment form. It's a complete **admin-driven order management platform** with sophisticated payment orchestration. Understand the full system before changing anything.
 
-### Current User Flow (Admin-Initiated)
+### Payment Flow (Admin-Initiated)
 
-1. Admin creates order in **Google Sheets** (Apps Script button) (We are currently in the process of transitioning to an personalizeed production ready Admin dashboard in order to not depend on google sheets)
-2. Apps Script calls backend → creates Stripe PaymentIntent (manual capture / pre-auth)
-3. Customer receives **payment link via WhatsApp**
-4. Customer pays on `pay.html` (new card) or confirms on `book.html` (saved card, 1-click)
-5. Card is **pre-authorized** (hold, not charged)
-6. After service completion, admin **captures** the payment from Sheets
-7. Saved-card customers get auto-pre-authorized 24h before service via hourly trigger when order is scheduled with more than 72 hours in advance. If order is scheduled and booked within the 72 hour window, pre authorization is done immediately.
-
-**There is now customer-facing self-service booking intake on the landing page.** Customers can submit service requests from the website, and admin still handles manual matching + payment-link creation.
+1. Customer submits service request via website OR contacts via WhatsApp
+2. Admin reviews request, matches provider, creates order in **admin dashboard** (`admin.html`) or Google Sheets (legacy)
+3. Backend creates Stripe PaymentIntent (manual capture / pre-auth)
+4. Customer receives **payment link via WhatsApp**
+5. Customer pays on `pay.html` (new card) or confirms on `book.html` (saved card, 1-click)
+6. Card is **pre-authorized** (hold, not charged)
+7. After service completion, admin **captures** the payment
+8. Saved-card customers get auto-pre-authorized 24h before service via hourly trigger
 
 ### Deployment Topology
 
-| Layer             | Host                   | Details                                                           |
-| ----------------- | ---------------------- | ----------------------------------------------------------------- |
-| Backend           | **Render** (Docker)    | `node backend/index.mjs`, auto-deploys on push to `main`          |
-| Frontend          | **Cloudflare Pages**   | Static HTML from `frontend/` folder                               |
-| Database          | **Neon** (PostgreSQL)  | Serverless Postgres, `pg` Pool connection                         |
-| Admin             | **Google Apps Script** | Container-bound to Google Sheet, synced via `clasp`               |
-| Payments          | **Stripe**             | Pre-auth (manual capture), saved cards, off-session, 3DS fallback |
-| Auth signup/login | **Firebase**           | Free instance                                                     |
+| Layer | Host | Details |
+|-------|------|---------|
+| Backend | **Render** (Docker) | `node backend/index.mjs`, auto-deploys on push to `main` |
+| Frontend | **Cloudflare Pages** | Static HTML from `frontend/` folder |
+| File Storage | **Cloudflare R2** | S3-compatible, for video/audio/image uploads |
+| Database | **Neon** (PostgreSQL) | Serverless Postgres, `pg` Pool connection |
+| Admin (legacy) | **Google Apps Script** | Container-bound to Google Sheet, synced via `clasp` — being phased out |
+| Payments | **Stripe** | Pre-auth (manual capture), saved cards, off-session, 3DS fallback |
+| Auth | **Firebase** | Phone OTP, email magic link, Google OAuth (free tier) |
 
 ### Backend (`backend/`)
 
 - **Runtime:** Node.js with ES modules (`.mjs` extensions only)
 - **Framework:** Express 5
-- **Entry point:** `backend/index.mjs` — ALL routes and business logic in one file (large monolith, 5k+ lines)
+- **Entry point:** `backend/index.mjs` — ALL routes and business logic in one file (large monolith, 5.5k+ lines)
 - **Database:** `backend/db.pg.mjs` — Pool connection + full schema (`CREATE TABLE IF NOT EXISTS`)
 - **Pricing:** `backend/pricing.mjs` — Dynamic fee calculation (alpha curve for booking fees, Stripe processing fees with VAT)
 - **TLS guard:** `ALLOW_INSECURE_DB_TLS=true` throws at startup if `NODE_ENV=production`
 - **Admin auth:** Bearer token via `ADMIN_API_TOKEN` env var, constant-time comparison
 - **Webhook:** Stripe webhook at `/webhook` with raw body parsing + signature verification
-- **Google Sheets sync:** Outbound POST to Apps Script web app URL for status updates
+- **Google Sheets sync:** Outbound POST to Apps Script web app URL for status updates (legacy)
 
 ### Key Backend Concepts
 
@@ -168,35 +172,66 @@ This is NOT a simple payment form. It's a complete **admin-driven order manageme
 - `all_bookings` — Main orders table (primary, book, adjustment kinds)
 - `consented_offsession_bookings` — Per-order consent audit trail
 - `saved_servi_users` — Per-customer consent + saved payment method registry
+- `auth_users` — User authentication records (Firebase UID, phone/email verification, profile)
+- `user_addresses` — Saved addresses per user
+- `service_requests` — Customer service request intake (category, description, schedule, address, contact)
 - `providers` — Verified providers registry (id, name, phone, email, specialty, city)
 
 ### Frontend (`frontend/`)
 
 **No framework. No build step. Plain static HTML + vanilla JS on Cloudflare Pages.**
 
-- `frontend/config.js` — Runtime config (`window.CONFIG` with `API_BASE`, `STRIPE_PUBLISHABLE_KEY`, `WHATSAPP_NUMBER`)
-- `frontend/pay.html` — Card payment form (Stripe Elements, consent checkbox, terms, cash exception)
-- `frontend/book.html` — Saved-card 1-click checkout (phone verification gate, 3DS fallback, billing portal)
-- `frontend/success.html` — Post-payment confirmation (order summary, pricing breakdown)
-- `frontend/save.html` — Standalone account/card management portal
-- `frontend/link-expired.html` — Shown when payment link has expired
+#### Shared Components (`frontend/shared/`)
+
+- `shared-styles.css` — Global design system (brand colors, components, animations)
+- `shared-auth.js` — Firebase USL auth flow (phone OTP, email magic link, Google OAuth, cross-identifier recovery — 1,400+ lines)
+- `shared-nav.js` — Navigation bar (language toggle, auth state, user menu dropdown, mobile hamburger)
+- `shared-footer.js` — 4-column footer component
+- `i18n.js` — Full Spanish/English translation system (936 lines)
+
+#### Customer-Facing Pages
+
+- `index.html` — Landing page (hero, categories, how it works, testimonials, contact)
+- `account.html` — User account management (edit profile, saved addresses, delete account — auth-guarded)
+- `email-verified.html` — Post-email-verification landing page
+- `legal.html` — Legal terms (términos, privacidad, cancelación, aviso legal)
+- `partners.html` — Partner signup hub
+- `handbook.html` — Provider guide index → `handbook/` subpages (7 guide pages)
+- `helpcenter.html` — Support index → `helpcenter/` subpages (4 pages including report/suggestion forms)
+- `partners/registro.html` — Partner application form
+
+#### Payment Pages (standalone dark theme — DO NOT RESTYLE)
+
+- `config.js` — Runtime config (`window.CONFIG` with `API_BASE`, `STRIPE_PUBLISHABLE_KEY`, `WHATSAPP_NUMBER`, `FIREBASE_CONFIG`)
+- `pay.html` — Card payment form (Stripe Elements, consent checkbox, terms, cash exception)
+- `book.html` — Saved-card 1-click checkout (phone verification gate, 3DS fallback, billing portal)
+- `success.html` — Post-payment confirmation (order summary, pricing breakdown)
+- `save.html` — Standalone account/card management portal
+- `link-expired.html` — Shown when payment link has expired
+
+#### Admin Dashboard
+
+- `admin.html` — **Primary admin interface** (token-protected, dark theme)
+  - **Inbox tab:** Incident reports, suggestions, partner applications (filter by type/status)
+  - **Orders tab:** All orders from `all_bookings` + pending web requests as "WEB-..." rows
+  - Actions: Capture, Cancel, Refund (partial), View in Stripe Dashboard
 
 **Frontend conventions:**
 
 - Vanilla JS, direct DOM manipulation
-- Stripe.js loaded via CDN (`<script src="https://js.stripe.com/v3/"></script>`)
-- Google Fonts via `<link>` (currently Inter)
-- `<style>` blocks in each HTML file (dark theme, black background, white text)
+- Stripe.js loaded via CDN
+- Google Fonts via `<link>`
+- Customer pages use shared components; payment pages have inline styles
 - No npm/bundler on frontend side
 - All API calls via `fetch()` to `window.CONFIG.API_BASE`
 
-### Apps Script (`apps-script/`)
+### Apps Script (`apps-script/`) — Legacy, Being Phased Out
 
 - **Synced via clasp** (NOT auto-deployed — must manually push + redeploy)
 - `Code.js` — Order creation, payment link generation, capture, cancel, adjustments, sidebar, auto-preauth trigger
 - `webhook.js` — Receives status updates from backend, writes to Sheet
 - Sheet tabs: `SERVI Orders`, `SERVI Adjustments`, `SERVI Changes`
-- Column mapping via header aliases (resilient to column reordering)
+- **`admin.html` is now the primary admin tool.** Apps Script remains for order creation and auto-preauth triggers until fully migrated.
 
 ### Apps Script Provider Recruitment (`apps-script-provider-recruitment/`)
 
@@ -210,274 +245,86 @@ This is NOT a simple payment form. It's a complete **admin-driven order manageme
 - `ADMIN_API_TOKEN` — Shared secret for admin API routes
 - `FRONTEND_BASE_URL` — Cloudflare Pages URL (used to build payment links)
 - `SHEETS_WEBHOOK_URL` — Google Apps Script exec URL
+- `FIREBASE_SERVICE_ACCOUNT_JSON` — Firebase Admin SDK credentials (backend auth verification)
+- `JWT_SECRET` — Custom session token secret (falls back to `STRIPE_WEBHOOK_SECRET`)
+- `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`, `R2_PUBLIC_URL` — Cloudflare R2 file uploads
 - `CORS_ALLOWLIST` — Additional allowed origins
 - `NODE_ENV` — `production` on Render
-
----
-
-### What's Incomplete / In Progress
-
-⚠️ **End-to-end QA testing** — All flows need testing on live domain (phone OTP, Google OAuth, booking, account management)
-⚠️ **Admin dashboard refinement** — Tabs built (Inbox, Orders), may need detail panels, refinement
-⚠️ **Legal page text** — Structure built, 5 placeholders for legal documents (términos, privacidad, etc.)
-⚠️ **Payment flow integration** — Existing pay.html/book.html/success.html untouched; verify booking flow → payment link creation works end-to-end
-⚠️ **Potential bugs** — Testing may uncover issues in auth edge cases, form validation, error handling
-
----
-
-## Authentication & User Accounts
-
-### Current Implementation
-
-- **Frontend auth:** Firebase-only (passwordless), phone-first USL (Unified Sign-up/Login) flow
-  - **Unified identifier input** — single field, auto-detects phone vs email (@ triggers email mode)
-  - **Phone OTP** via invisible reCAPTCHA (`signInWithPhoneNumber`)
-  - **Email magic link** via Firebase `sendSignInLinkToEmail` (email path — no 6-digit codes)
-  - **Google OAuth** via popup (`signInWithPopup`) — bypasses all OTP screens
-  - No email/password auth (passwordless Firebase-only)
-- **Backend:** `POST /api/auth/firebase` syncs Firebase ID token → issues custom JWT (30-day HS256)
-- **Session storage:** localStorage (`servi_user_session`) stores `{ token, user, firebaseUid }` where `user` includes `phone_verified`, `email_verified`
-- **Verification tracking:** `auth_users` table has `phone_verified`, `email_verified`, `first_identifier_type` columns
-- **Booking gate:** `POST /api/service-requests` enforces `email_verified=true` + `phone_verified=true` for authenticated users; returns 409 with `email_required` or `phone_required` error code
-- **Cross-identifier recovery:** `POST /api/auth/resolve-identifier-mismatch` detects orphaned phone-only accounts when an unrecognised email is submitted — triggers name-validation + phone OTP merge flow
-- **Account page:** Fully bilingual, edit profile, manage addresses, delete account
-- **Navbar:** Shows logged-in user's name + avatar + dropdown menu with My Account / Logout
-
-### Auth Flow
-
-**Signup (phone-first):**
-
-1. User enters phone number in unified identifier field → `POST /api/auth/check-identifier` → `{ exists: false }`
-2. Phone OTP screen — enter SMS code → Firebase verifies
-3. Name collection screen — first + last name (required) + terms checkbox
-4. Secondary identifier screen — add email (optional, skip available → sets `servi_email_skipped=1`)
-5. If email entered → Firebase magic link sent → after click, email verified → `POST /api/auth/add-email`
-6. `POST /api/auth/firebase` creates account with `phone_verified=true`, `first_identifier_type='phone'`
-7. JWT stored in localStorage, modal closes
-
-**Login:**
-
-1. User enters phone or email → `POST /api/auth/check-identifier` → `{ exists: true, provider }`
-2. OTP screen rendered for provider's type (`'phone'` or `'email'`)
-3. Verify → `POST /api/auth/firebase` → JWT refreshed, modal closes
-
-**Google OAuth (all paths):**
-
-- Google popup → Firebase → `POST /api/auth/firebase` with `email_verified=true`, `phone_verified=false`
-- Booking gate will request phone at step 3
-
-**Email-first signup:** symmetric to phone-first — email OTP → name → phone → `POST /api/auth/add-phone`
-
-**Cross-identifier recovery:** unrecognised email + existing phone-only account → `POST /api/auth/resolve-identifier-mismatch` → name validation → phone OTP → account merged with `email_verified=true`
-
-### Logged-In User Benefits
-
-- **Faster booking confirmation** — Pre-filled name, phone, email on booking step 3
-- **Saved addresses** — Create/manage addresses from account page, auto-fill on next booking
-- **Account page access** — Edit profile, manage addresses, manage payment methods, delete account
-- **Secure bookings** — All API calls use Bearer token for authorization
-
-### Payment Method Logic
-
-- **Pre-authorization:** Existing logic in `backend/pricing.mjs` already handles pre-auth timing. Depends on order nature (24h before service, early pre-auth if ≤72h, etc.). **Do not redesign this.**
-- **Saved cards:** When a user saves a card, it's validated and stored. Pre-auth happens according to the order's schedule.
-
----
-
-## Service Request Booking Flow
-
-### Customer Journey
-
-1. Click "Solicitar servicio" (CTA on landing or navbar)
-2. **Step 1-2 (Browse):** No login required
-   - Select category (6 options)
-   - Describe service needed (free text)
-   - Choose timing ("Lo antes posible" or schedule)
-3. **Step 3 (Confirm):** Login REQUIRED via Firebase (phone OTP or Google)
-   - Auth modal opens
-   - After login: pre-filled name, phone, email from account
-   - Enter/confirm service address
-   - Review + confirm
-4. Submit → Service request created in database
-5. Confirmation screen: "¡Solicitud enviada! Te contactaremos pronto por WhatsApp."
-
-### Backend Processing
-
-- Endpoint: `POST /api/service-requests` (public, rate-limited)
-- Creates entry in `service_requests` table with `status: 'pending'`
-- **Admin matching:** Admin team MANUALLY reviews request, finds available provider, contacts customer via WhatsApp
-- **Order creation:** Admin creates order in Google Sheets (Apps Script), which triggers payment flow
-- Pending web service requests are surfaced in the **Orders** tab as "WEB-..." rows until converted into a payment order
-
-### Database Table: `service_requests`
-
-```sql
-CREATE TABLE IF NOT EXISTS service_requests (
-  id TEXT PRIMARY KEY,
-  category TEXT NOT NULL,
-  description TEXT,
-  preferred_date TEXT,
-  preferred_time TEXT,
-  is_asap BOOLEAN DEFAULT FALSE,
-  service_address TEXT,
-  client_name TEXT NOT NULL,
-  client_phone TEXT NOT NULL,
-  client_email TEXT,
-  customer_id TEXT,
-  status TEXT DEFAULT 'pending',
-  converted_order_id TEXT,
-  lang TEXT DEFAULT 'es',
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-```
 
 ### Admin Backend Endpoints
 
 - `GET /api/admin/orders` — List orders with pagination, filtering, search
 - `GET /api/admin/orders/:id` — Full order details
+- `GET /api/admin/stats` — Quick stats (requests today, pending orders, confirmed, revenue)
 - `GET /api/reports` — List reports/suggestions (admin auth; filters by type/status)
 - `PATCH /api/reports/:id` — Update report status/notes (admin auth)
 - `GET /api/partner-applications` — List applications (admin auth)
 - `PATCH /api/partner-applications/:id` — Update application status (admin auth)
-- `GET /api/admin/stats` — Quick stats (requests today, pending orders, confirmed, revenue)
+- Existing capture/cancel/refund endpoints already work — dashboard just calls them
 
 ---
 
-### ─── SHARED COMPONENTS ───
+### What's Incomplete / In Progress
 
-All public-facing pages share these elements (implement as reusable JS includes or copy-paste with consistent structure):
+- **End-to-end QA testing** — All flows need testing on live domain (phone OTP, Google OAuth, booking, account management)
+- **Admin dashboard migration** — Order creation and auto-preauth triggers still depend on Apps Script
+- **Legal page text** — Structure built, placeholder content for legal documents
+- **Payment flow integration** — Verify booking flow → payment link creation works end-to-end
+
+---
+
+## Shared Components
+
+All public-facing pages share these elements via JS includes:
 
 **Navbar (customer-facing pages):**
 
 - SERVI. logo (links to index.html)
 - Links: Servicios, Cómo funciona, Testimonios (index.html anchors), Partners, Help Center
 - ES/EN toggle
-- Login / Crear cuenta buttons (or user avatar if logged in)
+- Login / Crear cuenta buttons (or user avatar + dropdown if logged in)
 - Mobile hamburger at ≤900px
 
-**Navbar (Help Center pages):**
+**Navbar (Help Center pages):** SERVI. logo, Help Center, Solicitar, Trabajar links
 
-- SERVI. logo
-- Help Center, Solicitar, Trabajar links
+**Navbar (Partners/Handbook pages):** SERVI. | Partner logo, ¿Qué?, ¿Cómo?, Handbook links
 
-**Navbar (Partners/Handbook pages):**
-
-- SERVI. | Partner logo
-- ¿Qué?, ¿Cómo?, Handbook links
-
-**Footer (all pages):**
-4 columns matching the current site:
-
-- SERVI: Solicita, Qué ofrecemos, Cómo, App, Testimonios
-- Partners: Quiero ser partner, Qué es ser Partner, Cómo ser Partner, Handbook
-- Help Center: Reportar/sugerencia, Quiénes Somos, Contáctanos
-- Legal: Términos, Privacidad, Política de Cancelación, Aviso Legal
+**Footer (all pages):** 4 columns — SERVI, Partners, Help Center, Legal
 
 ---
 
-### ─── DESIGN SYSTEM ───
+## Design System
 
-**Customer-facing pages (landing, help center, partners, handbook, legal):**
+**Customer-facing pages (landing, help center, partners, handbook, legal, account):**
 
 - Uber-inspired: minimalist, generous whitespace, typography-driven
-- **Headline font:** Not final
-- **Body font:** Not final
-- **Colors:** Not final
-- **Logo:** logo-servi-white.png
 - Light theme throughout
 - Sticky navbar with scroll-aware blur, mobile hamburger at 900px
 - Cards with subtle borders (#e8e8e8), 16px radius, hover lift + shadow
 - Smooth animations (fadeUp, slideUp)
 - Bilingual ES/EN with toggle in navbar, Spanish default
 
-**Admin dashboard:**
-
-- Dark theme (matches existing payment pages aesthetic)
-- Inter font
-- Clean data tables, minimal but functional
-- Internal tool — prioritize usability over visual flair
-
-**Existing payment pages (`pay.html`, `book.html`, `success.html`, `save.html`):**
-
-- DO NOT RESTYLE. They keep their existing dark theme + Inter font.
-
----
-
-### ─── SERVICE REQUEST INTAKE (Booking Flow) ───
-
-**Purpose:** Structured way for customers to request services via the website. Creates a **request** that the admin team processes manually (finds provider, contacts customer via WhatsApp, creates order + payment link in Google Sheets).
-
-**Customer flow:**
-
-1. _(Optional)_ Log in or create account — OR continue as guest
-2. Click "Solicitar servicio" on landing page
-3. Describe request directly or select service category (6 categories)
-4. Details of what they need (free text)
-5. Choose when: "Lo antes posible" (ASAP) or schedule date/time
-6. Enter address
-7. Enter contact info if not already logged in: name, phone (required), email
-8. Review summary → Submit
-9. Confirmation: "¡Solicitud enviada! Te contactaremos pronto por WhatsApp."
-
----
-
-### ─── ADMIN DASHBOARD ───
-
-**File:** `frontend/admin.html`
-
-Web-based admin panel protected by `ADMIN_API_TOKEN`. Replaces Google Forms + starts replacing Google Sheets.
-
-**Sections/Tabs:**
-
-1. **Inbox** — Unified view of ALL incoming submissions
-   - Incident reports (from Help Center)
-   - Suggestions (from Help Center)
-   - Partner applications (from Partners page)
-   - Filter by type and status
-   - Quick status updates
-
-   Service requests are managed from the Orders tab (pending web intake rows).
-
-2. **Orders Management** — View all orders from `all_bookings`
-   - Table: order ID (short code), customer name, service, amount, status, service date, provider
-   - Status badges: Pending, Setup required, Scheduled, Confirmed, Captured, Declined, Canceled, etc.
-   - Expandable details (pricing breakdown, PI, consent)
-   - Actions: Capture, Cancel, Refund (partial), View in Stripe Dashboard
-   - Filter by status, search by name/phone/order ID, sort by date
-
-3. **Auth gate** — Token-based
-   - Login screen → `sessionStorage`
-   - All calls use `Authorization: Bearer {token}`
-   - Same `ADMIN_API_TOKEN` from `.env`
-
-**Admin backend endpoints:**
-
-- `GET /api/admin/orders` — List orders with pagination, filtering, search
-- `GET /api/admin/orders/:id` — Full order details
-- `GET /api/admin/stats` — Quick stats (requests today, pending orders, confirmed, revenue)
-- Existing capture/cancel/refund endpoints already work — dashboard just calls them
+**Admin dashboard + payment pages:** Dark theme, Inter font. DO NOT RESTYLE payment pages.
 
 ---
 
 ## Reference Files & Resources
 
-- **Dashboard reference:** `dashboard.jsx` — Read the "REPORTS" section (line ~228) for Inbox UI pattern
 - **PDF content:** `/docs/pdfs/` — Help Center, Partners, Handbook content
-- **Existing payment styling:** `frontend/pay.html`, `book.html` — Reference for dark-theme admin dashboard
-- **i18n system:** `frontend/shared/i18n.js` — Full translation system (916 lines, ES/EN complete)
+- **Auth state machine:** `docs/AUTH_STATE_MACHINE.md` — Detailed auth flow documentation
+- **i18n system:** `frontend/shared/i18n.js` — Full translation system (ES/EN)
 - **Design system:** `frontend/shared/shared-styles.css` — All brand colors, components, animations
+- **Cloudflare middleware:** `functions/_middleware.js` — Injects Firebase API key into config.js at deploy time
 
 ---
 
-## Key Principles (Still Valid)
+## Key Principles
 
 1. **Do NOT break existing flows** — `pay.html`, `book.html`, `success.html`, `save.html`, all backend routes, Stripe webhooks, and Apps Script must continue working unchanged.
 2. **Plain HTML/CSS/JS only** — No React, no build step, no bundler. Match existing `frontend/` patterns.
 3. **Express + ESM conventions** — All routes in `.mjs`, use existing `pool` connection, follow `requireAdminAuth` pattern.
-4. **Shared components** — Navbar, footer, and i18n are reusable across all pages to avoid duplication.
+4. **Shared components** — Navbar, footer, auth, and i18n are reusable across all pages via `frontend/shared/`.
 5. **Uber-quality UX** — Polished, intentional, professional on customer pages.
 6. **Mobile-first** — Most CDMX users on phones.
 7. **Bilingual** — ES/EN toggle, Spanish default. Admin dashboard can be Spanish-only.
-8. **Content placeholders** — Use clear `<!-- [PLACEHOLDER: Section title] -->` markers where text is missing.
-9. **Integrate, don't replace** — New intake feeds into existing pipeline. Dashboard reads from same database. Sheets continues in parallel.
+8. **Integrate, don't replace** — New intake feeds into existing pipeline. Dashboard reads from same database. Sheets continues in parallel until fully migrated.
