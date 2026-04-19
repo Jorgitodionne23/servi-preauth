@@ -528,6 +528,37 @@
     });
   };
 
+  // ─── Dashboard hero textarea submit ───────────────────────────
+  window._dashSubmitText = function() {
+    const ta = document.getElementById('dash-textarea');
+    const text = ta ? ta.value.trim() : '';
+    if (!text) {
+      if (ta) ta.focus();
+      return;
+    }
+    window.bookingState = {
+      step: 2,
+      category: null,
+      description: text,
+      whenType: 'asap',
+      date: '',
+      time: '',
+      address: '',
+      clientName: window.__user?.name || '',
+      clientPhone: window.__user?.phone || '',
+      clientEmail: window.__user?.email || '',
+      attachments: [],
+      catsExpanded: false,
+    };
+    renderBooking();
+    if (ta) ta.value = '';
+  };
+
+  // ─── Dashboard hero "+" attach shortcut ───────────────────────
+  window._dashShowAttachMenu = function() {
+    window._dashShowCameraExplain();
+  };
+
   function renderSteps() {
     const grid = document.getElementById('steps-grid');
     if (!grid) return;
