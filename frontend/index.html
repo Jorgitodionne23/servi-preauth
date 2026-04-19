@@ -326,6 +326,116 @@
     }, 340);
   };
 
+  // ─── Camera explanation modal ─────────────────────────────────
+  window._dashShowCameraExplain = function() {
+    const tr = t();
+    const cx = tr.cameraExplain || {};
+    const overlay = document.getElementById('media-explain-overlay');
+    const modal = document.getElementById('media-explain-modal');
+    if (!overlay || !modal) return;
+
+    modal.innerHTML = `
+      <div class="media-explain-modal__icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/>
+          <circle cx="12" cy="13" r="4"/>
+        </svg>
+      </div>
+      <h2 class="media-explain-modal__title">${cx.title || 'Solicita con foto o video'}</h2>
+      <p class="media-explain-modal__desc">${cx.desc || ''}</p>
+      <div class="media-explain-modal__actions">
+        <button class="media-explain-modal__btn media-explain-modal__btn--primary" type="button" onclick="window._dashTriggerHeroPhotos()">
+          📷 ${cx.photoBtn || 'Tomar fotos (hasta 3)'}
+        </button>
+        <button class="media-explain-modal__btn media-explain-modal__btn--secondary" type="button" onclick="window._dashTriggerHeroVideo()">
+          🎥 ${cx.videoBtn || 'Grabar video (7 seg máx)'}
+        </button>
+        <button class="media-explain-modal__btn media-explain-modal__btn--cancel" type="button" onclick="window._closeMediaExplain()">
+          ${cx.cancel || 'Cancelar'}
+        </button>
+      </div>
+    `;
+
+    overlay.removeAttribute('hidden');
+    document.body.style.overflow = 'hidden';
+  };
+
+  window._closeMediaExplain = function() {
+    const overlay = document.getElementById('media-explain-overlay');
+    if (overlay) overlay.setAttribute('hidden', '');
+    document.body.style.overflow = '';
+  };
+
+  window._dashTriggerHeroPhotos = function() {
+    window._closeMediaExplain();
+    window.bookingState = {
+      step: 1, category: null, description: '', whenType: 'asap', date: '', time: '',
+      address: '', clientName: window.__user?.name || '', clientPhone: window.__user?.phone || '',
+      clientEmail: window.__user?.email || '', attachments: [], catsExpanded: false,
+    };
+
+    const existing = document.getElementById('_bk-capture-input');
+    if (existing) existing.remove();
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.id = '_bk-capture-input';
+    input.style.display = 'none';
+    input.accept = 'image/*';
+    input.multiple = true;
+    if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+      input.setAttribute('capture', 'environment');
+    }
+    input.addEventListener('change', () => {
+      const files = Array.from(input.files).slice(0, 3);
+      if (files.length === 0) return;
+      Promise.all(files.map(f => uploadAttachment(f))).then(() => {
+        renderBooking();
+      });
+    });
+    document.body.appendChild(input);
+    input.click();
+  };
+
+  window._dashTriggerHeroVideo = function() {
+    window._closeMediaExplain();
+    window.bookingState = {
+      step: 1, category: null, description: '', whenType: 'asap', date: '', time: '',
+      address: '', clientName: window.__user?.name || '', clientPhone: window.__user?.phone || '',
+      clientEmail: window.__user?.email || '', attachments: [], catsExpanded: false,
+    };
+
+    const existing = document.getElementById('_bk-capture-input');
+    if (existing) existing.remove();
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.id = '_bk-capture-input';
+    input.style.display = 'none';
+    input.accept = 'video/*';
+    if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+      input.setAttribute('capture', 'environment');
+    }
+    input.addEventListener('change', () => {
+      const file = input.files[0];
+      if (!file) return;
+      const url = URL.createObjectURL(file);
+      const v = document.createElement('video');
+      v.preload = 'metadata';
+      v.onloadedmetadata = () => {
+        URL.revokeObjectURL(url);
+        if (v.duration > 9) {
+          const lang = window.__lang || 'es';
+          alert(lang === 'es' ? 'El video no puede superar 7 segundos.' : 'Video must be 7 seconds or less.');
+          return;
+        }
+        uploadAttachment(file).then(() => renderBooking());
+      };
+      v.onerror = () => { uploadAttachment(file).then(() => renderBooking()); };
+      v.src = url;
+    });
+    document.body.appendChild(input);
+    input.click();
+  };
+
   function renderSteps() {
     const grid = document.getElementById('steps-grid');
     if (!grid) return;
