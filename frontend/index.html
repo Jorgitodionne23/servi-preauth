@@ -201,44 +201,130 @@
     suppliers: { name: 'categories.suppliers', desc: 'categories.suppliersDesc' },
   };
 
+  const catEmoji = {
+    cleaning:  '🧹',
+    repair:    '🔧',
+    moving:    '📦',
+    wellness:  '💆',
+    suppliers: '🛒',
+  };
+
   function resolve(key) {
     return key.split('.').reduce((o, k) => o?.[k], t());
   }
 
   // ─── Render AI-style suggestion chips ─────────────────────────
   function renderChips() {
-    const el = document.getElementById('hero-chips');
-    if (!el) return;
-    const suggestions = t().heroSuggestions || [];
-    const label = t().hero2?.suggestionsLabel || '';
-    el.innerHTML =
-      (label ? `<div class="hero-ai-suggestions__label">${label}</div>` : '') +
-      suggestions.map(s =>
-        `<button class="hero-ai-suggestion" onclick="window._heroChipClick('${s.replace(/'/g, "\\'")}')">${s}</button>`
-      ).join('');
+    // Suggestion chips removed in dashboard hero redesign — no-op.
   }
 
   // ─── Update hero search placeholder ──────────────────────────
   function updatePlaceholders() {
-    const input = document.getElementById('hero-search-input');
-    if (input) input.placeholder = resolve('hero2.searchPlaceholder') || '';
+    const ta = document.getElementById('dash-textarea');
+    if (ta) ta.placeholder = resolve('dashHero.placeholder') || 'Describe lo que necesitas...';
   }
 
   // ─── Render dynamic sections ─────────────────────────────────
   function renderCategories() {
-    const grid = document.getElementById('categories-grid');
+    const grid = document.getElementById('dash-cats-grid');
     if (!grid) return;
-    grid.innerHTML = catKeys.map((key, i) => `
-      <div class="card card--clickable" onclick="openBooking('${key}')" style="animation-delay:${i * 0.08}s">
-        <div style="margin-bottom:16px;color:var(--color-accent)">${icons[key]}</div>
-        <div style="font-family:var(--font-heading);font-weight:700;font-size:18px;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between">
-          ${resolve(catI18n[key].name)}
-          <span class="cat-arrow">${icons.arrow}</span>
-        </div>
-        <div class="text-sm">${resolve(catI18n[key].desc)}</div>
+
+    const tr = t();
+    const dh = tr.dashHero || {};
+
+    const cards = catKeys.map(key => `
+      <div class="dash-cat-card">
+        <span class="dash-cat-card__emoji" aria-hidden="true">${catEmoji[key]}</span>
+        <span class="dash-cat-card__name">${resolve(catI18n[key].name)}</span>
+        <button class="dash-cat-card__details" onclick="window._openBrowseDrawer('${key}')" type="button">
+          ${dh.details || 'Detalles'}
+        </button>
       </div>
     `).join('');
+
+    const customCard = `
+      <div class="dash-cat-card dash-cat-card--custom">
+        <span class="dash-cat-card__name">${dh.cantFind || '¿No encuentras lo que buscas?'}</span>
+        <button class="dash-cat-card__details" onclick="openBooking('custom')" type="button">
+          ${dh.leaveItToUs || 'Déjalo en nuestras manos'}
+        </button>
+      </div>
+    `;
+
+    grid.innerHTML = cards + customCard;
+
+    // Update static i18n labels in the dashboard hero
+    const locLabel = document.getElementById('dash-location-label');
+    if (locLabel) locLabel.textContent = dh.location || 'Santa Fe, CDMX';
+    const changeBtn = document.getElementById('dash-change-address');
+    if (changeBtn) changeBtn.textContent = dh.changeAddress || 'Cambiar dirección';
+    const headline = document.getElementById('dash-headline');
+    if (headline) headline.textContent = dh.headline || 'Solicita un servicio ahora';
+    const mediaLabel = document.getElementById('dash-media-label');
+    if (mediaLabel) mediaLabel.textContent = dh.mediaLabel || 'O envía tu solicitud por:';
+    const browseTitle = document.getElementById('dash-browse-title');
+    if (browseTitle) browseTitle.textContent = dh.browseTitle || 'O explora';
+    const ta = document.getElementById('dash-textarea');
+    if (ta) ta.placeholder = dh.placeholder || 'Describe lo que necesitas...';
   }
+
+  // ─── Browse Drawer ────────────────────────────────────────────
+  window._openBrowseDrawer = function(catKey) {
+    const tr = t();
+    const browseStr = tr.browse || {};
+    const catName = resolve(catI18n[catKey].name) || catKey;
+    const subs = (tr.categories && tr.categories[catKey + 'Sub']) || [];
+
+    const drawer = document.getElementById('browse-drawer');
+    const titleEl = document.getElementById('browse-drawer-title');
+    const subtitleEl = document.getElementById('browse-drawer-subtitle');
+    const listEl = document.getElementById('browse-drawer-list');
+
+    if (!drawer) return;
+    titleEl.textContent = catName;
+    subtitleEl.textContent = browseStr.selectService || 'Selecciona un servicio';
+    listEl.innerHTML = subs.map(sub => `
+      <li>
+        <button class="browse-drawer__item" type="button" onclick="window._browseSelectService('${catKey}', ${JSON.stringify(sub)})">
+          <span>${sub}</span>
+          <span class="browse-drawer__item-arrow">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          </span>
+        </button>
+      </li>
+    `).join('');
+
+    drawer.removeAttribute('hidden');
+    document.body.style.overflow = 'hidden';
+  };
+
+  window._closeBrowseDrawer = function() {
+    const drawer = document.getElementById('browse-drawer');
+    if (!drawer) return;
+    drawer.setAttribute('hidden', '');
+    document.body.style.overflow = '';
+  };
+
+  window._browseSelectService = function(catKey, serviceName) {
+    window._closeBrowseDrawer();
+    setTimeout(() => {
+      window.bookingState = {
+        step: 1,
+        category: catKey,
+        description: serviceName,
+        whenType: 'asap',
+        date: '',
+        time: '',
+        address: '',
+        clientName: window.__user?.name || '',
+        clientPhone: window.__user?.phone || '',
+        clientEmail: window.__user?.email || '',
+        attachments: [],
+        catsExpanded: true,
+      };
+      renderBooking();
+    }, 340);
+  };
 
   function renderSteps() {
     const grid = document.getElementById('steps-grid');
