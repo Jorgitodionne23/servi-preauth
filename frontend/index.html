@@ -7,176 +7,157 @@
   <meta name="description" content="Servicios a domicilio sin complicaciones. Limpieza, reparaciones, mantenimiento y más — encuentra al especialista ideal en minutos.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,700;1,9..40,400&family=Syne:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,700;1,9..40,400&family=Syne:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/shared/shared-styles.css">
-  <style>
-    /* Hero decorative gradients */
-    .hero-glow-1 { position:absolute;top:-200px;right:-200px;width:600px;height:600px;border-radius:50%;background:radial-gradient(circle,rgba(16,185,129,0.06) 0%,transparent 70%);pointer-events:none; }
-    .hero-glow-2 { position:absolute;bottom:-100px;left:-100px;width:400px;height:400px;border-radius:50%;background:radial-gradient(circle,rgba(16,185,129,0.04) 0%,transparent 70%);pointer-events:none; }
-    /* App mockup placeholder */
-    .app-mockup {
-      width: 280px; height: 500px; border-radius: 40px; background: #0a0a0a;
-      border: 4px solid #333; position: relative; overflow: hidden;
-      box-shadow: 0 24px 64px rgba(0,0,0,0.15); animation: float 4s ease-in-out infinite;
-    }
-    .app-mockup-inner {
-      position:absolute;inset:8px;border-radius:32px;background:#fafafa;overflow:hidden;
-      display:flex;flex-direction:column;padding:20px 16px;gap:12px;
-    }
-    .app-cat-pill {
-      display:flex;align-items:center;gap:10px;padding:12px 14px;
-      border:1px solid #e8e8e8;border-radius:12px;background:#fff;font-size:12px;
-    }
-    .app-cat-icon { width:28px;height:28px;border-radius:8px;background:#10b981;opacity:0.15;flex-shrink:0; }
-    /* Quote mark */
-    .quote-mark { font-size:32px;color:#10b981;font-family:Georgia,serif;line-height:1;margin-bottom:16px; }
-    /* Author avatar */
-    .author-avatar {
-      width:40px;height:40px;border-radius:50%;
-      background:linear-gradient(135deg,#10b981,#059669);
-      display:flex;align-items:center;justify-content:center;
-      color:#fff;font-size:14px;font-weight:600;flex-shrink:0;
-    }
-  </style>
+  <link rel="stylesheet" href="/shared/landing-theme.css">
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
-<body>
+<body class="landing-page">
 
 <!-- ═══ SHARED COMPONENTS ═══ -->
 <script src="/config.js"></script>
 <script src="/shared/i18n.js"></script>
 <script src="/shared/shared-auth.js"></script>
 <div id="navbar"></div>
-<script src="/shared/shared-nav.js"></script>
+<script src="/shared/morphing-nav.js"></script>
 
-<!-- ═══ HERO ═══ -->
-<section style="padding-top:140px;padding-bottom:80px;position:relative;overflow:hidden;background-image:linear-gradient(to bottom,rgba(250,250,250,0) 62%,#fafafa 100%),linear-gradient(135deg,#f0fdf4 0%,#ecfdf5 50%,#fafafa 100%)">
-  <div class="hero-glow-1"></div>
-  <div class="hero-glow-2"></div>
-  <div class="container" style="position:relative">
-    <div style="max-width:720px" class="animate-fadeUp">
-      <h1 class="heading-xl" id="hero-headline">
-        <span data-i18n="hero.headline">Servicios a domicilio.</span><br>
-        <span class="gradient-text" data-i18n="hero.headlineBold">Sin complicaciones.</span>
-      </h1>
-      <p class="text-body" style="max-width:520px;margin:24px 0 40px;font-size:19px" data-i18n="hero.sub">
-        Desde limpieza hasta reparaciones — encuentra al especialista ideal en minutos, no en días.
-      </p>
-      <div class="flex-gap-12">
-        <button class="btn-primary btn-primary--lg" onclick="openBooking()">
-          <span data-i18n="hero.cta">Solicitar servicio</span>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+<!-- ═══ DASHBOARD HERO ═══ -->
+<section class="dash-hero" id="landing-hero">
+  <div class="dash-hero__inner animate-fadeUp">
+
+    <!-- LEFT — Request panel -->
+    <div class="dash-hero__left">
+      <div class="dash-hero__location">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+        <span id="dash-location-label">Santa Fe, CDMX</span>
+        <button class="dash-hero__location-change" id="dash-change-address" type="button">Cambiar dirección</button>
+      </div>
+
+      <h1 class="dash-hero__headline" id="dash-headline">Solicita un servicio ahora</h1>
+
+      <div class="dash-hero__textarea-wrap">
+        <textarea
+          class="dash-hero__textarea"
+          id="dash-textarea"
+          rows="4"
+          placeholder="Describe lo que necesitas..."
+          onkeydown="if(event.key==='Enter'&&(event.metaKey||event.ctrlKey)){event.preventDefault();window._dashSubmitText()}"
+        ></textarea>
+        <div class="dash-hero__textarea-bar">
+          <button class="dash-hero__attach-btn" type="button" onclick="window._dashShowAttachMenu()" aria-label="Adjuntar">+</button>
+          <button class="dash-hero__send-btn" type="button" onclick="window._dashSubmitText()" aria-label="Enviar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <p class="dash-hero__media-label" id="dash-media-label">O envía tu solicitud por:</p>
+      <div class="dash-hero__media-row">
+        <button class="dash-hero__media-btn" type="button" onclick="window._dashShowCameraExplain()" aria-label="Cámara" id="dash-camera-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
+        </button>
+        <button class="dash-hero__media-btn" type="button" onclick="window._dashShowMicExplain()" aria-label="Micrófono" id="dash-mic-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
         </button>
       </div>
     </div>
+
+    <!-- RIGHT — Browse categories -->
+    <div class="dash-hero__right">
+      <h2 class="dash-hero__browse-title" id="dash-browse-title">O explora</h2>
+      <div class="dash-cats-grid" id="dash-cats-grid"></div>
+    </div>
+
   </div>
 </section>
 
-<!-- ═══ SERVICES ═══ -->
-<section id="services" class="section--sm">
-  <div class="container">
-    <h2 class="heading-lg" style="margin-bottom:48px" data-i18n="categories.title">Explora nuestros servicios</h2>
-    <div class="grid-3" id="categories-grid"></div>
+<!-- ═══ BROWSE DRAWER (subcategory panel) ═══ -->
+<div class="browse-drawer" id="browse-drawer" hidden role="dialog" aria-modal="true">
+  <div class="browse-drawer__scrim" onclick="window._closeBrowseDrawer()"></div>
+  <div class="browse-drawer__panel">
+    <div class="browse-drawer__header">
+      <button class="browse-drawer__back" onclick="window._closeBrowseDrawer()" aria-label="Volver">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+      </button>
+      <span class="browse-drawer__cat-name" id="browse-drawer-title"></span>
+    </div>
+    <div class="browse-drawer__subtitle" id="browse-drawer-subtitle"></div>
+    <ul class="browse-drawer__list" id="browse-drawer-list"></ul>
   </div>
-</section>
+</div>
 
-<div class="divider"></div>
+<!-- ═══ MEDIA EXPLANATION MODAL ═══ -->
+<div class="media-explain-overlay" id="media-explain-overlay" hidden role="dialog" aria-modal="true">
+  <div class="media-explain-modal" id="media-explain-modal">
+    <!-- rendered by JS -->
+  </div>
+</div>
 
-<!-- ═══ HOW IT WORKS ═══ -->
+<!-- ═══ HOW IT WORKS (light) ═══ -->
 <section id="how" class="section">
   <div class="container">
-    <h2 class="heading-lg" style="margin-bottom:56px" data-i18n="how.title">Así de fácil</h2>
-    <div class="grid-3" id="steps-grid" style="gap:32px"></div>
+    <h2 class="heading-lg" data-i18n="how.title" style="margin-bottom:56px">Así de fácil</h2>
+    <div id="steps-grid"></div>
   </div>
 </section>
 
-<div class="divider"></div>
-
-<!-- ═══ WHY SERVI ═══ -->
-<section id="about" class="section">
+<!-- ═══ WHY SERVI (dark) ═══ -->
+<section id="about" class="section section--dark">
   <div class="container">
     <div class="about-layout" style="display:flex;gap:64px;align-items:center">
       <div style="flex:1">
-        <h2 class="heading-lg" style="margin-bottom:24px" data-i18n="about.title">¿Por qué SERVI?</h2>
-        <p class="text-body" style="margin-bottom:16px" data-i18n="about.sub">Hoy puedes pedir comida o un taxi en segundos, pero encontrar un plomero o un electricista sigue siendo lento, informal y desorganizado.</p>
-        <p class="text-body text-bold" data-i18n="about.bold">SERVI gestiona todo el proceso por ti.</p>
+        <h2 class="heading-lg" data-i18n="about.title" style="margin-bottom:24px">¿Por qué SERVI?</h2>
+        <p class="text-body" data-i18n="about.sub" style="margin-bottom:16px">Hoy puedes pedir comida o un taxi en segundos, pero encontrar un plomero o un electricista sigue siendo lento, informal y desorganizado.</p>
+        <p class="text-body text-bold" data-i18n="about.bold" style="color:#fff">SERVI gestiona todo el proceso por ti.</p>
       </div>
-      <div class="stats-grid" style="flex:1;display:grid;grid-template-columns:1fr 1fr;gap:40px" id="stats-grid"></div>
+      <div style="flex:1" id="stats-grid"></div>
     </div>
   </div>
 </section>
 
-<div class="divider"></div>
-
-<!-- ═══ APP PREVIEW ═══ -->
-<section id="app" class="section">
-  <div class="container" style="text-align:center">
-    <div style="display:inline-block;background:#10b981;color:#fff;padding:6px 16px;border-radius:20px;font-size:13px;font-weight:600;margin-bottom:20px;letter-spacing:0.03em" data-i18n="app.badge">Muy pronto</div>
-    <h2 class="heading-lg" style="margin-bottom:16px" data-i18n="app.title">La app de SERVI</h2>
-    <p class="text-body" style="max-width:480px;margin:0 auto 48px" data-i18n="app.sub">Solicita servicios, da seguimiento y paga — todo desde tu celular.</p>
-    <div style="display:flex;justify-content:center">
-      <div class="app-mockup">
-        <div class="app-mockup-inner">
-          <div style="font-family:'Syne',sans-serif;font-weight:800;font-size:16px;margin-bottom:4px">SERVI<span style="color:#10b981">.</span></div>
-          <div id="app-mockup-cats"></div>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<div class="divider"></div>
-
-<!-- ═══ TESTIMONIALS ═══ -->
+<!-- ═══ TESTIMONIALS (light) ═══ -->
 <section id="testimonials" class="section">
   <div class="container">
-    <h2 class="heading-lg" style="margin-bottom:48px" data-i18n="testimonials.title">Nuestros clientes</h2>
+    <h2 class="heading-lg" data-i18n="testimonials.title" style="margin-bottom:48px">Nuestros clientes</h2>
     <div class="grid-3" id="testimonials-grid" style="gap:20px"></div>
   </div>
 </section>
 
-<!-- ═══ PROVIDERS ═══ -->
-<section id="providers" style="padding:40px 0 80px">
-  <div style="max-width:1200px;margin:0 auto">
-    <div class="provider-section">
-      <h2 style="font-family:'Syne',sans-serif;font-size:36px;font-weight:700;letter-spacing:-0.02em;margin-bottom:16px" data-i18n="providers.title">¿Eres proveedor de servicios?</h2>
-      <p style="font-size:17px;color:rgba(255,255,255,0.7);margin-bottom:36px;max-width:480px;line-height:1.6" data-i18n="providers.sub">Ofrece tus servicios con SERVI y haz crecer tu clientela de manera gratuita.</p>
-      <div class="flex-gap-12">
-        <a href="/partners.html" class="btn-white" data-i18n="providers.cta1">Guía para ganar con SERVI</a>
-        <a href="/partners.html#how" class="btn-outline-white" data-i18n="providers.cta2">Aplicar como Partner</a>
+<!-- ═══ PROVIDERS (dark, full-bleed) ═══ -->
+<section id="providers" class="provider-full">
+  <div class="container">
+    <div class="provider-layout">
+      <div class="provider-copy">
+        <h2 class="provider-headline" data-i18n="providers.title">¿Eres proveedor de servicios?</h2>
+        <p class="text-body" data-i18n="providers.sub" style="max-width:480px;margin-bottom:36px">Ofrece tus servicios con SERVI y haz crecer tu clientela de manera gratuita.</p>
+        <div class="flex-gap-12">
+          <a href="/partners.html" class="btn-accent" data-i18n="providers.cta1">Guía para ganar con SERVI</a>
+          <a href="/partners.html#how" class="btn-outline-white" data-i18n="providers.cta2">Aplicar como Partner</a>
+        </div>
       </div>
+      <div class="provider-media" aria-hidden="true"></div>
     </div>
   </div>
 </section>
 
-<!-- ═══ CONTACT ═══ -->
-<section id="contact" style="padding:0 0 80px">
+<!-- ═══ CONTACT (light) ═══ -->
+<section id="contact" class="section">
   <div class="container">
-    <h2 class="heading-lg" style="margin-bottom:32px" data-i18n="contact.title">Contacto</h2>
+    <h2 class="heading-lg" data-i18n="contact.title" style="margin-bottom:32px">Contacto</h2>
     <div style="display:flex;flex-direction:column;gap:16px">
-      <div style="display:flex;align-items:center;gap:12px;color:#555;font-size:15px">
+      <div class="contact-item">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
         <span data-i18n="contact.address">Santa Fe, Cuajimalpa de Morelos, Ciudad de México, CDMX.</span>
       </div>
-      <div style="display:flex;align-items:center;gap:12px;color:#555;font-size:15px">
+      <div class="contact-item">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M22 4l-10 8L2 4"/></svg>
         <span>serv.clientserv@gmail.com</span>
       </div>
-      <a href="https://wa.me/525525112588" target="_blank" rel="noopener" style="display:flex;align-items:center;gap:12px;color:#555;font-size:15px;text-decoration:none">
+      <a href="https://wa.me/525525112588" target="_blank" rel="noopener" class="contact-item">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="#25D366"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
         <span data-i18n="contact.whatsapp">WhatsApp</span>
       </a>
     </div>
-  </div>
-</section>
-
-<!-- ═══ FINAL CTA ═══ -->
-<section style="padding:0 0 80px">
-  <div class="container" style="text-align:center">
-    <button class="btn-primary btn-primary--lg" onclick="openBooking()">
-      <span data-i18n="cta.request">Solicita tu servicio</span>
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-    </button>
   </div>
 </section>
 
@@ -202,28 +183,45 @@
   const icons = {
     cleaning: '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v6m0 0l-3-3m3 3l3-3"/><path d="M8 14h8"/><path d="M7 14l-2 8h14l-2-8"/><circle cx="12" cy="11" r="1"/></svg>',
     repair: '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>',
+    moving: '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="6" width="15" height="12" rx="1"/><path d="M16 10h4l3 4v4h-7V10z"/><circle cx="5.5" cy="19.5" r="1.5"/><circle cx="18.5" cy="19.5" r="1.5"/></svg>',
     wellness: '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>',
-    maintenance: '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>',
-    supply: '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4zM3 6h18"/><path d="M16 10a4 4 0 01-8 0"/></svg>',
-    custom: '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>',
+    suppliers: '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4zM3 6h18"/><path d="M16 10a4 4 0 01-8 0"/></svg>',
     arrow: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>',
     back: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>',
     check: '<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg>',
     x: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>',
   };
 
-  const catKeys = ['cleaning', 'repair', 'wellness', 'maintenance', 'supply', 'custom'];
+  const catKeys = ['cleaning', 'repair', 'moving', 'wellness', 'suppliers'];
   const catI18n = {
-    cleaning: { name: 'categories.cleaning', desc: 'categories.cleaningDesc' },
-    repair:   { name: 'categories.repair',   desc: 'categories.repairDesc' },
-    wellness: { name: 'categories.wellness', desc: 'categories.wellnessDesc' },
-    maintenance: { name: 'categories.maintenance', desc: 'categories.maintenanceDesc' },
-    supply:   { name: 'categories.supply',   desc: 'categories.supplyDesc' },
-    custom:   { name: 'categories.custom',   desc: 'categories.customDesc' },
+    cleaning:  { name: 'categories.cleaning',  desc: 'categories.cleaningDesc' },
+    repair:    { name: 'categories.repair',    desc: 'categories.repairDesc' },
+    moving:    { name: 'categories.moving',    desc: 'categories.movingDesc' },
+    wellness:  { name: 'categories.wellness',  desc: 'categories.wellnessDesc' },
+    suppliers: { name: 'categories.suppliers', desc: 'categories.suppliersDesc' },
   };
 
   function resolve(key) {
     return key.split('.').reduce((o, k) => o?.[k], t());
+  }
+
+  // ─── Render AI-style suggestion chips ─────────────────────────
+  function renderChips() {
+    const el = document.getElementById('hero-chips');
+    if (!el) return;
+    const suggestions = t().heroSuggestions || [];
+    const label = t().hero2?.suggestionsLabel || '';
+    el.innerHTML =
+      (label ? `<div class="hero-ai-suggestions__label">${label}</div>` : '') +
+      suggestions.map(s =>
+        `<button class="hero-ai-suggestion" onclick="window._heroChipClick('${s.replace(/'/g, "\\'")}')">${s}</button>`
+      ).join('');
+  }
+
+  // ─── Update hero search placeholder ──────────────────────────
+  function updatePlaceholders() {
+    const input = document.getElementById('hero-search-input');
+    if (input) input.placeholder = resolve('hero2.searchPlaceholder') || '';
   }
 
   // ─── Render dynamic sections ─────────────────────────────────
@@ -232,12 +230,12 @@
     if (!grid) return;
     grid.innerHTML = catKeys.map((key, i) => `
       <div class="card card--clickable" onclick="openBooking('${key}')" style="animation-delay:${i * 0.08}s">
-        <div style="margin-bottom:16px;color:#10b981">${icons[key]}</div>
-        <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:18px;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between">
+        <div style="margin-bottom:16px;color:var(--color-accent)">${icons[key]}</div>
+        <div style="font-family:var(--font-heading);font-weight:700;font-size:18px;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between">
           ${resolve(catI18n[key].name)}
           <span class="cat-arrow">${icons.arrow}</span>
         </div>
-        <div class="text-sm" style="color:#888">${resolve(catI18n[key].desc)}</div>
+        <div class="text-sm">${resolve(catI18n[key].desc)}</div>
       </div>
     `).join('');
   }
@@ -250,38 +248,25 @@
       { num: '2', title: resolve('how.s2t'), desc: resolve('how.s2d') },
       { num: '3', title: resolve('how.s3t'), desc: resolve('how.s3d') },
     ];
-    grid.innerHTML = steps.map(s => `
-      <div style="display:flex;gap:20px;align-items:flex-start">
-        <div class="step-num">${s.num}</div>
-        <div>
-          <div class="heading-sm" style="margin-bottom:8px">${s.title}</div>
-          <div class="text-sm">${s.desc}</div>
-        </div>
+    grid.innerHTML = `<div class="landing-steps">${steps.map(s => `
+      <div class="landing-step">
+        <div class="step-num-large">${s.num}</div>
+        <div class="heading-sm" style="margin:16px 0 8px">${s.title}</div>
+        <div class="text-sm">${s.desc}</div>
       </div>
-    `).join('');
+    `).join('')}</div>`;
   }
 
   function renderStats() {
     const grid = document.getElementById('stats-grid');
     if (!grid) return;
     const stats = t().about.stats;
-    grid.innerHTML = stats.map(s => `
-      <div style="text-align:center">
+    grid.innerHTML = `<div class="landing-stats-grid">${stats.map(s => `
+      <div class="landing-stat-cell">
         <div class="stat-num">${s.num}</div>
         <div class="stat-label">${s.label}</div>
       </div>
-    `).join('');
-  }
-
-  function renderAppMockup() {
-    const el = document.getElementById('app-mockup-cats');
-    if (!el) return;
-    el.innerHTML = catKeys.map(key => `
-      <div class="app-cat-pill">
-        <div class="app-cat-icon"></div>
-        <span style="font-weight:500">${resolve(catI18n[key].name)}</span>
-      </div>
-    `).join('');
+    `).join('')}</div>`;
   }
 
   function renderTestimonials() {
@@ -291,9 +276,9 @@
     grid.innerHTML = items.map(item => `
       <div class="testimonial-card">
         <div class="quote-mark">&ldquo;</div>
-        <p class="text-sm" style="color:#555;margin-bottom:20px">${item.text}</p>
+        <p class="text-sm" style="color:var(--color-text-secondary);margin-bottom:20px">${item.text}</p>
         <div style="display:flex;align-items:center;gap:12px">
-          <div class="author-avatar">${item.author.charAt(0)}</div>
+          <div class="author-avatar" style="width:40px;height:40px;border-radius:50%;background:var(--color-accent);display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:600;flex-shrink:0">${item.author.charAt(0)}</div>
           <div style="font-weight:600;font-size:14px">${item.author}</div>
         </div>
       </div>
@@ -301,23 +286,22 @@
   }
 
   function renderAll() {
+    renderChips();
+    updatePlaceholders();
     renderCategories();
     renderSteps();
     renderStats();
-    renderAppMockup();
     renderTestimonials();
   }
 
   renderAll();
   window.addEventListener('langchange', renderAll);
 
-  // Auth modal functions moved to shared-auth.js
-
   // ─── Booking Panel ──────────────────────────────────────────
   window.bookingState = {
     step: 1, category: null, description: '', whenType: 'asap', date: '', time: '',
     address: '', clientName: '', clientPhone: '', clientEmail: '',
-    attachments: [],        // array of { url, mimetype, name }
+    attachments: [],
     catsExpanded: false,
   };
 
@@ -354,7 +338,6 @@
   }
 
   async function handleMediaFile(file, type) {
-    // Duration check for video (client-side, best-effort)
     if (type === 'video' && file.type.startsWith('video/')) {
       try {
         const dur = await getVideoDuration(file);
@@ -362,7 +345,7 @@
           alert(lang() === 'es' ? `El video no puede superar ${MAX_VIDEO_SECS} segundos.` : `Video must be ${MAX_VIDEO_SECS} seconds or less.`);
           return;
         }
-      } catch (_) { /* skip if can't read duration */ }
+      } catch (_) {}
     }
     uploadAttachment(file);
   }
@@ -511,24 +494,22 @@
     const s = window.bookingState;
     let content = '';
 
-    // Header
     const stepLabel = ['', '1/3', '2/3', '3/3', ''][s.step] || '';
     const header = `
       <div style="display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid #eee">
-        ${s.step > 1 ? `<button onclick="bookingBack()" style="background:none;border:none;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:15px;font-weight:500;font-family:'DM Sans',sans-serif">${icons.back} ${tr.back}</button>` : '<div></div>'}
+        ${s.step > 1 ? `<button onclick="bookingBack()" style="background:none;border:none;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:15px;font-weight:500;font-family:var(--font-body)">${icons.back} ${tr.back}</button>` : '<div></div>'}
         <div style="text-align:center"><span class="heading-md">${tr.title}</span>${stepLabel ? `<div style="font-size:11px;color:#aaa;margin-top:2px">${stepLabel}</div>` : ''}</div>
         <button onclick="closeBooking()" style="background:none;border:none;cursor:pointer;padding:4px">${icons.x}</button>
       </div>`;
 
     if (s.step === 1) {
-      // ── Custom-first intake ──────────────────────────────────
       const mediaRow = `
         <div style="margin-top:12px">
-          <div style="font-size:12px;color:#aaa;margin-bottom:8px">${lang()==='es'?'Adjunta una foto, video o audio (opcional — solo móvil)':'Attach a photo, video, or audio (optional — mobile only'}</div>
+          <div style="font-size:12px;color:#aaa;margin-bottom:8px">${lang()==='es'?'Adjunta una foto, video o audio (opcional — solo móvil)':'Attach a photo, video, or audio (optional — mobile only)'}</div>
           <div style="display:flex;gap:10px;flex-wrap:wrap">
-            <button onclick="triggerCapture('photo')" style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:8px;border:1px solid #ddd;background:#fafafa;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">📷 ${lang()==='es'?'Foto':'Photo'}</button>
-            <button onclick="triggerCapture('video')" style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:8px;border:1px solid #ddd;background:#fafafa;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">🎥 Video</button>
-            <button id="bk-audio-btn" onclick="startAudioRecording()" style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:8px;border:1px solid #ddd;background:#fafafa;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">🎙 Audio</button>
+            <button onclick="triggerCapture('photo')" style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:8px;border:1px solid #ddd;background:#fafafa;font-size:13px;font-weight:600;cursor:pointer;font-family:var(--font-body)">📷 ${lang()==='es'?'Foto':'Photo'}</button>
+            <button onclick="triggerCapture('video')" style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:8px;border:1px solid #ddd;background:#fafafa;font-size:13px;font-weight:600;cursor:pointer;font-family:var(--font-body)">🎥 Video</button>
+            <button id="bk-audio-btn" onclick="startAudioRecording()" style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:8px;border:1px solid #ddd;background:#fafafa;font-size:13px;font-weight:600;cursor:pointer;font-family:var(--font-body)">🎙 Audio</button>
           </div>
           <div id="bk-attach-status" style="font-size:12px;color:#888;margin-top:6px"></div>
           <div id="bk-previews" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">${s.attachments.map((a,i) => {
@@ -541,7 +522,7 @@
 
       const catsHtml = catKeys.map(key => `
         <div class="booking-cat ${s.category === key ? 'booking-cat--active' : ''}" onclick="bookingSelectCat('${key}')">
-          <div style="color:#10b981">${icons[key]}</div>
+          <div style="color:var(--color-accent)">${icons[key]}</div>
           <div>
             <div style="font-weight:600;font-size:15px">${resolve(catI18n[key].name)}</div>
             <div class="text-xs">${resolve(catI18n[key].desc)}</div>
@@ -555,7 +536,7 @@
           ${mediaRow}
         </div>
         <div>
-          <button onclick="window.bookingState.catsExpanded=!window.bookingState.catsExpanded;renderBooking()" style="display:flex;align-items:center;justify-content:space-between;width:100%;background:#f8f8f8;border:1px solid #eee;border-radius:10px;padding:12px 16px;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:600">
+          <button onclick="window.bookingState.catsExpanded=!window.bookingState.catsExpanded;renderBooking()" style="display:flex;align-items:center;justify-content:space-between;width:100%;background:var(--color-surface);border:1px solid var(--color-border);border-radius:10px;padding:12px 16px;cursor:pointer;font-family:var(--font-body);font-size:14px;font-weight:600">
             <span>${lang()==='es'?'¿Sabes qué categoría es? (opcional)':'Know the category? (optional)'}</span>
             <span style="font-size:18px;transition:transform 0.2s;display:inline-block;transform:rotate(${s.catsExpanded?'180':'0'}deg)">⌄</span>
           </button>
@@ -566,7 +547,6 @@
         </button>
       </div>`;
     } else if (s.step === 2) {
-      // ── When ────────────────────────────────────────────────
       content = `<div style="padding:24px;display:flex;flex-direction:column;gap:24px">
         <div>
           <label class="text-body text-bold" style="display:block;margin-bottom:12px">${tr.when}</label>
@@ -598,7 +578,6 @@
         </button>
       </div>`;
     } else if (s.step === 3) {
-      // ── Address + Contact ────────────────────────────────────
       content = `<div style="padding:24px;display:flex;flex-direction:column;gap:24px">
         <div>
           <label class="text-body text-bold" style="display:block;margin-bottom:8px">${tr.where}</label>
@@ -612,17 +591,16 @@
               <input class="input-field" id="booking-phone" value="${s.clientPhone || ''}" readonly style="opacity:0.6;cursor:not-allowed">
               <p class="text-muted" style="font-size:13px;margin:0">${lang()==='es'?'Información de tu cuenta.':'From your account.'}</p>
             ` : `
-              <p style="font-size:14px;color:#666;margin:0">${lang()==='es'?'Necesitas iniciar sesión para confirmar tu solicitud.':'You need to sign in to confirm your request.'}</p>
+              <p style="font-size:14px;color:var(--color-text-secondary);margin:0">${lang()==='es'?'Necesitas iniciar sesión para confirmar tu solicitud.':'You need to sign in to confirm your request.'}</p>
             `}
           </div>
         </div>
-        ${s.attachments.length ? `<div><div style="font-size:12px;color:#888;margin-bottom:6px">${lang()==='es'?'Archivos adjuntos:':'Attachments:'} ${s.attachments.length}</div><div style="display:flex;gap:8px;flex-wrap:wrap">${s.attachments.map(a => a.mimetype.startsWith('image/') ? `<img src="${a.url}" style="width:48px;height:48px;object-fit:cover;border-radius:6px">` : `<span style="font-size:20px">${a.mimetype.startsWith('video/')? '🎥':'🎙'}</span>`).join('')}</div></div>` : ''}
+        ${s.attachments.length ? `<div><div style="font-size:12px;color:var(--color-text-muted);margin-bottom:6px">${lang()==='es'?'Archivos adjuntos:':'Attachments:'} ${s.attachments.length}</div><div style="display:flex;gap:8px;flex-wrap:wrap">${s.attachments.map(a => a.mimetype.startsWith('image/') ? `<img src="${a.url}" style="width:48px;height:48px;object-fit:cover;border-radius:6px">` : `<span style="font-size:20px">${a.mimetype.startsWith('video/')? '🎥':'🎙'}</span>`).join('')}</div></div>` : ''}
         <button class="btn-primary" onclick="submitBooking()" style="width:100%;justify-content:center" id="booking-submit-btn">
           ${tr.confirm}
         </button>
       </div>`;
     } else if (s.step === 4) {
-      // ── Confirmation ─────────────────────────────────────────
       content = `<div style="padding:48px 24px;text-align:center">
         <div style="margin-bottom:24px">${icons.check}</div>
         <h3 class="heading-md" style="margin-bottom:12px">${tr.confirmed}</h3>
@@ -662,9 +640,7 @@
   };
 
   window.submitBooking = function () {
-    // Auth gate: must be logged in to confirm a booking
     if (!window.__user) {
-      // Save any typed values before opening auth modal
       const s = window.bookingState;
       s.address = document.getElementById('booking-address')?.value || s.address;
       window.openAuthModal('login');
@@ -713,7 +689,421 @@
   };
 })();
 
-// Scroll to hash section on load (e.g. arriving from /account.html nav links)
+/* ─── Conversational Booking Flow ──────────────────────────────────────────
+   Inline chat UI that replaces the 4-step modal. Reuses:
+     - window.bookingState (same field names as submitBooking expects)
+     - triggerCapture / startAudioRecording / stopAudioRecording / updateAudioBtn
+     - uploadAttachment (still writes to bookingState.attachments)
+     - openAuthModal (auth gate at contact step)
+   Legacy modal still reachable via window.__legacyBooking=true → openBooking().
+*/
+(function () {
+  const t = () => (window.T ? window.T[window.__lang || 'es'] : {});
+  const tr = () => t().convo || {};
+  const lang = () => window.__lang || 'es';
+
+  // Internal turn log so re-renders after lang change could rebuild if needed.
+  const turns = [];
+  // Conversation step index for control flow.
+  let step = 0;
+  const STEPS = ['desc', 'when', 'where', 'contact', 'review', 'done'];
+
+  function el(html) {
+    const d = document.createElement('div');
+    d.innerHTML = html.trim();
+    return d.firstElementChild;
+  }
+
+  function stream() { return document.getElementById('bk-convo-stream'); }
+
+  function addBot(text, extra) {
+    const s = stream();
+    if (!s) return null;
+    const bubble = el(`<div class="bk-convo__bubble bk-convo__bubble--bot"></div>`);
+    bubble.textContent = text;
+    s.appendChild(bubble);
+    if (extra) s.appendChild(extra);
+    scrollConvo();
+    return bubble;
+  }
+
+  function addUser(text) {
+    const s = stream();
+    if (!s) return;
+    const bubble = el(`<div class="bk-convo__bubble bk-convo__bubble--user"></div>`);
+    bubble.textContent = text;
+    s.appendChild(bubble);
+    scrollConvo();
+    turns.push({ role: 'user', text });
+  }
+
+  function replyChips(chips, onPick) {
+    const wrap = el(`<div class="bk-convo__reply"></div>`);
+    chips.forEach(c => {
+      const b = document.createElement('button');
+      b.className = 'hero-chip';
+      b.type = 'button';
+      b.textContent = c.label;
+      b.addEventListener('click', () => { onPick(c); });
+      wrap.appendChild(b);
+    });
+    return wrap;
+  }
+
+  function scrollConvo() {
+    const c = document.getElementById('bk-conversation');
+    if (!c) return;
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: c.offsetTop - 8, behavior: 'smooth' });
+    });
+  }
+
+  function removeNode(node) { if (node && node.parentNode) node.parentNode.removeChild(node); }
+
+  // ─── Step: describe ────────────────────────────────────────────────────
+  function askDescription(seed) {
+    addBot(tr().askDescription || 'Tell me more about what you need.');
+    const row = el(`
+      <div class="bk-convo__input-row">
+        <input type="text" class="bk-convo__input" id="bk-convo-desc" placeholder="${tr().descPlaceholder || ''}" value="${seed || ''}">
+        <button class="bk-convo__icon-btn" type="button" id="bk-convo-photo" title="${tr().addPhoto || ''}" aria-label="${tr().addPhoto || ''}">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
+        </button>
+        <button class="bk-convo__icon-btn" type="button" id="bk-audio-btn" title="${tr().recordAudio || ''}" aria-label="${tr().recordAudio || ''}">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+        </button>
+        <button class="bk-convo__send" type="button" id="bk-convo-send" aria-label="${tr().send || 'Send'}">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        </button>
+      </div>
+    `);
+    // Preview container lives between row and next bot bubble.
+    const previews = el(`<div class="bk-convo__previews" id="bk-convo-previews" style="display:flex;gap:10px;flex-wrap:wrap"></div>`);
+    stream().appendChild(row);
+    stream().appendChild(previews);
+    const input = row.querySelector('#bk-convo-desc');
+    input.focus();
+
+    row.querySelector('#bk-convo-photo').addEventListener('click', () => window.triggerCapture && window.triggerCapture('photo'));
+    // Audio button starts recording; updateAudioBtn (legacy) will toggle its look.
+    row.querySelector('#bk-audio-btn').addEventListener('click', () => window.startAudioRecording && window.startAudioRecording());
+
+    const submit = () => {
+      const val = input.value.trim();
+      if (!val) { input.focus(); return; }
+      window.bookingState.description = val;
+      removeNode(row);
+      removeNode(previews);
+      addUser(val);
+      reflowPreviews(/* finalized */ true);
+      step = 1;
+      askWhen();
+    };
+    row.querySelector('#bk-convo-send').addEventListener('click', submit);
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); submit(); }
+    });
+  }
+
+  // Called by uploadAttachment(renderAttachmentPreviews) — we render into our own container.
+  function renderConvoAttachments() {
+    const el2 = document.getElementById('bk-convo-previews');
+    if (!el2) return;
+    const atts = (window.bookingState && window.bookingState.attachments) || [];
+    el2.innerHTML = atts.map((a, i) => {
+      const isImage = a.mimetype && a.mimetype.startsWith('image/');
+      const isVideo = a.mimetype && a.mimetype.startsWith('video/');
+      const thumb = isImage
+        ? `<img src="${a.url}" style="width:72px;height:72px;object-fit:cover;border-radius:10px">`
+        : isVideo
+          ? `<div style="width:72px;height:72px;border-radius:10px;background:var(--color-surface);display:flex;align-items:center;justify-content:center"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg></div>`
+          : `<div style="width:72px;height:72px;border-radius:10px;background:var(--color-surface);display:flex;align-items:center;justify-content:center"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/></svg></div>`;
+      return `<div style="position:relative;display:inline-block">${thumb}
+        <button onclick="window._convoRemoveAttachment(${i})" style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;background:var(--color-text);color:#fff;border:none;cursor:pointer;font-size:11px;display:flex;align-items:center;justify-content:center">×</button>
+      </div>`;
+    }).join('');
+  }
+
+  // When the description step moves on, if there were attachments, show them in a fixed bubble.
+  function reflowPreviews(finalize) {
+    if (!finalize) { renderConvoAttachments(); return; }
+    const atts = (window.bookingState && window.bookingState.attachments) || [];
+    if (!atts.length) return;
+    const bubble = el(`<div class="bk-convo__attachment"></div>`);
+    atts.forEach(a => {
+      if (a.mimetype && a.mimetype.startsWith('image/')) {
+        const img = document.createElement('img');
+        img.src = a.url; img.alt = ''; bubble.appendChild(img);
+      } else if (a.mimetype && a.mimetype.startsWith('video/')) {
+        const v = document.createElement('video'); v.src = a.url; v.controls = true; bubble.appendChild(v);
+      } else {
+        const au = document.createElement('audio'); au.src = a.url; au.controls = true; bubble.appendChild(au);
+      }
+    });
+    stream().appendChild(bubble);
+  }
+
+  window._convoRemoveAttachment = function (i) {
+    window.bookingState.attachments.splice(i, 1);
+    renderConvoAttachments();
+  };
+
+  // Intercept renderAttachmentPreviews so existing uploadAttachment keeps working.
+  const _legacyRenderPreviews = window.renderAttachmentPreviews;
+  window.renderAttachmentPreviews = function () {
+    if (document.getElementById('bk-convo-previews')) { renderConvoAttachments(); return; }
+    if (typeof _legacyRenderPreviews === 'function') return _legacyRenderPreviews.apply(this, arguments);
+  };
+
+  // ─── Step: when ────────────────────────────────────────────────────────
+  function askWhen() {
+    addBot(tr().askWhen || 'When do you need it?');
+    const chips = replyChips(
+      [
+        { key: 'asap', label: tr().replyAsap || 'ASAP' },
+        { key: 'schedule', label: tr().replySchedule || 'Schedule' },
+      ],
+      (c) => {
+        removeNode(chips);
+        if (c.key === 'asap') {
+          window.bookingState.whenType = 'asap';
+          window.bookingState.date = '';
+          window.bookingState.time = '';
+          addUser(tr().userSaysAsap || 'ASAP');
+          step = 2;
+          askWhere();
+        } else {
+          window.bookingState.whenType = 'schedule';
+          askSchedule();
+        }
+      }
+    );
+    stream().appendChild(chips);
+  }
+
+  function askSchedule() {
+    const row = el(`
+      <div class="bk-convo__input-row" style="gap:12px">
+        <input type="date" class="bk-convo__input" id="bk-convo-date" style="max-width:180px" min="${new Date().toISOString().slice(0,10)}">
+        <input type="time" class="bk-convo__input" id="bk-convo-time" style="max-width:140px">
+        <button class="bk-convo__send" type="button" id="bk-convo-sched-send" aria-label="${tr().send || 'Send'}">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        </button>
+      </div>
+    `);
+    stream().appendChild(row);
+    const d = row.querySelector('#bk-convo-date');
+    const tm = row.querySelector('#bk-convo-time');
+    row.querySelector('#bk-convo-sched-send').addEventListener('click', () => {
+      if (!d.value || !tm.value) { d.focus(); return; }
+      window.bookingState.date = d.value;
+      window.bookingState.time = tm.value;
+      removeNode(row);
+      addUser(`${d.value} · ${tm.value}`);
+      step = 2;
+      askWhere();
+    });
+  }
+
+  // ─── Step: where ───────────────────────────────────────────────────────
+  function askWhere() {
+    addBot(tr().askWhere || 'What address?');
+    const row = el(`
+      <div class="bk-convo__input-row">
+        <input type="text" class="bk-convo__input" id="bk-convo-addr" placeholder="${tr().addressPlaceholder || ''}">
+        <button class="bk-convo__send" type="button" id="bk-convo-addr-send" aria-label="${tr().send || 'Send'}">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        </button>
+      </div>
+    `);
+    stream().appendChild(row);
+    const input = row.querySelector('#bk-convo-addr');
+    input.focus();
+    const submit = () => {
+      const v = input.value.trim();
+      if (!v) { input.focus(); return; }
+      window.bookingState.address = v;
+      removeNode(row);
+      addUser(v);
+      step = 3;
+      askContact();
+    };
+    row.querySelector('#bk-convo-addr-send').addEventListener('click', submit);
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); submit(); } });
+  }
+
+  // ─── Step: contact (auth gate or confirm) ──────────────────────────────
+  function askContact() {
+    if (window.__user) {
+      window.bookingState.clientName = window.__user.name || window.bookingState.clientName;
+      window.bookingState.clientPhone = window.__user.phone || window.bookingState.clientPhone;
+      window.bookingState.clientEmail = window.__user.email || window.bookingState.clientEmail;
+      showReview();
+      return;
+    }
+    addBot(tr().authNeeded || 'Log in to send your request.');
+    const btnWrap = el(`<div class="bk-convo__reply"></div>`);
+    const b = document.createElement('button');
+    b.className = 'btn-accent';
+    b.type = 'button';
+    b.textContent = tr().authBtn || 'Log in';
+    b.addEventListener('click', () => {
+      if (!window.openAuthModal) return;
+      // Resume automatically when auth succeeds — shared-auth.js dispatches 'servi-auth-success'.
+      const resume = () => {
+        window.removeEventListener('servi-auth-success', resume);
+        removeNode(btnWrap);
+        setTimeout(askContact, 100);
+      };
+      window.addEventListener('servi-auth-success', resume);
+      window.openAuthModal('login');
+    });
+    btnWrap.appendChild(b);
+    stream().appendChild(btnWrap);
+  }
+
+  // ─── Step: review + confirm ────────────────────────────────────────────
+  function showReview() {
+    addBot(tr().reviewTitle || 'All set. Review your request:');
+    const s = window.bookingState;
+    const whenStr = s.whenType === 'asap'
+      ? (tr().userSaysAsap || 'ASAP')
+      : `${s.date || ''} · ${s.time || ''}`;
+    const serviceStr = s.description || '—';
+    const addrStr = s.address || '—';
+    const contactStr = [s.clientName, s.clientPhone].filter(Boolean).join(' · ');
+
+    const summary = el(`
+      <div class="bk-convo__summary">
+        <div class="bk-convo__summary-row"><div class="bk-convo__summary-label">${tr().labelService || 'Service'}</div><div>${escapeHtml(serviceStr)}</div></div>
+        <div class="bk-convo__summary-row"><div class="bk-convo__summary-label">${tr().labelWhen || 'When'}</div><div>${escapeHtml(whenStr)}</div></div>
+        <div class="bk-convo__summary-row"><div class="bk-convo__summary-label">${tr().labelWhere || 'Where'}</div><div>${escapeHtml(addrStr)}</div></div>
+        <div class="bk-convo__summary-row"><div class="bk-convo__summary-label">${tr().labelContact || 'Contact'}</div><div>${escapeHtml(contactStr)}</div></div>
+        <div style="display:flex;justify-content:flex-end;margin-top:8px">
+          <button class="btn-accent" id="bk-convo-confirm">${tr().confirm || 'Confirm'}</button>
+        </div>
+      </div>
+    `);
+    stream().appendChild(summary);
+    summary.querySelector('#bk-convo-confirm').addEventListener('click', () => confirmSubmit(summary));
+  }
+
+  async function confirmSubmit(summaryNode) {
+    const btn = summaryNode.querySelector('#bk-convo-confirm');
+    if (btn) { btn.disabled = true; btn.textContent = tr().submitting || '…'; }
+    const s = window.bookingState;
+    const API = (window.CONFIG && window.CONFIG.API_BASE) || '';
+    try {
+      const res = await fetch(API + '/api/service-requests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          category: s.category || 'custom',
+          description: s.description,
+          preferredDate: s.whenType === 'schedule' ? s.date : null,
+          preferredTime: s.whenType === 'schedule' ? s.time : null,
+          isAsap: s.whenType === 'asap',
+          serviceAddress: s.address,
+          clientName: s.clientName,
+          clientPhone: s.clientPhone,
+          clientEmail: s.clientEmail,
+          lang: lang(),
+          attachments: s.attachments.map(a => a.url),
+        }),
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      addBot(tr().success || 'Request sent!');
+      step = 5;
+    } catch (err) {
+      console.error('[convo] submit error:', err);
+      if (btn) { btn.disabled = false; btn.textContent = tr().confirm || 'Confirm'; }
+      addBot(tr().error || 'Error. Please try again.');
+    }
+  }
+
+  function escapeHtml(str) {
+    return String(str || '').replace(/[&<>"']/g, ch => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[ch]));
+  }
+
+  // ─── Public entry point ────────────────────────────────────────────────
+  window.openConversation = async function openConversation(seedText) {
+    if (window.__legacyBooking) {
+      // Explicit opt-out → old modal.
+      window.openBooking && window.openBooking();
+      if (seedText) setTimeout(() => {
+        window.bookingState.description = seedText;
+        const desc = document.getElementById('booking-desc');
+        if (desc) desc.value = seedText;
+      }, 100);
+      return;
+    }
+
+    // Pre-fill contact from logged-in user if available.
+    if (window.__user && !window.__user.phone) {
+      try {
+        const raw = localStorage.getItem('servi_user_session');
+        const session = raw ? JSON.parse(raw) : {};
+        const API = ((window.CONFIG && window.CONFIG.API_BASE) || '').replace(/\/+$/, '');
+        const r = await fetch(API + '/api/auth/me', { headers: { Authorization: 'Bearer ' + (session.token || '') } });
+        if (r.ok) {
+          const d = await r.json();
+          if (d.user && d.user.phone) {
+            window.__user.phone = d.user.phone;
+            session.user = Object.assign({}, session.user, { phone: d.user.phone });
+            localStorage.setItem('servi_user_session', JSON.stringify(session));
+          }
+        }
+      } catch (_) {}
+    }
+
+    // Reset state.
+    window.bookingState = {
+      step: 1, category: null, description: '', whenType: 'asap', date: '', time: '',
+      address: '',
+      clientName: (window.__user && window.__user.name) || '',
+      clientPhone: (window.__user && window.__user.phone) || '',
+      clientEmail: (window.__user && window.__user.email) || '',
+      attachments: [],
+      catsExpanded: false,
+    };
+    turns.length = 0;
+
+    const section = document.getElementById('bk-conversation');
+    if (!section) return;
+    section.hidden = false;
+    const s = stream();
+    if (s) s.innerHTML = '';
+    step = 0;
+
+    addBot(tr().greeting || 'Hi. Tell me what you need.');
+    askDescription(seedText || '');
+  };
+
+  window.closeConversation = function closeConversation() {
+    window.stopAudioRecording && window.stopAudioRecording();
+    const section = document.getElementById('bk-conversation');
+    if (section) {
+      section.hidden = true;
+      const s = stream();
+      if (s) s.innerHTML = '';
+    }
+    step = 0;
+  };
+
+  // Wire the close button.
+  document.addEventListener('DOMContentLoaded', () => {
+    const close = document.getElementById('bk-convo-close');
+    if (close) close.addEventListener('click', window.closeConversation);
+  });
+  if (document.readyState !== 'loading') {
+    const close = document.getElementById('bk-convo-close');
+    if (close) close.addEventListener('click', window.closeConversation);
+  }
+})();
+
+// Scroll to hash section on load
 (function () {
   function scrollToHash() {
     var hash = window.location.hash.replace('#', '');
@@ -733,39 +1123,29 @@
 <!-- ═══ EMAIL VERIFICATION LISTENER ═══ -->
 <script>
   (function() {
-    // Listen for email verification signal from email-verified page
     window.addEventListener('storage', function(e) {
       if (e.key === 'servi_email_verified_at') {
-        // Email was verified in another tab/window, check if modal is open
         handleEmailVerificationSignal();
       }
     });
 
-    // Also set up direct event listener for same-window opener
     window.addEventListener('servi-email-verified', function() {
       handleEmailVerificationSignal();
     });
 
     function handleEmailVerificationSignal() {
-      // Check if auth modal is open and in USL flow
       var modalEl = document.getElementById('auth-modal-global');
       if (!modalEl || !modalEl.innerHTML) return;
 
-      // Check if we're in email-first signup flow
       if (window.uslIsNew && window.uslFirstIdentifierType === 'email' && window.uslNewUserData && window.uslNewUserData.email) {
-        // Modal is open and waiting for name screen after email verification
-        // Automatically advance to name collection screen
         console.log('[SERVI] Email verified, resuming signup in modal');
 
-        // Mark email as verified in local state
         if (window.uslNewUserData) {
           window.uslNewUserData.email_verified = true;
         }
 
-        // Advance modal to name screen
         window.renderIdentifierScreen = window.renderIdentifierScreen || function() {};
 
-        // Show name collection screen
         var es = window.isEs && window.isEs() ? true : (localStorage.getItem('servi_lang') === 'es' || !localStorage.getItem('servi_lang'));
         var title = es ? 'Tu nombre' : 'Your name';
 
