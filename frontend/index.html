@@ -436,6 +436,98 @@
     input.click();
   };
 
+  // ─── Microphone explanation modal ─────────────────────────────
+  window._dashShowMicExplain = function() {
+    const tr = t();
+    const mx = tr.micExplain || {};
+    const overlay = document.getElementById('media-explain-overlay');
+    const modal = document.getElementById('media-explain-modal');
+    if (!overlay || !modal) return;
+
+    modal.innerHTML = `
+      <div class="media-explain-modal__icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/>
+          <path d="M19 10v2a7 7 0 01-14 0v-2"/>
+          <line x1="12" y1="19" x2="12" y2="23"/>
+          <line x1="8" y1="23" x2="16" y2="23"/>
+        </svg>
+      </div>
+      <h2 class="media-explain-modal__title">${mx.title || 'Solicita con tu voz'}</h2>
+      <p class="media-explain-modal__desc">${mx.desc || ''}</p>
+      <div class="media-explain-modal__actions">
+        <button class="media-explain-modal__btn media-explain-modal__btn--primary" type="button" onclick="window._dashStartHeroRecording()">
+          🎙 ${mx.startBtn || 'Iniciar grabación'}
+        </button>
+        <button class="media-explain-modal__btn media-explain-modal__btn--cancel" type="button" onclick="window._closeMediaExplain()">
+          ${mx.cancel || 'Cancelar'}
+        </button>
+      </div>
+    `;
+
+    overlay.removeAttribute('hidden');
+    document.body.style.overflow = 'hidden';
+  };
+
+  window._dashStartHeroRecording = function() {
+    window._closeMediaExplain();
+    window.bookingState = {
+      step: 1, category: null, description: '', whenType: 'asap', date: '', time: '',
+      address: '', clientName: window.__user?.name || '', clientPhone: window.__user?.phone || '',
+      clientEmail: window.__user?.email || '', attachments: [], catsExpanded: false,
+    };
+
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+      window._audioChunks = [];
+      window._audioRecorder = new MediaRecorder(stream);
+      window._audioRecorder.ondataavailable = e => { if (e.data.size > 0) window._audioChunks.push(e.data); };
+      window._audioRecorder.onstop = () => {
+        stream.getTracks().forEach(t => t.stop());
+        const blob = new Blob(window._audioChunks, { type: 'audio/webm' });
+        const file = new File([blob], `audio-${Date.now()}.webm`, { type: 'audio/webm' });
+        uploadAttachment(file).then(() => renderBooking());
+        window._audioRecorder = null;
+        clearInterval(window._audioTimer);
+        window._audioTimer = null;
+      };
+      window._audioRecorder.start();
+      let secs = 0;
+      window._audioTimer = setInterval(() => {
+        secs++;
+        if (secs >= 120) window.stopAudioRecording();
+      }, 1000);
+
+      // Show in-progress recording state in the modal
+      const overlay = document.getElementById('media-explain-overlay');
+      const modal = document.getElementById('media-explain-modal');
+      const lang = window.__lang || 'es';
+      if (overlay && modal) {
+        modal.innerHTML = `
+          <div class="media-explain-modal__icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/>
+              <path d="M19 10v2a7 7 0 01-14 0v-2"/>
+              <line x1="12" y1="19" x2="12" y2="23"/>
+              <line x1="8" y1="23" x2="16" y2="23"/>
+            </svg>
+          </div>
+          <h2 class="media-explain-modal__title" style="color:#dc2626">${lang === 'es' ? '⏺ Grabando...' : '⏺ Recording...'}</h2>
+          <p class="media-explain-modal__desc">${lang === 'es' ? 'Habla claramente. Máximo 2 minutos.' : 'Speak clearly. Maximum 2 minutes.'}</p>
+          <div class="media-explain-modal__actions">
+            <button class="media-explain-modal__btn media-explain-modal__btn--primary" type="button" onclick="window.stopAudioRecording();window._closeMediaExplain()" style="background:#dc2626">
+              ⏹ ${lang === 'es' ? 'Detener grabación' : 'Stop recording'}
+            </button>
+          </div>
+        `;
+        overlay.removeAttribute('hidden');
+        document.body.style.overflow = 'hidden';
+      }
+    }).catch(() => {
+      const lang = window.__lang || 'es';
+      alert(lang === 'es' ? 'No se pudo acceder al micrófono.' : 'Could not access microphone.');
+    });
+  };
+
   function renderSteps() {
     const grid = document.getElementById('steps-grid');
     if (!grid) return;
