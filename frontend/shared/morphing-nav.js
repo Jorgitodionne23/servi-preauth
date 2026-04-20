@@ -440,11 +440,9 @@
     if (seg === 'browse') {
       state.segment = null;
       applyHeaderState();
-      if (window._openBrowseDrawer) {
-        window._openBrowseDrawer();
-      } else if (window.location.pathname === '/' || window.location.pathname === '/index.html') {
-        const firstCat = document.querySelector('.dash-cats-grid .dash-cat-card');
-        if (firstCat) firstCat.click();
+      // Scroll to categories on the landing page, or navigate there
+      if (window.location.pathname === '/' || window.location.pathname === '/index.html') {
+        document.getElementById('landing-hero')?.scrollIntoView({ behavior: 'smooth' });
       } else {
         window.location.href = '/index.html#services';
       }

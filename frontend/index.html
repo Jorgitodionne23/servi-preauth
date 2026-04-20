@@ -379,21 +379,6 @@
     document.body.style.overflow = 'hidden';
   };
 
-  window._openBrowseDrawer = function(catKey) {
-    if (catKey) {
-      window._openCategoryDrawer && window._openCategoryDrawer(catKey);
-      return;
-    }
-    // No specific category — click the first visible cat card to open the drawer
-    const firstCard = document.querySelector('.dash-cat-card');
-    if (firstCard) {
-      firstCard.click();
-    } else {
-      // Fallback: scroll to the categories section
-      document.getElementById('landing-hero')?.scrollIntoView({ behavior: 'smooth' });
-    }
-  };
-
   window._closeBrowseDrawer = function() {
     const drawer = document.getElementById('browse-drawer');
     if (!drawer) return;
