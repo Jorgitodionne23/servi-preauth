@@ -30,7 +30,7 @@
       <div class="dash-hero__location">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
         <span id="dash-location-label">Santa Fe, CDMX</span>
-        <button class="dash-hero__location-change" id="dash-change-address" type="button">Cambiar dirección</button>
+        <button class="dash-hero__location-change" id="dash-change-address" type="button" onclick="window._dashShowAddressModal()">Cambiar dirección</button>
       </div>
 
       <h1 class="dash-hero__headline" id="dash-headline">Solicita un servicio ahora</h1>
@@ -44,7 +44,9 @@
           onkeydown="if(event.key==='Enter'&&(event.metaKey||event.ctrlKey)){event.preventDefault();window._dashSubmitText()}"
         ></textarea>
         <div class="dash-hero__textarea-bar">
-          <button class="dash-hero__attach-btn" type="button" onclick="window._dashShowAttachMenu()" aria-label="Adjuntar">+</button>
+          <button class="dash-hero__attach-btn" type="button" onclick="window._dashShowAttachMenu()" aria-label="Adjuntar">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          </button>
           <button class="dash-hero__send-btn" type="button" onclick="window._dashSubmitText()" aria-label="Enviar">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
           </button>
@@ -93,6 +95,13 @@
   </div>
 </div>
 
+<!-- ═══ ADDRESS CHANGE MODAL ═══ -->
+<div class="address-modal-overlay" id="address-modal-overlay" hidden role="dialog" aria-modal="true">
+  <div class="address-modal-panel" id="address-modal-panel">
+    <!-- rendered by JS -->
+  </div>
+</div>
+
 <!-- ═══ HOW IT WORKS (light) ═══ -->
 <section id="how" class="section">
   <div class="container">
@@ -131,8 +140,8 @@
         <h2 class="provider-headline" data-i18n="providers.title">¿Eres proveedor de servicios?</h2>
         <p class="text-body" data-i18n="providers.sub" style="max-width:480px;margin-bottom:36px">Ofrece tus servicios con SERVI y haz crecer tu clientela de manera gratuita.</p>
         <div class="flex-gap-12">
-          <a href="/partners.html" class="btn-accent" data-i18n="providers.cta1">Guía para ganar con SERVI</a>
-          <a href="/partners.html#how" class="btn-outline-white" data-i18n="providers.cta2">Aplicar como Partner</a>
+          <a href="/partners.html#how" class="btn-accent" data-i18n="providers.cta2">Aplicar como Partner</a>
+          <a href="/partners.html" class="btn-outline-white" data-i18n="providers.cta1">Guía para ganar con SERVI</a>
         </div>
       </div>
       <div class="provider-media" aria-hidden="true"></div>
@@ -224,6 +233,78 @@
     if (ta) ta.placeholder = resolve('dashHero.placeholder') || 'Describe lo que necesitas...';
   }
 
+  // ─── Address Change Modal ────────────────────────────────────
+  window._dashShowAddressModal = function() {
+    const tr = t();
+    const am = tr.addressModal || {};
+    const overlay = document.getElementById('address-modal-overlay');
+    const panel = document.getElementById('address-modal-panel');
+    if (!overlay || !panel) return;
+
+    const currentAddr = document.getElementById('dash-location-label')?.textContent || 'Santa Fe, CDMX';
+
+    panel.innerHTML = `
+      <div class="address-modal__header">
+        <h2 class="address-modal__title">${am.title || 'Change your address'}</h2>
+        <button class="address-modal__close" type="button" onclick="window._dashCloseAddressModal()">×</button>
+      </div>
+      <p class="address-modal__desc">${am.desc || 'Enter a new location to see services available in that area.'}</p>
+      <div class="address-modal__input-group">
+        <label class="address-modal__label">${am.label || 'Enter address'}</label>
+        <input type="text" class="address-modal__input" id="address-input" placeholder="${am.placeholder || 'City, neighborhood, or address'}" value="${currentAddr}">
+      </div>
+      <div class="address-modal__actions">
+        <button class="address-modal__btn address-modal__btn--primary" type="button" onclick="window._dashSaveAddress()">
+          ${am.saveBtn || 'Update location'}
+        </button>
+        <button class="address-modal__btn address-modal__btn--secondary" type="button" onclick="window._dashCloseAddressModal()">
+          ${am.cancelBtn || 'Cancel'}
+        </button>
+      </div>
+    `;
+
+    overlay.removeAttribute('hidden');
+    document.body.style.overflow = 'hidden';
+
+    // Focus input and select all text
+    setTimeout(() => {
+      const input = document.getElementById('address-input');
+      if (input) {
+        input.focus();
+        input.select();
+      }
+    }, 100);
+  };
+
+  window._dashCloseAddressModal = function() {
+    const overlay = document.getElementById('address-modal-overlay');
+    if (overlay) overlay.setAttribute('hidden', '');
+    document.body.style.overflow = '';
+  };
+
+  window._dashSaveAddress = function() {
+    const input = document.getElementById('address-input');
+    const newAddr = input?.value.trim();
+    if (!newAddr) return;
+
+    const label = document.getElementById('dash-location-label');
+    if (label) label.textContent = newAddr;
+
+    // Store in localStorage for persistence
+    localStorage.setItem('dash_hero_address', newAddr);
+
+    window._dashCloseAddressModal();
+  };
+
+  // Load saved address from localStorage on init
+  function loadSavedAddress() {
+    const saved = localStorage.getItem('dash_hero_address');
+    if (saved) {
+      const label = document.getElementById('dash-location-label');
+      if (label) label.textContent = saved;
+    }
+  }
+
   // ─── Render dynamic sections ─────────────────────────────────
   function renderCategories() {
     const grid = document.getElementById('dash-cats-grid');
@@ -298,6 +379,21 @@
     document.body.style.overflow = 'hidden';
   };
 
+  window._openBrowseDrawer = function(catKey) {
+    if (catKey) {
+      window._openCategoryDrawer && window._openCategoryDrawer(catKey);
+      return;
+    }
+    // No specific category — click the first visible cat card to open the drawer
+    const firstCard = document.querySelector('.dash-cat-card');
+    if (firstCard) {
+      firstCard.click();
+    } else {
+      // Fallback: scroll to the categories section
+      document.getElementById('landing-hero')?.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
   window._closeBrowseDrawer = function() {
     const drawer = document.getElementById('browse-drawer');
     if (!drawer) return;
@@ -326,7 +422,148 @@
     }, 340);
   };
 
-  // ─── Camera explanation modal ─────────────────────────────────
+  // ─── Attach menu (add image from files/camera/gallery) ────────────────────
+  window._dashShowAttachMenu = function() {
+    const tr = t();
+    const am = tr.attachMenu || {};
+    const overlay = document.getElementById('media-explain-overlay');
+    const modal = document.getElementById('media-explain-modal');
+    if (!overlay || !modal) return;
+
+    modal.innerHTML = `
+      <div class="media-explain-modal__icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 5v14M5 12h14"/>
+        </svg>
+      </div>
+      <h2 class="media-explain-modal__title">${am.title || 'Adjuntar archivos'}</h2>
+      <p class="media-explain-modal__desc">${am.desc || ''}</p>
+      <div class="media-explain-modal__actions">
+        <button class="media-explain-modal__btn media-explain-modal__btn--primary" type="button" onclick="window._dashAttachPhotos('attach')">
+          📷 ${am.photoBtn || 'Foto'}
+        </button>
+        <button class="media-explain-modal__btn media-explain-modal__btn--secondary" type="button" onclick="window._dashAttachFiles()">
+          📁 ${am.filesBtn || 'Archivos'}
+        </button>
+        <button class="media-explain-modal__btn media-explain-modal__btn--cancel" type="button" onclick="window._closeMediaExplain()">
+          ${am.cancel || 'Cancelar'}
+        </button>
+      </div>
+    `;
+
+    overlay.removeAttribute('hidden');
+    document.body.style.overflow = 'hidden';
+  };
+
+  // ─── Show bottom toast with context message before camera/file picker opens ─
+  function _showCameraToast(msg, id) {
+    const existing = document.getElementById(id);
+    if (existing) existing.remove();
+    const toast = document.createElement('div');
+    toast.id = id;
+    toast.style.cssText = `
+      position: fixed;
+      bottom: 40px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.82);
+      color: #fff;
+      padding: 12px 20px;
+      border-radius: 24px;
+      font-family: var(--font-body);
+      font-size: 13px;
+      line-height: 1.45;
+      text-align: center;
+      max-width: 300px;
+      width: calc(100% - 48px);
+      z-index: 9999;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.18s ease;
+    `;
+    toast.textContent = msg;
+    document.body.appendChild(toast);
+    requestAnimationFrame(() => { toast.style.opacity = '1'; });
+    return toast;
+  }
+
+  function _removeCameraToast(id) {
+    const el = document.getElementById(id);
+    if (el) el.remove();
+  }
+
+  // ─── Attach photo (with indicator message) ───────────────────────────────
+  window._dashAttachPhotos = function(mode) {
+    window._closeMediaExplain();
+
+    const tr = t();
+    const msg = mode === 'attach'
+      ? (tr.attachPhotoMsg || 'Add image to your description')
+      : (tr.requestPhotoMsg || 'Request service by taking photos/video. SERVI team will identify your need!');
+
+    const toastId = '_dash-camera-toast';
+    _showCameraToast(msg, toastId);
+
+    const existing = document.getElementById('_dash-attach-input');
+    if (existing) existing.remove();
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.id = '_dash-attach-input';
+    input.style.display = 'none';
+    input.accept = 'image/*';
+    input.multiple = true;
+    if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+      input.setAttribute('capture', 'environment');
+    }
+    input.addEventListener('change', () => {
+      _removeCameraToast(toastId);
+      const files = Array.from(input.files).slice(0, 3);
+      if (files.length === 0) return;
+      Promise.all(files.map(f => uploadAttachment(f))).then(() => {
+        if (!window.bookingState) {
+          window.bookingState = {
+            step: 1, category: null, description: '', whenType: 'asap', date: '', time: '',
+            address: '', clientName: window.__user?.name || '', clientPhone: window.__user?.phone || '',
+            clientEmail: window.__user?.email || '', attachments: [], catsExpanded: true,
+          };
+        }
+        renderBooking();
+      });
+    });
+    input.addEventListener('cancel', () => { _removeCameraToast(toastId); });
+    document.body.appendChild(input);
+    input.click();
+  };
+
+  // ─── Attach files ───────────────────────────────────────────────────────
+  window._dashAttachFiles = function() {
+    window._closeMediaExplain();
+    const existing = document.getElementById('_dash-files-input');
+    if (existing) existing.remove();
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.id = '_dash-files-input';
+    input.style.display = 'none';
+    input.multiple = true;
+    input.addEventListener('change', () => {
+      const files = Array.from(input.files).slice(0, 5);
+      if (files.length === 0) return;
+      Promise.all(files.map(f => uploadAttachment(f))).then(() => {
+        if (!window.bookingState) {
+          window.bookingState = {
+            step: 1, category: null, description: '', whenType: 'asap', date: '', time: '',
+            address: '', clientName: window.__user?.name || '', clientPhone: window.__user?.phone || '',
+            clientEmail: window.__user?.email || '', attachments: [], catsExpanded: true,
+          };
+        }
+        renderBooking();
+      });
+    });
+    document.body.appendChild(input);
+    input.click();
+  };
+
+  // ─── Camera explanation modal (for media-btn, not attach-btn) ──────────────────────────────────
   window._dashShowCameraExplain = function() {
     const tr = t();
     const cx = tr.cameraExplain || {};
@@ -374,6 +611,11 @@
       clientEmail: window.__user?.email || '', attachments: [], catsExpanded: false,
     };
 
+    const tr = t();
+    const msg = tr.requestPhotoMsg || 'Request service by taking photos/video. SERVI team will identify your need!';
+    const toastId = '_dash-camera-toast-media';
+    _showCameraToast(msg, toastId);
+
     const existing = document.getElementById('_bk-capture-input');
     if (existing) existing.remove();
     const input = document.createElement('input');
@@ -386,12 +628,12 @@
       input.setAttribute('capture', 'environment');
     }
     input.addEventListener('change', () => {
+      _removeCameraToast(toastId);
       const files = Array.from(input.files).slice(0, 3);
       if (files.length === 0) return;
-      Promise.all(files.map(f => uploadAttachment(f))).then(() => {
-        renderBooking();
-      });
+      Promise.all(files.map(f => uploadAttachment(f))).then(() => { renderBooking(); });
     });
+    input.addEventListener('cancel', () => { _removeCameraToast(toastId); });
     document.body.appendChild(input);
     input.click();
   };
@@ -404,6 +646,11 @@
       clientEmail: window.__user?.email || '', attachments: [], catsExpanded: false,
     };
 
+    const tr = t();
+    const msg = tr.requestPhotoMsg || 'Request service by taking photos/video. SERVI team will identify your need!';
+    const toastId = '_dash-camera-toast-media';
+    _showCameraToast(msg, toastId);
+
     const existing = document.getElementById('_bk-capture-input');
     if (existing) existing.remove();
     const input = document.createElement('input');
@@ -415,6 +662,7 @@
       input.setAttribute('capture', 'environment');
     }
     input.addEventListener('change', () => {
+      _removeCameraToast(toastId);
       const file = input.files[0];
       if (!file) return;
       const url = URL.createObjectURL(file);
@@ -432,6 +680,7 @@
       v.onerror = () => { uploadAttachment(file).then(() => renderBooking()); };
       v.src = url;
     });
+    input.addEventListener('cancel', () => { _removeCameraToast(toastId); });
     document.body.appendChild(input);
     input.click();
   };
@@ -554,11 +803,6 @@
     if (ta) ta.value = '';
   };
 
-  // ─── Dashboard hero "+" attach shortcut ───────────────────────
-  window._dashShowAttachMenu = function() {
-    window._dashShowCameraExplain();
-  };
-
   function renderSteps() {
     const grid = document.getElementById('steps-grid');
     if (!grid) return;
@@ -614,6 +858,7 @@
   }
 
   renderAll();
+  loadSavedAddress();
   window.addEventListener('langchange', renderAll);
 
   // ─── Booking Panel ──────────────────────────────────────────
