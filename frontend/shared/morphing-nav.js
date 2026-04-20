@@ -157,9 +157,8 @@
       </div>
 
       <div class="site-header__panel" id="site-header-panel" data-active-segment="" aria-hidden="true"></div>
+      <div class="search-pill-popover" id="search-pill-popover" aria-hidden="true" data-segment=""></div>
     </header>
-
-    <div class="search-pill-popover" id="search-pill-popover" aria-hidden="true" data-segment=""></div>
 
     <div class="site-header__scrim" id="site-scrim" aria-hidden="true"></div>
 
