@@ -372,18 +372,16 @@
   box-shadow: 0 16px 48px -12px rgba(0,0,0,0.18);
   overflow: hidden;
   width: 420px;
-  max-height: 0;
+  height: auto;
   opacity: 0;
   pointer-events: none;
-  will-change: width, max-height, opacity;
+  will-change: width, opacity;
   transition:
     width 240ms cubic-bezier(0.4, 0, 0.2, 1),
-    max-height 240ms cubic-bezier(0.4, 0, 0.2, 1),
     opacity 160ms ease;
   z-index: 101;
 }
 .search-pill-popover[data-open="true"] {
-  max-height: 360px;
   opacity: 1;
   pointer-events: auto;
 }
@@ -391,16 +389,23 @@
   width: 300px;
 }
 
+/* Popover inner — wraps both panels */
+.spp-body {
+  position: relative;
+  overflow: hidden;
+  transition: height 220ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
 /* Popover inner panels */
 .spp-panel {
   padding: 16px 18px 18px;
-  opacity: 0;
-  transition: opacity 160ms ease;
-  pointer-events: none;
+  width: 100%;
+}
+.spp-panel[data-visible="false"] {
+  display: none;
 }
 .spp-panel[data-visible="true"] {
-  opacity: 1;
-  pointer-events: auto;
+  display: block;
 }
 
 /* Describe panel — input row */

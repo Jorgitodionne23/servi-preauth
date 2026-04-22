@@ -272,7 +272,7 @@
     const t = window.__t;
     const suggestions = t.heroSuggestions || [];
     return `
-      <div class="spp-panel" data-panel="describe" data-visible="false">
+      <div class="spp-panel" data-panel="describe">
         <div class="spp-input-row">
           <input type="text" class="spp-input" id="spp-describe-input"
             placeholder="${t.header.pillDescribe || 'Describe what you need'}"
@@ -296,7 +296,7 @@
     const isAsap = state.whenChoice === 'asap';
     const isDate = state.whenChoice === 'date';
     return `
-      <div class="spp-panel" data-panel="when" data-visible="false">
+      <div class="spp-panel" data-panel="when">
         <div class="spp-when-opts">
           <button type="button" class="spp-when-opt" data-action="spp-when-asap" data-selected="${isAsap}">
             <span class="spp-when-opt-icon">${ICON.zap}</span>
@@ -341,6 +341,28 @@
     whenDate: '',        // ISO date string when choice === 'date'
   };
 
+  function _showActivePanel(segment) {
+    const popover = document.getElementById('search-pill-popover');
+    if (!popover) return;
+    const body = popover.querySelector('.spp-body');
+    if (!body) return;
+
+    // Show the matching panel, hide others
+    const panels = body.querySelectorAll('.spp-panel');
+    let targetHeight = 0;
+    panels.forEach(p => {
+      const isTarget = p.getAttribute('data-panel') === segment;
+      p.setAttribute('data-visible', isTarget ? 'true' : 'false');
+      if (isTarget) targetHeight = p.scrollHeight;
+    });
+
+    // Animate body height to new panel's natural height
+    body.style.height = targetHeight + 'px';
+
+    // Update popover width based on segment
+    popover.setAttribute('data-segment', segment);
+  }
+
   function applyHeaderState() {
     const header = document.getElementById('site-header');
     const scrim = document.getElementById('site-scrim');
@@ -369,47 +391,32 @@
       scrim.setAttribute('aria-hidden', 'false');
 
       if (popover) {
-        const isSwitch = popover.getAttribute('data-open') === 'true';
+        const alreadyOpen = popover.getAttribute('data-open') === 'true';
         popover.setAttribute('data-segment', state.segment);
         popover.setAttribute('data-open', 'true');
         popover.setAttribute('aria-hidden', 'false');
 
-        const html = state.segment === 'describe' ? buildDescribePanel() : buildWhenPanel();
-
-        if (isSwitch) {
-          // Cross-fade: fade out current, swap, fade in
-          const existing = popover.querySelector('.spp-panel');
-          if (existing) {
-            existing.style.transition = 'opacity 100ms ease';
-            existing.style.opacity = '0';
-            setTimeout(() => {
-              popover.innerHTML = html;
-              requestAnimationFrame(() => {
-                const next = popover.querySelector('.spp-panel');
-                if (next) next.setAttribute('data-visible', 'true');
-                if (state.segment === 'describe') {
-                  const inp = document.getElementById('spp-describe-input');
-                  if (inp) inp.focus();
-                }
-              });
-            }, 110);
-          } else {
-            popover.innerHTML = html;
-            requestAnimationFrame(() => {
-              const next = popover.querySelector('.spp-panel');
-              if (next) next.setAttribute('data-visible', 'true');
-            });
-          }
-        } else {
-          popover.innerHTML = html;
+        if (!alreadyOpen) {
+          // First open: render both panels into the popover
+          popover.innerHTML = `<div class="spp-body">
+            ${buildDescribePanel()}
+            ${buildWhenPanel()}
+          </div>`;
+          // Set initial heights after render
           requestAnimationFrame(() => {
-            const next = popover.querySelector('.spp-panel');
-            if (next) next.setAttribute('data-visible', 'true');
+            _showActivePanel(state.segment);
             if (state.segment === 'describe') {
               const inp = document.getElementById('spp-describe-input');
               if (inp) inp.focus();
             }
           });
+        } else {
+          // Already open — just switch active panel (no rebuild)
+          _showActivePanel(state.segment);
+          if (state.segment === 'describe') {
+            const inp = document.getElementById('spp-describe-input');
+            if (inp) inp.focus();
+          }
         }
       }
 
@@ -603,29 +610,33 @@
         state.whenChoice = 'asap';
         state.whenDate = '';
         _updateWhenLabel();
+        // Update UI in place
         const pop = document.getElementById('search-pill-popover');
         if (pop) {
-          pop.innerHTML = buildWhenPanel();
-          requestAnimationFrame(() => {
-            const next = pop.querySelector('.spp-panel');
-            if (next) next.setAttribute('data-visible', 'true');
-          });
+          const asapBtn = pop.querySelector('[data-action="spp-when-asap"]');
+          const dateBtn = pop.querySelector('[data-action="spp-when-date"]');
+          const dateInput = pop.querySelector('#spp-date-input');
+          if (asapBtn) asapBtn.setAttribute('data-selected', 'true');
+          if (dateBtn) dateBtn.setAttribute('data-selected', 'false');
+          if (dateInput) dateInput.hidden = true;
+          // Re-sync body height
+          _showActivePanel('when');
         }
         return;
       }
       if (action === 'spp-when-date') {
         state.whenChoice = 'date';
+        _updateWhenLabel();
         const pop = document.getElementById('search-pill-popover');
         if (pop) {
-          pop.innerHTML = buildWhenPanel();
-          requestAnimationFrame(() => {
-            const next = pop.querySelector('.spp-panel');
-            if (next) next.setAttribute('data-visible', 'true');
-            const di = document.getElementById('spp-date-input');
-            if (di) di.focus();
-          });
+          const asapBtn = pop.querySelector('[data-action="spp-when-asap"]');
+          const dateBtn = pop.querySelector('[data-action="spp-when-date"]');
+          const dateInput = pop.querySelector('#spp-date-input');
+          if (asapBtn) asapBtn.setAttribute('data-selected', 'false');
+          if (dateBtn) dateBtn.setAttribute('data-selected', 'true');
+          if (dateInput) { dateInput.hidden = false; dateInput.focus(); }
+          _showActivePanel('when');
         }
-        _updateWhenLabel();
         return;
       }
       return; // swallow unhandled clicks inside popover
