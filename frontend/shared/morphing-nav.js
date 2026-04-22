@@ -146,8 +146,6 @@
           ${ICON.hamburger}
         </button>
       </div>
-
-      <div class="site-header__panel" id="site-header-panel" data-active-segment="" aria-hidden="true"></div>
     </header>
 
     <div class="site-header__scrim" id="site-scrim" aria-hidden="true"></div>
@@ -367,7 +365,6 @@
     const header = document.getElementById('site-header');
     const scrim = document.getElementById('site-scrim');
     const popover = document.getElementById('search-pill-popover');
-    const panel = document.getElementById('site-header-panel');
     if (!header) return;
 
     // Header data-state drives bar expansion + scrim
@@ -642,22 +639,6 @@
       return; // swallow unhandled clicks inside popover
     }
 
-    // Panel interactions (suggestions + categories dropdown)
-    const panel = e.target.closest('#site-header-panel');
-    if (panel) {
-      const suggestion = e.target.closest('[data-suggestion]')?.getAttribute('data-suggestion');
-      const category = e.target.closest('[data-category]')?.getAttribute('data-category');
-      if (suggestion) {
-        closeSegment();
-        routeToBookingIntake(suggestion);
-        return;
-      }
-      if (category) {
-        closeSegment();
-        window.openBooking && window.openBooking(category);
-        return;
-      }
-    }
   }
 
   function onRootChange(e) {
