@@ -169,7 +169,7 @@
   backdrop-filter: saturate(180%) blur(18px);
   border: 1px solid var(--color-border);
   border-radius: 16px;
-  box-shadow: 0 6px 24px -10px rgba(0,0,0,0.08);
+  box-shadow: 0 4px 6px -1px rgba(0,0,0,0.06), 0 10px 32px -8px rgba(0,0,0,0.12);
   transition: grid-template-rows 280ms var(--morph-ease),
               box-shadow var(--duration-morph) var(--morph-ease),
               background var(--duration-morph) var(--morph-ease);
@@ -177,7 +177,7 @@
 }
 .site-header[data-state="scrolled"] .site-header__bar,
 .site-header[data-state="scrolled-expanded"] .site-header__bar {
-  box-shadow: 0 12px 36px -14px rgba(0,0,0,0.14);
+  box-shadow: 0 4px 8px -2px rgba(0,0,0,0.08), 0 16px 40px -12px rgba(0,0,0,0.16);
   background: rgba(255,255,255,0.96);
 }
 /* Expanded: second row opens up */
