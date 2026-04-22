@@ -125,39 +125,29 @@
             >${t.header.linkPartners}</a>
         </nav>
 
-        <div class="site-header__pill" role="search" aria-label="${t.header.pillDescribe || 'Search'}">
-          <button type="button" class="search-pill__segment search-pill__segment--describe" data-segment="describe" aria-label="${t.header.pillDescribe || 'Describe'}">
-            <span class="search-pill__icon">${ICON.search}</span>
-            <span class="search-pill__label">${t.header.pillDescribe || 'Describe what you need'}</span>
+        <div class="site-header__center">
+          <div class="site-header__pill" role="search" aria-label="${t.header.pillDescribe || 'Search'}">
+            <button type="button" class="search-pill__segment search-pill__segment--describe" data-segment="describe" aria-label="${t.header.pillDescribe || 'Describe'}">
+              <span class="search-pill__icon">${ICON.search}</span>
+              <span class="search-pill__label">${t.header.pillDescribe || 'Describe what you need'}</span>
+            </button>
+            <span class="search-pill__divider" aria-hidden="true"></span>
+            <button type="button" class="search-pill__segment search-pill__segment--when" data-segment="when" aria-label="${t.header.pillWhen || 'When'}">
+              <span class="search-pill__label search-pill__label--when" id="pill-when-label">${t.header.pillWhen || 'When'}</span>
+            </button>
+          </div>
+          <button type="button" class="site-header__browse-btn" data-segment="browse" aria-label="${t.header.pillBrowse || 'Browse'}">
+            <span>${t.header.pillBrowse || 'Browse'}</span>
           </button>
-          <span class="search-pill__divider" aria-hidden="true"></span>
-          <button type="button" class="search-pill__segment search-pill__segment--when" data-segment="when" aria-label="${t.header.pillWhen || 'When'}">
-            <span class="search-pill__label search-pill__label--when" id="pill-when-label">${t.header.pillWhen || 'When'}</span>
-          </button>
-          <span class="search-pill__divider" aria-hidden="true"></span>
-          <button type="button" class="search-pill__segment search-pill__segment--browse" data-segment="browse" aria-label="${t.header.pillBrowse || 'Browse'}">
-            <span class="search-pill__label">${t.header.pillBrowse || 'Browse'}</span>
-          </button>
+          <div class="search-pill-popover" id="search-pill-popover" aria-hidden="true" data-segment=""></div>
         </div>
 
         <button type="button" class="site-header__hamburger" id="site-hamburger" aria-label="${t.header.menu}" aria-controls="site-drawer">
           ${ICON.hamburger}
         </button>
-
-        <!-- Inline search row (row 2, revealed on expand) -->
-        <div class="site-header__inline-search">
-          <div class="site-header__inline-search-inner">
-            <input type="text" class="site-header__inline-input" id="header-inline-input"
-              placeholder="${t.hero2.searchPlaceholder}" autocomplete="off">
-            <button type="button" class="site-header__inline-btn" data-action="inline-camera" aria-label="Camera">${ICON.camera}</button>
-            <button type="button" class="site-header__inline-btn" data-action="inline-mic" aria-label="Microphone">${ICON.mic}</button>
-            <button type="button" class="site-header__inline-submit" data-action="inline-submit" aria-label="Submit">${ICON.arrow}</button>
-          </div>
-        </div>
       </div>
 
       <div class="site-header__panel" id="site-header-panel" data-active-segment="" aria-hidden="true"></div>
-      <div class="search-pill-popover" id="search-pill-popover" aria-hidden="true" data-segment=""></div>
     </header>
 
     <div class="site-header__scrim" id="site-scrim" aria-hidden="true"></div>
@@ -369,6 +359,10 @@
     document.querySelectorAll('.search-pill__segment').forEach(btn => {
       btn.setAttribute('data-active', btn.getAttribute('data-segment') === state.segment ? 'true' : 'false');
     });
+
+    // Browse button active highlight
+    const browseBtn = document.querySelector('.site-header__browse-btn');
+    if (browseBtn) browseBtn.setAttribute('data-active', state.segment === 'browse' ? 'true' : 'false');
 
     if (state.segment === 'describe' || state.segment === 'when') {
       scrim.setAttribute('data-visible', 'true');
