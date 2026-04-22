@@ -199,18 +199,16 @@
 .site-header__logo-dot {
   color: #000;
   display: inline-block;
-  width: 0.34em;
-  height: 0.19em;
-  border-radius: 0.34em 0.34em 0 0;
+  width: 0.22em;
+  height: 0.22em;
+  border-radius: 50%;
   background: currentColor;
-  margin-left: 2px;
-  margin-bottom: 0;
+  margin-left: 1px;
+  margin-bottom: 0.08em;
+  vertical-align: baseline;
+  overflow: visible;
   font-size: inherit;
   line-height: 1;
-  vertical-align: baseline;
-  overflow: hidden;
-  text-indent: 100%;
-  white-space: nowrap;
 }
 
 .site-header__links {
