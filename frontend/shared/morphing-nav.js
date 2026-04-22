@@ -571,29 +571,6 @@
       return;
     }
 
-    // Inline search bar actions (inside the header bar row 2)
-    const inlineAction = e.target.closest('.site-header__inline-search [data-action]');
-    if (inlineAction) {
-      const act = inlineAction.getAttribute('data-action');
-      if (act === 'inline-submit') {
-        const i = document.getElementById('header-inline-input');
-        const val = i ? i.value.trim() : '';
-        closeSegment();
-        routeToBookingIntake(val);
-        return;
-      }
-      if (act === 'inline-camera') {
-        closeSegment();
-        window.triggerCapture && window.triggerCapture('photo');
-        return;
-      }
-      if (act === 'inline-mic') {
-        closeSegment();
-        window.startAudioRecording && window.startAudioRecording();
-        return;
-      }
-    }
-
     // Popover (morphing pill) interactions
     const popover = e.target.closest('#search-pill-popover');
     if (popover) {
@@ -685,7 +662,7 @@
       else if (state.drawerOpen) closeDrawer();
     }
     if (e.key === 'Enter') {
-      if (e.target && (e.target.id === 'header-inline-input' || e.target.id === 'header-panel-input' || e.target.id === 'spp-describe-input')) {
+      if (e.target && (e.target.id === 'header-panel-input' || e.target.id === 'spp-describe-input')) {
         e.preventDefault();
         const val = e.target.value.trim();
         closeSegment();
