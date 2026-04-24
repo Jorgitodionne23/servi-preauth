@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SERVI — Browse</title>
+  <meta name="description" content="Explora servicios por categoría con vista de galería y carruseles.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,700;1,9..40,400&family=Syne:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/shared/shared-styles.css">
+  <link rel="stylesheet" href="/shared/landing-theme.css">
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script src="/shared/browse-data.js"></script>
+</head>
+<body class="landing-page browse-page">
+
+<script src="/config.js"></script>
+<script src="/shared/i18n.js"></script>
+<script src="/shared/shared-auth.js"></script>
+<div id="navbar"></div>
+<script src="/shared/morphing-nav.js"></script>
+
+<main class="browse-page-main" id="browse-discovery">
+  <div class="browse-page-main__inner animate-fadeUp">
+    <h1 class="browse-page-main__title" id="browse-page-title">Explora por categoría</h1>
+    <p class="browse-page-main__subtitle" id="browse-page-subtitle"></p>
+    <div class="dash-discovery" id="dash-discovery-root"></div>
+  </div>
+</main>
+
+<div class="browse-drawer" id="browse-drawer" hidden role="dialog" aria-modal="true">
+  <div class="browse-drawer__scrim" onclick="window._closeBrowseDrawer()"></div>
+  <div class="browse-drawer__panel">
+    <div class="browse-drawer__header">
+      <button class="browse-drawer__back" onclick="window._closeBrowseDrawer()" aria-label="Volver">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+      </button>
+      <span class="browse-drawer__cat-name" id="browse-drawer-title"></span>
+    </div>
+    <div class="browse-drawer__subtitle" id="browse-drawer-subtitle"></div>
+    <ul class="browse-drawer__list" id="browse-drawer-list"></ul>
+  </div>
+</div>
+
+<div id="footer"></div>
+<script src="/shared/shared-footer.js"></script>
+
+<script>
+(function () {
+  const t = () => window.__t;
+
+  window.updateNavForAuth = function () {
+    window.buildNavbar && window.buildNavbar();
+  };
+
+  const catKeys = ['cleaning', 'repair', 'moving', 'wellness', 'suppliers'];
+  const catI18n = {
+    cleaning:  { name: 'categories.cleaning' },
+    repair:    { name: 'categories.repair' },
+    moving:    { name: 'categories.moving' },
+    wellness:  { name: 'categories.wellness' },
+    suppliers: { name: 'categories.suppliers' },
+  };
+  const catEmoji = {
+    cleaning: '🧹',
+    repair: '🔧',
+    moving: '📦',
+    wellness: '💆',
+    suppliers: '🛒',
+  };
+
+  const PREVIEW_ITEMS_PER_CATEGORY = 8;
+  const DISCOVERY_FILTER_ALL = 'all';
+  let activeDiscoveryFilter = DISCOVERY_FILTER_ALL;
+
+  function resolve(key) {
+    return key.split('.').reduce((o, k) => o && o[k], t());
+  }
+
+  function escapeAttr(str) {
+    return String(str || '').replace(/[&<>"']/g, ch => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;',
+    }[ch]));
+  }
+
+  function getLocale() {
+    const lang = (window.__lang || document.documentElement.lang || 'es').toLowerCase();
+    return lang.startsWith('es') ? 'es' : 'en';
+  }
+
+  function getCategoryConfig(catKey) {
+    return browseCategoryData[catKey] || { subcategories: [] };
+  }
+
+  function getSubcategoryConfigs(catKey) {
+    return getCategoryConfig(catKey).subcategories || [];
+  }
+
+  function getSubcategoryConfig(catKey, subKey) {
+    return getSubcategoryConfigs(catKey).find(sub => sub.key === subKey) || null;
+  }
+
+  function getLocalizedText(value) {
+    if (!value) return '';
+    if (typeof value === 'string') return value;
+    const locale = getLocale();
+    return value[locale] || value.es || value.en || '';
+  }
+
+  function getSubcategoryLabel(catKey, subKey) {
+    const sub = getSubcategoryConfig(catKey, subKey);
+    return sub ? getLocalizedText(sub.label) : '';
+  }
+
+  function getSpecificServices(catKey, subKey) {
+    const sub = getSubcategoryConfig(catKey, subKey);
+    if (!sub || !sub.services) return [];
+    const locale = getLocale();
+    return sub.services[locale] || sub.services.es || sub.services.en || [];
+  }
+
+  function getSubcategoryImage(catKey, subKey) {
+    const categoryImages = discoverySubcategoryImages[catKey] || {};
+    return categoryImages[subKey] || discoveryFallbackByCategory[catKey] || '/assets/partnerimage.png';
+  }
+
+  window._browseSetFilter = function(filterKey) {
+    activeDiscoveryFilter = filterKey || DISCOVERY_FILTER_ALL;
+    renderDiscovery();
+  };
+
+  window._browseOpenCategory = function(catKey, source) {
+    window._browseSetFilter(catKey);
+  };
+
+  window._browseScrollCarousel = function(catKey, dir) {
+    const track = document.getElementById(`dash-carousel-${catKey}`);
+    if (!track) return;
+    const card = track.querySelector('.dash-discovery__card');
+    const step = card ? Math.round((card.offsetWidth + 14) * 2) : Math.round(track.clientWidth * 0.9);
+    track.scrollBy({ left: step * (dir < 0 ? -1 : 1), behavior: 'smooth' });
+  };
+
+  window._browseHandleCarouselKey = function(evt, catKey) {
+    if (evt.key === 'ArrowRight') {
+      evt.preventDefault();
+      window._browseScrollCarousel(catKey, 1);
+      return;
+    }
+    if (evt.key === 'ArrowLeft') {
+      evt.preventDefault();
+      window._browseScrollCarousel(catKey, -1);
+    }
+  };
+
+  window._openBrowseDrawer = function(catKey, subKey, opts) {
+    const tr = t();
+    const browseStr = tr.browse || {};
+    const catName = resolve(catI18n[catKey].name) || catKey;
+    const subName = getSubcategoryLabel(catKey, subKey) || catName;
+    const services = getSpecificServices(catKey, subKey);
+
+    const drawer = document.getElementById('browse-drawer');
+    const titleEl = document.getElementById('browse-drawer-title');
+    const subtitleEl = document.getElementById('browse-drawer-subtitle');
+    const listEl = document.getElementById('browse-drawer-list');
+
+    if (!drawer) return;
+    const source = opts && opts.source ? opts.source : '';
+    if (source) drawer.setAttribute('data-source', source);
+    else drawer.removeAttribute('data-source');
+
+    titleEl.textContent = subName;
+    subtitleEl.textContent = browseStr.selectService || 'Selecciona un servicio';
+    listEl.innerHTML = services.map(serviceName => `
+      <li>
+        <button class="browse-drawer__item" type="button" onclick="window._browseSelectService('${catKey}', '${subKey}', '${encodeURIComponent(serviceName)}')">
+          <span>${serviceName}</span>
+          <span class="browse-drawer__item-arrow">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          </span>
+        </button>
+      </li>
+    `).join('');
+
+    drawer.removeAttribute('hidden');
+    document.body.style.overflow = 'hidden';
+  };
+
+  window._closeBrowseDrawer = function() {
+    const drawer = document.getElementById('browse-drawer');
+    if (!drawer) return;
+    drawer.setAttribute('hidden', '');
+    document.body.style.overflow = '';
+  };
+
+  window._browseOpenSubcategory = function(catKey, subKey, source) {
+    window._openBrowseDrawer(catKey, subKey, { source: source || 'subcategory-card' });
+  };
+
+  window._browseSelectService = function(catKey, subKey, serviceName) {
+    let decodedService = serviceName;
+    try {
+      decodedService = decodeURIComponent(serviceName);
+    } catch (_) {}
+    window._closeBrowseDrawer();
+    const params = new URLSearchParams();
+    params.set('discover_service', decodedService || '');
+    params.set('discover_category', catKey || '');
+    if (subKey) params.set('discover_subcategory', subKey);
+    window.location.href = '/index.html?' + params.toString();
+  };
+
+  function buildCategoryCards(catKey, categoryName, discovery) {
+    const services = getSubcategoryConfigs(catKey).slice(0, PREVIEW_ITEMS_PER_CATEGORY);
+
+    if (!services.length) {
+      return `<div class="dash-discovery__empty">${discovery.empty || 'Próximamente habrá más servicios.'}</div>`;
+    }
+
+    return services.map(sub => {
+      const serviceLabel = escapeAttr(getLocalizedText(sub.label));
+      const imageSrc = getSubcategoryImage(catKey, sub.key);
+      const fallback = discoveryFallbackByCategory[catKey] || '/assets/partnerimage.png';
+      return `
+        <button class="dash-discovery__card" type="button"
+                onclick="window._browseOpenSubcategory('${catKey}', '${sub.key}', 'discovery-card')"
+                aria-label="${serviceLabel}">
+          <span class="dash-discovery__media">
+            <img class="dash-discovery__img"
+                 src="${imageSrc}"
+                 alt="${serviceLabel || categoryName}"
+                 loading="lazy"
+                 onerror="this.onerror=null;this.src='${fallback}'">
+          </span>
+          <span class="dash-discovery__label">${serviceLabel}</span>
+        </button>
+      `;
+    }).join('');
+  }
+
+  function buildSpecificServiceCards(catKey, subKey, subName, discovery) {
+    const imageSrc = getSubcategoryImage(catKey, subKey);
+    const fallback = discoveryFallbackByCategory[catKey] || '/assets/partnerimage.png';
+    const services = getSpecificServices(catKey, subKey).slice(0, 5);
+
+    if (!services.length) {
+      return `<div class="dash-discovery__empty">${discovery.empty || 'Próximamente habrá más servicios.'}</div>`;
+    }
+
+    return services.map(serviceName => {
+      const safeLabel = escapeAttr(serviceName);
+      return `
+        <button class="dash-discovery__card" type="button"
+                onclick="window._browseSelectService('${catKey}', '${subKey}', '${encodeURIComponent(serviceName)}')"
+                aria-label="${safeLabel}">
+          <span class="dash-discovery__media">
+            <img class="dash-discovery__img"
+                 src="${imageSrc}"
+                 alt="${safeLabel || subName}"
+                 loading="lazy"
+                 onerror="this.onerror=null;this.src='${fallback}'">
+          </span>
+          <span class="dash-discovery__label">${safeLabel}</span>
+        </button>
+      `;
+    }).join('');
+  }
+
+  function renderDiscovery() {
+    const root = document.getElementById('dash-discovery-root');
+    if (!root) return;
+
+    const tr = t();
+    const discovery = tr.discovery || {};
+    const filters = [DISCOVERY_FILTER_ALL].concat(catKeys);
+
+    const titleEl = document.getElementById('browse-page-title');
+    if (titleEl) titleEl.textContent = discovery.title || 'Explora por categoría';
+    const subtitleEl = document.getElementById('browse-page-subtitle');
+    if (subtitleEl) subtitleEl.textContent = discovery.subtitle || '';
+
+    const chipsHtml = filters.map(key => {
+      const isAll = key === DISCOVERY_FILTER_ALL;
+      const isActive = activeDiscoveryFilter === key;
+      const label = isAll ? (discovery.allChip || 'Todo') : (resolve(catI18n[key].name) || key);
+      const icon = isAll ? '✨' : (catEmoji[key] || '•');
+      return `
+        <button class="dash-discovery__chip${isActive ? ' is-active' : ''}" type="button"
+                aria-pressed="${isActive ? 'true' : 'false'}"
+                onclick="window._browseSetFilter('${key}')">
+          <span class="dash-discovery__chip-icon" aria-hidden="true">${icon}</span>
+          <span>${label}</span>
+        </button>
+      `;
+    }).join('');
+
+    const rowsHtml = activeDiscoveryFilter === DISCOVERY_FILTER_ALL
+      ? catKeys.map(catKey => {
+          const catName = resolve(catI18n[catKey].name) || catKey;
+          const rowCards = buildCategoryCards(catKey, catName, discovery);
+          return `
+            <section class="dash-discovery__row" data-category="${catKey}">
+              <div class="dash-discovery__row-head">
+                <h3 class="dash-discovery__row-title">${catName}</h3>
+                <button class="dash-discovery__see-all" type="button"
+                        onclick="window._browseOpenCategory('${catKey}', 'discovery-see-all')">
+                  ${discovery.seeAll || 'Ver todo'}
+                </button>
+              </div>
+              <div class="dash-discovery__carousel-wrap">
+                <button class="dash-discovery__arrow dash-discovery__arrow--left" type="button"
+                        aria-label="${escapeAttr(discovery.prev || 'Desplazar a la izquierda')}"
+                        onclick="window._browseScrollCarousel('${catKey}', -1)">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+                </button>
+                <div class="dash-discovery__carousel" id="dash-carousel-${catKey}" tabindex="0"
+                     onkeydown="window._browseHandleCarouselKey(event, '${catKey}')">
+                  ${rowCards}
+                </div>
+                <button class="dash-discovery__arrow dash-discovery__arrow--right" type="button"
+                        aria-label="${escapeAttr(discovery.next || 'Desplazar a la derecha')}"
+                        onclick="window._browseScrollCarousel('${catKey}', 1)">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+                </button>
+              </div>
+            </section>
+          `;
+        }).join('')
+      : getSubcategoryConfigs(activeDiscoveryFilter).map(sub => {
+          const subName = escapeAttr(getLocalizedText(sub.label));
+          const rowCards = buildSpecificServiceCards(activeDiscoveryFilter, sub.key, subName, discovery);
+          const rowId = `${activeDiscoveryFilter}-${sub.key}`;
+          return `
+            <section class="dash-discovery__row" data-category="${activeDiscoveryFilter}" data-subcategory="${sub.key}">
+              <div class="dash-discovery__row-head">
+                <h3 class="dash-discovery__row-title">${subName}</h3>
+              </div>
+              <div class="dash-discovery__carousel-wrap">
+                <button class="dash-discovery__arrow dash-discovery__arrow--left" type="button"
+                        aria-label="${escapeAttr(discovery.prev || 'Desplazar a la izquierda')}"
+                        onclick="window._browseScrollCarousel('${rowId}', -1)">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+                </button>
+                <div class="dash-discovery__carousel" id="dash-carousel-${rowId}" tabindex="0"
+                     onkeydown="window._browseHandleCarouselKey(event, '${rowId}')">
+                  ${rowCards}
+                </div>
+                <button class="dash-discovery__arrow dash-discovery__arrow--right" type="button"
+                        aria-label="${escapeAttr(discovery.next || 'Desplazar a la derecha')}"
+                        onclick="window._browseScrollCarousel('${rowId}', 1)">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+                </button>
+              </div>
+            </section>
+          `;
+        }).join('');
+
+    root.innerHTML = `
+      <div class="dash-discovery__chips" role="toolbar" aria-label="${escapeAttr(discovery.chipsLabel || 'Filtrar por categoría')}">
+        ${chipsHtml}
+      </div>
+      <div class="dash-discovery__rows">
+        ${rowsHtml}
+      </div>
+    `;
+  }
+
+  function initFilterFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    const category = params.get('category');
+    if (category && catKeys.includes(category)) activeDiscoveryFilter = category;
+  }
+
+  initFilterFromUrl();
+  renderDiscovery();
+  window.addEventListener('langchange', renderDiscovery);
+})();
+</script>
+</body>
+</html>
