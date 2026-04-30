@@ -210,10 +210,10 @@
     } catch (_) {}
     window._closeBrowseDrawer();
     const params = new URLSearchParams();
-    params.set('discover_service', decodedService || '');
-    params.set('discover_category', catKey || '');
-    if (subKey) params.set('discover_subcategory', subKey);
-    window.location.href = '/index.html?' + params.toString();
+    params.set('category', catKey || '');
+    params.set('sub', subKey || '');
+    params.set('service', decodedService || '');
+    window.open('/service.html?' + params.toString(), '_blank');
   };
 
   function buildCategoryCards(catKey, categoryName, discovery) {
