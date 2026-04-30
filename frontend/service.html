@@ -477,10 +477,7 @@
   const MAX_ATTACHMENTS = 3;
 
   function renderPreviews() {
-    const el = document.getElementById('svc-previews');
-    if (!el) return;
-    if (!attachments.length) { el.innerHTML = ''; return; }
-    el.innerHTML = attachments.map((a, i) => {
+    const html = !attachments.length ? '' : attachments.map((a, i) => {
       const isImage = a.mimetype && a.mimetype.startsWith('image/');
       const thumb = isImage
         ? `<img src="${esc(a.url)}" alt="">`
@@ -490,6 +487,17 @@
         <button class="svc-preview-remove" type="button" onclick="window._svcRemoveAttachment(${i})" aria-label="Eliminar">✕</button>
       </div>`;
     }).join('');
+    ['desk', 'mob'].forEach(prefix => {
+      const el = document.getElementById(`svc-previews-${prefix}`);
+      if (el) el.innerHTML = html;
+    });
+  }
+
+  function setAttachStatus(text) {
+    ['desk', 'mob'].forEach(prefix => {
+      const el = document.getElementById(`svc-attach-status-${prefix}`);
+      if (el) el.textContent = text;
+    });
   }
 
   window._svcRemoveAttachment = function(i) {
@@ -498,12 +506,11 @@
   };
 
   async function uploadFile(file) {
-    const statusEl = document.getElementById('svc-attach-status');
     if (attachments.length >= MAX_ATTACHMENTS) {
-      if (statusEl) statusEl.textContent = lang() === 'es' ? 'Máximo 3 fotos.' : 'Maximum 3 photos.';
+      setAttachStatus(lang() === 'es' ? 'Máximo 3 fotos.' : 'Maximum 3 photos.');
       return;
     }
-    if (statusEl) statusEl.textContent = lang() === 'es' ? 'Subiendo…' : 'Uploading…';
+    setAttachStatus(lang() === 'es' ? 'Subiendo…' : 'Uploading…');
     const fd = new FormData();
     fd.append('file', file);
     try {
@@ -513,10 +520,10 @@
       const d = await res.json();
       if (!res.ok) throw new Error(d.message || d.error || 'Upload error');
       attachments.push({ url: d.url, mimetype: d.mimetype, name: file.name });
-      if (statusEl) statusEl.textContent = '';
+      setAttachStatus('');
       renderPreviews();
     } catch (err) {
-      if (statusEl) statusEl.textContent = '❌ ' + err.message;
+      setAttachStatus('❌ ' + err.message);
     }
   }
 
@@ -711,8 +718,8 @@
         </div>
         <input type="file" id="svc-file-input-${prefix}" accept="image/*" multiple
                style="display:none" onchange="window._svcHandleFiles(this.files)">
-        <div class="svc-previews" id="svc-previews"></div>
-        <div class="svc-attach-status" id="svc-attach-status"></div>
+        <div class="svc-previews" id="svc-previews-${prefix}"></div>
+        <div class="svc-attach-status" id="svc-attach-status-${prefix}"></div>
 
         <hr class="svc-sidebar__divider">
         <button class="svc-cta-btn" type="button" id="svc-cta-btn-${prefix}"
@@ -820,10 +827,8 @@
             </div>
           </div>
 
-          <div id="svc-sidebar-wrap-desk">
-            <div class="svc-sidebar">
-              ${buildSidebarContent('desk')}
-            </div>
+          <div class="svc-sidebar" id="svc-sidebar-wrap-desk">
+            ${buildSidebarContent('desk')}
           </div>
         </div>
       </div>
