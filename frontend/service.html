@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SERVI — Servicio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,700;1,9..40,400&family=Syne:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/shared/shared-styles.css">
+  <link rel="stylesheet" href="/shared/landing-theme.css">
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script src="/shared/browse-data.js"></script>
+  <style>
+    .svc-page {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 32px 24px 80px;
+    }
+    .svc-breadcrumb {
+      font-size: 13px;
+      color: #888;
+      margin-bottom: 24px;
+    }
+    .svc-breadcrumb a {
+      color: #888;
+      text-decoration: none;
+    }
+    .svc-breadcrumb a:hover { text-decoration: underline; }
+    .svc-breadcrumb span { margin: 0 6px; }
+
+    .svc-layout {
+      display: grid;
+      grid-template-columns: 1fr 380px;
+      gap: 48px;
+      align-items: start;
+    }
+
+    .svc-hero-img {
+      width: 100%;
+      height: 420px;
+      object-fit: cover;
+      border-radius: 16px;
+      display: block;
+      background: #f0f0f0;
+    }
+    .svc-title {
+      font-size: 28px;
+      font-weight: 700;
+      margin: 24px 0 4px;
+      line-height: 1.25;
+      font-family: var(--font-heading, 'Syne', sans-serif);
+    }
+    .svc-subcat-label {
+      font-size: 14px;
+      color: #666;
+      margin-bottom: 24px;
+    }
+    .svc-included-section {
+      border-top: 1px solid #e8e8e8;
+      padding-top: 24px;
+      margin-top: 8px;
+    }
+    .svc-included-title {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 10px;
+    }
+    .svc-included-body {
+      font-size: 15px;
+      color: #444;
+      line-height: 1.6;
+    }
+    .svc-other-section {
+      border-top: 1px solid #e8e8e8;
+      padding-top: 24px;
+      margin-top: 32px;
+    }
+    .svc-other-title {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 14px;
+    }
+    .svc-other-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .svc-other-chip {
+      padding: 7px 14px;
+      border: 1.5px solid #e0e0e0;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 500;
+      background: #fafafa;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+      font-family: var(--font-body, 'DM Sans', sans-serif);
+      color: inherit;
+    }
+    .svc-other-chip:hover {
+      border-color: #111;
+      background: #f5f5f5;
+    }
+
+    .svc-sidebar {
+      position: sticky;
+      top: 100px;
+      border: 1.5px solid #e8e8e8;
+      border-radius: 20px;
+      padding: 28px 24px;
+      background: #fff;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.07);
+    }
+    .svc-sidebar__service-name {
+      font-size: 17px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .svc-sidebar__price-label {
+      font-size: 15px;
+      font-weight: 600;
+      color: #111;
+      margin-bottom: 2px;
+    }
+    .svc-sidebar__price-note {
+      font-size: 12px;
+      color: #888;
+      margin-bottom: 20px;
+    }
+    .svc-sidebar__divider {
+      border: none;
+      border-top: 1px solid #efefef;
+      margin: 18px 0;
+    }
+    .svc-sidebar__label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #444;
+      margin-bottom: 8px;
+      display: block;
+    }
+    .svc-when-chips {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 0;
+    }
+    .svc-when-chip {
+      flex: 1;
+      padding: 9px 12px;
+      border: 1.5px solid #e0e0e0;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 500;
+      background: #fafafa;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.15s;
+      font-family: var(--font-body, 'DM Sans', sans-serif);
+      color: inherit;
+    }
+    .svc-when-chip.active {
+      border-color: #111;
+      background: #111;
+      color: #fff;
+    }
+    .svc-schedule-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .svc-schedule-row input {
+      flex: 1;
+      padding: 9px 12px;
+      border: 1.5px solid #e0e0e0;
+      border-radius: 10px;
+      font-size: 13px;
+      font-family: var(--font-body, 'DM Sans', sans-serif);
+      background: #fafafa;
+      color: #111;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .svc-schedule-row input:focus { border-color: #111; background: #fff; }
+
+    .svc-sidebar__input {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1.5px solid #e0e0e0;
+      border-radius: 10px;
+      font-size: 14px;
+      font-family: var(--font-body, 'DM Sans', sans-serif);
+      background: #fafafa;
+      color: #111;
+      outline: none;
+      transition: border-color 0.15s;
+      box-sizing: border-box;
+      resize: none;
+    }
+    .svc-sidebar__input:focus { border-color: #111; background: #fff; }
+    .svc-sidebar__input.error { border-color: #dc2626; }
+    .svc-error-msg {
+      font-size: 12px;
+      color: #dc2626;
+      margin-top: 4px;
+      display: none;
+    }
+    .svc-error-msg.visible { display: block; }
+
+    .svc-attach-zone {
+      border: 1.5px dashed #d0d0d0;
+      border-radius: 10px;
+      padding: 14px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.15s;
+      font-size: 13px;
+      color: #666;
+    }
+    .svc-attach-zone:hover { border-color: #111; }
+    .svc-previews {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+    .svc-preview-thumb {
+      position: relative;
+      display: inline-block;
+    }
+    .svc-preview-thumb img {
+      width: 56px;
+      height: 56px;
+      object-fit: cover;
+      border-radius: 8px;
+      display: block;
+    }
+    .svc-preview-thumb .svc-preview-remove {
+      position: absolute;
+      top: -6px;
+      right: -6px;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #dc2626;
+      color: #fff;
+      border: none;
+      cursor: pointer;
+      font-size: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+    }
+    .svc-attach-status {
+      font-size: 12px;
+      color: #888;
+      margin-top: 6px;
+    }
+
+    .svc-cta-btn {
+      width: 100%;
+      padding: 14px;
+      background: #111;
+      color: #fff;
+      border: none;
+      border-radius: 12px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: var(--font-body, 'DM Sans', sans-serif);
+      transition: opacity 0.15s;
+      margin-top: 4px;
+    }
+    .svc-cta-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .svc-cta-btn:hover:not(:disabled) { opacity: 0.88; }
+
+    .svc-auth-gate {
+      text-align: center;
+      padding: 8px 0;
+    }
+    .svc-auth-gate p {
+      font-size: 14px;
+      color: #555;
+      margin-bottom: 12px;
+    }
+    .svc-auth-btn {
+      width: 100%;
+      padding: 12px;
+      background: #111;
+      color: #fff;
+      border: none;
+      border-radius: 12px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: var(--font-body, 'DM Sans', sans-serif);
+    }
+
+    .svc-success {
+      text-align: center;
+      padding: 16px 0;
+    }
+    .svc-success__icon {
+      font-size: 40px;
+      margin-bottom: 12px;
+    }
+    .svc-success__title {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .svc-success__body {
+      font-size: 14px;
+      color: #555;
+      margin-bottom: 20px;
+    }
+    .svc-success__wa {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 20px;
+      background: #25D366;
+      color: #fff;
+      border-radius: 12px;
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .svc-not-found {
+      text-align: center;
+      padding: 80px 24px;
+    }
+    .svc-not-found h1 { font-size: 24px; margin-bottom: 12px; }
+    .svc-not-found p { color: #666; font-size: 15px; }
+    .svc-not-found a { color: #111; font-weight: 600; }
+
+    .svc-mobile-bar {
+      display: none;
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: #fff;
+      border-top: 1px solid #e8e8e8;
+      padding: 12px 20px;
+      z-index: 100;
+    }
+    .svc-mobile-bar button {
+      width: 100%;
+      padding: 14px;
+      background: #111;
+      color: #fff;
+      border: none;
+      border-radius: 12px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: var(--font-body, 'DM Sans', sans-serif);
+    }
+
+    .svc-mobile-form {
+      display: none;
+      border-top: 1px solid #e8e8e8;
+      padding-top: 32px;
+      margin-top: 32px;
+    }
+    .svc-mobile-form .svc-sidebar {
+      position: static;
+      box-shadow: none;
+      border: none;
+      border-radius: 0;
+      padding: 0;
+    }
+
+    @media (max-width: 900px) {
+      .svc-layout {
+        grid-template-columns: 1fr;
+      }
+      .svc-sidebar { display: none; }
+      .svc-mobile-bar { display: block; }
+      .svc-mobile-form { display: block; }
+    }
+    @media (max-width: 600px) {
+      .svc-page { padding: 16px 16px 100px; }
+      .svc-hero-img { height: 240px; }
+      .svc-title { font-size: 22px; }
+    }
+  </style>
+</head>
+<body class="landing-page">
+
+<script src="/config.js"></script>
+<script src="/shared/i18n.js"></script>
+<script src="/shared/shared-auth.js"></script>
+<div id="navbar"></div>
+<script src="/shared/morphing-nav.js"></script>
+
+<main id="svc-main">
+  <!-- Rendered by JS -->
+</main>
+
+<div class="svc-mobile-bar" id="svc-mobile-bar" style="display:none">
+  <button type="button" id="svc-mobile-cta-btn"></button>
+</div>
+
+<div id="footer"></div>
+<script src="/shared/shared-footer.js"></script>
+
+<script>
+(function () {
+  const t = () => window.__t || {};
+  const sp = () => (t().servicePage || {});
+  const lang = () => window.__lang || 'es';
+
+  function esc(str) {
+    return String(str || '').replace(/[&<>"']/g, ch =>
+      ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[ch])
+    );
+  }
+
+  function getLocale() {
+    return lang().startsWith('es') ? 'es' : 'en';
+  }
+
+  function getLocalizedText(value) {
+    if (!value) return '';
+    if (typeof value === 'string') return value;
+    const locale = getLocale();
+    return value[locale] || value.es || value.en || '';
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  const catKey = params.get('category') || '';
+  const subKey = params.get('sub') || '';
+  const serviceName = params.get('service') || '';
+
+  function getCatalogData() {
+    const catData = window.browseCategoryData && window.browseCategoryData[catKey];
+    if (!catData) return null;
+    const subData = catData.subcategories.find(s => s.key === subKey);
+    if (!subData) return null;
+    return { catData, subData };
+  }
+
+  function getSubcategoryImage() {
+    const imgs = window.discoverySubcategoryImages || {};
+    const fallbacks = window.discoveryFallbackByCategory || {};
+    return (imgs[catKey] && imgs[catKey][subKey]) || fallbacks[catKey] || '/assets/partnerimage.png';
+  }
+
+  function getCategoryLabel() {
+    const cats = t().categories || {};
+    const map = { cleaning: 'cleaning', repair: 'repair', moving: 'moving', wellness: 'wellness', suppliers: 'suppliers' };
+    return cats[map[catKey]] || catKey;
+  }
+
+  function getDetailsPlaceholder() {
+    const s = sp();
+    if (catKey === 'repair') return s.detailsPlaceholderRepair || '';
+    if (catKey === 'cleaning') return s.detailsPlaceholderCleaning || '';
+    if (catKey === 'wellness') return s.detailsPlaceholderWellness || '';
+    return s.detailsPlaceholderDefault || '';
+  }
+
+  function getWhatsIncluded() {
+    const s = sp();
+    if (catKey === 'cleaning') return s.whatsIncludedCleaning || '';
+    if (catKey === 'repair') return s.whatsIncludedRepair || '';
+    if (catKey === 'moving') return s.whatsIncludedMoving || '';
+    if (catKey === 'wellness') return s.whatsIncludedWellness || '';
+    return s.whatsIncludedSuppliers || '';
+  }
+
+  const attachments = [];
+  const MAX_ATTACHMENTS = 3;
+
+  function renderPreviews() {
+    const el = document.getElementById('svc-previews');
+    if (!el) return;
+    if (!attachments.length) { el.innerHTML = ''; return; }
+    el.innerHTML = attachments.map((a, i) => {
+      const isImage = a.mimetype && a.mimetype.startsWith('image/');
+      const thumb = isImage
+        ? `<img src="${esc(a.url)}" alt="">`
+        : `<div style="width:56px;height:56px;border-radius:8px;background:#eee;display:flex;align-items:center;justify-content:center;font-size:22px">📎</div>`;
+      return `<div class="svc-preview-thumb">
+        ${thumb}
+        <button class="svc-preview-remove" type="button" onclick="window._svcRemoveAttachment(${i})" aria-label="Eliminar">✕</button>
+      </div>`;
+    }).join('');
+  }
+
+  window._svcRemoveAttachment = function(i) {
+    attachments.splice(i, 1);
+    renderPreviews();
+  };
+
+  async function uploadFile(file) {
+    const statusEl = document.getElementById('svc-attach-status');
+    if (attachments.length >= MAX_ATTACHMENTS) {
+      if (statusEl) statusEl.textContent = lang() === 'es' ? 'Máximo 3 fotos.' : 'Maximum 3 photos.';
+      return;
+    }
+    if (statusEl) statusEl.textContent = lang() === 'es' ? 'Subiendo…' : 'Uploading…';
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      const res = await fetch((window.CONFIG && window.CONFIG.API_BASE || '') + '/api/uploads', {
+        method: 'POST', body: fd,
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.message || d.error || 'Upload error');
+      attachments.push({ url: d.url, mimetype: d.mimetype, name: file.name });
+      if (statusEl) statusEl.textContent = '';
+      renderPreviews();
+    } catch (err) {
+      if (statusEl) statusEl.textContent = '❌ ' + err.message;
+    }
+  }
+
+  let whenType = 'asap';
+
+  function toggleWhen(type) {
+    whenType = type;
+    document.querySelectorAll('.svc-when-chip').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.when === type);
+    });
+    const schedRows = document.querySelectorAll('.svc-schedule-row');
+    schedRows.forEach(r => { r.style.display = type === 'schedule' ? 'flex' : 'none'; });
+  }
+
+  function validateAndCollect(prefix) {
+    let valid = true;
+    const addrInput = document.getElementById(`svc-addr-${prefix}`);
+    const addrErr = document.getElementById(`svc-addr-err-${prefix}`);
+    if (addrInput && !addrInput.value.trim()) {
+      addrInput.classList.add('error');
+      if (addrErr) addrErr.classList.add('visible');
+      valid = false;
+    } else if (addrInput) {
+      addrInput.classList.remove('error');
+      if (addrErr) addrErr.classList.remove('visible');
+    }
+
+    let preferredDate = null, preferredTime = null;
+    if (whenType === 'schedule') {
+      const dateInput = document.getElementById(`svc-date-${prefix}`);
+      const dateErr = document.getElementById(`svc-date-err-${prefix}`);
+      if (dateInput && !dateInput.value) {
+        dateInput.classList.add('error');
+        if (dateErr) dateErr.classList.add('visible');
+        valid = false;
+      } else if (dateInput) {
+        dateInput.classList.remove('error');
+        if (dateErr) dateErr.classList.remove('visible');
+        preferredDate = dateInput.value;
+        const timeInput = document.getElementById(`svc-time-${prefix}`);
+        if (timeInput && timeInput.value) preferredTime = timeInput.value;
+      }
+    }
+
+    if (!valid) return null;
+
+    const detailsInput = document.getElementById(`svc-details-${prefix}`);
+    const extraDetails = detailsInput ? detailsInput.value.trim() : '';
+    const description = serviceName + (extraDetails ? ' — ' + extraDetails : '');
+
+    return {
+      address: addrInput ? addrInput.value.trim() : '',
+      preferredDate,
+      preferredTime,
+      description,
+    };
+  }
+
+  async function submitRequest(prefix) {
+    const data = validateAndCollect(prefix);
+    if (!data) return;
+
+    if (!window.__user) {
+      showAuthGate(prefix, () => submitRequest(prefix));
+      return;
+    }
+
+    const btn = document.getElementById(`svc-cta-btn-${prefix}`);
+    if (btn) { btn.disabled = true; btn.textContent = sp().submitting || 'Enviando…'; }
+
+    const session = JSON.parse(localStorage.getItem('servi_user_session') || '{}');
+    const token = session.token || '';
+
+    try {
+      const res = await fetch((window.CONFIG && window.CONFIG.API_BASE || '') + '/api/service-requests', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': 'Bearer ' + token } : {}),
+        },
+        body: JSON.stringify({
+          category: catKey || 'custom',
+          description: data.description,
+          preferredDate: data.preferredDate,
+          preferredTime: data.preferredTime,
+          isAsap: whenType === 'asap',
+          serviceAddress: data.address,
+          clientName: window.__user.name || '',
+          clientPhone: window.__user.phone || '',
+          clientEmail: window.__user.email || '',
+          attachments: attachments.map(a => a.url),
+          lang: lang(),
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || 'HTTP ' + res.status);
+      }
+      showSuccess(prefix);
+    } catch (err) {
+      if (btn) { btn.disabled = false; btn.textContent = sp().cta || 'Solicitar servicio'; }
+      alert(lang() === 'es' ? 'Error al enviar. Intenta de nuevo.' : 'Submit error. Please try again.');
+      console.error('[service.html] submit error:', err);
+    }
+  }
+
+  function showAuthGate(prefix, onSuccess) {
+    const sidebar = document.getElementById(`svc-sidebar-${prefix}`);
+    if (!sidebar) return;
+    sidebar.innerHTML = `
+      <div class="svc-auth-gate">
+        <p>${esc(sp().authNeeded || 'Inicia sesión para enviar tu solicitud')}</p>
+        <button class="svc-auth-btn" type="button" id="svc-auth-btn-${prefix}">${esc(sp().authBtn || 'Iniciar sesión')}</button>
+      </div>
+    `;
+    document.getElementById(`svc-auth-btn-${prefix}`).addEventListener('click', () => {
+      if (!window.openAuthModal) return;
+      const resume = () => {
+        window.removeEventListener('servi-auth-success', resume);
+        renderSidebar(prefix);
+        setTimeout(() => onSuccess(), 100);
+      };
+      window.addEventListener('servi-auth-success', resume);
+      window.openAuthModal('login');
+    });
+  }
+
+  function showSuccess(prefix) {
+    const sidebar = document.getElementById(`svc-sidebar-${prefix}`);
+    if (!sidebar) return;
+    const waNumber = (window.CONFIG && window.CONFIG.WHATSAPP_NUMBER) || '525525112588';
+    const waUrl = `https://wa.me/${waNumber}`;
+    sidebar.innerHTML = `
+      <div class="svc-success">
+        <div class="svc-success__icon">✅</div>
+        <div class="svc-success__title">${esc(sp().successTitle || '¡Solicitud enviada!')}</div>
+        <div class="svc-success__body">${esc(sp().successBody || 'Te contactaremos pronto por WhatsApp.')}</div>
+        <a class="svc-success__wa" href="${esc(waUrl)}" target="_blank" rel="noopener">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+          ${esc(sp().successWhatsapp || 'Abrir WhatsApp')}
+        </a>
+      </div>
+    `;
+    const mobileBar = document.getElementById('svc-mobile-bar');
+    if (mobileBar) mobileBar.style.display = 'none';
+  }
+
+  function buildSidebarContent(prefix) {
+    const s = sp();
+    const savedAddr = localStorage.getItem('dash_hero_address') || '';
+    const today = new Date().toISOString().slice(0, 10);
+
+    return `
+      <div id="svc-sidebar-${prefix}">
+        <div class="svc-sidebar__service-name">${esc(serviceName)}</div>
+        <div class="svc-sidebar__price-label">${esc(s.priceLabel || 'Precio a confirmar')}</div>
+        <div class="svc-sidebar__price-note">${esc(s.priceNote || '')}</div>
+        <hr class="svc-sidebar__divider">
+
+        <span class="svc-sidebar__label">${esc(s.whenLabel || '¿Cuándo lo necesitas?')}</span>
+        <div class="svc-when-chips">
+          <button class="svc-when-chip active" type="button" data-when="asap"
+                  onclick="window._svcToggleWhen('asap')">${esc(s.whenAsap || 'Lo antes posible')}</button>
+          <button class="svc-when-chip" type="button" data-when="schedule"
+                  onclick="window._svcToggleWhen('schedule')">${esc(s.whenSchedule || 'Programar')}</button>
+        </div>
+        <div class="svc-schedule-row" style="display:none">
+          <input type="date" class="svc-sidebar__input" id="svc-date-${prefix}" min="${today}"
+                 placeholder="${esc(s.datePlaceholder || 'Fecha')}">
+          <input type="time" class="svc-sidebar__input" id="svc-time-${prefix}"
+                 placeholder="${esc(s.timePlaceholder || 'Hora (opcional)')}">
+        </div>
+        <div class="svc-error-msg" id="svc-date-err-${prefix}">${esc(s.dateError || 'Por favor selecciona una fecha')}</div>
+
+        <hr class="svc-sidebar__divider">
+        <span class="svc-sidebar__label">${esc(s.addressLabel || 'Dirección del servicio')}</span>
+        <input type="text" class="svc-sidebar__input" id="svc-addr-${prefix}"
+               placeholder="${esc(s.addressPlaceholder || 'Calle, número, colonia')}"
+               value="${esc(savedAddr)}">
+        <div class="svc-error-msg" id="svc-addr-err-${prefix}">${esc(s.addressError || 'Por favor ingresa tu dirección')}</div>
+
+        <hr class="svc-sidebar__divider">
+        <span class="svc-sidebar__label">${esc(s.detailsLabel || 'Detalles adicionales (opcional)')}</span>
+        <textarea class="svc-sidebar__input" id="svc-details-${prefix}" rows="3"
+                  placeholder="${esc(getDetailsPlaceholder())}"></textarea>
+
+        <hr class="svc-sidebar__divider">
+        <span class="svc-sidebar__label">${esc(s.attachLabel || 'Adjuntar fotos (opcional)')}</span>
+        <div class="svc-attach-zone" id="svc-attach-zone-${prefix}"
+             onclick="document.getElementById('svc-file-input-${prefix}').click()">
+          📷 ${lang() === 'es' ? 'Toca para agregar fotos' : 'Tap to add photos'}
+        </div>
+        <input type="file" id="svc-file-input-${prefix}" accept="image/*" multiple
+               style="display:none" onchange="window._svcHandleFiles(this.files)">
+        <div class="svc-previews" id="svc-previews"></div>
+        <div class="svc-attach-status" id="svc-attach-status"></div>
+
+        <hr class="svc-sidebar__divider">
+        <button class="svc-cta-btn" type="button" id="svc-cta-btn-${prefix}"
+                onclick="window._svcSubmit('${prefix}')">
+          ${esc(s.cta || 'Solicitar servicio')}
+        </button>
+      </div>
+    `;
+  }
+
+  function renderSidebar(prefix) {
+    const container = document.getElementById(`svc-sidebar-wrap-${prefix}`);
+    if (container) container.innerHTML = buildSidebarContent(prefix);
+  }
+
+  window._svcToggleWhen = function(type) {
+    toggleWhen(type);
+  };
+
+  window._svcSubmit = function(prefix) {
+    submitRequest(prefix);
+  };
+
+  window._svcHandleFiles = function(files) {
+    Array.from(files).forEach(f => uploadFile(f));
+  };
+
+  window._svcOpenOtherService = function(otherService) {
+    let decoded = otherService;
+    try { decoded = decodeURIComponent(otherService); } catch (_) {}
+    const p = new URLSearchParams();
+    p.set('category', catKey);
+    p.set('sub', subKey);
+    p.set('service', decoded);
+    window.open('/service.html?' + p.toString(), '_blank');
+  };
+
+  function render() {
+    const main = document.getElementById('svc-main');
+    if (!main) return;
+
+    if (serviceName) document.title = `SERVI — ${serviceName}`;
+
+    const catalog = getCatalogData();
+    const s = sp();
+
+    if (!catalog || !serviceName) {
+      main.innerHTML = `
+        <div class="svc-not-found">
+          <h1>${esc(s.notFound || 'Servicio no encontrado')}</h1>
+          <p>${esc(s.notFoundBody || 'El enlace puede estar incompleto. Vuelve a explorar desde')}
+             <a href="/browse.html">${esc(s.notFoundLink || 'browse.html')}</a>.</p>
+        </div>
+      `;
+      return;
+    }
+
+    const { subData } = catalog;
+    const imgSrc = getSubcategoryImage();
+    const subLabel = getLocalizedText(subData.label);
+    const catLabel = getCategoryLabel();
+    const otherServices = (subData.services[getLocale()] || subData.services.es || [])
+      .filter(sv => sv !== serviceName);
+
+    main.innerHTML = `
+      <div class="svc-page">
+        <div class="svc-breadcrumb">
+          <a href="/browse.html">Browse</a>
+          <span>›</span>
+          <a href="/browse.html?category=${esc(catKey)}">${esc(catLabel)}</a>
+          <span>›</span>
+          <span>${esc(subLabel)}</span>
+        </div>
+
+        <div class="svc-layout">
+          <div class="svc-left">
+            <img class="svc-hero-img" src="${esc(imgSrc)}" alt="${esc(serviceName)}"
+                 onerror="this.onerror=null;this.src='/assets/partnerimage.png'">
+            <h1 class="svc-title">${esc(serviceName)}</h1>
+            <div class="svc-subcat-label">${esc(subLabel)} · ${esc(catLabel)}</div>
+
+            <div class="svc-included-section">
+              <div class="svc-included-title">${esc(s.whatsIncluded || '¿Qué incluye?')}</div>
+              <div class="svc-included-body">${esc(getWhatsIncluded())}</div>
+            </div>
+
+            ${otherServices.length ? `
+              <div class="svc-other-section">
+                <div class="svc-other-title">${esc(s.otherServices || 'Otros servicios en esta categoría')}</div>
+                <div class="svc-other-chips">
+                  ${otherServices.map(sv => `
+                    <button class="svc-other-chip" type="button"
+                            onclick="window._svcOpenOtherService('${esc(encodeURIComponent(sv))}')">
+                      ${esc(sv)}
+                    </button>
+                  `).join('')}
+                </div>
+              </div>
+            ` : ''}
+
+            <div class="svc-mobile-form">
+              <div class="svc-sidebar" id="svc-sidebar-wrap-mob">
+                ${buildSidebarContent('mob')}
+              </div>
+            </div>
+          </div>
+
+          <div id="svc-sidebar-wrap-desk">
+            <div class="svc-sidebar">
+              ${buildSidebarContent('desk')}
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const mobileBar = document.getElementById('svc-mobile-bar');
+    const mobileCta = document.getElementById('svc-mobile-cta-btn');
+    if (mobileCta) mobileCta.textContent = s.cta || 'Solicitar servicio';
+    if (mobileBar) {
+      mobileBar.style.display = '';
+      if (mobileCta) {
+        mobileCta.onclick = () => {
+          const mobileForm = document.querySelector('.svc-mobile-form');
+          if (mobileForm) mobileForm.scrollIntoView({ behavior: 'smooth' });
+        };
+      }
+    }
+  }
+
+  window.updateNavForAuth = function() {
+    window.buildNavbar && window.buildNavbar();
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', render);
+  } else {
+    render();
+  }
+
+  window.addEventListener('langchange', render);
+})();
+</script>
+</body>
+</html>
