@@ -177,6 +177,7 @@
       }
       if (window.renderBooking) window.renderBooking();
     }
+    window.dispatchEvent(new Event('servi-auth-success'));
   }
 
   // ── Modal shell ──────────────────────────────────────────────────────────────

@@ -582,15 +582,27 @@
     };
   }
 
-  async function submitRequest(prefix) {
+  async function handleSubmit(prefix) {
     const data = validateAndCollect(prefix);
     if (!data) return;
-
+    const payload = {
+      category: catKey || 'custom',
+      description: data.description,
+      preferredDate: data.preferredDate,
+      preferredTime: data.preferredTime,
+      isAsap: whenType === 'asap',
+      serviceAddress: data.address,
+      attachments: attachments.map(a => a.url),
+      lang: lang(),
+    };
     if (!window.__user) {
-      showAuthGate(prefix, () => submitRequest(prefix));
+      showAuthGate(prefix, () => sendRequest(prefix, payload));
       return;
     }
+    sendRequest(prefix, payload);
+  }
 
+  async function sendRequest(prefix, payload) {
     const btn = document.getElementById(`svc-cta-btn-${prefix}`);
     if (btn) { btn.disabled = true; btn.textContent = sp().submitting || 'Enviando…'; }
 
@@ -605,17 +617,10 @@
           ...(token ? { 'Authorization': 'Bearer ' + token } : {}),
         },
         body: JSON.stringify({
-          category: catKey || 'custom',
-          description: data.description,
-          preferredDate: data.preferredDate,
-          preferredTime: data.preferredTime,
-          isAsap: whenType === 'asap',
-          serviceAddress: data.address,
+          ...payload,
           clientName: window.__user.name || '',
           clientPhone: window.__user.phone || '',
           clientEmail: window.__user.email || '',
-          attachments: attachments.map(a => a.url),
-          lang: lang(),
         }),
       });
       if (!res.ok) {
@@ -631,24 +636,13 @@
   }
 
   function showAuthGate(prefix, onSuccess) {
-    const sidebar = document.getElementById(`svc-sidebar-${prefix}`);
-    if (!sidebar) return;
-    sidebar.innerHTML = `
-      <div class="svc-auth-gate">
-        <p>${esc(sp().authNeeded || 'Inicia sesión para enviar tu solicitud')}</p>
-        <button class="svc-auth-btn" type="button" id="svc-auth-btn-${prefix}">${esc(sp().authBtn || 'Iniciar sesión')}</button>
-      </div>
-    `;
-    document.getElementById(`svc-auth-btn-${prefix}`).addEventListener('click', () => {
-      if (!window.openAuthModal) return;
-      const resume = () => {
-        window.removeEventListener('servi-auth-success', resume);
-        renderSidebar(prefix);
-        setTimeout(() => onSuccess(), 100);
-      };
-      window.addEventListener('servi-auth-success', resume);
-      window.openAuthModal('login');
-    });
+    if (!window.openAuthModal) return;
+    const resume = () => {
+      window.removeEventListener('servi-auth-success', resume);
+      setTimeout(() => onSuccess(), 100);
+    };
+    window.addEventListener('servi-auth-success', resume);
+    window.openAuthModal('login');
   }
 
   function showSuccess(prefix) {
@@ -730,21 +724,25 @@
     `;
   }
 
-  function renderSidebar(prefix) {
-    const container = document.getElementById(`svc-sidebar-wrap-${prefix}`);
-    if (container) container.innerHTML = buildSidebarContent(prefix);
-  }
-
   window._svcToggleWhen = function(type) {
     toggleWhen(type);
   };
 
   window._svcSubmit = function(prefix) {
-    submitRequest(prefix);
+    handleSubmit(prefix);
   };
 
   window._svcHandleFiles = function(files) {
-    Array.from(files).forEach(f => uploadFile(f));
+    const remaining = MAX_ATTACHMENTS - attachments.length;
+    if (remaining <= 0) {
+      setAttachStatus(lang() === 'es' ? 'Máximo 3 fotos.' : 'Maximum 3 photos.');
+      return;
+    }
+    const list = Array.from(files);
+    if (list.length > remaining) {
+      setAttachStatus(lang() === 'es' ? 'Máximo 3 fotos.' : 'Maximum 3 photos.');
+    }
+    list.slice(0, remaining).forEach(f => uploadFile(f));
   };
 
   window._svcOpenOtherService = function(otherService) {
@@ -847,10 +845,6 @@
       }
     }
   }
-
-  window.updateNavForAuth = function() {
-    window.buildNavbar && window.buildNavbar();
-  };
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', render);
