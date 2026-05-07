@@ -77,6 +77,13 @@
       if (!config || !config.apiKey) { console.warn('[SERVI] No Firebase config or API key found'); return false; }
       if (!firebase.apps.length) firebase.initializeApp(config);
       auth = firebase.auth();
+      if (
+        (location.hostname === 'localhost' || location.hostname === '127.0.0.1') &&
+        window.CONFIG &&
+        window.CONFIG.USE_FIREBASE_AUTH_EMULATOR !== false
+      ) {
+        auth.useEmulator('http://127.0.0.1:9099', { disableWarnings: true });
+      }
       auth.languageCode = lang();
       firebaseReady = true;
       if (localStorage.getItem('servi_pending_logout')) {
@@ -245,7 +252,9 @@
 
   // ── Monitor for email verification in other tab ─────────────────────────────────
   // When user clicks email link in a new tab, that tab verifies and broadcasts.
-  // This monitors for that broadcast and continues the flow in the original modal.
+  // The localStorage flag is a UX trigger ONLY (signals "stop polling, check now") —
+  // we never trust it as proof of verification. Final email_verified state is always
+  // confirmed server-side via GET /api/auth/me before the booking gate opens.
   window.__monitorEmailVerification = function () {
     var startTime = Date.now();
     var timeout = 10 * 60 * 1000; // 10 minutes
@@ -253,67 +262,60 @@
     var onVerificationDetected = null;
     var handled = false; // guard against double-calls across storage/poll/visibility triggers
 
-    function checkVerified() {
+    function checkVerifiedFlag() {
       return !!localStorage.getItem('servi_email_verified_at');
     }
 
-    function continueAfterVerification() {
+    // Authoritative server check — flag alone is never trusted (audit A5).
+    async function confirmEmailVerifiedWithBackend() {
+      try {
+        var sess = JSON.parse(localStorage.getItem('servi_user_session') || 'null');
+        if (!sess || !sess.token) return null;
+        var res = await fetch(API() + '/api/auth/me', {
+          headers: { 'Authorization': 'Bearer ' + sess.token }
+        });
+        if (!res.ok) return null;
+        var data = await res.json();
+        if (data && data.user && data.user.email_verified === true) {
+          return data.user;
+        }
+        return null;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    async function continueAfterVerification() {
       if (handled) return;
       handled = true;
       if (pollInterval) clearInterval(pollInterval);
       if (onVerificationDetected) window.removeEventListener('storage', onVerificationDetected);
       document.removeEventListener('visibilitychange', onVisibilityChange);
 
-      // The original tab already has the email in uslIdentifier — it was set when the user
-      // typed it and never changes. No need for Firebase cross-tab onAuthStateChanged
-      // (unreliable with Firebase v9+ IndexedDB persistence) or servi_user_session.
-      var email = null;
-      if (uslIdentifierType === 'email' && uslIdentifier) {
-        email = uslIdentifier;
-      } else if (window.__user && window.__user.email) {
-        email = window.__user.email;
-      } else {
-        try {
-          var sess = JSON.parse(localStorage.getItem('servi_user_session') || 'null');
-          if (sess && sess.user && sess.user.email) email = sess.user.email;
-        } catch (_) {}
+      // Server-authoritative confirmation. If backend hasn't yet processed the
+      // email verification (race), retry briefly before accepting/rejecting.
+      var serverUser = null;
+      for (var attempt = 0; attempt < 6; attempt++) {
+        serverUser = await confirmEmailVerifiedWithBackend();
+        if (serverUser) break;
+        await new Promise(function (r) { setTimeout(r, 500); });
       }
 
-      if (email) {
-        uslNewUserData.email = email;
-        uslNewUserData.email_verified = true;
-        if (uslIsNew && uslFirstIdentifierType === 'email') {
-          renderNameCollectionScreen();
-        } else {
-          onAuthSuccess();
-        }
+      if (!serverUser) {
+        // Backend has not confirmed verification — re-arm monitor instead of trusting the flag
+        handled = false;
         return;
       }
 
-      // Fallback poll — only reached if email somehow not in scope (edge case)
-      var checkCount = 0;
-      var stateCheckInterval = setInterval(function () {
-        checkCount++;
-        if (checkCount > 150) { clearInterval(stateCheckInterval); return; } // 15 seconds max
-
-        var e = window.__user && window.__user.email;
-        if (!e) {
-          try {
-            var s = JSON.parse(localStorage.getItem('servi_user_session') || 'null');
-            if (s && s.user && s.user.email) { e = s.user.email; if (!window.__user) window.__user = s.user; }
-          } catch (_) {}
-        }
-        if (e) {
-          clearInterval(stateCheckInterval);
-          uslNewUserData.email = e;
-          uslNewUserData.email_verified = true;
-          if (uslIsNew && uslFirstIdentifierType === 'email') {
-            renderNameCollectionScreen();
-          } else {
-            onAuthSuccess();
-          }
-        }
-      }, 100);
+      var email = serverUser.email;
+      if (!window.__user) window.__user = serverUser;
+      uslNewUserData.email = email;
+      uslNewUserData.email_verified = true;
+      if (uslIsNew && uslFirstIdentifierType === 'email') {
+        renderNameCollectionScreen();
+      } else {
+        onAuthSuccess();
+      }
     }
 
     // Listen for storage events (from other tabs setting servi_email_verified_at)
@@ -327,17 +329,18 @@
     // Listen for page visibility changes (user returns to this tab after closing email-verified tab)
     function onVisibilityChange() {
       if (document.hidden) return;
-      if (checkVerified()) continueAfterVerification();
+      if (checkVerifiedFlag()) continueAfterVerification();
     }
     document.addEventListener('visibilitychange', onVisibilityChange);
 
-    // Polling fallback (in case storage event doesn't fire in some browsers)
+    // Polling fallback (in case storage event doesn't fire in some browsers).
+    // The flag merely triggers a server confirmation — it is not itself proof.
     pollInterval = setInterval(function () {
       if (Date.now() - startTime > timeout) {
         clearInterval(pollInterval);
         return;
       }
-      if (checkVerified()) continueAfterVerification();
+      if (checkVerifiedFlag()) continueAfterVerification();
     }, 500);
 
     // Cleanup on modal close
@@ -346,7 +349,43 @@
       if (pollInterval) clearInterval(pollInterval);
       if (onVerificationDetected) window.removeEventListener('storage', onVerificationDetected);
       document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.__uslManualEmailContinue = null;
       if (originalCloseAuthModal) originalCloseAuthModal();
+    };
+
+    // Manual escape hatch: user taps "Ya verifiqué" — bypasses storage event
+    // (needed when link opens on another device or in a webview that doesn't
+    // share localStorage with the original tab).
+    window.__uslManualEmailContinue = function () {
+      var btn = document.getElementById('manual-email-continue-btn');
+      var hint = document.getElementById('manual-email-hint');
+      if (auth && auth.currentUser && auth.currentUser.email) {
+        if (checkVerifiedFlag()) { continueAfterVerification(); return; }
+        try { localStorage.setItem('servi_email_verified_at', Date.now().toString()); } catch (_) {}
+        continueAfterVerification();
+        return;
+      }
+      if (btn) { btn.disabled = true; btn.textContent = '...'; }
+      var waited = 0;
+      var waitForAuth = setInterval(function () {
+        waited += 500;
+        if (auth && auth.currentUser && auth.currentUser.email) {
+          clearInterval(waitForAuth);
+          try { localStorage.setItem('servi_email_verified_at', Date.now().toString()); } catch (_) {}
+          continueAfterVerification();
+          return;
+        }
+        if (waited >= 4000) {
+          clearInterval(waitForAuth);
+          if (btn) { btn.disabled = false; btn.textContent = isEs() ? 'Ya verifiqué mi correo' : 'I verified my email'; }
+          if (hint) {
+            hint.textContent = isEs()
+              ? 'Aún no detectamos la verificación. Abre el enlace en este mismo navegador o vuelve a esta pestaña después de hacer clic.'
+              : "We haven't detected the verification yet. Open the link in this browser or return to this tab after clicking it.";
+            hint.style.display = 'block';
+          }
+        }
+      }, 500);
     };
   };
 
@@ -540,11 +579,16 @@
           '<div style="text-align:center;padding:16px 0">' +
             '<div style="font-size:40px;margin-bottom:12px">📧</div>' +
             '<p style="font-size:15px;font-weight:600;margin-bottom:8px">' + (isEs() ? '¡Enlace enviado!' : 'Link sent!') + '</p>' +
-            '<p style="font-size:14px;color:#666;line-height:1.6">' +
+            '<p style="font-size:14px;color:#666;line-height:1.6;margin-bottom:20px">' +
               (isEs()
                 ? 'Revisa <strong>' + uslIdentifier + '</strong> y haz clic en el enlace para continuar.'
                 : 'Check <strong>' + uslIdentifier + '</strong> and click the link to continue.') +
             '</p>' +
+            '<button id="manual-email-continue-btn" onclick="window.__uslManualEmailContinue && window.__uslManualEmailContinue()" ' +
+              'style="background:#0a0a0a;color:#fff;border:none;border-radius:10px;padding:12px 20px;font-size:14px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif;width:100%">' +
+              (isEs() ? 'Ya verifiqué mi correo' : 'I verified my email') +
+            '</button>' +
+            '<p id="manual-email-hint" style="display:none;font-size:12px;color:#888;line-height:1.5;margin-top:12px"></p>' +
           '</div>'
         );
         // Monitor for email verification completion in other tab
@@ -1178,8 +1222,36 @@
     localStorage.removeItem('servi_email_verification_mode');
 
     try {
-      // If already signed in with phone, link email rather than sign in fresh
-      if (auth.currentUser && auth.currentUser.phoneNumber) {
+      // Give Firebase persistence a moment to restore the existing user before
+      // deciding whether to link the email credential or sign in fresh.
+      if (!auth.currentUser) {
+        await new Promise(function (resolve) {
+          var done = false;
+          var finish = function () {
+            if (done) return;
+            done = true;
+            try { unsubscribe && unsubscribe(); } catch (_) {}
+            resolve();
+          };
+          var unsubscribe = auth.onAuthStateChanged(function () { finish(); });
+          setTimeout(finish, 1500);
+        });
+      }
+      // Account email changes verify a new address for the existing SERVI
+      // session. Keep the Firebase user aligned before sending the proof token
+      // to the backend; otherwise a stale Firebase email can never verify the
+      // newly saved DB email.
+      if (isEmailVerification && auth.currentUser) {
+        if ((auth.currentUser.email || '').toLowerCase() !== String(email || '').toLowerCase()) {
+          if (auth.currentUser.email) {
+            await auth.currentUser.updateEmail(email);
+          } else {
+            var accountCredential = firebase.auth.EmailAuthProvider.credentialWithLink(email, window.location.href);
+            await auth.currentUser.linkWithCredential(accountCredential);
+          }
+        }
+      } else if (auth.currentUser && auth.currentUser.phoneNumber) {
+        // If already signed in with phone, link email rather than sign in fresh
         var credential = firebase.auth.EmailAuthProvider.credentialWithLink(email, window.location.href);
         await auth.currentUser.linkWithCredential(credential);
       } else {
@@ -1192,7 +1264,20 @@
       window.history.replaceState({}, document.title, window.location.pathname);
 
       if (isEmailVerification) {
-        // Email verification from account page: just update the session and return to account page
+        // Email verification from account page: prove the verified Firebase
+        // email to the backend, then update the session and return.
+        var verifyToken = getSessionToken();
+        if (verifyToken && auth.currentUser) {
+          var verifyFbToken = await auth.currentUser.getIdToken(true);
+          var verifyRes = await fetch(API() + '/api/auth/add-email', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + verifyToken },
+            body: JSON.stringify({ email: email, firebase_id_token: verifyFbToken })
+          });
+          if (!verifyRes.ok) {
+            console.warn('[SERVI] Account email verification backend sync failed:', verifyRes.status);
+          }
+        }
         if (window.__syncPromise) { try { await window.__syncPromise; } catch (_) {} }
         if (window.__user) window.__user.email_verified = true;
         var raw = localStorage.getItem('servi_user_session');
@@ -1332,10 +1417,37 @@
   }
 
   // ── Logout ────────────────────────────────────────────────────────────────────
+  // Revoke server-side, sign out of Firebase, and clear all auth-related localStorage.
+  // The backend revoke is best-effort and runs in parallel with the redirect — even if
+  // the network call fails, the local session is still cleared.
   window.logoutUser = async function () {
+    var sess = null;
+    try { sess = JSON.parse(localStorage.getItem('servi_user_session') || 'null'); } catch (_) {}
+
+    // Fire-and-forget server revocation (don't block UX on it)
+    if (sess && sess.token) {
+      try {
+        fetch(API() + '/api/auth/logout', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + sess.token },
+          keepalive: true
+        }).catch(function () {});
+      } catch (_) {}
+    }
+
     window.__user = null;
     window.__syncPromise = null;
-    localStorage.removeItem('servi_user_session');
+    // Clear every auth-related localStorage key (audit A11 — prevent stale flags)
+    try {
+      localStorage.removeItem('servi_user_session');
+      localStorage.removeItem('servi_email_verified_at');
+      localStorage.removeItem('servi_email_link_target');
+      localStorage.removeItem('servi_usl_state');
+      localStorage.removeItem('servi_recovery_mode');
+      localStorage.removeItem('servi_phone_skipped');
+      localStorage.removeItem('servi_email_skipped');
+    } catch (_) {}
+
     if (auth) {
       try { await auth.signOut(); } catch (e) {}
     } else {

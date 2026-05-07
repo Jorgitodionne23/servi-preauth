@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SERVI · Auth Flows</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: 'Inter', sans-serif;
+    background: #0d0d0d;
+    color: #eee;
+    line-height: 1.55;
+    min-height: 100vh;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 48px 32px 80px; }
+  header { border-bottom: 1px solid #222; padding-bottom: 24px; margin-bottom: 32px; }
+  h1 { font-size: 28px; margin: 0 0 8px; font-weight: 700; letter-spacing: -0.01em; }
+  h1 .accent { color: #10b981; }
+  h2 { font-size: 20px; margin: 48px 0 16px; padding-bottom: 8px; border-bottom: 1px solid #222; font-weight: 600; }
+  h3 { font-size: 15px; margin: 28px 0 12px; color: #ccc; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+  p, li { color: #bbb; font-size: 14px; }
+  a { color: #10b981; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code, .mono { font-family: 'JetBrains Mono', monospace; font-size: 12.5px; }
+  code { background: #1a1a1a; padding: 2px 6px; border-radius: 4px; color: #e8e8e8; }
+  .muted { color: #888; font-size: 13px; }
+  .meta { color: #666; font-size: 12.5px; margin-top: 4px; }
+
+  /* TOC */
+  .toc {
+    background: #141414;
+    border: 1px solid #222;
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 32px;
+  }
+  .toc h3 { margin-top: 0; color: #aaa; font-size: 11px; }
+  .toc ol { margin: 0; padding-left: 20px; }
+  .toc li { margin: 4px 0; font-size: 13.5px; }
+
+  /* Diagram cards */
+  .diagram {
+    background: #141414;
+    border: 1px solid #222;
+    border-radius: 12px;
+    padding: 20px;
+    margin: 16px 0 24px;
+    overflow-x: auto;
+  }
+  .diagram .mermaid { background: transparent !important; }
+
+  /* Tables */
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #222; vertical-align: top; }
+  th { background: #161616; color: #ccc; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+  td.mono { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #ddd; }
+  tr:hover td { background: #161616; }
+
+  /* Severity dots / chips */
+  .chip {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 10.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-right: 4px;
+  }
+  .chip-crit { background: #3a0d0d; color: #ff6868; border: 1px solid #5a1414; }
+  .chip-high { background: #3a1f0d; color: #ff9d4a; border: 1px solid #5a3614; }
+  .chip-mod  { background: #2a2410; color: #f5d76e; border: 1px solid #44391c; }
+  .chip-low  { background: #142a2a; color: #6ec5d6; border: 1px solid #1e4147; }
+  .audit-flag {
+    display: inline-block;
+    background: #2a0e0e;
+    color: #ff8a8a;
+    border: 1px solid #4a1818;
+    padding: 1px 7px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-family: 'JetBrains Mono', monospace;
+    margin-left: 4px;
+    vertical-align: middle;
+  }
+  .audit-flag:hover { background: #3a1818; text-decoration: none; }
+
+  .legend {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 12px 0 24px;
+    font-size: 12px;
+    color: #888;
+  }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+
+  .callout {
+    background: #0f1a16;
+    border-left: 3px solid #10b981;
+    padding: 12px 16px;
+    border-radius: 6px;
+    margin: 16px 0;
+    font-size: 13px;
+    color: #cde7dd;
+  }
+  .callout-warn {
+    background: #1a0f0f;
+    border-left-color: #ff6868;
+    color: #f5d2d2;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>SERVI<span class="accent">.</span> Auth Flows</h1>
+    <p class="meta">Visual reference for Firebase Auth + custom JWT session layer · companion to <a href="./AUTH_AUDIT.md">AUTH_AUDIT.md</a></p>
+  </header>
+
+  <div class="toc">
+    <h3>Contents</h3>
+    <ol>
+      <li><a href="#arch">Architecture overview</a></li>
+      <li><a href="#flows">Sequence diagrams</a> — Phone OTP · Email magic-link · Google · Session establishment · Booking gate · Profile edit · Account deletion · Logout</li>
+      <li><a href="#state">State machine</a></li>
+      <li><a href="#tokens">Token lifecycle</a></li>
+      <li><a href="#endpoints">Endpoint matrix</a></li>
+    </ol>
+  </div>
+
+  <div class="legend">
+    <span><span class="chip chip-crit">CRIT</span></span>
+    <span><span class="chip chip-high">HIGH</span></span>
+    <span><span class="chip chip-mod">MOD</span></span>
+    <span><span class="chip chip-low">LOW</span></span>
+    <span class="audit-flag">A1</span><span style="color:#666">→ click to jump to finding</span>
+  </div>
+
+  <!-- ============== ARCHITECTURE ============== -->
+  <h2 id="arch">1. Architecture overview</h2>
+  <p>Three trust zones: the browser (untrusted), Firebase (Google-managed identity provider), and the SERVI backend on Render (authoritative for app data). Postgres on Neon stores user records and addresses. The browser holds two distinct tokens at once.</p>
+
+  <div class="diagram">
+  <pre class="mermaid">
+flowchart LR
+  classDef browser fill:#1a1a2e,stroke:#3a3a5a,color:#eee
+  classDef firebase fill:#1f1a0d,stroke:#5a4a1c,color:#eee
+  classDef backend fill:#0f1a16,stroke:#10b981,color:#eee
+  classDef db fill:#1a0f1a,stroke:#5a1c5a,color:#eee
+
+  subgraph BR["Browser"]
+    UI["Auth Modal<br/>shared-auth.js"]
+    LS["localStorage<br/>servi_user_session<br/>(JWT + user)"]
+    UI --- LS
+  end
+
+  subgraph FB["Firebase"]
+    FBA["Firebase Auth<br/>Phone · Email · Google"]
+    FBT["ID Token (1h)<br/>+ Refresh Token"]
+    FBA --- FBT
+  end
+
+  subgraph BE["Backend (Render)"]
+    AUTH["/api/auth/firebase<br/>verifyIdToken"]
+    JWT["signSessionToken<br/>HS256 · 7d TTL"]
+    GUARD["Booking gate<br/>email_verified ∧ phone_verified"]
+    AUTH --> JWT
+    AUTH --> GUARD
+  end
+
+  subgraph DB["Postgres (Neon)"]
+    USERS["auth_users<br/>firebase_uid · email · phone<br/>email_verified · phone_verified"]
+    ADDR["user_addresses"]
+  end
+
+  UI -->|"signIn (popup/SMS/link)"| FBA
+  FBA -->|"ID Token"| UI
+  UI -->|"POST ID Token"| AUTH
+  AUTH -->|"verify"| FBA
+  AUTH -->|"upsert"| USERS
+  JWT -->|"servi_user_session"| LS
+  LS -->|"Authorization: Bearer"| GUARD
+  GUARD --> USERS
+  GUARD --> ADDR
+
+  class BR browser
+  class FB firebase
+  class BE backend
+  class DB db
+  </pre>
+  </div>
+
+  <!-- ============== SEQUENCE DIAGRAMS ============== -->
+  <h2 id="flows">2. Sequence diagrams</h2>
+
+  <h3>2.1 · Phone OTP signup / login</h3>
+  <p class="muted">Includes invisible reCAPTCHA + cross-identifier recovery (orphan phone-only accounts get merged when an email is later added).</p>
+  <div class="diagram">
+  <pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor U as User
+  participant FE as Browser<br/>(shared-auth.js)
+  participant RC as reCAPTCHA
+  participant FB as Firebase Auth
+  participant BE as Backend<br/>(/api/auth/firebase)
+  participant PG as Postgres
+
+  U->>FE: Enter phone
+  FE->>RC: render invisible widget
+  RC-->>FE: token
+  FE->>FB: signInWithPhoneNumber(phone, recaptcha)
+  FB-->>U: SMS code
+  U->>FE: Enter 6-digit code
+  FE->>FB: confirmationResult.confirm(code)
+  FB-->>FE: User + ID token (1h)
+  FE->>BE: POST {firebase_id_token, phone}
+  BE->>FB: verifyIdToken(token, checkRevoked=true)
+  FB-->>BE: decoded {uid, phone_number, ...}
+  BE->>PG: SELECT auth_users WHERE firebase_uid OR phone
+  alt Existing orphan phone account
+    BE->>PG: UPDATE merge identifiers
+  else New user
+    BE->>PG: INSERT phone_verified=true
+  end
+  BE-->>FE: {token: SERVI JWT, user}
+  FE->>FE: localStorage.setItem('servi_user_session', ...)
+  Note over FE: Subsequent calls send<br/>Authorization: Bearer JWT
+  </pre>
+  </div>
+
+  <h3>2.2 · Email magic-link signup / login</h3>
+  <p class="muted">Two-tab flow: original tab triggers email; click in inbox opens a second tab; verification handoff currently uses <code>localStorage.servi_email_verified_at</code> <a class="audit-flag" href="./AUTH_AUDIT.md#a5-email-verification-trusted-from-another-tab-via-localstorage">A5</a>.</p>
+  <div class="diagram">
+  <pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor U as User
+  participant T1 as Tab 1<br/>(auth modal)
+  participant FB as Firebase Auth
+  participant ML as Email
+  participant T2 as Tab 2<br/>(email-verified.html)
+  participant BE as Backend
+
+  U->>T1: Enter email
+  T1->>T1: localStorage.setItem('servi_usl_state', {...})
+  T1->>FB: sendSignInLinkToEmail(email)
+  FB-->>ML: link with continueUrl
+  Note over T1: Tab 1 polls<br/>for storage event
+  U->>ML: Click link
+  ML->>T2: opens /email-verified.html
+  T2->>FB: signInWithEmailLink(email, url)
+  FB-->>T2: User + ID token
+  T2->>BE: POST /api/auth/firebase
+  BE-->>T2: SERVI JWT
+  T2->>T2: localStorage.setItem('servi_email_verified_at', now)
+  T1->>T1: storage event → restore USL state
+  T1->>BE: GET /api/auth/me (with JWT)
+  BE-->>T1: {email_verified: true, ...}
+  </pre>
+  </div>
+  <div class="callout callout-warn">
+    <strong>Audit flag (A5):</strong> Tab 1 currently treats the presence of <code>servi_email_verified_at</code> as proof. The fix is to defer trust to the backend: always confirm via <code>GET /api/auth/me</code> before unlocking gated actions.
+  </div>
+
+  <h3>2.3 · Google OAuth (popup)</h3>
+  <div class="diagram">
+  <pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor U as User
+  participant FE as Browser
+  participant G as Google OAuth
+  participant FB as Firebase Auth
+  participant BE as Backend
+
+  U->>FE: Click "Continue with Google"
+  FE->>FB: signInWithPopup(GoogleAuthProvider)
+  FB->>G: OAuth popup
+  U->>G: Approve
+  G-->>FB: ID token + profile
+  FB-->>FE: User (email_verified=true) + ID token
+  FE->>BE: POST /api/auth/firebase
+  BE->>FB: verifyIdToken
+  BE-->>FE: SERVI JWT
+  </pre>
+  </div>
+
+  <h3>2.4 · Session establishment (<code>POST /api/auth/firebase</code>)</h3>
+  <p class="muted">Common terminator for all three signup paths above. Issues the SERVI custom JWT.</p>
+  <div class="diagram">
+  <pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant FE as Browser
+  participant BE as Backend
+  participant FB as Firebase Admin
+  participant PG as Postgres
+
+  FE->>BE: POST {firebase_id_token, name?, email?, phone?}
+  BE->>BE: rate-limit (publicFormLimit · 5/min/IP)
+  BE->>FB: verifyIdToken(idToken, checkRevoked=true)
+  FB-->>BE: {uid, email_verified, phone_number, sign_in_provider}
+  BE->>PG: lookup by firebase_uid → email → phone
+  alt Found existing
+    BE->>PG: UPDATE auth_users SET ...
+  else Cross-identifier orphan
+    BE->>PG: MERGE phone-only into firebase_uid
+  else New
+    BE->>PG: INSERT auth_users
+  end
+  BE->>BE: signSessionToken({user_id, email, phone, ...})
+  BE-->>FE: 200 {token, user}
+  Note right of BE: JWT TTL = 7 days<br/>HMAC-SHA256<br/>Secret: JWT_SECRET<br/>(falls back to STRIPE_WEBHOOK_SECRET) <a href="./AUTH_AUDIT.md#a1">A1</a>
+  </pre>
+  </div>
+  <div class="callout callout-warn">
+    <strong>Audit flags on this flow:</strong>
+    <a class="audit-flag" href="./AUTH_AUDIT.md#a1-jwt-secret-falls-back-to-stripe-webhook-secret-then-to-a-hardcoded-string">A1</a>
+    <a class="audit-flag" href="./AUTH_AUDIT.md#a2-custom-jwts-stored-in-localstorage-readable-by-any-xss">A2</a>
+    <a class="audit-flag" href="./AUTH_AUDIT.md#a6-jwt-ttl-is-7-days-no-refresh-no-server-side-revocation">A6</a>
+    <a class="audit-flag" href="./AUTH_AUDIT.md#a10-firebase-token-revocation-depends-on-service-account-credentials">A10</a>
+  </div>
+
+  <h3>2.5 · Booking gate</h3>
+  <p class="muted">Step 3 of the service-request flow requires both <code>email_verified=true</code> AND <code>phone_verified=true</code>.</p>
+  <div class="diagram">
+  <pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant FE as Browser<br/>(service.html)
+  participant BE as Backend
+  participant PG as Postgres
+
+  FE->>BE: POST /api/service-requests<br/>Authorization: Bearer JWT
+  BE->>BE: verifySessionToken(JWT)
+  BE->>PG: SELECT email_verified, phone_verified
+  alt Both true
+    BE->>PG: INSERT service_requests
+    BE-->>FE: 200 {request_id}
+  else Either false
+    BE-->>FE: 403 {needs: ['email','phone']}
+    FE->>FE: Show verification modal
+  end
+  </pre>
+  </div>
+
+  <h3>2.6 · Profile edit (<code>PATCH /api/auth/me</code>)</h3>
+  <p class="muted">Currently runs <code>requireRecentAuth</code> (Firebase token ≤ 5min old) before applying changes. <strong>Phone change does NOT reset <code>phone_verified</code></strong> <a class="audit-flag" href="./AUTH_AUDIT.md#a4-phone-re-verification-bypass-on-profile-edit">A4</a>.</p>
+  <div class="diagram">
+  <pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant FE as Browser<br/>(account.html)
+  participant BE as Backend
+  participant FB as Firebase Admin
+  participant PG as Postgres
+
+  FE->>BE: PATCH /api/auth/me<br/>{name, email?, phone?}<br/>X-Firebase-Token (fresh)
+  BE->>BE: verifySessionToken(JWT)
+  BE->>FB: verifyIdToken(firebaseToken, checkRevoked=true)
+  FB-->>BE: decoded {auth_time}
+  BE->>BE: requireRecentAuth (auth_time within 300s) <a href="./AUTH_AUDIT.md#a7">A7</a>
+  alt email changed
+    BE->>PG: check uniqueness
+    BE->>PG: UPDATE auth_users (email_verified left as-is)
+  end
+  alt phone changed
+    Note over BE,PG: ⚠ phone_verified NOT reset (A4)
+    BE->>PG: UPDATE auth_users SET phone=$new
+  end
+  BE-->>FE: 200 {user}
+  </pre>
+  </div>
+
+  <h3>2.7 · Account deletion (<code>DELETE /api/auth/me</code>)</h3>
+  <p class="muted">Deliberately frictionless per product decision — JWT is sufficient, no re-auth or OTP. Risk acknowledged in audit.</p>
+  <div class="diagram">
+  <pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant FE as Browser
+  participant BE as Backend
+  participant FB as Firebase Admin
+  participant PG as Postgres
+
+  FE->>FE: Confirm dialog
+  FE->>BE: DELETE /api/auth/me<br/>Authorization: Bearer JWT
+  BE->>BE: verifySessionToken(JWT)
+  BE->>PG: BEGIN; DELETE user_addresses; DELETE auth_users; COMMIT
+  BE->>FB: deleteUser(firebase_uid)
+  BE-->>FE: 204
+  FE->>FE: localStorage.clear() · Firebase.signOut() · redirect /
+  </pre>
+  </div>
+
+  <h3>2.8 · Logout</h3>
+  <div class="diagram">
+  <pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant FE as Browser
+  participant FB as Firebase Auth (client)
+  Note right of FE: ⚠ Server-side JWT NOT revoked <a href="./AUTH_AUDIT.md#a6">A6</a>
+  FE->>FE: localStorage.setItem('servi_pending_logout', '1')
+  FE->>FB: signOut()
+  FB-->>FE: ok
+  FE->>FE: localStorage.removeItem('servi_user_session')
+  FE->>FE: dispatch 'auth-logout' event
+  FE->>FE: redirect /
+  </pre>
+  </div>
+
+  <!-- ============== STATE MACHINE ============== -->
+  <h2 id="state">3. State machine</h2>
+  <p>Auth state per user. Booking gate requires reaching <code>FullyVerified</code>. Supersedes the prose in <a href="./AUTH_STATE_MACHINE.md">AUTH_STATE_MACHINE.md</a>.</p>
+  <div class="diagram">
+  <pre class="mermaid">
+stateDiagram-v2
+  [*] --> Anonymous
+  Anonymous --> Unverified : signup w/ Firebase<br/>(any provider)
+  Unverified --> EmailOnlyVerified : email link clicked
+  Unverified --> PhoneOnlyVerified : OTP confirmed
+  Unverified --> FullyVerified : Google OAuth<br/>(email already verified) +<br/>phone OTP
+  EmailOnlyVerified --> FullyVerified : phone OTP
+  PhoneOnlyVerified --> FullyVerified : email link
+  FullyVerified --> CanBook : booking gate passes
+  CanBook --> FullyVerified : (logout or token expiry)
+  FullyVerified --> Deleted : DELETE /api/auth/me
+  PhoneOnlyVerified --> Deleted
+  EmailOnlyVerified --> Deleted
+  Unverified --> Deleted
+  Deleted --> [*]
+
+  note right of CanBook
+    email_verified=true
+    AND phone_verified=true
+  end note
+
+  note left of Unverified
+    Phone change in PATCH does
+    NOT demote PhoneVerified→Unverified (A4)
+  end note
+  </pre>
+  </div>
+
+  <!-- ============== TOKEN LIFECYCLE ============== -->
+  <h2 id="tokens">4. Token lifecycle</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Token</th>
+        <th>Issuer</th>
+        <th>Storage</th>
+        <th>TTL</th>
+        <th>Refresh</th>
+        <th>Revocation</th>
+        <th>Audit</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Firebase ID token</strong></td>
+        <td>Firebase Auth</td>
+        <td>IndexedDB (Firebase SDK)</td>
+        <td class="mono">1h</td>
+        <td>Auto via Firebase refresh token</td>
+        <td>Server check: <code>verifyIdToken(token, true)</code></td>
+        <td><a class="audit-flag" href="./AUTH_AUDIT.md#a10-firebase-token-revocation-depends-on-service-account-credentials">A10</a></td>
+      </tr>
+      <tr>
+        <td><strong>SERVI custom JWT</strong></td>
+        <td>Backend (HS256)</td>
+        <td><code>localStorage.servi_user_session</code></td>
+        <td class="mono">7 days</td>
+        <td>None (re-auth required)</td>
+        <td>None (no server-side revocation list)</td>
+        <td>
+          <a class="audit-flag" href="./AUTH_AUDIT.md#a1-jwt-secret-falls-back-to-stripe-webhook-secret-then-to-a-hardcoded-string">A1</a>
+          <a class="audit-flag" href="./AUTH_AUDIT.md#a2-custom-jwts-stored-in-localstorage-readable-by-any-xss">A2</a>
+          <a class="audit-flag" href="./AUTH_AUDIT.md#a6-jwt-ttl-is-7-days-no-refresh-no-server-side-revocation">A6</a>
+        </td>
+      </tr>
+      <tr>
+        <td><strong>reCAPTCHA token</strong></td>
+        <td>Google</td>
+        <td>In-memory (Firebase SDK)</td>
+        <td class="mono">~2min</td>
+        <td>One-shot per OTP request</td>
+        <td>n/a (single use)</td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td><strong>Email-link continuation</strong></td>
+        <td>Firebase Auth</td>
+        <td>URL fragment + <code>localStorage.servi_usl_state</code></td>
+        <td class="mono">1h (link expiry)</td>
+        <td>—</td>
+        <td>One-shot consumption</td>
+        <td><a class="audit-flag" href="./AUTH_AUDIT.md#a5-email-verification-trusted-from-another-tab-via-localstorage">A5</a></td>
+      </tr>
+      <tr>
+        <td><em>Session cookie (planned, not deployed)</em></td>
+        <td>Firebase Admin</td>
+        <td><code>httpOnly · Secure · SameSite=Lax</code> cookie</td>
+        <td class="mono">5d (configurable)</td>
+        <td>Re-issue on activity</td>
+        <td><code>verifySessionCookie(c, true)</code></td>
+        <td><a class="audit-flag" href="./AUTH_AUDIT.md#a2-custom-jwts-stored-in-localstorage-readable-by-any-xss">A2</a> <a class="audit-flag" href="./AUTH_AUDIT.md#a3-no-csrf-protection-on-state-changing-endpoints">A3</a></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- ============== ENDPOINT MATRIX ============== -->
+  <h2 id="endpoints">5. Endpoint matrix</h2>
+  <p>Every <code>/api/auth/*</code> route, per [backend/index.mjs:4508-5280]. <span class="muted">Rate-limit: <code>publicFormLimit</code> = 5/min/IP unless noted.</span></p>
+  <table>
+    <thead>
+      <tr>
+        <th>Method</th>
+        <th>Path</th>
+        <th>Auth</th>
+        <th>Recent-auth</th>
+        <th>Rate limit</th>
+        <th>CSRF (planned)</th>
+        <th>Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td class="mono">POST</td><td class="mono">/api/auth/signup</td><td>none</td><td>—</td><td>publicFormLimit</td><td>n/a</td><td>Legacy stub</td></tr>
+      <tr><td class="mono">POST</td><td class="mono">/api/auth/login</td><td>none</td><td>—</td><td>publicFormLimit</td><td>n/a</td><td>Legacy stub</td></tr>
+      <tr><td class="mono">GET</td><td class="mono">/api/auth/me</td><td>JWT</td><td>—</td><td>—</td><td>n/a</td><td>Authoritative source for verification flags</td></tr>
+      <tr><td class="mono">POST</td><td class="mono">/api/auth/check-identifier</td><td>none</td><td>—</td><td>publicFormLimit</td><td>n/a</td><td><a class="audit-flag" href="./AUTH_AUDIT.md#a8-account--identifier-enumeration">A8</a></td></tr>
+      <tr><td class="mono">POST</td><td class="mono">/api/auth/firebase</td><td>Firebase ID</td><td>—</td><td>publicFormLimit</td><td>required</td><td>Issues SERVI JWT</td></tr>
+      <tr><td class="mono">POST</td><td class="mono">/api/auth/add-email</td><td>Firebase ID</td><td>—</td><td>publicFormLimit</td><td>required</td><td>Cross-identifier merge</td></tr>
+      <tr><td class="mono">POST</td><td class="mono">/api/auth/add-phone</td><td>Firebase ID</td><td>—</td><td>publicFormLimit</td><td>required</td><td>Cross-identifier merge</td></tr>
+      <tr><td class="mono">POST</td><td class="mono">/api/auth/resolve-identifier-mismatch</td><td>Firebase ID</td><td>—</td><td>publicFormLimit</td><td>required</td><td><a class="audit-flag" href="./AUTH_AUDIT.md#a8-account--identifier-enumeration">A8</a></td></tr>
+      <tr><td class="mono">POST</td><td class="mono">/api/auth/send-email-verification</td><td>JWT</td><td>—</td><td>publicFormLimit</td><td>required</td><td><a class="audit-flag" href="./AUTH_AUDIT.md#a9-sms-bombing-risk--no-per-identifier-rate-limit">A9</a></td></tr>
+      <tr><td class="mono">PATCH</td><td class="mono">/api/auth/me</td><td>JWT</td><td>≤5min</td><td>publicFormLimit</td><td>required</td><td><a class="audit-flag" href="./AUTH_AUDIT.md#a4-phone-re-verification-bypass-on-profile-edit">A4</a> <a class="audit-flag" href="./AUTH_AUDIT.md#a7-requirerecentauth-accepts-5-minute-old-firebase-tokens">A7</a></td></tr>
+      <tr><td class="mono">POST</td><td class="mono">/api/auth/change-password</td><td>JWT</td><td>≤5min</td><td>publicFormLimit</td><td>required</td><td>Stub (Firebase handles password)</td></tr>
+      <tr><td class="mono">DELETE</td><td class="mono">/api/auth/me</td><td>JWT</td><td>—</td><td>publicFormLimit</td><td>required</td><td><strong>No re-auth (intentional, out of scope)</strong></td></tr>
+      <tr><td class="mono">POST</td><td class="mono">/api/auth/refresh</td><td>JWT</td><td>—</td><td>publicFormLimit</td><td>required</td><td>Re-issues SERVI JWT</td></tr>
+      <tr><td class="mono">GET</td><td class="mono">/api/auth/addresses</td><td>JWT</td><td>—</td><td>—</td><td>n/a</td><td>—</td></tr>
+      <tr><td class="mono">POST</td><td class="mono">/api/auth/addresses</td><td>JWT</td><td>—</td><td>publicFormLimit</td><td>required</td><td>—</td></tr>
+      <tr><td class="mono">PATCH</td><td class="mono">/api/auth/addresses/:id</td><td>JWT</td><td>—</td><td>publicFormLimit</td><td>required</td><td>—</td></tr>
+      <tr><td class="mono">DELETE</td><td class="mono">/api/auth/addresses/:id</td><td>JWT</td><td>—</td><td>—</td><td>n/a</td><td>—</td></tr>
+      <tr><td class="mono">PATCH</td><td class="mono">/api/auth/addresses/:id/default</td><td>JWT</td><td>—</td><td>publicFormLimit</td><td>required</td><td>—</td></tr>
+      <tr><td class="mono">GET</td><td class="mono">/api/auth/payment-methods</td><td>JWT</td><td>—</td><td>publicFormLimit</td><td>n/a</td><td>—</td></tr>
+      <tr><td class="mono">POST</td><td class="mono">/api/auth/payment-methods/setup</td><td>JWT</td><td>—</td><td>publicFormLimit</td><td>required</td><td>Stripe SetupIntent</td></tr>
+      <tr><td class="mono">DELETE</td><td class="mono">/api/auth/payment-methods/:pmId</td><td>JWT</td><td>—</td><td>publicFormLimit</td><td>required</td><td>—</td></tr>
+      <tr><td class="mono">PATCH</td><td class="mono">/api/auth/payment-methods/:pmId/default</td><td>JWT</td><td>—</td><td>publicFormLimit</td><td>required</td><td>—</td></tr>
+    </tbody>
+  </table>
+
+  <p class="muted" style="margin-top:32px; padding-top:16px; border-top:1px solid #222;">
+    Generated 2026-05-07 · Source: <a href="./AUTH_AUDIT.md">AUTH_AUDIT.md</a> · Diagrams rendered with Mermaid v10
+  </p>
+
+</div>
+
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'dark',
+    themeVariables: {
+      darkMode: true,
+      background: '#141414',
+      primaryColor: '#1f2937',
+      primaryTextColor: '#eee',
+      primaryBorderColor: '#10b981',
+      lineColor: '#666',
+      secondaryColor: '#1f2937',
+      tertiaryColor: '#0d0d0d',
+      noteBkgColor: '#1f1a0d',
+      noteBorderColor: '#5a4a1c',
+      noteTextColor: '#f5d76e',
+      actorBkg: '#1a1a2e',
+      actorBorder: '#3a3a5a',
+      actorTextColor: '#eee',
+      signalColor: '#10b981',
+      signalTextColor: '#eee'
+    },
+    flowchart: { curve: 'basis', padding: 20 },
+    sequence: { mirrorActors: false, bottomMarginAdj: 12 }
+  });
+</script>
+</body>
+</html>

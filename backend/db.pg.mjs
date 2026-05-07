@@ -402,6 +402,64 @@ export async function initDb() {
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
 
+    -- Stripe webhook event ledger: dedupes retried deliveries by event.id.
+    -- A row inserted here means "we have started processing this event"; processed_at
+    -- is set when the handler finishes successfully. On hard error mid-handler the row
+    -- is deleted so Stripe's retry can replay safely.
+    CREATE TABLE IF NOT EXISTS stripe_webhook_events (
+      event_id          TEXT PRIMARY KEY,
+      event_type        TEXT NOT NULL,
+      payment_intent_id TEXT,
+      received_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      processed_at      TIMESTAMPTZ
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_stripe_webhook_events_received_at
+      ON stripe_webhook_events (received_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_stripe_webhook_events_pi
+      ON stripe_webhook_events (payment_intent_id)
+      WHERE payment_intent_id IS NOT NULL;
+
+    -- Revoked SERVI session JWTs (logout, account delete, sensitive change).
+    -- Rows can be pruned after expires_at < NOW().
+    CREATE TABLE IF NOT EXISTS revoked_sessions (
+      jti         TEXT PRIMARY KEY,
+      user_id     TEXT,
+      revoked_at  TIMESTAMPTZ DEFAULT NOW(),
+      expires_at  TIMESTAMPTZ NOT NULL,
+      reason      TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_revoked_sessions_expires
+      ON revoked_sessions(expires_at);
+
+    -- Per-identifier OTP / auth attempts for rate-limiting (phone or email).
+    -- Counted in a sliding window; old rows can be pruned periodically.
+    CREATE TABLE IF NOT EXISTS auth_otp_attempts (
+      id          BIGSERIAL PRIMARY KEY,
+      identifier  TEXT NOT NULL,
+      kind        TEXT NOT NULL,         -- 'phone' | 'email' | 'firebase_sync'
+      ip          TEXT,
+      created_at  TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_auth_otp_attempts_id_time
+      ON auth_otp_attempts(identifier, created_at DESC);
+
+    -- Audit log for sensitive auth actions (login, phone change, email change).
+    -- Account deletion is intentionally NOT logged here per product decision.
+    CREATE TABLE IF NOT EXISTS auth_events (
+      id          BIGSERIAL PRIMARY KEY,
+      user_id     TEXT,
+      event_type  TEXT NOT NULL,
+      ip          TEXT,
+      user_agent  TEXT,
+      metadata    JSONB,
+      created_at  TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_auth_events_user
+      ON auth_events(user_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_auth_events_type
+      ON auth_events(event_type, created_at DESC);
+
   `);
 }
 

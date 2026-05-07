@@ -44,32 +44,51 @@ const upload = multer({
 });
 
 // --- Firebase Admin Init ---
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+
 if (!firebaseAdmin.apps.length) {
+  if (IS_PRODUCTION && !process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+    throw new Error('FIREBASE_SERVICE_ACCOUNT_JSON must be configured in production. Without it, Firebase token revocation checks (checkRevoked) silently fail.');
+  }
   const firebaseInitConfig = process.env.FIREBASE_SERVICE_ACCOUNT_JSON
     ? { credential: firebaseAdmin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON)) }
     : { projectId: process.env.FIREBASE_PROJECT_ID || 'servi-bec91' };
   firebaseAdmin.initializeApp(firebaseInitConfig);
   if (!process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
-    console.warn('[STARTUP WARNING] FIREBASE_SERVICE_ACCOUNT_JSON is not set. checkRevoked will fail — token revocation checks are disabled.');
+    console.warn('[STARTUP WARNING] FIREBASE_SERVICE_ACCOUNT_JSON is not set (dev mode). Token revocation checks are disabled.');
   }
 }
 
 // --- Auth Helpers ---
-// Use dedicated JWT_SECRET if available; fall back to existing secrets for backward compat.
-const JWT_SECRET = process.env.JWT_SECRET || process.env.STRIPE_WEBHOOK_SECRET || process.env.ADMIN_API_TOKEN || 'servi-fallback-auth-secret';
-if (!process.env.JWT_SECRET) {
-  console.warn('[STARTUP WARNING] JWT_SECRET env var is not set. Session tokens are signed with a fallback secret. Set JWT_SECRET on Render to decouple from Stripe webhook secret rotation.');
+// JWT_SECRET is required in production. Dev falls back to a deterministic dev-only key
+// so a missing .env doesn't crash local work — but never in prod.
+if (IS_PRODUCTION && !process.env.JWT_SECRET) {
+  throw new Error('JWT_SECRET must be configured in production. Set it on Render so session tokens are decoupled from Stripe webhook secret rotation.');
 }
+const JWT_SECRET = process.env.JWT_SECRET || 'servi-dev-only-jwt-secret-do-not-use-in-prod';
+if (!process.env.JWT_SECRET) {
+  console.warn('[STARTUP WARNING] JWT_SECRET not set — using dev-only fallback. NEVER deploy this configuration.');
+}
+
+// Session JWT TTL: 24 hours (down from 7 days). Refresh handled via /api/auth/refresh
+// which accepts tokens up to 24h past expiry, so active users stay logged in indefinitely
+// while idle/stolen tokens age out within a day. Logout writes the jti to revoked_sessions
+// for explicit server-side revocation before natural expiry.
+const SESSION_TTL_SECS = 24 * 60 * 60;
+const SESSION_REFRESH_GRACE_SECS = 24 * 60 * 60;
 
 function signSessionToken(payload) {
   const now = Math.floor(Date.now() / 1000);
-  const fullPayload = { ...payload, iat: now, exp: now + (7 * 24 * 60 * 60) };
+  const jti = randomUUID();
+  const fullPayload = { ...payload, iat: now, exp: now + SESSION_TTL_SECS, jti };
   const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
   const body = Buffer.from(JSON.stringify(fullPayload)).toString('base64url');
   const signature = createHmac('sha256', JWT_SECRET).update(`${header}.${body}`).digest('base64url');
   return `${header}.${body}.${signature}`;
 }
 
+// Synchronous: signature + expiry only. Does NOT consult the revocation list.
+// Use verifySessionTokenAsync for routes that need revocation checking.
 function verifySessionToken(token) {
   if (!token) return null;
   const [header, body, signature] = token.split('.');
@@ -81,6 +100,79 @@ function verifySessionToken(token) {
     if (payload.exp && Math.floor(Date.now() / 1000) > payload.exp) return null;
     return payload;
   } catch (e) { return null; }
+}
+
+async function verifySessionTokenAsync(token) {
+  const payload = verifySessionToken(token);
+  if (!payload) return null;
+  if (!payload.jti) return payload; // legacy 7d tokens predating jti — accept until they expire
+  try {
+    const { rows } = await pool.query('SELECT 1 FROM revoked_sessions WHERE jti = $1 LIMIT 1', [payload.jti]);
+    if (rows.length) return null;
+  } catch (err) {
+    console.error('[verifySessionTokenAsync] revocation check failed:', err.message);
+    // Fail closed in production; open in dev to keep local work unblocked.
+    if (IS_PRODUCTION) return null;
+  }
+  return payload;
+}
+
+async function revokeSessionJti(jti, userId, reason) {
+  if (!jti) return;
+  const expiresAt = new Date(Date.now() + SESSION_TTL_SECS * 1000);
+  try {
+    await pool.query(
+      `INSERT INTO revoked_sessions (jti, user_id, expires_at, reason)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (jti) DO NOTHING`,
+      [jti, userId || null, expiresAt, reason || null]
+    );
+  } catch (err) {
+    console.error('[revokeSessionJti]', err.message);
+  }
+}
+
+// Best-effort audit log writer. Never throws — auth_events is supplemental and must
+// not block the actual auth action.
+async function logAuthEvent(req, userId, eventType, metadata) {
+  try {
+    const ip = (req?.headers?.['x-forwarded-for'] || req?.ip || '').toString().split(',')[0].trim() || null;
+    const ua = (req?.headers?.['user-agent'] || '').toString().slice(0, 512) || null;
+    await pool.query(
+      `INSERT INTO auth_events (user_id, event_type, ip, user_agent, metadata)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [userId || null, eventType, ip, ua, metadata ? JSON.stringify(metadata) : null]
+    );
+  } catch (err) {
+    console.error('[logAuthEvent]', err.message);
+  }
+}
+
+// Per-identifier rate limiter using auth_otp_attempts. Returns true if allowed,
+// false if the identifier has exceeded `limit` attempts within `windowMs`.
+async function checkAndRecordIdentifierAttempt(identifier, kind, ip, limit, windowMs) {
+  if (process.env.DISABLE_RATE_LIMITS === '1') return true;
+  if (!identifier) return true;
+  const key = String(identifier).toLowerCase().trim();
+  try {
+    const since = new Date(Date.now() - windowMs);
+    const { rows } = await pool.query(
+      `SELECT COUNT(*)::int AS n FROM auth_otp_attempts
+       WHERE identifier = $1 AND kind = $2 AND created_at > $3`,
+      [key, kind, since]
+    );
+    const count = rows[0]?.n || 0;
+    if (count >= limit) return false;
+    await pool.query(
+      `INSERT INTO auth_otp_attempts (identifier, kind, ip) VALUES ($1, $2, $3)`,
+      [key, kind, ip || null]
+    );
+    return true;
+  } catch (err) {
+    console.error('[checkAndRecordIdentifierAttempt]', err.message);
+    // On DB error, fall back to permissive in dev / restrictive in prod
+    return !IS_PRODUCTION;
+  }
 }
 
 function hashPassword(password) {
@@ -605,6 +697,7 @@ app.set('trust proxy', 1); // Render sits behind a load balancer; trust first pr
 const adminRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 200,
+  skip: () => process.env.NODE_ENV === 'test' || process.env.DISABLE_RATE_LIMITS === '1',
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'too_many_requests' },
@@ -613,6 +706,7 @@ const adminRateLimit = rateLimit({
 const publicFormLimit = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 30,               // stricter than admin — public forms
+  skip: () => process.env.NODE_ENV === 'test' || process.env.DISABLE_RATE_LIMITS === '1',
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'too_many_requests' },
@@ -751,20 +845,28 @@ function requireAdminAuth(req, res, next) {
   return next();
 }
 
-async function postToGoogleWebhook(payload, { maxAttempts = 3, delayMs = 1000 } = {}) {
+async function postToGoogleWebhook(payload, { maxAttempts = 3, delayMs = 1000, timeoutMs = 8000 } = {}) {
   if (!GOOGLE_SCRIPT_WEBHOOK_URL) return;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    // Per-attempt AbortController bounds the fetch so a hung Apps Script can't pin
+    // a socket and leak retries off the back of Stripe webhook deliveries.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const res = await fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal: controller.signal
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text().catch(() => '')}`);
       return;
     } catch (err) {
-      console.error(`[webhook] attempt ${attempt}/${maxAttempts} failed (type=${payload?.type}):`, err.message);
+      const reason = err?.name === 'AbortError' ? `timeout after ${timeoutMs}ms` : (err?.message || String(err));
+      console.error(`[webhook] attempt ${attempt}/${maxAttempts} failed (type=${payload?.type}): ${reason}`);
       if (attempt < maxAttempts) await new Promise(r => setTimeout(r, delayMs * attempt));
+    } finally {
+      clearTimeout(timer);
     }
   }
   console.error('[webhook] all retry attempts exhausted for payload:', JSON.stringify(payload));
@@ -2436,31 +2538,32 @@ app.get('/o/:code', async (req, res) => {
 });
 
 // Customer lookup by phone (for save.html portal access)
+// Lookup the Stripe customer ID for the authenticated user. The session is the
+// identity proof — client-supplied phone/email is intentionally ignored to prevent
+// account-takeover via identifier enumeration.
 app.get('/customer-lookup', async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
   try {
-    const { phone } = req.query;
-    if (!phone) return res.status(400).json({ error: 'phone required' });
-
-    const esc = (s) => String(s || '').replace(/'/g, "\\'");
-    const found = await stripe.customers.search({ query: `phone:'${esc(phone)}'` });
-    
-    if (!found.data?.length) {
-      return res.status(404).json({ error: 'customer not found' });
-    }
-
-    return res.json({ customerId: found.data[0].id });
+    const customerId = await getStripeCustomerForUser(payload.user_id, { createIfMissing: false });
+    if (!customerId) return res.status(404).json({ error: 'customer_not_found' });
+    return res.json({ customerId });
   } catch (err) {
     console.error('customer-lookup error:', err);
-    return res.status(500).json({ error: 'Internal error' });
+    return res.status(500).json({ error: 'internal_error' });
   }
 });
 
-// Standalone billing portal (no order required)
+// Standalone billing portal — generates a Stripe billing portal URL for the
+// authenticated user's customer. Body customerId (if any) is ignored.
 app.post('/billing-portal-standalone', async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
   try {
-    const { customerId, returnUrl } = req.body || {};
-    if (!customerId) return res.status(400).json({ error: 'customerId required' });
+    const customerId = await getStripeCustomerForUser(payload.user_id, { createIfMissing: false });
+    if (!customerId) return res.status(404).json({ error: 'customer_not_found' });
 
+    const { returnUrl } = req.body || {};
     const base = buildFrontendUrl('/save.html');
     const session = await stripe.billingPortal.sessions.create({
       customer: customerId,
@@ -2470,23 +2573,28 @@ app.post('/billing-portal-standalone', async (req, res) => {
     return res.json({ url: session.url });
   } catch (err) {
     console.error('billing-portal-standalone error:', err);
-    return res.status(500).json({ error: err.message || 'Portal error' });
+    return res.status(500).json({ error: 'internal_error' });
   }
 });
 
-// Create standalone SetupIntent (no order)
+// Create a SetupIntent attached to the authenticated user's Stripe customer.
+// Customer is find-or-created so first-time savers also work.
 app.post('/create-standalone-setup', async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
   try {
+    const customerId = await getStripeCustomerForUser(payload.user_id);
     const si = await stripe.setupIntents.create({
+      customer: customerId,
       automatic_payment_methods: { enabled: true },
       usage: 'off_session',
-      metadata: { kind: 'standalone_account_creation' }
+      metadata: { kind: 'standalone_account_creation', auth_user_id: payload.user_id }
     });
 
     return res.json({ client_secret: si.client_secret });
   } catch (err) {
     console.error('create-standalone-setup error:', err);
-    return res.status(500).json({ error: err.message || 'Setup error' });
+    return res.status(500).json({ error: 'internal_error' });
   }
 });
 
@@ -3386,7 +3494,7 @@ app.post('/capture-order', adminRateLimit, requireAdminAuth, async (req, res) =>
 });
 
 app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
-  
+
   const sig = req.headers['stripe-signature'];
   let event;
 
@@ -3403,6 +3511,30 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
   } else {
     paymentIntentId = event.data.object.id;
   }
+
+  // Idempotency guard: dedupe Stripe retries by event.id. A successful INSERT means
+  // we own this delivery; a conflict means another delivery already started and we
+  // should ack 200 so Stripe stops retrying.
+  let claimedDelivery = false;
+  try {
+    const claim = await pool.query(
+      `INSERT INTO stripe_webhook_events (event_id, event_type, payment_intent_id)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (event_id) DO NOTHING`,
+      [event.id, event.type, paymentIntentId || null]
+    );
+    if (claim.rowCount === 0) {
+      console.log(`[webhook] duplicate event ignored: ${event.id} (${event.type})`);
+      return res.status(200).send('Duplicate event ignored');
+    }
+    claimedDelivery = true;
+  } catch (claimErr) {
+    // If the dedupe insert itself fails (DB blip), fall through and process the event.
+    // Worst case is we double-process this one delivery; Stripe will not retry on 200.
+    console.error('[webhook] idempotency claim failed (processing anyway):', claimErr?.message || claimErr);
+  }
+
+  try {
 
   switch (event.type) {
     case 'payment_intent.succeeded': {
@@ -3571,27 +3703,52 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
     case 'charge.failed': {
       console.log('❌ Failed (charge.failed):', paymentIntentId);
-      await pool.query('UPDATE all_bookings SET status = $1 WHERE payment_intent_id = $2',
-                      ['Failed', paymentIntentId]);
-      postToGoogleWebhook({ paymentIntentId, status: 'Failed' });
+      const r = await pool.query(
+        'SELECT id, customer_id FROM all_bookings WHERE payment_intent_id = $1 LIMIT 1',
+        [paymentIntentId]
+      );
+      const row = r.rows[0] || {};
+      // Forward-only: never overwrite a terminal-positive status with Failed.
+      await pool.query(
+        `UPDATE all_bookings SET status = $1
+          WHERE payment_intent_id = $2 AND status NOT IN ('Captured', 'Refunded')`,
+        ['Failed', paymentIntentId]
+      );
+      postToGoogleWebhook({ type: 'order.status', paymentIntentId, status: 'Failed', orderId: row.id || '', customerId: row.customer_id || '' });
       break;
     }
 
     // === PI-level failure (keep distinct label so it never looks like 'expired') ===
     case 'payment_intent.payment_failed': {
       console.log('⛔ Declined (payment_intent.payment_failed):', paymentIntentId);
-      await pool.query('UPDATE all_bookings SET status = $1 WHERE payment_intent_id = $2',
-                      ['Declined', paymentIntentId]); // <-- not "Failed"
-      postToGoogleWebhook({ paymentIntentId, status: 'Declined' });
+      const r = await pool.query(
+        'SELECT id, customer_id FROM all_bookings WHERE payment_intent_id = $1 LIMIT 1',
+        [paymentIntentId]
+      );
+      const row = r.rows[0] || {};
+      await pool.query(
+        `UPDATE all_bookings SET status = $1
+          WHERE payment_intent_id = $2 AND status NOT IN ('Captured', 'Refunded')`,
+        ['Declined', paymentIntentId]
+      );
+      postToGoogleWebhook({ type: 'order.status', paymentIntentId, status: 'Declined', orderId: row.id || '', customerId: row.customer_id || '' });
       break;
     }
 
     // === legacy/processor-side authorization expiry signal ===
     case 'charge.expired': {
       console.log('🕒 Canceled (expired) via charge.expired:', paymentIntentId);
-      await pool.query('UPDATE all_bookings SET status = $1 WHERE payment_intent_id = $2',
-                      ['Canceled (expired)', paymentIntentId]);
-      postToGoogleWebhook({ paymentIntentId, status: 'Canceled (expired)' });
+      const r = await pool.query(
+        'SELECT id, customer_id FROM all_bookings WHERE payment_intent_id = $1 LIMIT 1',
+        [paymentIntentId]
+      );
+      const row = r.rows[0] || {};
+      await pool.query(
+        `UPDATE all_bookings SET status = $1
+          WHERE payment_intent_id = $2 AND status NOT IN ('Captured', 'Refunded')`,
+        ['Canceled (expired)', paymentIntentId]
+      );
+      postToGoogleWebhook({ type: 'order.status', paymentIntentId, status: 'Canceled (expired)', orderId: row.id || '', customerId: row.customer_id || '' });
       break;
     }
 
@@ -3606,34 +3763,52 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
       // Try to map the PI back to the order either by PI lookup or metadata.order_id
       let isCash = false;
       let orderIdForWebhook = null;
+      let customerIdForWebhook = null;
       const byPi = await pool.query(
-        'SELECT id, cash_selected FROM all_bookings WHERE payment_intent_id = $1 LIMIT 1',
+        'SELECT id, cash_selected, customer_id FROM all_bookings WHERE payment_intent_id = $1 LIMIT 1',
         [paymentIntentId]
       );
       if (byPi.rows.length) {
         isCash = byPi.rows[0].cash_selected === true;
         orderIdForWebhook = byPi.rows[0].id;
+        customerIdForWebhook = byPi.rows[0].customer_id || null;
       } else if (pi?.metadata?.order_id) {
         const byMeta = await pool.query(
-          'SELECT id, cash_selected FROM all_bookings WHERE id = $1 LIMIT 1',
+          'SELECT id, cash_selected, customer_id FROM all_bookings WHERE id = $1 LIMIT 1',
           [pi.metadata.order_id]
         );
         if (byMeta.rows.length) {
           isCash = byMeta.rows[0].cash_selected === true;
           orderIdForWebhook = byMeta.rows[0].id;
+          customerIdForWebhook = byMeta.rows[0].customer_id || null;
         }
       }
 
       const nextStatus = isCash ? 'Pending Cash' : label;
 
+      // Forward-only: never overwrite a terminal-positive status (Captured/Refunded)
+      // with a late-arriving cancellation event.
       if (orderIdForWebhook) {
-        await pool.query('UPDATE all_bookings SET status = $1 WHERE id = $2', [nextStatus, orderIdForWebhook]);
+        await pool.query(
+          `UPDATE all_bookings SET status = $1
+            WHERE id = $2 AND status NOT IN ('Captured', 'Refunded')`,
+          [nextStatus, orderIdForWebhook]
+        );
       } else {
-        await pool.query('UPDATE all_bookings SET status = $1 WHERE payment_intent_id = $2', [nextStatus, paymentIntentId]);
+        await pool.query(
+          `UPDATE all_bookings SET status = $1
+            WHERE payment_intent_id = $2 AND status NOT IN ('Captured', 'Refunded')`,
+          [nextStatus, paymentIntentId]
+        );
       }
 
-      // Only notify Sheets/webhook when it is a real cancellation; for cash we keep Pending Cash
-      postToGoogleWebhook({ paymentIntentId, status: nextStatus });
+      postToGoogleWebhook({
+        type: 'order.status',
+        paymentIntentId,
+        status: nextStatus,
+        orderId: orderIdForWebhook || '',
+        customerId: customerIdForWebhook || ''
+      });
       break;
     }
 
@@ -3913,8 +4088,23 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
       console.log(`Unhandled event type: ${event.type}`);
   }
 
+  if (claimedDelivery) {
+    await pool.query(
+      `UPDATE stripe_webhook_events SET processed_at = NOW() WHERE event_id = $1`,
+      [event.id]
+    ).catch(err => console.error('[webhook] processed_at update failed:', err?.message || err));
+  }
 
   res.status(200).send('Webhook received');
+
+  } catch (handlerErr) {
+    console.error(`[webhook] handler error event=${event.id} type=${event.type}:`, handlerErr?.message || handlerErr);
+    if (claimedDelivery) {
+      await pool.query('DELETE FROM stripe_webhook_events WHERE event_id = $1', [event.id])
+        .catch(delErr => console.error('[webhook] dedupe row cleanup failed:', delErr?.message || delErr));
+    }
+    return res.status(500).send('Webhook handler error');
+  }
 });
 
 app.post('/confirm-with-saved', async (req, res) => {
@@ -4514,7 +4704,7 @@ app.post('/api/auth/login', publicFormLimit, (req, res) => {
 app.get('/api/auth/me', async (req, res) => {
   const authHeader = req.headers.authorization || '';
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
-  const payload = verifySessionToken(token);
+  const payload = await verifySessionTokenAsync(token);
   if (!payload?.user_id) return res.status(401).json({ error: 'unauthorized' });
   try {
     const { rows } = await pool.query(
@@ -4556,8 +4746,8 @@ app.post('/api/auth/check-identifier', publicFormLimit, async (req, res) => {
     } else {
       const phoneNorm = normalizePhoneToE164(identifier);
       if (phoneNorm) {
-        const { rows } = await pool.query('SELECT id, auth_provider FROM auth_users WHERE phone = $1', [phoneNorm]);
-        if (rows.length > 0) { exists = true; provider = rows[0].auth_provider || 'phone'; }
+        const { rows } = await pool.query('SELECT id FROM auth_users WHERE phone = $1', [phoneNorm]);
+        if (rows.length > 0) { exists = true; provider = 'phone'; }
       }
     }
 
@@ -4580,6 +4770,16 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
     const idToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
     if (!idToken) return res.status(401).json({ error: 'missing_token' });
 
+    // A9: per-identifier rate limit (IP rate limit alone can be bypassed by botnet IP rotation)
+    const rateLimitIdentifier = (req.body?.email || req.body?.phone || '').toString().toLowerCase().trim();
+    if (rateLimitIdentifier) {
+      const ok = await checkAndRecordIdentifierAttempt(
+        rateLimitIdentifier, 'firebase_sync',
+        req.ip, 20, 60 * 60 * 1000  // 20 attempts/hour per identifier
+      );
+      if (!ok) return res.status(429).json({ error: 'too_many_attempts', message: 'Demasiados intentos. Espera unos minutos.' });
+    }
+
     // Verify the Firebase ID token
     let decoded;
     try {
@@ -4599,6 +4799,8 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
     const email = decoded.email || req.body.email || null;
     const name = decoded.name || req.body.name || null;
     const phone = decoded.phone_number || req.body.phone || null;
+    const emailNormFromToken = email ? normalizeEmail(email) : null;
+    const phoneNormFromToken = phone ? normalizePhoneToE164(phone) : null;
     const provider = decoded.firebase?.sign_in_provider || 'unknown';
     // Verification flags forwarded by frontend after OTP steps
     const phoneVerified = req.body.phone_verified != null ? !!req.body.phone_verified : (decoded.phone_number ? true : null);
@@ -4619,7 +4821,10 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
           [firebaseUid, provider, user.id]
         );
         if (name && !user.name) await pool.query('UPDATE auth_users SET name = $1 WHERE id = $2', [name, user.id]);
-        if (phone && !user.phone) await pool.query('UPDATE auth_users SET phone = $1 WHERE id = $2', [phone, user.id]);
+        if (phoneNormFromToken && !user.phone) {
+          await pool.query('UPDATE auth_users SET phone = $1 WHERE id = $2', [phoneNormFromToken, user.id]);
+          user.phone = phoneNormFromToken;
+        }
       }
     }
 
@@ -4646,8 +4851,8 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
 
     if (!user) {
       const id = randomUUID();
-      const emailNorm = email ? email.toLowerCase().trim() : null;
-      const phoneNorm = phone ? normalizePhoneToE164(phone) : null;
+      const emailNorm = emailNormFromToken;
+      const phoneNorm = phoneNormFromToken;
       try {
         await pool.query(
           `INSERT INTO auth_users (id, email, name, phone, firebase_uid, auth_provider, phone_verified, email_verified, first_identifier_type)
@@ -4675,8 +4880,24 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
       // Update last_login and persist any newly-provided verification flags
       const vSets = ['last_login = NOW()'];
       const vParams = [];
-      if (phoneVerified !== null) { vParams.push(phoneVerified); vSets.push(`phone_verified = $${vParams.length}`); }
-      if (emailVerified !== null) { vParams.push(emailVerified); vSets.push(`email_verified = $${vParams.length}`); }
+      if (phoneVerified !== null) {
+        const currentPhoneNorm = user.phone ? normalizePhoneToE164(user.phone) : null;
+        if (!phoneVerified || (phoneNormFromToken && currentPhoneNorm && phoneNormFromToken === currentPhoneNorm)) {
+          vParams.push(phoneVerified);
+          vSets.push(`phone_verified = $${vParams.length}`);
+        } else if (phoneVerified) {
+          console.warn('[POST /api/auth/firebase] ignored stale phone verification for user:', user.id);
+        }
+      }
+      if (emailVerified !== null) {
+        const currentEmailNorm = user.email ? normalizeEmail(user.email) : null;
+        if (!emailVerified || (emailNormFromToken && currentEmailNorm && emailNormFromToken === currentEmailNorm)) {
+          vParams.push(emailVerified);
+          vSets.push(`email_verified = $${vParams.length}`);
+        } else if (emailVerified) {
+          console.warn('[POST /api/auth/firebase] ignored stale email verification for user:', user.id);
+        }
+      }
       if (firstIdentifierType && !user.first_identifier_type) { vParams.push(firstIdentifierType); vSets.push(`first_identifier_type = $${vParams.length}`); }
       if (name && !user.name) { vParams.push(name); vSets.push(`name = $${vParams.length}`); }
       vParams.push(user.id);
@@ -4705,6 +4926,9 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
       phone: user.phone || phone || null,
     });
 
+    // A12: audit log
+    logAuthEvent(req, user.id, 'login', { provider, email_verified: !!verifiedState.email_verified, phone_verified: !!verifiedState.phone_verified });
+
     return res.json({
       token,
       user: {
@@ -4722,7 +4946,7 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
 
 // POST /api/auth/add-email — add + verify email for an authenticated phone-first user
 app.post('/api/auth/add-email', publicFormLimit, async (req, res) => {
-  const payload = requireUserAuth(req, res);
+  const payload = await requireUserAuth(req, res);
   if (!payload) return;
   try {
     const { email, firebase_id_token } = req.body || {};
@@ -4732,7 +4956,7 @@ app.post('/api/auth/add-email', publicFormLimit, async (req, res) => {
 
     // Verify Firebase token proves ownership of this email
     let decoded;
-    try { decoded = await firebaseAdmin.auth().verifyIdToken(firebase_id_token, true); }
+    try { decoded = await firebaseAdmin.auth().verifyIdToken(firebase_id_token); }
     catch (e) { return res.status(401).json({ error: 'invalid_token' }); }
     if (!decoded.email || decoded.email.toLowerCase() !== emailNorm) {
       return res.status(400).json({ error: 'email_mismatch', message: 'Token email does not match supplied email.' });
@@ -4758,7 +4982,7 @@ app.post('/api/auth/add-email', publicFormLimit, async (req, res) => {
 
 // POST /api/auth/add-phone — add + verify phone for an authenticated email-first user
 app.post('/api/auth/add-phone', publicFormLimit, async (req, res) => {
-  const payload = requireUserAuth(req, res);
+  const payload = await requireUserAuth(req, res);
   if (!payload) return;
   try {
     const { phone, firebase_id_token } = req.body || {};
@@ -4797,7 +5021,7 @@ app.post('/api/auth/add-phone', publicFormLimit, async (req, res) => {
 // Rate-limited via publicFormLimit (5/min per IP from express-rate-limit config).
 app.post('/api/auth/resolve-identifier-mismatch', publicFormLimit, async (req, res) => {
   try {
-    const { identifier, firebase_id_token } = req.body || {};
+    const { identifier, firebase_id_token, phone } = req.body || {};
     if (!identifier || !firebase_id_token) return res.status(400).json({ error: 'missing_fields' });
 
     // Must prove email ownership before we reveal anything
@@ -4811,12 +5035,19 @@ app.post('/api/auth/resolve-identifier-mismatch', publicFormLimit, async (req, r
       return res.status(400).json({ error: 'email_mismatch' });
     }
 
-    // Look for a phone-only account that has no email (potential orphan)
+    // Avoid linking an unrelated phone-only account. Without an explicit phone
+    // candidate, an email-first signup has no stable way to identify an orphan.
+    const phoneNorm = phone ? normalizePhoneToE164(phone) : null;
+    if (!phoneNorm) {
+      return res.json({ resolution: 'new_account' });
+    }
+
+    // Look for the explicit phone-only account candidate.
     const { rows } = await pool.query(
       `SELECT id, name FROM auth_users
-       WHERE email IS NULL AND phone IS NOT NULL AND phone_verified = true
+       WHERE email IS NULL AND phone = $1 AND phone_verified = true
        LIMIT 1`,
-      []
+      [phoneNorm]
     );
 
     if (!rows.length) {
@@ -4835,16 +5066,19 @@ app.post('/api/auth/resolve-identifier-mismatch', publicFormLimit, async (req, r
 
 // ─── Account management (authenticated user routes) ───────────────────────────
 
-function requireUserAuth(req, res) {
+async function requireUserAuth(req, res) {
   const authHeader = req.headers.authorization || '';
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
-  const payload = verifySessionToken(token);
+  const payload = await verifySessionTokenAsync(token);
   if (!payload?.user_id) { res.status(401).json({ error: 'unauthorized' }); return null; }
   return payload;
 }
 
 // Requires a fresh Firebase ID token (auth_time within maxAgeSecs) on sensitive operations.
 // Client must include the token in X-Firebase-Reauth-Token header.
+//
+// A7: Two windows. Default 300s for routine edits (name, address). Pass 60s for
+// destructive/security-critical actions (phone change, email change, account delete).
 async function requireRecentAuth(req, res, maxAgeSecs = 300) {
   const rawToken = req.headers['x-firebase-reauth-token'] || '';
   if (!rawToken) {
@@ -4870,27 +5104,39 @@ async function requireRecentAuth(req, res, maxAgeSecs = 300) {
   }
 }
 
+const RECENT_AUTH_DESTRUCTIVE_SECS = 60;   // phone/email change
+const RECENT_AUTH_ROUTINE_SECS = 300;      // name, address, etc.
+
 // PATCH /api/auth/me — update profile
 app.patch('/api/auth/me', publicFormLimit, async (req, res) => {
-  const payload = requireUserAuth(req, res);
+  const payload = await requireUserAuth(req, res);
   if (!payload) return;
-  // Gate phone changes behind re-auth (fresh Firebase ID token required)
-  if (req.body?.phone !== undefined) {
-    const reauthed = await requireRecentAuth(req, res);
+  // A7: destructive identifier changes (phone, email) require fresh re-auth (60s window).
+  // Name-only edits don't need it.
+  const isDestructive = req.body?.phone !== undefined || req.body?.email !== undefined;
+  if (isDestructive) {
+    const reauthed = await requireRecentAuth(req, res, RECENT_AUTH_DESTRUCTIVE_SECS);
     if (!reauthed) return;
   }
   try {
     const { name, email, phone } = req.body || {};
     const sets = []; const params = [];
-    if (name !== undefined) { params.push(String(name).trim()); sets.push(`name = $${params.length}`); }
+    const changes = []; // for audit log
+
+    if (name !== undefined) {
+      params.push(String(name).trim());
+      sets.push(`name = $${params.length}`);
+      changes.push('name');
+    }
     if (email !== undefined) {
       const emailNorm = normalizeEmail(email);
       if (!emailNorm) return res.status(400).json({ error: 'invalid_email' });
       const { rows } = await pool.query('SELECT id FROM auth_users WHERE email = $1 AND id != $2', [emailNorm, payload.user_id]);
       if (rows.length) return res.status(409).json({ error: 'email_exists', message: 'Este correo ya está en uso.' });
       params.push(emailNorm); sets.push(`email = $${params.length}`);
-      // When email changes, require re-verification
+      // Email changed → require re-verification before booking gate re-opens
       params.push(false); sets.push(`email_verified = $${params.length}`);
+      changes.push('email');
     }
     if (phone !== undefined) {
       const phoneNorm = normalizePhoneToE164(phone);
@@ -4898,12 +5144,21 @@ app.patch('/api/auth/me', publicFormLimit, async (req, res) => {
       const { rows } = await pool.query('SELECT id FROM auth_users WHERE phone = $1 AND id != $2', [phoneNorm, payload.user_id]);
       if (rows.length) return res.status(409).json({ error: 'phone_exists', message: 'Este teléfono ya está en uso.' });
       params.push(phoneNorm); sets.push(`phone = $${params.length}`);
+      // A4: Phone changed → reset phone_verified so booking gate re-requires OTP on the new number
+      params.push(false); sets.push(`phone_verified = $${params.length}`);
+      changes.push('phone');
     }
     if (!sets.length) return res.status(400).json({ error: 'no_fields' });
     params.push(payload.user_id);
     await pool.query(`UPDATE auth_users SET ${sets.join(', ')} WHERE id = $${params.length}`, params);
     const { rows } = await pool.query('SELECT id, email, name, phone, auth_provider, phone_verified, email_verified FROM auth_users WHERE id = $1', [payload.user_id]);
     const u = rows[0];
+
+    // A12: audit identifier changes
+    if (changes.includes('email') || changes.includes('phone')) {
+      logAuthEvent(req, payload.user_id, 'profile_change', { fields: changes });
+    }
+
     return res.json({ user: {
       id: u.id, email: u.email, name: u.name, phone: u.phone || null,
       auth_provider: u.auth_provider || null,
@@ -4918,7 +5173,7 @@ app.patch('/api/auth/me', publicFormLimit, async (req, res) => {
 
 // POST /api/auth/send-email-verification — send verification email to user's current email
 app.post('/api/auth/send-email-verification', publicFormLimit, async (req, res) => {
-  const payload = requireUserAuth(req, res);
+  const payload = await requireUserAuth(req, res);
   if (!payload) return;
   try {
     const { rows } = await pool.query('SELECT email FROM auth_users WHERE id = $1', [payload.user_id]);
@@ -4948,21 +5203,27 @@ app.post('/api/auth/change-password', publicFormLimit, (req, res) => {
 });
 
 // DELETE /api/auth/me — delete account
+// Note (audit A2): does NOT require requireRecentAuth per product decision.
+// JWT alone is sufficient. Risk acknowledged: an XSS-stolen token could delete the account.
 app.delete('/api/auth/me', publicFormLimit, async (req, res) => {
-  const payload = requireUserAuth(req, res);
+  const payload = await requireUserAuth(req, res);
   if (!payload) return;
-  const reauthed = await requireRecentAuth(req, res);
-  if (!reauthed) return;
+  const userId = payload.user_id;
   try {
-    // Fetch firebase_uid before deleting the row
-    const { rows } = await pool.query('SELECT firebase_uid FROM auth_users WHERE id = $1', [payload.user_id]);
+    const { rows } = await pool.query('SELECT firebase_uid FROM auth_users WHERE id = $1', [userId]);
+    if (!rows.length) {
+      console.warn('[DELETE /api/auth/me] user row not found for id:', userId);
+      return res.status(404).json({ error: 'user_not_found' });
+    }
     const firebaseUid = rows[0]?.firebase_uid;
 
-    // Delete user addresses and then the user record
-    await pool.query('DELETE FROM user_addresses WHERE user_id = $1', [payload.user_id]);
-    await pool.query('DELETE FROM auth_users WHERE id = $1', [payload.user_id]);
+    await pool.query('DELETE FROM user_addresses WHERE user_id = $1', [userId]);
+    const delRes = await pool.query('DELETE FROM auth_users WHERE id = $1', [userId]);
+    console.log('[DELETE /api/auth/me] deleted user row, rowCount=', delRes.rowCount, 'userId=', userId);
 
-    // Delete the Firebase user (best-effort — don't fail the request if this errors)
+    // A6: revoke this session's JWT so it can't be replayed before natural expiry
+    await revokeSessionJti(payload.jti, userId, 'account_delete');
+
     if (firebaseUid) {
       try {
         await firebaseAdmin.auth().deleteUser(firebaseUid);
@@ -4974,9 +5235,22 @@ app.delete('/api/auth/me', publicFormLimit, async (req, res) => {
 
     return res.json({ ok: true });
   } catch (err) {
-    console.error('[DELETE /api/auth/me]', err);
-    return res.status(500).json({ error: 'internal_error' });
+    console.error('[DELETE /api/auth/me] error code=', err.code, 'detail=', err.detail, 'message=', err.message);
+    return res.status(500).json({ error: 'internal_error', code: err.code || null, detail: err.detail || null });
   }
+});
+
+// POST /api/auth/logout — revoke the current SERVI session JWT server-side.
+// Idempotent — succeeds even with missing/invalid tokens (don't leak existence info).
+app.post('/api/auth/logout', publicFormLimit, async (req, res) => {
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+  const payload = verifySessionToken(token);
+  if (payload?.jti) {
+    await revokeSessionJti(payload.jti, payload.user_id, 'logout');
+    logAuthEvent(req, payload.user_id, 'logout');
+  }
+  return res.json({ ok: true });
 });
 
 // POST /api/auth/refresh — silently refresh a nearly-expired or recently-expired JWT
@@ -5010,6 +5284,17 @@ app.post('/api/auth/refresh', publicFormLimit, async (req, res) => {
 
   if (!payload?.user_id) return res.status(401).json({ error: 'no_user_id' });
 
+  // A6: reject if the old token's jti has been revoked
+  if (payload.jti) {
+    try {
+      const { rows: revoked } = await pool.query('SELECT 1 FROM revoked_sessions WHERE jti = $1 LIMIT 1', [payload.jti]);
+      if (revoked.length) return res.status(401).json({ error: 'token_revoked' });
+    } catch (err) {
+      console.error('[POST /api/auth/refresh] revocation check failed:', err.message);
+      if (IS_PRODUCTION) return res.status(500).json({ error: 'internal_error' });
+    }
+  }
+
   try {
     // Re-fetch user from DB (don't trust JWT claims for user data)
     const { rows } = await pool.query(
@@ -5023,6 +5308,9 @@ app.post('/api/auth/refresh', publicFormLimit, async (req, res) => {
       user_id: u.id, email: u.email, name: u.name, phone: u.phone,
       auth_provider: u.auth_provider,
     });
+
+    // A6: rotate the jti — revoke the old one so a stolen pre-refresh JWT can't be reused
+    if (payload.jti) await revokeSessionJti(payload.jti, u.id, 'refresh_rotation');
 
     return res.json({
       token: newToken,
@@ -5041,7 +5329,7 @@ app.post('/api/auth/refresh', publicFormLimit, async (req, res) => {
 
 // GET /api/auth/addresses
 app.get('/api/auth/addresses', async (req, res) => {
-  const payload = requireUserAuth(req, res);
+  const payload = await requireUserAuth(req, res);
   if (!payload) return;
   try {
     const { rows } = await pool.query(
@@ -5057,7 +5345,7 @@ app.get('/api/auth/addresses', async (req, res) => {
 
 // POST /api/auth/addresses
 app.post('/api/auth/addresses', publicFormLimit, async (req, res) => {
-  const payload = requireUserAuth(req, res);
+  const payload = await requireUserAuth(req, res);
   if (!payload) return;
   try {
     const { label, street, city, state, postal_code, country, is_default } = req.body || {};
@@ -5081,7 +5369,7 @@ app.post('/api/auth/addresses', publicFormLimit, async (req, res) => {
 
 // PATCH /api/auth/addresses/:id
 app.patch('/api/auth/addresses/:id', publicFormLimit, async (req, res) => {
-  const payload = requireUserAuth(req, res);
+  const payload = await requireUserAuth(req, res);
   if (!payload) return;
   try {
     const { label, street, city, state, postal_code, country } = req.body || {};
@@ -5109,7 +5397,7 @@ app.patch('/api/auth/addresses/:id', publicFormLimit, async (req, res) => {
 
 // DELETE /api/auth/addresses/:id
 app.delete('/api/auth/addresses/:id', async (req, res) => {
-  const payload = requireUserAuth(req, res);
+  const payload = await requireUserAuth(req, res);
   if (!payload) return;
   try {
     const { rowCount } = await pool.query(
@@ -5126,7 +5414,7 @@ app.delete('/api/auth/addresses/:id', async (req, res) => {
 
 // PATCH /api/auth/addresses/:id/default
 app.patch('/api/auth/addresses/:id/default', publicFormLimit, async (req, res) => {
-  const payload = requireUserAuth(req, res);
+  const payload = await requireUserAuth(req, res);
   if (!payload) return;
   try {
     await pool.query('UPDATE user_addresses SET is_default = FALSE WHERE user_id = $1', [payload.user_id]);
@@ -5145,7 +5433,7 @@ app.patch('/api/auth/addresses/:id/default', publicFormLimit, async (req, res) =
 // ─── Payment Methods (auth users) ────────────────────────────────────────────
 
 // Resolve or create a Stripe customer for an authenticated user
-async function getStripeCustomerForUser(userId) {
+async function getStripeCustomerForUser(userId, { createIfMissing = true } = {}) {
   const { rows } = await pool.query(
     'SELECT id, name, email, phone FROM auth_users WHERE id = $1',
     [userId]
@@ -5169,6 +5457,7 @@ async function getStripeCustomerForUser(userId) {
     const saved = await findSavedClientByPhoneDigits(digits);
     if (saved?.customer_id) return saved.customer_id;
   }
+  if (!createIfMissing) return null;
   // Create new Stripe customer and register in saved_servi_users
   const customer = await stripe.customers.create({
     name: user.name || undefined,
@@ -5187,7 +5476,7 @@ async function getStripeCustomerForUser(userId) {
 
 // GET /api/auth/payment-methods — list saved payment methods
 app.get('/api/auth/payment-methods', publicFormLimit, async (req, res) => {
-  const payload = requireUserAuth(req, res);
+  const payload = await requireUserAuth(req, res);
   if (!payload) return;
   try {
     const customerId = await getStripeCustomerForUser(payload.user_id);
@@ -5215,7 +5504,7 @@ app.get('/api/auth/payment-methods', publicFormLimit, async (req, res) => {
 
 // POST /api/auth/payment-methods/setup — create SetupIntent for adding card/Apple Pay/Google Pay
 app.post('/api/auth/payment-methods/setup', publicFormLimit, async (req, res) => {
-  const payload = requireUserAuth(req, res);
+  const payload = await requireUserAuth(req, res);
   if (!payload) return;
   try {
     const customerId = await getStripeCustomerForUser(payload.user_id);
@@ -5234,7 +5523,7 @@ app.post('/api/auth/payment-methods/setup', publicFormLimit, async (req, res) =>
 
 // DELETE /api/auth/payment-methods/:pmId — detach a payment method
 app.delete('/api/auth/payment-methods/:pmId', publicFormLimit, async (req, res) => {
-  const payload = requireUserAuth(req, res);
+  const payload = await requireUserAuth(req, res);
   if (!payload) return;
   try {
     const customerId = await getStripeCustomerForUser(payload.user_id);
@@ -5250,7 +5539,7 @@ app.delete('/api/auth/payment-methods/:pmId', publicFormLimit, async (req, res) 
 
 // PATCH /api/auth/payment-methods/:pmId/default — set default payment method
 app.patch('/api/auth/payment-methods/:pmId/default', publicFormLimit, async (req, res) => {
-  const payload = requireUserAuth(req, res);
+  const payload = await requireUserAuth(req, res);
   if (!payload) return;
   try {
     const customerId = await getStripeCustomerForUser(payload.user_id);
