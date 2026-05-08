@@ -2508,10 +2508,13 @@ app.post('/tasks/preauth-due', adminRateLimit, requireAdminAuth, async (req, res
           client_email,
           service_date,
           service_datetime,
-          /* Use full timestamp if present; otherwise assume 08:00 local on service_date */
+          /* service_datetime + service_date are TEXT columns; cast to timestamptz for comparison.
+             service_datetime is stored as ISO-8601 with offset (e.g. "2026-05-08T14:30:00-06:00"
+             from Apps Script, or ".000Z" from admin.html). NULLIF guards legacy empty strings.
+             Fallback assumes midnight Mexico City local time on service_date. */
           COALESCE(
-            service_datetime,
-            (service_date::timestamp AT TIME ZONE 'America/Mexico_City') + INTERVAL '0 hours'
+            NULLIF(service_datetime, '')::timestamptz,
+            (NULLIF(service_date, '')::timestamp AT TIME ZONE 'America/Mexico_City')
           ) AS svc_at
         FROM all_bookings
         WHERE kind = 'book'
