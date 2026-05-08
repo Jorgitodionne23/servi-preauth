@@ -11,31 +11,78 @@ on:
         required: false
         default: 'false'
 
+# Prevent overlapping runs: if a slow run is still in flight when the next hour fires,
+# the new one waits rather than racing. Stripe idempotency keys (pi-preauth-${order_id})
+# already prevent double-charging, but overlapping runs would still waste API calls and
+# pollute logs.
+concurrency:
+  group: preauth-cron
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write   # Needed for the failure step to file an alert issue
+
 jobs:
   preauth:
     name: Trigger preauth-due
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    env:
+      PREAUTH_ENDPOINT: https://servi-preauth.onrender.com/tasks/preauth-due
 
     steps:
       - name: Ping Render — POST /tasks/preauth-due
+        id: ping
+        env:
+          ADMIN_API_TOKEN: ${{ secrets.ADMIN_API_TOKEN }}
         run: |
+          set -eu
+
           FORCE_FLAG="${{ github.event.inputs.force }}"
           BODY="{}"
           if [ "$FORCE_FLAG" = "true" ]; then
             BODY='{"force":true}'
           fi
 
-          echo "Sending preauth-due request (force=$FORCE_FLAG)..."
-          HTTP_STATUS=$(curl -s -o /tmp/response.json -w "%{http_code}" \
-            -X POST "https://servi-preauth.onrender.com/tasks/preauth-due" \
-            -H "Authorization: Bearer ${{ secrets.ADMIN_API_TOKEN }}" \
+          if [ -z "${ADMIN_API_TOKEN:-}" ]; then
+            echo "❌ GitHub Actions secret ADMIN_API_TOKEN is missing or empty"
+            exit 1
+          fi
+
+          echo "Sending preauth-due request to $PREAUTH_ENDPOINT (force=$FORCE_FLAG)..."
+
+          CURL_EXIT=0
+          HTTP_STATUS=$(curl -sS \
+            -D /tmp/preauth-headers.txt \
+            -o /tmp/response.json \
+            -w "%{http_code}" \
+            -X POST "$PREAUTH_ENDPOINT" \
+            -H "Authorization: Bearer $ADMIN_API_TOKEN" \
             -H "Content-Type: application/json" \
             -d "$BODY" \
-            --max-time 90)
+            --connect-timeout 15 \
+            --max-time 90) || CURL_EXIT=$?
+
+          echo "curl exit code: $CURL_EXIT"
+          if [ -f /tmp/preauth-headers.txt ]; then
+            echo "Response headers:"
+            cat /tmp/preauth-headers.txt
+          fi
+
+          if [ -f /tmp/response.json ]; then
+            echo "Response body:"
+            cat /tmp/response.json
+          else
+            echo "Response body: <none>"
+          fi
+
+          if [ "$CURL_EXIT" -ne 0 ]; then
+            echo "❌ Request to $PREAUTH_ENDPOINT failed before receiving a valid HTTP response"
+            exit 1
+          fi
 
           echo "HTTP status: $HTTP_STATUS"
-          echo "Response: $(cat /tmp/response.json)"
 
           if [ "$HTTP_STATUS" -lt 200 ] || [ "$HTTP_STATUS" -ge 300 ]; then
             echo "❌ preauth-due returned non-2xx: $HTTP_STATUS"
@@ -43,3 +90,86 @@ jobs:
           fi
 
           echo "✅ preauth-due completed successfully"
+
+      - name: Summarize results
+        # Always run so the summary is visible even on partial failure.
+        if: always() && hashFiles('/tmp/response.json') != ''
+        run: |
+          set -eu
+          # Parse the response with jq. Counts: total processed, individual order failures
+          # (expected operational events — declined cards), and any decline_codes seen.
+          PROCESSED=$(jq -r '.processed // 0' /tmp/response.json 2>/dev/null || echo "?")
+          FAILED=$(jq -r '[.results[]? | select(.error)] | length' /tmp/response.json 2>/dev/null || echo "?")
+          SUCCEEDED=$(jq -r '[.results[]? | select(.pi)] | length' /tmp/response.json 2>/dev/null || echo "?")
+          DECLINE_CODES=$(jq -r '[.results[]? | select(.decline_code) | .decline_code] | unique | join(", ")' /tmp/response.json 2>/dev/null || echo "")
+
+          {
+            echo "### Preauth-due summary"
+            echo ""
+            echo "| Metric | Value |"
+            echo "| --- | --- |"
+            echo "| Orders processed | $PROCESSED |"
+            echo "| Pre-authorized successfully | $SUCCEEDED |"
+            echo "| Per-order failures (declined etc.) | $FAILED |"
+            if [ -n "$DECLINE_CODES" ]; then
+              echo "| Decline codes seen | $DECLINE_CODES |"
+            fi
+            echo ""
+            echo "Per-order failures are operational events (expired card, declined, etc.) — they trigger \`handlePreauthFailure\` server-side, which marks the order Declined and creates a customer retry link. The cron itself succeeded as long as this step's status is 'success'."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Notify Slack on infrastructure failure (only if webhook configured)
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -eu
+          if [ -z "${SLACK_WEBHOOK_URL:-}" ]; then
+            echo "SLACK_WEBHOOK_URL secret not configured; skipping Slack notification."
+            exit 0
+          fi
+          PAYLOAD=$(jq -nc \
+            --arg text "🚨 SERVI preauth-due cron FAILED" \
+            --arg run "$RUN_URL" \
+            '{text: $text, blocks: [
+              {type: "header", text: {type: "plain_text", text: "🚨 SERVI preauth-due cron FAILED"}},
+              {type: "section", text: {type: "mrkdwn", text: ("Run: <" + $run + "|view logs>\nThis means the hourly preauth job did not complete successfully. Saved-card customers entering the 24h window may not have had their cards pre-authorized.")}}
+            ]}')
+          curl -sS -X POST -H "Content-Type: application/json" --data "$PAYLOAD" "$SLACK_WEBHOOK_URL" || true
+
+      - name: File GitHub issue on infrastructure failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -eu
+          # De-dupe by date+hour so a fully broken backend doesn't spam 24 issues/day.
+          BUCKET=$(date -u '+%Y-%m-%d-%H')
+          TITLE="[preauth-cron] failure during $BUCKET UTC"
+          # Skip creating a duplicate issue if one with the same title already exists open.
+          EXISTING=$(gh issue list --state open --search "in:title \"$TITLE\"" --json number --jq '.[0].number // ""')
+          if [ -n "$EXISTING" ]; then
+            echo "Issue #$EXISTING already exists for this hour; not creating a duplicate."
+            exit 0
+          fi
+          BODY=$(cat <<EOF
+          The hourly auto-preauth cron failed.
+
+          - Run: $RUN_URL
+          - Hour bucket (UTC): \`$BUCKET\`
+
+          ## Impact
+          Saved-card customers whose service is within 24h may not have had their cards pre-authorized this hour. They will be retried on the next hourly run.
+
+          ## What to check
+          1. Is \`https://servi-preauth.onrender.com\` reachable? (Render cold-start, deploy in progress, etc.)
+          2. Did the response body show a 5xx with a SQL/Stripe error? Check Render logs.
+          3. Did the workflow fail before the endpoint call? Check this run's logs above.
+
+          ## What is NOT alerted here
+          Individual card declines (\`error: "Your card was declined."\`) are NOT infrastructure failures — they are handled by \`handlePreauthFailure\` server-side and will create a retry link for the customer. The "Summarize results" step shows the per-run breakdown.
+          EOF
+          )
+          gh issue create --title "$TITLE" --body "$BODY" --label "alert,preauth-cron" || gh issue create --title "$TITLE" --body "$BODY"
