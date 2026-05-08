@@ -2504,6 +2504,7 @@ app.post('/tasks/preauth-due', adminRateLimit, requireAdminAuth, async (req, res
           parent_id_of_adjustment,
           kind,
           provider_id,
+          provider_name,
           client_name,
           client_email,
           service_date,
