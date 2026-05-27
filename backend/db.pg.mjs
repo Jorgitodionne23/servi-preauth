@@ -379,6 +379,8 @@ export async function initDb() {
     ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS phone_verified BOOLEAN DEFAULT false;
     ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT false;
     ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS first_identifier_type VARCHAR(10);
+    ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS terms_accepted_at TIMESTAMPTZ;
+    ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS email_skipped_at TIMESTAMPTZ;
 
     -- Backfill: existing phone-OTP users are phone-verified
     UPDATE auth_users SET phone_verified = true, first_identifier_type = 'phone'
@@ -401,6 +403,24 @@ export async function initDb() {
       is_default BOOLEAN DEFAULT FALSE,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
+
+    CREATE TABLE IF NOT EXISTS user_favorite_services (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+      category_key TEXT NOT NULL,
+      subcategory_key TEXT NOT NULL,
+      service_name TEXT NOT NULL,
+      category_name TEXT,
+      subcategory_name TEXT,
+      image_url TEXT,
+      href TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (user_id, category_key, subcategory_key, service_name)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_user_favorite_services_user_created
+      ON user_favorite_services (user_id, created_at DESC);
 
     -- Stripe webhook event ledger: dedupes retried deliveries by event.id.
     -- A row inserted here means "we have started processing this event"; processed_at

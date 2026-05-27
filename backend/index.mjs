@@ -45,6 +45,16 @@ const upload = multer({
 
 // --- Firebase Admin Init ---
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const wantsFirebaseAuthEmulator = !IS_PRODUCTION
+  && !process.env.FIREBASE_SERVICE_ACCOUNT_JSON
+  && !['0', 'false'].includes(String(process.env.USE_FIREBASE_AUTH_EMULATOR || '').toLowerCase());
+
+if (wantsFirebaseAuthEmulator && !process.env.FIREBASE_AUTH_EMULATOR_HOST) {
+  process.env.FIREBASE_AUTH_EMULATOR_HOST = '127.0.0.1:9099';
+}
+
+const USING_FIREBASE_AUTH_EMULATOR = !!process.env.FIREBASE_AUTH_EMULATOR_HOST;
+const CAN_CHECK_FIREBASE_TOKEN_REVOCATION = !!process.env.FIREBASE_SERVICE_ACCOUNT_JSON || USING_FIREBASE_AUTH_EMULATOR;
 
 if (!firebaseAdmin.apps.length) {
   if (IS_PRODUCTION && !process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
@@ -54,8 +64,37 @@ if (!firebaseAdmin.apps.length) {
     ? { credential: firebaseAdmin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON)) }
     : { projectId: process.env.FIREBASE_PROJECT_ID || 'servi-bec91' };
   firebaseAdmin.initializeApp(firebaseInitConfig);
-  if (!process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+  if (USING_FIREBASE_AUTH_EMULATOR) {
+    console.warn(`[STARTUP WARNING] Firebase Admin Auth is using emulator at ${process.env.FIREBASE_AUTH_EMULATOR_HOST}.`);
+  }
+  if (!CAN_CHECK_FIREBASE_TOKEN_REVOCATION) {
     console.warn('[STARTUP WARNING] FIREBASE_SERVICE_ACCOUNT_JSON is not set (dev mode). Token revocation checks are disabled.');
+  }
+}
+
+async function verifyFirebaseIdToken(idToken, checkRevoked = true) {
+  return firebaseAdmin.auth().verifyIdToken(idToken, checkRevoked && CAN_CHECK_FIREBASE_TOKEN_REVOCATION);
+}
+
+function normalizeFirebaseProvider(provider) {
+  const value = String(provider || '').toLowerCase();
+  if (value.includes('google')) return 'google';
+  if (value.includes('phone')) return 'phone';
+  if (value) return 'email';
+  return null;
+}
+
+async function findFirebaseAuthUserByIdentifier(identifier, isEmail) {
+  try {
+    if (isEmail) {
+      const emailNorm = normalizeEmail(identifier);
+      return emailNorm ? await firebaseAdmin.auth().getUserByEmail(emailNorm) : null;
+    }
+    const phoneNorm = normalizePhoneToE164(identifier);
+    return phoneNorm ? await firebaseAdmin.auth().getUserByPhoneNumber(phoneNorm) : null;
+  } catch (err) {
+    if (err.code === 'auth/user-not-found') return null;
+    throw err;
   }
 }
 
@@ -4712,7 +4751,7 @@ app.get('/api/auth/me', async (req, res) => {
   if (!payload?.user_id) return res.status(401).json({ error: 'unauthorized' });
   try {
     const { rows } = await pool.query(
-      'SELECT id, email, name, phone, auth_provider, phone_verified, email_verified FROM auth_users WHERE id = $1',
+      'SELECT id, email, name, phone, auth_provider, phone_verified, email_verified, terms_accepted_at, email_skipped_at FROM auth_users WHERE id = $1',
       [payload.user_id]
     );
     const user = rows[0];
@@ -4721,6 +4760,8 @@ app.get('/api/auth/me', async (req, res) => {
       id: user.id, email: user.email, name: user.name,
       phone: user.phone || null, auth_provider: user.auth_provider || null,
       phone_verified: !!user.phone_verified, email_verified: !!user.email_verified,
+      terms_accepted_at: user.terms_accepted_at || null,
+      email_skipped_at: user.email_skipped_at || null,
     }});
   } catch (err) {
     console.error('[GET /api/auth/me]', err);
@@ -4755,10 +4796,17 @@ app.post('/api/auth/check-identifier', publicFormLimit, async (req, res) => {
       }
     }
 
+    if (!exists) {
+      const firebaseUser = await findFirebaseAuthUserByIdentifier(identifier, isEmail);
+      if (firebaseUser) {
+        exists = true;
+        const providerIds = (firebaseUser.providerData || []).map((entry) => entry.providerId);
+        provider = isEmail && providerIds.includes('google.com') ? 'google' : (isEmail ? 'email' : 'phone');
+      }
+    }
+
     // Normalise provider to the three values the frontend needs
-    if (provider && provider.includes('google')) provider = 'google';
-    else if (provider && (provider === 'phone' || provider === 'phone')) provider = 'phone';
-    else if (provider) provider = 'email';
+    provider = normalizeFirebaseProvider(provider);
 
     return res.json({ exists, provider });
   } catch (err) {
@@ -4787,9 +4835,9 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
     // Verify the Firebase ID token
     let decoded;
     try {
-      decoded = await firebaseAdmin.auth().verifyIdToken(idToken, true);
+      decoded = await verifyFirebaseIdToken(idToken, true);
     } catch (verifyErr) {
-      console.error('[POST /api/auth/firebase] token verification failed:', verifyErr.code);
+      console.error('[POST /api/auth/firebase] token verification failed:', verifyErr.code, verifyErr.message);
       if (verifyErr.code === 'auth/id-token-revoked') {
         return res.status(401).json({ error: 'token_revoked', message: 'Session has been revoked. Please sign in again.' });
       }
@@ -4805,11 +4853,19 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
     const phone = decoded.phone_number || req.body.phone || null;
     const emailNormFromToken = email ? normalizeEmail(email) : null;
     const phoneNormFromToken = phone ? normalizePhoneToE164(phone) : null;
+    const decodedPhoneNorm = decoded.phone_number ? normalizePhoneToE164(decoded.phone_number) : null;
     const provider = decoded.firebase?.sign_in_provider || 'unknown';
-    // Verification flags forwarded by frontend after OTP steps
-    const phoneVerified = req.body.phone_verified != null ? !!req.body.phone_verified : (decoded.phone_number ? true : null);
-    const emailVerified = req.body.email_verified != null ? !!req.body.email_verified : (decoded.email_verified || decoded.email ? true : null);
+    const isGoogleProvider = normalizeFirebaseProvider(provider) === 'google';
+    const phoneVerifiedByFirebase = !!decodedPhoneNorm;
+    const emailVerifiedByFirebase = !!emailNormFromToken && !!(isGoogleProvider || decoded.email_verified || decoded.email);
+    // False flags can close gates after profile edits; true flags are trusted only
+    // when the Firebase token proves the matching identifier.
+    const phoneVerified = req.body.phone_verified === false ? false : (phoneVerifiedByFirebase ? true : null);
+    const emailVerified = req.body.email_verified === false ? false : (emailVerifiedByFirebase ? true : null);
     const firstIdentifierType = req.body.first_identifier_type || null;
+    const signupComplete = req.body.signup_complete === true;
+    const termsAccepted = req.body.terms_accepted === true;
+    const emailSkipped = req.body.email_skipped === true && firstIdentifierType === 'phone' && !emailNormFromToken;
 
     // Look up existing user by firebase_uid, then email, then phone (for phone-only OTP users)
     let { rows } = await pool.query('SELECT * FROM auth_users WHERE firebase_uid = $1', [firebaseUid]);
@@ -4834,7 +4890,7 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
 
     // Update email_verified if Firebase confirms email is verified
     if (user && email && emailVerified) {
-      await pool.query('UPDATE auth_users SET email_verified = true WHERE id = $1 AND email = $2', [user.id, email.toLowerCase().trim()]);
+      await pool.query('UPDATE auth_users SET email_verified = true, email_skipped_at = NULL WHERE id = $1 AND email = $2', [user.id, email.toLowerCase().trim()]);
       user.email_verified = true;
     }
 
@@ -4856,23 +4912,39 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
     if (!user) {
       const id = randomUUID();
       const emailNorm = emailNormFromToken;
-      const phoneNorm = phoneNormFromToken;
-      try {
+      const phoneNorm = decodedPhoneNorm;
+      const cleanName = name ? String(name).trim() : '';
+      const finalPhoneVerified = phoneVerifiedByFirebase;
+      const finalEmailVerified = emailVerifiedByFirebase;
+      const phoneFirstMaySkipEmail = firstIdentifierType === 'phone' && (finalEmailVerified || emailSkipped);
+      const nonPhoneFirstHasVerifiedEmail = firstIdentifierType !== 'phone' && finalEmailVerified;
+      if (!signupComplete || !cleanName || !termsAccepted || !phoneNorm || !finalPhoneVerified || !(phoneFirstMaySkipEmail || nonPhoneFirstHasVerifiedEmail)) {
+        return res.status(409).json({
+          error: 'signup_incomplete',
+          message: 'Complete required signup steps before creating an account.',
+        });
+      }
+      if (!user) try {
         await pool.query(
-          `INSERT INTO auth_users (id, email, name, phone, firebase_uid, auth_provider, phone_verified, email_verified, first_identifier_type)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-          [id, emailNorm, name, phoneNorm, firebaseUid, provider,
-           phoneVerified !== null ? phoneVerified : !!phoneNorm,
-           emailVerified !== null ? emailVerified : !!emailNorm,
-           firstIdentifierType]
+          `INSERT INTO auth_users (id, email, name, phone, firebase_uid, auth_provider, phone_verified, email_verified, first_identifier_type, terms_accepted_at, email_skipped_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), CASE WHEN $10 THEN NOW() ELSE NULL END)`,
+          [id, emailNorm, cleanName, phoneNorm, firebaseUid, provider,
+           finalPhoneVerified,
+           finalEmailVerified,
+           firstIdentifierType,
+           emailSkipped]
         );
-        user = { id, email: emailNorm, name, phone: phoneNorm, phone_verified: !!phoneNorm, email_verified: !!emailNorm };
+        user = { id, email: emailNorm, name: cleanName, phone: phoneNorm, phone_verified: finalPhoneVerified, email_verified: finalEmailVerified, email_skipped_at: emailSkipped ? new Date().toISOString() : null };
         console.log('[POST /api/auth/firebase] new user created:', id, emailNorm || phoneNorm);
       } catch (insertErr) {
         if (insertErr.code === '23505') {
           const isPhone = (insertErr.constraint || '').includes('phone');
           if (isPhone) {
             return res.status(409).json({ error: 'phone_exists', message: 'Este número ya está registrado con otra cuenta.' });
+          }
+          const isEmail = (insertErr.constraint || '').includes('email');
+          if (isEmail) {
+            return res.status(409).json({ error: 'email_taken', message: 'Este correo ya está registrado con otra cuenta.' });
           }
           // Firebase UID race: re-fetch
           ({ rows } = await pool.query('SELECT * FROM auth_users WHERE firebase_uid = $1', [firebaseUid]));
@@ -4909,7 +4981,7 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
     }
 
     // Re-fetch to get canonical verified state
-    ({ rows } = await pool.query('SELECT phone_verified, email_verified FROM auth_users WHERE id = $1', [user.id]));
+    ({ rows } = await pool.query('SELECT phone_verified, email_verified, terms_accepted_at, email_skipped_at FROM auth_users WHERE id = $1', [user.id]));
     const verifiedState = rows[0] || {};
 
     // Resolve Stripe customer if applicable
@@ -4940,6 +5012,8 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
         phone: user.phone || phone || null,
         phone_verified: !!verifiedState.phone_verified,
         email_verified: !!verifiedState.email_verified,
+        terms_accepted_at: verifiedState.terms_accepted_at || null,
+        email_skipped_at: verifiedState.email_skipped_at || null,
       },
     });
   } catch (err) {
@@ -4960,7 +5034,7 @@ app.post('/api/auth/add-email', publicFormLimit, async (req, res) => {
 
     // Verify Firebase token proves ownership of this email
     let decoded;
-    try { decoded = await firebaseAdmin.auth().verifyIdToken(firebase_id_token); }
+    try { decoded = await verifyFirebaseIdToken(firebase_id_token, false); }
     catch (e) { return res.status(401).json({ error: 'invalid_token' }); }
     if (!decoded.email || decoded.email.toLowerCase() !== emailNorm) {
       return res.status(400).json({ error: 'email_mismatch', message: 'Token email does not match supplied email.' });
@@ -4973,7 +5047,7 @@ app.post('/api/auth/add-email', publicFormLimit, async (req, res) => {
     }
 
     await pool.query(
-      'UPDATE auth_users SET email = $1, email_verified = true WHERE id = $2',
+      'UPDATE auth_users SET email = $1, email_verified = true, email_skipped_at = NULL WHERE id = $2',
       [emailNorm, payload.user_id]
     );
     console.log('[POST /api/auth/add-email] email verified for user:', payload.user_id, emailNorm);
@@ -4996,7 +5070,7 @@ app.post('/api/auth/add-phone', publicFormLimit, async (req, res) => {
 
     // Verify Firebase token proves ownership of this phone number
     let decoded;
-    try { decoded = await firebaseAdmin.auth().verifyIdToken(firebase_id_token, true); }
+    try { decoded = await verifyFirebaseIdToken(firebase_id_token, true); }
     catch (e) { return res.status(401).json({ error: 'invalid_token' }); }
     if (!decoded.phone_number || decoded.phone_number !== phoneNorm) {
       return res.status(400).json({ error: 'phone_mismatch', message: 'Token phone does not match supplied phone.' });
@@ -5030,7 +5104,7 @@ app.post('/api/auth/resolve-identifier-mismatch', publicFormLimit, async (req, r
 
     // Must prove email ownership before we reveal anything
     let decoded;
-    try { decoded = await firebaseAdmin.auth().verifyIdToken(firebase_id_token, true); }
+    try { decoded = await verifyFirebaseIdToken(firebase_id_token, true); }
     catch (e) { return res.status(401).json({ error: 'invalid_token' }); }
 
     const emailNorm = normalizeEmail(identifier);
@@ -5083,14 +5157,22 @@ async function requireUserAuth(req, res) {
 //
 // A7: Two windows. Default 300s for routine edits (name, address). Pass 60s for
 // destructive/security-critical actions (phone change, email change, account delete).
-async function requireRecentAuth(req, res, maxAgeSecs = 300) {
+async function requireRecentAuth(req, res, maxAgeSecs = 300, sessionPayload = null) {
   const rawToken = req.headers['x-firebase-reauth-token'] || '';
   if (!rawToken) {
     res.status(401).json({ error: 'reauth_required', message: 'Re-authentication required. Please verify your identity again.' });
     return false;
   }
   try {
-    const decoded = await firebaseAdmin.auth().verifyIdToken(rawToken, true);
+    const decoded = await verifyFirebaseIdToken(rawToken, true);
+    if (sessionPayload?.user_id) {
+      const { rows } = await pool.query('SELECT firebase_uid FROM auth_users WHERE id = $1', [sessionPayload.user_id]);
+      const firebaseUid = rows[0]?.firebase_uid || null;
+      if (!firebaseUid || decoded.uid !== firebaseUid) {
+        res.status(401).json({ error: 'reauth_user_mismatch', message: 'Re-authentication token does not match this account.' });
+        return false;
+      }
+    }
     const now = Math.floor(Date.now() / 1000);
     if ((now - decoded.auth_time) > maxAgeSecs) {
       res.status(401).json({ error: 'reauth_too_old', message: 'Re-authentication expired. Please verify your identity again.' });
@@ -5119,7 +5201,7 @@ app.patch('/api/auth/me', publicFormLimit, async (req, res) => {
   // Name-only edits don't need it.
   const isDestructive = req.body?.phone !== undefined || req.body?.email !== undefined;
   if (isDestructive) {
-    const reauthed = await requireRecentAuth(req, res, RECENT_AUTH_DESTRUCTIVE_SECS);
+    const reauthed = await requireRecentAuth(req, res, RECENT_AUTH_DESTRUCTIVE_SECS, payload);
     if (!reauthed) return;
   }
   try {
@@ -5155,7 +5237,7 @@ app.patch('/api/auth/me', publicFormLimit, async (req, res) => {
     if (!sets.length) return res.status(400).json({ error: 'no_fields' });
     params.push(payload.user_id);
     await pool.query(`UPDATE auth_users SET ${sets.join(', ')} WHERE id = $${params.length}`, params);
-    const { rows } = await pool.query('SELECT id, email, name, phone, auth_provider, phone_verified, email_verified FROM auth_users WHERE id = $1', [payload.user_id]);
+    const { rows } = await pool.query('SELECT id, email, name, phone, auth_provider, phone_verified, email_verified, terms_accepted_at, email_skipped_at FROM auth_users WHERE id = $1', [payload.user_id]);
     const u = rows[0];
 
     // A12: audit identifier changes
@@ -5167,6 +5249,8 @@ app.patch('/api/auth/me', publicFormLimit, async (req, res) => {
       id: u.id, email: u.email, name: u.name, phone: u.phone || null,
       auth_provider: u.auth_provider || null,
       phone_verified: !!u.phone_verified, email_verified: !!u.email_verified,
+      terms_accepted_at: u.terms_accepted_at || null,
+      email_skipped_at: u.email_skipped_at || null,
     }});
   } catch (err) {
     if (err.code === '23505') return res.status(409).json({ error: 'conflict', message: 'Ese dato ya está en uso.' });
@@ -5302,7 +5386,7 @@ app.post('/api/auth/refresh', publicFormLimit, async (req, res) => {
   try {
     // Re-fetch user from DB (don't trust JWT claims for user data)
     const { rows } = await pool.query(
-      'SELECT id, email, name, phone, auth_provider, phone_verified, email_verified FROM auth_users WHERE id = $1',
+      'SELECT id, email, name, phone, auth_provider, phone_verified, email_verified, terms_accepted_at, email_skipped_at FROM auth_users WHERE id = $1',
       [payload.user_id]
     );
     if (!rows.length) return res.status(404).json({ error: 'user_not_found' });
@@ -5323,6 +5407,8 @@ app.post('/api/auth/refresh', publicFormLimit, async (req, res) => {
         auth_provider: u.auth_provider || null,
         phone_verified: !!u.phone_verified,
         email_verified: !!u.email_verified,
+        terms_accepted_at: u.terms_accepted_at || null,
+        email_skipped_at: u.email_skipped_at || null,
       }
     });
   } catch (err) {
@@ -5430,6 +5516,95 @@ app.patch('/api/auth/addresses/:id/default', publicFormLimit, async (req, res) =
     return res.json({ ok: true });
   } catch (err) {
     console.error('[PATCH /api/auth/addresses/:id/default]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// GET /api/auth/favorites
+app.get('/api/auth/favorites', async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, category_key, subcategory_key, service_name, category_name,
+              subcategory_name, image_url, href, created_at, updated_at
+       FROM user_favorite_services
+       WHERE user_id = $1
+       ORDER BY created_at DESC`,
+      [payload.user_id]
+    );
+    return res.json({ favorites: rows });
+  } catch (err) {
+    console.error('[GET /api/auth/favorites]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// POST /api/auth/favorites
+app.post('/api/auth/favorites', publicFormLimit, async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const {
+      category_key,
+      subcategory_key,
+      service_name,
+      category_name,
+      subcategory_name,
+      image_url,
+      href,
+    } = req.body || {};
+
+    if (!category_key || !subcategory_key || !service_name) {
+      return res.status(400).json({ error: 'missing_favorite_fields' });
+    }
+
+    const id = randomUUID();
+    const { rows } = await pool.query(
+      `INSERT INTO user_favorite_services
+        (id, user_id, category_key, subcategory_key, service_name, category_name, subcategory_name, image_url, href)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       ON CONFLICT (user_id, category_key, subcategory_key, service_name)
+       DO UPDATE SET
+         category_name = EXCLUDED.category_name,
+         subcategory_name = EXCLUDED.subcategory_name,
+         image_url = EXCLUDED.image_url,
+         href = EXCLUDED.href,
+         updated_at = NOW()
+       RETURNING id, category_key, subcategory_key, service_name, category_name,
+                 subcategory_name, image_url, href, created_at, updated_at`,
+      [
+        id,
+        payload.user_id,
+        String(category_key).slice(0, 80),
+        String(subcategory_key).slice(0, 120),
+        String(service_name).slice(0, 240),
+        category_name ? String(category_name).slice(0, 160) : null,
+        subcategory_name ? String(subcategory_name).slice(0, 160) : null,
+        image_url ? String(image_url).slice(0, 1000) : null,
+        href ? String(href).slice(0, 1000) : null,
+      ]
+    );
+    return res.status(201).json({ favorite: rows[0] });
+  } catch (err) {
+    console.error('[POST /api/auth/favorites]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// DELETE /api/auth/favorites/:id
+app.delete('/api/auth/favorites/:id', async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const { rowCount } = await pool.query(
+      'DELETE FROM user_favorite_services WHERE id = $1 AND user_id = $2',
+      [req.params.id, payload.user_id]
+    );
+    if (!rowCount) return res.status(404).json({ error: 'not_found' });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('[DELETE /api/auth/favorites/:id]', err);
     return res.status(500).json({ error: 'internal_error' });
   }
 });
@@ -5790,6 +5965,82 @@ app.get('/api/admin/stats', adminRateLimit, requireAdminAuth, async (req, res) =
   } catch (err) {
     console.error('[GET /api/admin/stats]', err);
     return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// --- Admin dashboard: Regenerate payment link (resets retry_token + 2h expiry) ---
+app.post('/api/admin/orders/:id/regenerate-link', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { rows } = await pool.query(
+      `SELECT id, customer_id, kind, status FROM all_bookings WHERE id = $1 LIMIT 1`,
+      [id]
+    );
+    const row = rows[0];
+    if (!row) return res.status(404).json({ error: 'not_found' });
+
+    const token = randomBytes(12).toString('base64url');
+    const upd = await pool.query(
+      `UPDATE all_bookings
+          SET retry_token = $1,
+              retry_token_created_at = NOW()
+        WHERE id = $2
+        RETURNING retry_token_created_at`,
+      [token, id]
+    );
+
+    const useBookFlow = Boolean(row.customer_id) || row.kind === 'book' || row.kind === 'adjustment';
+    const baseUrl = useBookFlow
+      ? buildFrontendUrl('/book.html', { orderId: id })
+      : buildFrontendUrl('/pay.html', { order: id });
+    const urlObj = baseUrl ? new URL(baseUrl) : null;
+    if (urlObj) urlObj.searchParams.set('rt', token);
+
+    return res.json({
+      ok: true,
+      url: urlObj ? urlObj.toString() : baseUrl,
+      flow: useBookFlow ? 'book' : 'pay',
+      issued_at: upd.rows[0]?.retry_token_created_at || new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error('[POST /api/admin/orders/:id/regenerate-link]', err);
+    return res.status(500).json({ error: 'internal_error', message: err.message });
+  }
+});
+
+// --- Admin dashboard: Mark as cash (admin-side cash exception) ---
+app.post('/api/admin/orders/:id/mark-cash', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { rows } = await pool.query(
+      `SELECT id, payment_intent_id, cash_selected, status FROM all_bookings WHERE id = $1 LIMIT 1`,
+      [id]
+    );
+    const row = rows[0];
+    if (!row) return res.status(404).json({ error: 'not_found' });
+    if (row.cash_selected) return res.json({ ok: true, status: row.status || 'Pending Cash' });
+
+    if (row.payment_intent_id) {
+      try {
+        await stripe.paymentIntents.cancel(row.payment_intent_id, { cancellation_reason: 'requested_by_customer' });
+      } catch (cancelErr) {
+        console.warn('mark-cash: cancel PI failed', cancelErr?.message || cancelErr);
+      }
+    }
+
+    await pool.query(
+      `UPDATE all_bookings
+          SET cash_exception_allowed = TRUE,
+              cash_selected = TRUE,
+              status = 'Pending Cash',
+              payment_intent_id = NULL
+        WHERE id = $1`,
+      [id]
+    );
+    return res.json({ ok: true, status: 'Pending Cash' });
+  } catch (err) {
+    console.error('[POST /api/admin/orders/:id/mark-cash]', err);
+    return res.status(500).json({ error: 'internal_error', message: err.message });
   }
 });
 

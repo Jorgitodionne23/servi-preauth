@@ -6,108 +6,354 @@
   <title>SERVI — Mi Cuenta</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,700&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,700;1,9..40,400&family=Syne:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/shared/shared-styles.css">
+  <link rel="stylesheet" href="/shared/landing-theme.css">
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
   <style>
-    .account-page { padding: 120px 0 80px; min-height: 100vh; }
-    .account-layout { display: grid; grid-template-columns: 220px 1fr; gap: 32px; align-items: start; }
-    .account-sidebar { background: #fff; border: 1px solid #e8e8e8; border-radius: 16px; overflow: hidden; position: sticky; top: 100px; }
-    .account-sidebar-item { display: flex; align-items: center; gap: 12px; padding: 14px 20px; font-size: 14px; font-weight: 500; color: #555; cursor: pointer; border: none; background: none; width: 100%; text-align: left; font-family: 'DM Sans', sans-serif; transition: background 0.15s, color 0.15s; border-left: 3px solid transparent; }
-    .account-sidebar-item:hover { background: #f5f5f5; color: #0a0a0a; }
-    .account-sidebar-item.active { color: #0a0a0a; font-weight: 700; background: #f0fdf8; border-left-color: #10b981; }
-    .account-sidebar-item.danger { color: #dc2626; }
-    .account-sidebar-item.danger:hover { background: #fef2f2; }
-    .account-sidebar-item.danger.active { background: #fef2f2; border-left-color: #dc2626; }
-    .account-card { background: #fff; border: 1px solid #e8e8e8; border-radius: 16px; padding: 32px; }
+    .account-page {
+      --account-accent-soft: rgba(149, 204, 213, 0.14);
+      --account-accent-ring: rgba(149, 204, 213, 0.24);
+      --account-danger: #c55d49;
+      --account-danger-soft: rgba(197, 93, 73, 0.10);
+      padding: 132px 0 88px;
+      min-height: 100vh;
+      position: relative;
+    }
+    .account-page::before {
+      content: "";
+      position: absolute;
+      inset: 0 0 auto;
+      height: 520px;
+      background:
+        radial-gradient(circle at 12% 18%, rgba(149, 204, 213, 0.24), transparent 34%),
+        radial-gradient(circle at 82% 0%, rgba(149, 204, 213, 0.14), transparent 30%);
+      pointer-events: none;
+      opacity: 0.95;
+      -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 38%, transparent 100%);
+      mask-image: linear-gradient(to bottom, #000 0%, #000 38%, transparent 100%);
+    }
+    .account-page > .container { position: relative; z-index: 1; }
+    .account-layout { display: grid; grid-template-columns: 240px 1fr; gap: 32px; align-items: start; }
+    .account-sidebar {
+      background: rgba(255, 255, 255, 0.8);
+      border: 1px solid var(--color-border);
+      border-radius: 20px;
+      overflow: hidden;
+      position: sticky;
+      top: 104px;
+      backdrop-filter: blur(18px);
+      box-shadow: 0 24px 48px -30px rgba(17, 17, 17, 0.25);
+    }
+    .account-sidebar-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 15px 20px;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--color-text-secondary);
+      cursor: pointer;
+      border: none;
+      background: none;
+      width: 100%;
+      text-align: left;
+      font-family: var(--font-body);
+      transition: background var(--duration-fast), color var(--duration-fast), border-color var(--duration-fast);
+      border-left: 3px solid transparent;
+    }
+    .account-sidebar-item:hover { background: var(--color-surface); color: var(--color-text); }
+    .account-sidebar-item.active {
+      color: var(--color-text);
+      font-weight: 700;
+      background: var(--account-accent-soft);
+      border-left-color: var(--color-accent);
+    }
+    .account-sidebar-item.danger { color: var(--account-danger); }
+    .account-sidebar-item.danger:hover { background: var(--account-danger-soft); }
+    .account-sidebar-item.danger.active { background: var(--account-danger-soft); border-left-color: var(--account-danger); }
+    .account-card {
+      background: rgba(255, 255, 255, 0.84);
+      border: 1px solid var(--color-border);
+      border-radius: 24px;
+      padding: 32px;
+      backdrop-filter: blur(18px);
+      box-shadow: 0 28px 56px -34px rgba(17, 17, 17, 0.24);
+    }
     .account-card + .account-card { margin-top: 20px; }
     .account-section { display: none; }
     .account-section.active { display: block; }
-    .section-title { font-family: 'Syne', sans-serif; font-size: 22px; font-weight: 800; color: #0a0a0a; margin-bottom: 6px; }
-    .section-sub { font-size: 14px; color: #888; margin-bottom: 28px; }
+    .section-title {
+      font-family: var(--font-heading);
+      font-size: 24px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      color: var(--color-text);
+      margin-bottom: 6px;
+    }
+    .section-sub { font-size: 14px; color: var(--color-text-muted); margin-bottom: 28px; line-height: 1.6; }
     .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
     .form-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
-    .form-label { font-size: 12px; font-weight: 700; color: #555; text-transform: uppercase; letter-spacing: 0.04em; }
-    .form-input { padding: 12px 14px; border: 1.5px solid #e0e0e0; border-radius: 12px; font-size: 15px; font-family: 'DM Sans', sans-serif; color: #0a0a0a; background: #fff; outline: none; transition: border-color 0.2s; }
-    .form-input:focus { border-color: #10b981; }
-    .form-input:disabled { background: #f9f9f9; color: #aaa; cursor: not-allowed; }
-    .form-input::placeholder { color: #bbb; }
-    .btn-save { display: inline-flex; align-items: center; gap: 8px; padding: 12px 24px; background: #0a0a0a; color: #fff; border: none; border-radius: 12px; font-size: 14px; font-weight: 700; font-family: 'DM Sans', sans-serif; cursor: pointer; transition: opacity 0.2s; }
-    .btn-save:hover { opacity: 0.85; }
+    .form-label { font-size: 12px; font-weight: 700; color: var(--color-text-secondary); text-transform: uppercase; letter-spacing: 0.08em; }
+    .form-input {
+      padding: 13px 15px;
+      border: 1.5px solid var(--color-border-input);
+      border-radius: 14px;
+      font-size: 15px;
+      font-family: var(--font-body);
+      color: var(--color-text);
+      background: rgba(255, 255, 255, 0.95);
+      outline: none;
+      transition: border-color var(--duration-fast), box-shadow var(--duration-fast), background var(--duration-fast);
+    }
+    .form-input:focus {
+      border-color: var(--color-accent);
+      box-shadow: 0 0 0 4px var(--account-accent-ring);
+    }
+    .form-input:disabled { background: var(--color-surface); color: var(--color-text-muted); cursor: not-allowed; }
+    .form-input::placeholder { color: #b2b2b2; }
+    .btn-save {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 13px 24px;
+      background: var(--color-text);
+      color: #fff;
+      border: none;
+      border-radius: 14px;
+      font-size: 14px;
+      font-weight: 700;
+      font-family: var(--font-body);
+      cursor: pointer;
+      transition: transform var(--duration-fast), box-shadow var(--duration-fast), background var(--duration-fast);
+      box-shadow: 0 18px 30px -22px rgba(17, 17, 17, 0.7);
+    }
+    .btn-save:hover {
+      background: var(--color-accent);
+      color: #fff;
+      transform: translateY(-1px);
+      box-shadow: 0 20px 34px -20px rgba(149, 204, 213, 0.65);
+    }
     .btn-save:disabled { opacity: 0.4; cursor: default; }
-    .btn-outline { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; background: #fff; color: #0a0a0a; border: 1.5px solid #e0e0e0; border-radius: 10px; font-size: 13px; font-weight: 600; font-family: 'DM Sans', sans-serif; cursor: pointer; transition: border-color 0.2s, background 0.2s; }
-    .btn-outline:hover { border-color: #0a0a0a; background: #f5f5f5; }
-    .btn-danger { display: inline-flex; align-items: center; gap: 8px; padding: 12px 24px; background: #dc2626; color: #fff; border: none; border-radius: 12px; font-size: 14px; font-weight: 700; font-family: 'DM Sans', sans-serif; cursor: pointer; transition: opacity 0.2s; }
+    .btn-outline {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 11px 18px;
+      background: rgba(255, 255, 255, 0.92);
+      color: var(--color-text);
+      border: 1.5px solid var(--color-border-input);
+      border-radius: 12px;
+      font-size: 13px;
+      font-weight: 600;
+      font-family: var(--font-body);
+      cursor: pointer;
+      transition: border-color var(--duration-fast), background var(--duration-fast), color var(--duration-fast);
+    }
+    .btn-outline:hover { border-color: var(--color-accent); background: var(--account-accent-soft); color: var(--color-text); }
+    .btn-danger { display: inline-flex; align-items: center; gap: 8px; padding: 12px 24px; background: var(--account-danger); color: #fff; border: none; border-radius: 14px; font-size: 14px; font-weight: 700; font-family: var(--font-body); cursor: pointer; transition: opacity 0.2s; }
     .btn-danger:hover { opacity: 0.85; }
-    .success-msg { display: none; align-items: center; gap: 8px; font-size: 14px; color: #059669; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 10px 14px; margin-top: 14px; }
-    .error-msg { display: none; font-size: 13px; color: #dc2626; margin-top: 8px; }
-    .info-box { background: #f8f8f8; border: 1px solid #e8e8e8; border-radius: 12px; padding: 16px 20px; font-size: 14px; color: #555; display: flex; align-items: center; gap: 10px; margin-bottom: 20px; }
+    .success-msg {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      color: var(--color-text);
+      background: var(--account-accent-soft);
+      border: 1px solid rgba(149, 204, 213, 0.42);
+      border-radius: 12px;
+      padding: 10px 14px;
+      margin-top: 14px;
+    }
+    .error-msg { display: none; font-size: 13px; color: var(--account-danger); margin-top: 8px; }
+    .info-box {
+      background: rgba(255, 255, 255, 0.72);
+      border: 1px solid var(--color-border);
+      border-radius: 16px;
+      padding: 16px 20px;
+      font-size: 14px;
+      color: var(--color-text-secondary);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .verify-warning {
+      display: none;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 18px 20px;
+      margin-bottom: 20px;
+      border-radius: 18px;
+      border: 1px solid rgba(161, 98, 7, 0.22);
+      background: linear-gradient(135deg, rgba(255, 251, 235, 0.94), rgba(255, 255, 255, 0.78));
+      box-shadow: 0 18px 40px -34px rgba(120, 53, 15, 0.45);
+    }
+    .verify-warning.visible { display: flex; }
+    .verify-warning-mark {
+      width: 28px;
+      height: 28px;
+      border-radius: 999px;
+      background: #a16207;
+      color: #fff;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 15px;
+      font-weight: 800;
+      flex: 0 0 auto;
+      margin-top: 1px;
+    }
+    .verify-warning-body { display: flex; gap: 12px; min-width: 0; }
+    .verify-warning-title { font-size: 14px; font-weight: 800; color: #4a3421; margin-bottom: 3px; }
+    .verify-warning-text { font-size: 13px; line-height: 1.45; color: #6f5742; }
+    .verify-warning-action {
+      flex: 0 0 auto;
+      border: none;
+      border-radius: 12px;
+      padding: 10px 14px;
+      background: #15110d;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 700;
+      font-family: var(--font-body);
+      cursor: pointer;
+      transition: transform var(--duration-fast), opacity var(--duration-fast);
+    }
+    .verify-warning-action:hover { transform: translateY(-1px); }
+    .verify-warning-action:active { transform: translateY(0); opacity: 0.86; }
+    .verify-warning-action:disabled { opacity: 0.55; cursor: default; transform: none; }
     /* Addresses */
     .address-list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px; }
-    .address-card { border: 1.5px solid #e8e8e8; border-radius: 12px; padding: 16px 18px; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; transition: border-color 0.2s; }
-    .address-card.default { border-color: #10b981; background: #f0fdf8; }
-    .address-label { font-size: 13px; font-weight: 700; color: #0a0a0a; display: flex; align-items: center; gap: 8px; }
-    .badge-default { background: #10b981; color: #fff; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.05em; }
-    .address-detail { font-size: 13px; color: #666; margin-top: 2px; }
+    .address-card {
+      border: 1.5px solid var(--color-border);
+      border-radius: 16px;
+      padding: 16px 18px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      transition: border-color var(--duration-fast), background var(--duration-fast);
+      background: rgba(255, 255, 255, 0.68);
+    }
+    .address-card.default { border-color: var(--color-accent); background: var(--account-accent-soft); }
+    .address-label { font-size: 13px; font-weight: 700; color: var(--color-text); display: flex; align-items: center; gap: 8px; }
+    .badge-default {
+      background: var(--color-accent);
+      color: #fff;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 20px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .address-detail { font-size: 13px; color: var(--color-text-secondary); margin-top: 2px; }
     .address-actions { display: flex; gap: 6px; flex-shrink: 0; }
-    .addr-btn { padding: 5px 10px; border-radius: 7px; font-size: 11px; font-weight: 700; font-family: 'DM Sans', sans-serif; cursor: pointer; border: 1.5px solid #e0e0e0; background: #fff; color: #555; transition: all 0.15s; }
-    .addr-btn:hover { border-color: #0a0a0a; color: #0a0a0a; }
-    .addr-btn.default-btn:hover { border-color: #10b981; color: #10b981; }
-    .addr-btn.delete-btn:hover { border-color: #dc2626; color: #dc2626; }
-    .add-address-form { background: #f8f8f8; border: 1.5px dashed #d0d0d0; border-radius: 12px; padding: 20px; display: none; }
+    .addr-btn {
+      padding: 6px 10px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 700;
+      font-family: var(--font-body);
+      cursor: pointer;
+      border: 1.5px solid var(--color-border-input);
+      background: rgba(255, 255, 255, 0.92);
+      color: var(--color-text-secondary);
+      transition: all var(--duration-fast);
+    }
+    .addr-btn:hover { border-color: var(--color-text); color: var(--color-text); }
+    .addr-btn.default-btn:hover { border-color: var(--color-accent); color: var(--color-accent); background: var(--account-accent-soft); }
+    .addr-btn.delete-btn:hover { border-color: var(--account-danger); color: var(--account-danger); background: var(--account-danger-soft); }
+    .add-address-form { background: rgba(255, 255, 255, 0.58); border: 1.5px dashed rgba(149, 204, 213, 0.58); border-radius: 16px; padding: 20px; display: none; }
     .add-address-form.open { display: block; }
     /* Danger zone */
-    .danger-zone { border: 1.5px solid #fecaca; border-radius: 16px; padding: 28px; background: #fff; }
-    .danger-title { font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 800; color: #dc2626; margin-bottom: 8px; }
-    .danger-text { font-size: 14px; color: #666; margin-bottom: 20px; line-height: 1.6; }
+    .danger-zone { border: 1.5px solid rgba(197, 93, 73, 0.28); border-radius: 24px; padding: 28px; background: rgba(255, 255, 255, 0.84); box-shadow: 0 24px 48px -34px rgba(17, 17, 17, 0.24); }
+    .danger-title { font-family: var(--font-heading); font-size: 20px; font-weight: 800; color: var(--account-danger); margin-bottom: 8px; letter-spacing: -0.02em; }
+    .danger-text { font-size: 14px; color: var(--color-text-secondary); margin-bottom: 20px; line-height: 1.6; }
     /* Mobile top tabs */
     .mobile-tabs { display: none; overflow-x: auto; gap: 8px; padding-bottom: 4px; margin-bottom: 20px; }
-    .mobile-tab { flex-shrink: 0; padding: 8px 16px; border-radius: 20px; font-size: 13px; font-weight: 600; border: 1.5px solid #e0e0e0; background: #fff; color: #555; cursor: pointer; font-family: 'DM Sans', sans-serif; white-space: nowrap; }
-    .mobile-tab.active { background: #0a0a0a; color: #fff; border-color: #0a0a0a; }
-    .mobile-tab.danger.active { background: #dc2626; border-color: #dc2626; }
+    .mobile-tab { flex-shrink: 0; padding: 10px 16px; border-radius: 9999px; font-size: 13px; font-weight: 600; border: 1.5px solid var(--color-border-input); background: rgba(255, 255, 255, 0.92); color: var(--color-text-secondary); cursor: pointer; font-family: var(--font-body); white-space: nowrap; }
+    .mobile-tab.active { background: var(--color-text); color: #fff; border-color: var(--color-text); }
+    .mobile-tab.danger.active { background: var(--account-danger); border-color: var(--account-danger); }
     /* Payment Methods */
     .pm-list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px; }
-    .pm-card { border: 1.5px solid #e8e8e8; border-radius: 12px; padding: 16px 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px; transition: border-color 0.2s; }
-    .pm-card.default { border-color: #10b981; background: #f0fdf8; }
+    .pm-card { border: 1.5px solid var(--color-border); border-radius: 16px; padding: 16px 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px; transition: border-color var(--duration-fast), background var(--duration-fast); background: rgba(255, 255, 255, 0.68); }
+    .pm-card.default { border-color: var(--color-accent); background: var(--account-accent-soft); }
     .pm-brand-wrap { display: flex; align-items: center; gap: 12px; }
-    .pm-brand-badge { border-radius: 6px; padding: 4px 10px; font-size: 11px; font-weight: 700; color: #fff; text-transform: uppercase; letter-spacing: 0.05em; background: #555; }
+    .pm-brand-badge { border-radius: 9999px; padding: 5px 10px; font-size: 11px; font-weight: 700; color: #fff; text-transform: uppercase; letter-spacing: 0.05em; background: var(--color-text-secondary); }
     .pm-brand-badge.visa { background: #1a1f71; }
     .pm-brand-badge.mastercard { background: #eb001b; }
     .pm-brand-badge.amex { background: #2e77bc; }
     .pm-brand-badge.discover { background: #f76d1b; }
     .pm-brand-badge.apple { background: #000; }
     .pm-brand-badge.google { background: #4285f4; }
-    .pm-info { font-size: 14px; color: #0a0a0a; font-weight: 500; display: flex; align-items: center; gap: 8px; }
-    .pm-exp { font-size: 12px; color: #888; margin-top: 2px; }
+    .pm-info { font-size: 14px; color: var(--color-text); font-weight: 500; display: flex; align-items: center; gap: 8px; }
+    .pm-exp { font-size: 12px; color: var(--color-text-muted); margin-top: 2px; }
     .pm-actions { display: flex; gap: 6px; flex-shrink: 0; }
     /* Add payment modal */
     .pm-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 9999; backdrop-filter: blur(4px); }
-    .pm-modal-box { background: #fff; border-radius: 20px; padding: 28px; width: 460px; max-width: 95%; box-shadow: 0 20px 60px rgba(0,0,0,0.15); }
-    .pm-modal-title { font-family: 'Syne', sans-serif; font-size: 20px; font-weight: 800; color: #0a0a0a; margin-bottom: 6px; }
-    .pm-modal-sub { font-size: 13px; color: #888; margin-bottom: 24px; line-height: 1.5; }
+    .pm-modal-box { background: rgba(255, 255, 255, 0.96); border: 1px solid rgba(255,255,255,0.7); border-radius: 24px; padding: 28px; width: 460px; max-width: 95%; box-shadow: 0 28px 80px rgba(0,0,0,0.18); }
+    .pm-modal-title { font-family: var(--font-heading); font-size: 20px; font-weight: 800; color: var(--color-text); margin-bottom: 6px; letter-spacing: -0.02em; }
+    .pm-modal-sub { font-size: 13px; color: var(--color-text-muted); margin-bottom: 24px; line-height: 1.5; }
     #payment-element-mount { margin-bottom: 20px; min-height: 48px; }
     .pm-modal-actions { display: flex; gap: 10px; }
+    /* Favorite services */
+    .favorite-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+    .favorite-card {
+      border: 1.5px solid var(--color-border);
+      border-radius: 16px;
+      overflow: hidden;
+      background: rgba(255, 255, 255, 0.74);
+      display: grid;
+      grid-template-columns: 120px 1fr;
+      min-height: 118px;
+    }
+    .favorite-media { background: var(--color-surface); min-height: 118px; }
+    .favorite-media img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .favorite-body { padding: 14px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+    .favorite-kicker { font-size: 11px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .favorite-title { font-size: 15px; font-weight: 800; line-height: 1.25; color: var(--color-text); }
+    .favorite-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: auto; }
+    .favorite-empty { border: 1.5px dashed rgba(149, 204, 213, 0.55); border-radius: 18px; padding: 28px; text-align: center; background: rgba(255,255,255,0.58); }
+    .favorite-empty-title { font-size: 16px; font-weight: 800; color: var(--color-text); margin-bottom: 6px; }
+    .favorite-empty-text { font-size: 13px; color: var(--color-text-secondary); line-height: 1.5; margin-bottom: 16px; }
     /* Confirm modal */
     .confirm-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 9999; backdrop-filter: blur(4px); }
-    .confirm-box { background: #fff; border-radius: 16px; padding: 28px; width: 380px; max-width: 94%; box-shadow: 0 20px 60px rgba(0,0,0,0.15); }
-    .confirm-box h3 { font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 800; margin-bottom: 8px; }
-    .confirm-box p { font-size: 14px; color: #666; margin-bottom: 18px; line-height: 1.5; }
+    .confirm-box { background: rgba(255, 255, 255, 0.96); border: 1px solid rgba(255,255,255,0.7); border-radius: 24px; padding: 28px; width: 380px; max-width: 94%; box-shadow: 0 28px 80px rgba(0,0,0,0.18); }
+    .confirm-box h3 { font-family: var(--font-heading); font-size: 18px; font-weight: 800; margin-bottom: 8px; letter-spacing: -0.02em; }
+    .confirm-box p { font-size: 14px; color: var(--color-text-secondary); margin-bottom: 18px; line-height: 1.5; }
     .confirm-row { display: flex; gap: 10px; justify-content: flex-end; }
-    .confirm-cancel { padding: 10px 18px; border-radius: 10px; border: 1.5px solid #e0e0e0; background: #fff; color: #555; font-size: 13px; font-weight: 600; font-family: 'DM Sans', sans-serif; cursor: pointer; }
-    .confirm-ok { padding: 10px 18px; border-radius: 10px; border: none; background: #dc2626; color: #fff; font-size: 13px; font-weight: 700; font-family: 'DM Sans', sans-serif; cursor: pointer; }
+    .confirm-cancel { padding: 10px 18px; border-radius: 12px; border: 1.5px solid var(--color-border-input); background: #fff; color: var(--color-text-secondary); font-size: 13px; font-weight: 600; font-family: var(--font-body); cursor: pointer; }
+    .confirm-ok { padding: 10px 18px; border-radius: 12px; border: none; background: #c55d49; color: #fff; font-size: 13px; font-weight: 700; font-family: var(--font-body); cursor: pointer; }
+    .confirm-ok:hover { background: #b04e3c; }
+    .confirm-ok:disabled { opacity: 0.6; cursor: not-allowed; }
     @media (max-width: 900px) {
+      .account-page { padding: 112px 0 72px; }
       .account-layout { grid-template-columns: 1fr; }
       .account-sidebar { display: none; }
       .mobile-tabs { display: flex; }
       .form-row { grid-template-columns: 1fr; }
+      .favorite-list { grid-template-columns: 1fr; }
+      .favorite-card { grid-template-columns: 96px 1fr; }
+      .account-card,
+      .danger-zone { padding: 24px; border-radius: 20px; }
+      .verify-warning { flex-direction: column; }
+      .verify-warning-action { width: 100%; }
+      /* Prevent iOS Safari auto-zoom on input focus */
+      .form-input { font-size: 16px; }
     }
   </style>
 </head>
-<body>
-<script src="/shared/i18n.js"></script>
+<body class="landing-page">
 <script src="/config.js"></script>
+<script src="/shared/i18n.js"></script>
 <script src="/shared/shared-auth.js"></script>
 <div id="navbar"></div>
-<script src="/shared/shared-nav.js"></script>
+<script src="/shared/morphing-nav.js"></script>
 
 <script src="https://js.stripe.com/v3/"></script>
 
@@ -121,6 +367,16 @@
 
       <!-- Content -->
       <div id="account-content">
+        <div class="verify-warning" id="email-verify-warning">
+          <div class="verify-warning-body">
+            <span class="verify-warning-mark">!</span>
+            <div>
+              <div class="verify-warning-title" id="email-warning-title">Verifica tu correo</div>
+              <div class="verify-warning-text" id="email-warning-text">Verifica tu correo para proteger tu cuenta y confirmar solicitudes.</div>
+            </div>
+          </div>
+          <button class="verify-warning-action" id="email-warning-action" onclick="handleEmailWarningAction()">Verificar correo</button>
+        </div>
 
         <!-- Personal Info -->
         <section class="account-section" id="section-info">
@@ -157,7 +413,7 @@
             <div class="info-box" id="security-info">
               🔐 <span id="security-info-text">Tu cuenta usa inicio de sesión con teléfono o Google. No se requiere contraseña.</span>
             </div>
-            <div style="margin-top:16px;font-size:14px;color:#666;line-height:1.6" id="security-provider-info"></div>
+            <div style="margin-top:16px;font-size:14px;color:var(--color-text-secondary);line-height:1.6" id="security-provider-info"></div>
           </div>
         </section>
 
@@ -197,8 +453,8 @@
                   <input class="form-input" id="addr-postal" type="text" placeholder="05348">
                 </div>
                 <div class="form-group" style="justify-content:flex-end;padding-top:22px">
-                  <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#555;cursor:pointer">
-                    <input type="checkbox" id="addr-default" style="width:15px;height:15px;accent-color:#10b981">
+                  <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--color-text-secondary);cursor:pointer">
+                    <input type="checkbox" id="addr-default" style="width:15px;height:15px;accent-color:var(--color-accent)">
                     <span id="lbl-addr-default">Predeterminada</span>
                   </label>
                 </div>
@@ -209,6 +465,18 @@
               </div>
               <div class="error-msg" id="addr-error"></div>
             </div>
+          </div>
+        </section>
+
+        <!-- Favorite Services -->
+        <section class="account-section" id="section-favorites">
+          <div class="account-card">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;gap:12px">
+              <div class="section-title" id="title-favorites">Favoritos</div>
+              <a class="btn-outline" href="/browse.html" id="browse-favorites-btn">Explorar servicios</a>
+            </div>
+            <div class="section-sub" id="sub-favorites">Tu lista de servicios frecuentes para volver a reservar rápido.</div>
+            <div class="favorite-list" id="favorite-list"></div>
           </div>
         </section>
 
@@ -251,10 +519,13 @@ const isEs = () => (localStorage.getItem('servi-lang') || 'es') === 'es';
 const TX = {
   es: {
     pageTitle: 'Mi cuenta',
-    navInfo: 'Información personal', navSecurity: 'Seguridad', navAddresses: 'Mis direcciones', navPayments: 'Métodos de pago', navDelete: 'Eliminar cuenta',
+    navInfo: 'Información personal', navSecurity: 'Seguridad', navAddresses: 'Mis direcciones', navFavorites: 'Favoritos', navPayments: 'Métodos de pago', navDelete: 'Eliminar cuenta',
     titleInfo: 'Información personal', subInfo: 'Actualiza tu nombre, correo y teléfono.',
     titleSecurity: 'Seguridad', subSecurity: 'Información de acceso a tu cuenta.',
     titleAddresses: 'Mis direcciones', subAddresses: 'Guarda tus domicilios para agilizar tus solicitudes.',
+    titleFavorites: 'Favoritos', subFavorites: 'Tu lista de servicios frecuentes para volver a reservar rápido.',
+    browseFavorites: 'Explorar servicios', favoriteBook: 'Reservar', favoriteRemove: 'Quitar',
+    favoriteEmptyTitle: 'Aún no tienes favoritos', favoriteEmptyText: 'Guarda servicios desde Explorar para crear tu lista de uso frecuente.',
     titlePayments: 'Métodos de pago', subPayments: 'Gestiona tus tarjetas, Apple Pay y Google Pay guardados.',
     addPaymentTitle: 'Agregar método de pago', addPaymentSub: 'Agrega una tarjeta de crédito o débito. Apple Pay y Google Pay se muestran automáticamente si tu dispositivo los soporta.',
     addPaymentBtn: 'Guardar método', expires: 'Vence',
@@ -263,6 +534,14 @@ const TX = {
     lblName: 'Nombre completo', lblEmail: 'Correo electrónico', lblPhone: 'Teléfono',
     securityInfo: 'Tu cuenta usa inicio de sesión con teléfono o Google. No se requiere contraseña.',
     securityProvider: 'Método de acceso:',
+    emailWarnTitle: 'Verifica tu correo',
+    emailWarnText: 'Verifica tu correo para proteger tu cuenta y confirmar solicitudes.',
+    emailWarnNoEmail: 'Agrega un correo para proteger tu cuenta y confirmar solicitudes.',
+    emailWarnAction: 'Verificar correo',
+    emailWarnAddAction: 'Agregar correo',
+    emailWarnSending: 'Enviando...',
+    emailWarnSent: 'Enlace enviado. Revisa tu correo.',
+    emailWarnFailed: 'No pudimos enviar el enlace. Intenta de nuevo.',
     lblAddrLabel: 'Etiqueta (opcional)', lblAddrStreet: 'Calle y número *', lblAddrCity: 'Ciudad', lblAddrState: 'Estado', lblAddrPostal: 'Código postal', lblAddrDefault: 'Predeterminada',
     saveBtn: 'Guardar cambios', saving: 'Guardando...', saved: 'Cambios guardados.',
     addAddr: '+ Agregar', saveAddr: 'Guardar dirección', cancel: 'Cancelar',
@@ -279,10 +558,13 @@ const TX = {
   },
   en: {
     pageTitle: 'My account',
-    navInfo: 'Personal info', navSecurity: 'Security', navAddresses: 'My addresses', navPayments: 'Payment methods', navDelete: 'Delete account',
+    navInfo: 'Personal info', navSecurity: 'Security', navAddresses: 'My addresses', navFavorites: 'Favorites', navPayments: 'Payment methods', navDelete: 'Delete account',
     titleInfo: 'Personal information', subInfo: 'Update your name, email, and phone.',
     titleSecurity: 'Security', subSecurity: 'Your account access information.',
     titleAddresses: 'My addresses', subAddresses: 'Save your addresses to speed up your requests.',
+    titleFavorites: 'Favorites', subFavorites: 'Your frequent service list for quick rebooking.',
+    browseFavorites: 'Browse services', favoriteBook: 'Book', favoriteRemove: 'Remove',
+    favoriteEmptyTitle: 'No favorites yet', favoriteEmptyText: 'Save services from Browse to build your go-to list.',
     titlePayments: 'Payment methods', subPayments: 'Manage your saved cards, Apple Pay, and Google Pay.',
     addPaymentTitle: 'Add payment method', addPaymentSub: 'Add a credit or debit card. Apple Pay and Google Pay appear automatically if your device supports them.',
     addPaymentBtn: 'Save method', expires: 'Expires',
@@ -291,6 +573,14 @@ const TX = {
     lblName: 'Full name', lblEmail: 'Email', lblPhone: 'Phone',
     securityInfo: 'Your account uses phone or Google sign-in. No password required.',
     securityProvider: 'Sign-in method:',
+    emailWarnTitle: 'Verify your email',
+    emailWarnText: 'Verify your email to protect your account and confirm requests.',
+    emailWarnNoEmail: 'Add an email to protect your account and confirm requests.',
+    emailWarnAction: 'Verify email',
+    emailWarnAddAction: 'Add email',
+    emailWarnSending: 'Sending...',
+    emailWarnSent: 'Link sent. Check your email.',
+    emailWarnFailed: 'We could not send the link. Try again.',
     lblAddrLabel: 'Label (optional)', lblAddrStreet: 'Street and number *', lblAddrCity: 'City', lblAddrState: 'State', lblAddrPostal: 'Postal code', lblAddrDefault: 'Set as default',
     saveBtn: 'Save changes', saving: 'Saving...', saved: 'Changes saved.',
     addAddr: '+ Add', saveAddr: 'Save address', cancel: 'Cancel',
@@ -308,6 +598,16 @@ const TX = {
 };
 function tr() { return TX[isEs() ? 'es' : 'en']; }
 
+function escapeHtml(str) {
+  return String(str || '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  }[ch]));
+}
+
 // ─── Auth guard ───────────────────────────────────────────────────────────────
 function authHeaders() {
   const token = window.getSessionToken ? window.getSessionToken() : null;
@@ -319,7 +619,7 @@ function guardAuth() {
 }
 
 // ─── Section navigation ───────────────────────────────────────────────────────
-const SECTIONS = ['info', 'security', 'addresses', 'payments', 'delete'];
+const SECTIONS = ['info', 'security', 'addresses', 'favorites', 'payments', 'delete'];
 let activeSection = 'info';
 
 function buildNav() {
@@ -328,6 +628,7 @@ function buildNav() {
     { id: 'info',      label: t.navInfo,      icon: '👤', danger: false },
     { id: 'security',  label: t.navSecurity,   icon: '🔒', danger: false },
     { id: 'addresses', label: t.navAddresses,  icon: '📍', danger: false },
+    { id: 'favorites', label: t.navFavorites,  icon: '♡', danger: false },
     { id: 'payments',  label: t.navPayments,   icon: '💳', danger: false },
     { id: 'delete',    label: t.navDelete,     icon: '🗑',  danger: true  },
   ];
@@ -361,14 +662,91 @@ function switchSection(id) {
 // ─── Pre-fill personal info ───────────────────────────────────────────────────
 let _originalPhone = null;
 let _originalEmail = null;
+let _originalName  = null;
 function fillProfileForm() {
   const u = window.__user;
   if (!u) return;
   _originalPhone = u.phone || '';
   _originalEmail = u.email || '';
+  _originalName  = u.name  || '';
   document.getElementById('info-name').value  = u.name  || '';
   document.getElementById('info-email').value = u.email || '';
   document.getElementById('info-phone').value = u.phone || '';
+}
+
+function renderEmailWarning(statusText) {
+  const t = tr();
+  const u = window.__user;
+  const banner = document.getElementById('email-verify-warning');
+  const title = document.getElementById('email-warning-title');
+  const text = document.getElementById('email-warning-text');
+  const action = document.getElementById('email-warning-action');
+  if (!banner || !title || !text || !action) return;
+
+  const needsEmail = !!u && u.email_verified === false;
+  banner.classList.toggle('visible', needsEmail);
+  if (!needsEmail) return;
+
+  const hasEmail = !!(u.email || '').trim();
+  title.textContent = t.emailWarnTitle;
+  text.textContent = statusText || (hasEmail ? t.emailWarnText : t.emailWarnNoEmail);
+  action.textContent = hasEmail ? t.emailWarnAction : t.emailWarnAddAction;
+  action.disabled = false;
+}
+
+async function handleEmailWarningAction() {
+  const t = tr();
+  const u = window.__user;
+  const action = document.getElementById('email-warning-action');
+  if (!u) return;
+  if (!u.email) {
+    switchSection('info');
+    const input = document.getElementById('info-email');
+    if (input) input.focus();
+    return;
+  }
+  if (!window.__sendEmailVerification) return;
+  try {
+    if (action) { action.disabled = true; action.textContent = t.emailWarnSending; }
+    localStorage.setItem('servi_email_verification_mode', '1');
+    localStorage.setItem('servi_email_link_target', u.email);
+    const sent = await window.__sendEmailVerification(u.email);
+    if (sent) {
+      renderEmailWarning(t.emailWarnSent);
+    } else {
+      localStorage.removeItem('servi_email_verification_mode');
+      localStorage.removeItem('servi_email_link_target');
+      renderEmailWarning(t.emailWarnFailed);
+    }
+  } catch (_) {
+    localStorage.removeItem('servi_email_verification_mode');
+    localStorage.removeItem('servi_email_link_target');
+    renderEmailWarning(t.emailWarnFailed);
+  }
+}
+
+async function refreshAccountUser() {
+  try {
+    const res = await fetch(API + '/api/auth/me', { headers: authHeaders() });
+    if (!res.ok) return null;
+    const d = await res.json();
+    if (d.user) {
+      window.__user = Object.assign(window.__user || {}, d.user);
+      try {
+        const raw = localStorage.getItem('servi_user_session');
+        if (raw) {
+          const sess = JSON.parse(raw);
+          sess.user = Object.assign(sess.user || {}, d.user);
+          localStorage.setItem('servi_user_session', JSON.stringify(sess));
+        }
+      } catch {}
+      fillProfileForm();
+      renderEmailWarning();
+    }
+    return d.user || null;
+  } catch (_) {
+    return null;
+  }
 }
 
 // ─── Save profile ─────────────────────────────────────────────────────────────
@@ -387,9 +765,15 @@ async function saveProfile() {
 
   btn.disabled = true; lbl.textContent = t.saving;
   try {
+    const nameChanged  = name  !== (_originalName  || '');
+    const emailChangedReq = email !== (_originalEmail || '');
+    const phoneChanged = phone !== (_originalPhone || '');
+    if (!nameChanged && !emailChangedReq && !phoneChanged) {
+      btn.disabled = false; lbl.textContent = t.saveBtn;
+      return;
+    }
     let reauthToken = null;
-    const phoneChanged = phone && phone !== (_originalPhone || '');
-    if (phoneChanged) {
+    if (emailChangedReq || phoneChanged) {
       try {
         reauthToken = await reauthenticate();
       } catch (err) {
@@ -402,9 +786,13 @@ async function saveProfile() {
     }
     const headers = { ...authHeaders() };
     if (reauthToken) headers['X-Firebase-Reauth-Token'] = reauthToken;
+    const body = {};
+    if (nameChanged)     body.name  = name;
+    if (emailChangedReq) body.email = email;
+    if (phoneChanged)    body.phone = phone;
     const res = await fetch(API + '/api/auth/me', {
       method: 'PATCH', headers,
-      body: JSON.stringify({ name: name || undefined, email: email || undefined, phone: phone || undefined })
+      body: JSON.stringify(body)
     });
     const d = await res.json();
     if (!res.ok) {
@@ -420,6 +808,7 @@ async function saveProfile() {
       window.__user.email = d.user.email || window.__user.email;
       window.__user.phone = d.user.phone || window.__user.phone;
       window.__user.email_verified = d.user.email_verified;
+      window.__user.phone_verified = d.user.phone_verified;
     }
     try {
       const raw = localStorage.getItem('servi_user_session');
@@ -430,11 +819,13 @@ async function saveProfile() {
           sess.user.email = d.user.email;
           sess.user.phone = d.user.phone;
           sess.user.email_verified = d.user.email_verified;
+          sess.user.phone_verified = d.user.phone_verified;
         }
         localStorage.setItem('servi_user_session', JSON.stringify(sess));
       }
     } catch {}
     if (window.buildNavbar) window.buildNavbar();
+    renderEmailWarning();
 
     // If email was changed and is now unverified, prompt user to verify
     const emailChanged = email && email !== (_originalEmail || '');
@@ -594,6 +985,69 @@ async function deleteAddress(id) {
   } catch {}
 }
 
+// ─── Favorite Services ───────────────────────────────────────────────────────
+let _favoriteServices = [];
+
+async function loadFavoriteServices() {
+  const list = document.getElementById('favorite-list');
+  if (!list) return;
+  list.innerHTML = `<p style="font-size:14px;color:#aaa;text-align:center;padding:20px 0;grid-column:1/-1">${isEs() ? 'Cargando...' : 'Loading...'}</p>`;
+  try {
+    const res = await fetch(API + '/api/auth/favorites', { headers: authHeaders() });
+    if (!res.ok) throw new Error('load_failed');
+    const d = await res.json();
+    _favoriteServices = d.favorites || [];
+    renderFavoriteServices();
+  } catch {
+    list.innerHTML = `<p style="font-size:14px;color:#aaa;text-align:center;padding:20px 0;grid-column:1/-1">${isEs() ? 'Error al cargar.' : 'Failed to load.'}</p>`;
+  }
+}
+
+function renderFavoriteServices() {
+  const t = tr();
+  const list = document.getElementById('favorite-list');
+  if (!list) return;
+  if (!_favoriteServices.length) {
+    list.innerHTML = `
+      <div class="favorite-empty" style="grid-column:1/-1">
+        <div class="favorite-empty-title">${t.favoriteEmptyTitle}</div>
+        <div class="favorite-empty-text">${t.favoriteEmptyText}</div>
+        <a class="btn-save" href="/browse.html">${t.browseFavorites}</a>
+      </div>`;
+    return;
+  }
+
+  list.innerHTML = _favoriteServices.map(fav => {
+    const category = [fav.category_name, fav.subcategory_name].filter(Boolean).join(' · ');
+    const href = fav.href || `/service.html?category=${encodeURIComponent(fav.category_key || '')}&sub=${encodeURIComponent(fav.subcategory_key || '')}&service=${encodeURIComponent(fav.service_name || '')}`;
+    const image = fav.image_url || '/assets/partnerimage.png';
+    return `
+      <div class="favorite-card">
+        <a class="favorite-media" href="${escapeHtml(href)}" aria-label="${escapeHtml(fav.service_name)}">
+          <img src="${escapeHtml(image)}" alt="${escapeHtml(fav.service_name)}" loading="lazy" onerror="this.onerror=null;this.src='/assets/partnerimage.png'">
+        </a>
+        <div class="favorite-body">
+          <div class="favorite-kicker">${escapeHtml(category || (isEs() ? 'Servicio' : 'Service'))}</div>
+          <div class="favorite-title">${escapeHtml(fav.service_name)}</div>
+          <div class="favorite-actions">
+            <a class="addr-btn default-btn" href="${escapeHtml(href)}">${t.favoriteBook}</a>
+            <button class="addr-btn delete-btn" onclick="deleteFavoriteService('${escapeHtml(fav.id)}')">${t.favoriteRemove}</button>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+async function deleteFavoriteService(id) {
+  if (!confirm(isEs() ? '¿Quitar este servicio de favoritos?' : 'Remove this service from favorites?')) return;
+  try {
+    const res = await fetch(API + '/api/auth/favorites/' + encodeURIComponent(id), { method: 'DELETE', headers: authHeaders() });
+    if (!res.ok) return;
+    _favoriteServices = _favoriteServices.filter(fav => fav.id !== id);
+    renderFavoriteServices();
+  } catch {}
+}
+
 // ─── Payment Methods ──────────────────────────────────────────────────────────
 let _stripe = null;
 let _pmElements = null;
@@ -694,7 +1148,7 @@ async function openAddPaymentModal() {
     _pmSetupSecret = d.clientSecret;
     _pmElements = _stripe.elements({
       clientSecret: _pmSetupSecret,
-      appearance: { theme: 'stripe', variables: { fontFamily: '"DM Sans", sans-serif', borderRadius: '12px', colorPrimary: '#10b981' } }
+      appearance: { theme: 'stripe', variables: { fontFamily: '"Plus Jakarta Sans", sans-serif', borderRadius: '14px', colorPrimary: '#95ccd5' } }
     });
     const paymentEl = _pmElements.create('payment');
     // Enable confirm button only once element is fully mounted and ready
@@ -769,7 +1223,7 @@ function showReauthOtpStep(auth, resolve, reject) {
   overlay.innerHTML = `
     <div class="confirm-box">
       <h3>${es ? 'Verifica tu identidad' : 'Verify your identity'}</h3>
-      <p style="font-size:14px;color:#555;margin-bottom:12px">
+      <p style="font-size:14px;color:var(--color-text-secondary);margin-bottom:12px">
         ${es ? 'Te enviaremos un SMS de confirmación a tu número registrado.' : "We'll send a confirmation SMS to your registered phone."}
       </p>
       <div id="reauth-recaptcha-inline" style="margin-bottom:12px"></div>
@@ -778,7 +1232,7 @@ function showReauthOtpStep(auth, resolve, reject) {
       </button>
       <input class="form-input" id="reauth-otp-input" type="text" inputmode="numeric"
         placeholder="${es ? 'Código de 6 dígitos' : '6-digit code'}" style="display:none;margin-bottom:10px">
-      <div id="reauth-error" style="font-size:13px;color:#dc2626;min-height:16px;margin-bottom:8px"></div>
+      <div id="reauth-error" style="font-size:13px;color:#c55d49;min-height:16px;margin-bottom:8px"></div>
       <div class="confirm-row">
         <button class="confirm-cancel" id="reauth-cancel-btn">${es ? 'Cancelar' : 'Cancel'}</button>
         <button class="confirm-ok" id="reauth-confirm-btn" style="display:none">${es ? 'Confirmar' : 'Confirm'}</button>
@@ -842,7 +1296,7 @@ function confirmDeleteAccount() {
       <h3>${t.confirmDeleteTitle}</h3>
       <p>${t.confirmDeleteBody}</p>
       <input class="form-input" id="delete-confirm-input" placeholder="${t.confirmDeletePlaceholder}" style="margin-bottom:12px">
-      <div id="delete-modal-error" style="font-size:13px;color:#dc2626;margin-bottom:12px;min-height:16px"></div>
+      <div id="delete-modal-error" style="font-size:13px;color:#c55d49;margin-bottom:12px;min-height:16px"></div>
       <div class="confirm-row">
         <button class="confirm-cancel" onclick="this.closest('.confirm-overlay').remove()">${t.cancelBtn}</button>
         <button class="confirm-ok" onclick="confirmDeleteAccountStep2(this)">${t.confirmDeleteBtn}</button>
@@ -857,7 +1311,7 @@ function confirmDeleteAccountStep2(btn) {
   const expected = isEs() ? 'ELIMINAR' : 'DELETE';
   const val = document.getElementById('delete-confirm-input')?.value?.trim();
   if (val !== expected) {
-    document.getElementById('delete-confirm-input').style.borderColor = '#dc2626';
+    document.getElementById('delete-confirm-input').style.borderColor = '#c55d49';
     return;
   }
   executeDeleteAccount(btn);
@@ -875,13 +1329,17 @@ async function executeDeleteAccount(btn) {
       headers: authHeaders(),
     });
     if (!res.ok) {
+      let detail = '';
+      try { const body = await res.json(); detail = body?.error || body?.message || ''; } catch {}
+      console.error('[deleteAccount] failed', res.status, detail);
       btn.disabled = false; btn.textContent = t.confirmDeleteBtn;
-      if (errEl) errEl.textContent = t.errDeleteFailed;
+      if (errEl) errEl.textContent = t.errDeleteFailed + (detail ? ' (' + res.status + ': ' + detail + ')' : ' (' + res.status + ')');
       return;
     }
     if (window.logoutUser) await window.logoutUser();
     window.location.replace('/');
-  } catch {
+  } catch (err) {
+    console.error('[deleteAccount] network error', err);
     btn.disabled = false; btn.textContent = t.confirmDeleteBtn;
     if (errEl) errEl.textContent = t.errDeleteFailed;
   }
@@ -896,11 +1354,16 @@ function applyTranslations() {
   set('title-info', t.titleInfo);       set('sub-info', t.subInfo);
   set('title-security', t.titleSecurity); set('sub-security', t.subSecurity);
   set('title-addresses', t.titleAddresses); set('sub-addresses', t.subAddresses);
+  set('title-favorites', t.titleFavorites); set('sub-favorites', t.subFavorites);
+  set('browse-favorites-btn', t.browseFavorites);
   set('title-payments', t.titlePayments); set('sub-payments', t.subPayments);
   set('add-pm-btn', '+ ' + (isEs() ? 'Agregar' : 'Add'));
   set('title-delete', t.titleDelete);   set('text-delete', t.textDelete);
   set('lbl-name', t.lblName);           set('lbl-email', t.lblEmail);   set('lbl-phone', t.lblPhone);
   set('security-info-text', t.securityInfo);
+  set('email-warning-title', t.emailWarnTitle);
+  set('email-warning-text', t.emailWarnText);
+  set('email-warning-action', window.__user && !window.__user.email ? t.emailWarnAddAction : t.emailWarnAction);
   set('lbl-addr-label', t.lblAddrLabel); set('lbl-addr-street', t.lblAddrStreet);
   set('lbl-addr-city', t.lblAddrCity);  set('lbl-addr-state', t.lblAddrState);
   set('lbl-addr-postal', t.lblAddrPostal); set('lbl-addr-default', t.lblAddrDefault);
@@ -968,8 +1431,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     fillProfileForm();
+    renderEmailWarning();
     initSecuritySection();
     loadAddresses();
+    loadFavoriteServices();
     loadPaymentMethods();
     buildNav();
 
@@ -982,12 +1447,19 @@ document.addEventListener('DOMContentLoaded', () => {
   // Re-apply translations if language changes
   window.addEventListener('langchange', () => {
     applyTranslations();
+    renderEmailWarning();
     buildNav();
     renderAddresses();
+    renderFavoriteServices();
     // Re-render payment methods list with updated language (data is already cached in DOM)
     const pmList = document.getElementById('pm-list');
     if (pmList && pmList.querySelector('.pm-card')) loadPaymentMethods();
   });
+
+  window.addEventListener('storage', (event) => {
+    if (event.key === 'servi_email_verified_at') refreshAccountUser();
+  });
+  window.addEventListener('servi-email-verified', refreshAccountUser);
 });
 </script>
 </body>
