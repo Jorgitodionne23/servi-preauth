@@ -72,6 +72,25 @@
     .adm-btn--danger { background:#dc2626;color:#fff; }
     .adm-btn--danger:hover { background:#b91c1c; }
 
+    /* Toast notifications */
+    .toast-stack { position:fixed; top:20px; right:20px; z-index:10000; display:flex; flex-direction:column; gap:8px; pointer-events:none; }
+    .toast { pointer-events:auto; min-width:280px; max-width:420px; background:#1a1a1a; border:1px solid #333; border-left:4px solid #10b981; border-radius:10px; padding:12px 16px; color:#eee; font-size:13px; line-height:1.45; box-shadow:0 8px 24px rgba(0,0,0,0.4); display:flex; align-items:flex-start; gap:10px; animation:toastIn 0.18s ease-out; }
+    .toast--err { border-left-color:#ef4444; }
+    .toast--info { border-left-color:#3b82f6; }
+    .toast--warn { border-left-color:#f59e0b; }
+    .toast .t-icon { font-size:14px; line-height:1.2; }
+    .toast .t-msg { flex:1; white-space:pre-wrap; }
+    .toast .t-close { background:transparent; border:none; color:#666; cursor:pointer; font-size:16px; line-height:1; padding:0 4px; }
+    .toast .t-close:hover { color:#eee; }
+    .toast.leaving { animation:toastOut 0.2s ease-in forwards; }
+    @keyframes toastIn { from { opacity:0; transform:translateX(20px); } to { opacity:1; transform:translateX(0); } }
+    @keyframes toastOut { to { opacity:0; transform:translateX(20px); } }
+
+    /* Copy-link modal */
+    .copy-link-row { display:flex; gap:8px; margin-top:10px; }
+    .copy-link-row input { flex:1; background:#0f0f0f; border:1px solid #333; border-radius:8px; padding:9px 11px; color:#eee; font-size:12px; font-family:monospace; outline:none; }
+    .copy-link-row input:focus { border-color:#10b981; }
+
     /* Table */
     .admin-table { width:100%; border-collapse:collapse; font-size:13px; }
     .admin-table th { text-align:left; padding:10px 12px; color:#888; font-weight:600; border-bottom:1px solid #222; font-size:12px; text-transform:uppercase; letter-spacing:0.05em; }
@@ -135,6 +154,8 @@
   </style>
 </head>
 <body>
+
+<div class="toast-stack" id="toast-stack" aria-live="polite" aria-atomic="true"></div>
 
 <!-- Auth Gate -->
 <div id="auth-gate" class="auth-gate">
@@ -395,6 +416,46 @@ let ordersTimer = null;
 const _subsCache = {};
 
 function headers() { return { 'Authorization': 'Bearer ' + TOKEN, 'Content-Type': 'application/json' }; }
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  }[ch]));
+}
+function escapeUrl(value) {
+  const url = String(value ?? '').trim();
+  if (!url) return '#';
+  try {
+    const parsed = new URL(url, window.location.origin);
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') return escapeHtml(url);
+  } catch (_) {}
+  return '#';
+}
+
+// ─── Toasts ──────────────────────────────────────────────────────────────────
+function toast(msg, type = 'ok', timeout = 4200) {
+  const stack = document.getElementById('toast-stack');
+  if (!stack) return;
+  const el = document.createElement('div');
+  const cls = type === 'err' ? 'toast--err' : type === 'info' ? 'toast--info' : type === 'warn' ? 'toast--warn' : '';
+  const icon = type === 'err' ? '❌' : type === 'info' ? 'ℹ️' : type === 'warn' ? '⚠️' : '✅';
+  el.className = 'toast ' + cls;
+  const iconEl = document.createElement('span'); iconEl.className = 't-icon'; iconEl.textContent = icon;
+  const msgEl = document.createElement('span'); msgEl.className = 't-msg'; msgEl.textContent = String(msg ?? '');
+  const btn = document.createElement('button'); btn.className = 't-close'; btn.textContent = '×';
+  const dismiss = () => {
+    if (!el.parentNode) return;
+    el.classList.add('leaving');
+    setTimeout(() => el.remove(), 200);
+  };
+  btn.addEventListener('click', dismiss);
+  el.appendChild(iconEl); el.appendChild(msgEl); el.appendChild(btn);
+  stack.appendChild(el);
+  if (timeout > 0) setTimeout(dismiss, timeout);
+}
 function fmtDate(d) { if (!d) return '—'; const dt = new Date(d); return dt.toLocaleDateString('es-MX', { day:'2-digit', month:'short', year:'numeric' }); }
 function fmtTime(d) { if (!d) return '—'; const dt = new Date(d); return dt.toLocaleTimeString('es-MX', { hour:'2-digit', minute:'2-digit' }); }
 function fmtMoney(cents) { if (!cents && cents !== 0) return '—'; return '$' + (cents / 100).toFixed(2) + ' MXN'; }
@@ -455,7 +516,7 @@ async function loadStats() {
       { num: fmtMoney(d.capturedRevenue), label: 'Revenue capturado' },
       { num: d.newReports, label: 'Reportes nuevos' },
       { num: d.pendingApplications, label: 'Apps pendientes' },
-    ].map(s => `<div class="stat-card"><div class="num">${s.num}</div><div class="label">${s.label}</div></div>`).join('');
+    ].map(s => `<div class="stat-card"><div class="num">${escapeHtml(s.num)}</div><div class="label">${escapeHtml(s.label)}</div></div>`).join('');
   } catch {}
 }
 
@@ -498,17 +559,17 @@ async function loadInbox() {
     empty.style.display = 'none';
     body.innerHTML = items.map(i => {
       const selOpts = i.options.map(opt => `<option value="${opt}" ${i.status.toLowerCase()===opt?'selected':''}>${opt}</option>`).join('');
-      const safeDetail = String(i.detail).replace(/"/g, '&quot;');
+      const safeDetail = escapeHtml(i.detail);
       return `
       <tr>
         <td>${fmtDate(i.date)}</td>
         <td>${fmtTime(i.date)}</td>
         <td>${i.type}</td>
-        <td>${i.name}</td>
-        <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${safeDetail}">${i.detail}</td>
+        <td>${escapeHtml(i.name)}</td>
+        <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${safeDetail}">${safeDetail}</td>
         <td>
           <div style="display:flex;align-items:center;gap:8px">
-            <span class="badge ${badgeClass(i.status)}" style="min-width:70px;text-align:center">${i.status}</span>
+            <span class="badge ${badgeClass(i.status)}" style="min-width:70px;text-align:center">${escapeHtml(i.status)}</span>
             <select class="auth-input" style="padding:4px;font-size:11px;width:auto;height:auto;background:#222;border-radius:4px" onchange="updateInboxStatus('${i.apiPath}', '${i.id}', this.value)">
               <option value="" disabled hidden ${!i.options.includes(i.status.toLowerCase()) ? 'selected' : ''}>—</option>
               ${selOpts}
@@ -535,7 +596,7 @@ async function updateInboxStatus(apiPath, id, newStatus) {
     loadInbox();
     loadStats();
   } catch (err) {
-    alert('Error al actualizar estado.');
+    toast('Error al actualizar estado.', 'err');
   }
 }
 
@@ -581,12 +642,12 @@ async function loadOrders() {
 
     const orderRows = d.items.map(o => `
       <tr onclick="openOrderDetail('${o.id}')" style="cursor:pointer">
-        <td style="font-family:monospace;font-size:12px">${o.public_code || o.id.slice(0,8)}</td>
-        <td>${o.client_name || '—'}<br><span style="color:#666;font-size:11px">${o.client_phone || ''}</span></td>
-        <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${o.service_description || '—'}</td>
+        <td style="font-family:monospace;font-size:12px">${escapeHtml(o.public_code || o.id.slice(0,8))}</td>
+        <td>${escapeHtml(o.client_name || '—')}<br><span style="color:#666;font-size:11px">${escapeHtml(o.client_phone || '')}</span></td>
+        <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(o.service_description || '—')}</td>
         <td>${fmtMoney(o.pricing_total_amount || o.amount)}</td>
         <td>${fmtDate(o.service_date || o.created_at)}</td>
-        <td><span class="badge ${badgeClass(o.status)}">${o.status || '—'}</span></td>
+        <td><span class="badge ${badgeClass(o.status)}">${escapeHtml(o.status || '—')}</span></td>
         <td onclick="event.stopPropagation()">${buildActionBtns(o)}</td>
       </tr>
     `).join('');
@@ -614,8 +675,8 @@ function buildSubmissionRow(s) {
   return `
     <tr style="border-left:3px solid #7c3aed">
       <td style="font-family:monospace;font-size:12px;color:#a78bfa">WEB-${s.id.slice(0,6).toUpperCase()}</td>
-      <td>${s.client_name || '—'}<br><span style="color:#666;font-size:11px">${s.client_phone || ''}</span></td>
-      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${detail}">${detail}</td>
+      <td>${escapeHtml(s.client_name || '—')}<br><span style="color:#666;font-size:11px">${escapeHtml(s.client_phone || '')}</span></td>
+      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(detail)}">${escapeHtml(detail)}</td>
       <td><span style="color:#555;font-size:11px">Sin precio</span></td>
       <td>${fmtDate(s.created_at)}</td>
       <td><span class="badge badge-web">Web · Sin enlace</span></td>
@@ -647,9 +708,9 @@ function openSubmissionLinkModal(subId) {
     <div class="adm-box" style="width:480px;max-width:96%" onclick="event.stopPropagation()">
       <h3 style="margin-bottom:6px">+ Crear enlace de pago</h3>
       <p style="font-size:12px;color:#666;margin-bottom:16px">
-        ${sub.client_name} · ${sub.client_phone} · ${sub.category || ''}
-        ${sub.service_address ? '<br>' + sub.service_address : ''}
-        ${sub.description ? '<br><span style="font-style:italic">"' + sub.description.slice(0,80) + (sub.description.length > 80 ? '…' : '') + '"</span>' : ''}
+        ${escapeHtml(sub.client_name)} · ${escapeHtml(sub.client_phone)} · ${escapeHtml(sub.category || '')}
+        ${sub.service_address ? '<br>' + escapeHtml(sub.service_address) : ''}
+        ${sub.description ? '<br><span style="font-style:italic">"' + escapeHtml(sub.description.slice(0,80)) + (sub.description.length > 80 ? '…' : '') + '"</span>' : ''}
       </p>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
         <div>
@@ -670,11 +731,11 @@ function openSubmissionLinkModal(subId) {
       </div>
       <div style="margin-bottom:10px">
         <label class="form-label">Email del cliente *</label>
-        <input class="adm-input" id="sub-email" type="email" value="${sub.client_email || ''}" placeholder="correo@email.com" style="margin-bottom:0">
+        <input class="adm-input" id="sub-email" type="email" value="${escapeHtml(sub.client_email || '')}" placeholder="correo@email.com" style="margin-bottom:0">
       </div>
       <div style="margin-bottom:16px">
         <label class="form-label">Fecha y hora del servicio</label>
-        <input class="adm-input" id="sub-datetime" type="datetime-local" value="${datetimeValue}" style="margin-bottom:0">
+        <input class="adm-input" id="sub-datetime" type="datetime-local" value="${escapeHtml(datetimeValue)}" style="margin-bottom:0">
       </div>
       <div id="sub-modal-error" style="color:#ef4444;font-size:13px;margin-bottom:10px;display:none"></div>
       <div id="sub-modal-result" style="display:none;margin-bottom:14px">
@@ -789,16 +850,17 @@ function copySubLink() {
 function buildActionBtns(o) {
   const s = (o.status || '').toLowerCase();
   const id = o.id;
+  const authorized = Number(o.pricing_total_amount || o.amount || 0);
   const btns = [];
 
-  // Capture — only for orders in manual pre-auth state
+  // Capture (full or partial) — only for orders in manual pre-auth state
   const capturable = s === 'scheduled' || s === 'confirmed';
   if (capturable) {
-    btns.push(`<button class="action-btn action-btn--capture" onclick="captureOrder('${id}')" title="Capturar pago">⚡ Capturar</button>`);
+    btns.push(`<button class="action-btn action-btn--capture" onclick="captureOrder('${id}', ${authorized})" title="Capturar pago (total o parcial)">⚡ Capturar</button>`);
   }
 
   // Cancel — anything not already captured/canceled/refunded
-  const notCancelable = new Set(['captured', 'canceled', 'cancelled', 'refunded', 'declined', 'failed', 'canceled (expired)', 'captured (partial refund)']);
+  const notCancelable = new Set(['captured', 'canceled', 'cancelled', 'refunded', 'declined', 'failed', 'canceled (expired)', 'captured (partial refund)', 'pending cash']);
   if (!notCancelable.has(s)) {
     btns.push(`<button class="action-btn action-btn--cancel" onclick="cancelOrder('${id}')" title="Cancelar orden">✕ Cancelar</button>`);
   }
@@ -806,7 +868,19 @@ function buildActionBtns(o) {
   // Refund — only for captured orders
   const refundable = s === 'captured' || s === 'captured (partial refund)';
   if (refundable) {
-    btns.push(`<button class="action-btn action-btn--refund" onclick="refundOrder('${id}', ${o.pricing_total_amount || o.amount || 0})" title="Reembolsar">↩ Reembolso</button>`);
+    btns.push(`<button class="action-btn action-btn--refund" onclick="refundOrder('${id}', ${authorized})" title="Reembolsar">↩ Reembolso</button>`);
+  }
+
+  // Regenerate payment link — for any order awaiting payment (not yet captured/canceled/refunded)
+  const linkRegenerable = !['captured', 'canceled', 'cancelled', 'refunded', 'captured (partial refund)', 'pending cash'].includes(s);
+  if (linkRegenerable) {
+    btns.push(`<button class="action-btn" style="background:#1f2937;color:#93c5fd;border:1px solid #334155" onclick="regenerateLink('${id}')" title="Regenerar enlace de pago (extiende 2h)">🔗 Enlace</button>`);
+  }
+
+  // Mark as cash — only for orders in pending/scheduled/confirmed states
+  const cashable = ['pending', 'scheduled', 'confirmed', 'new'].includes(s);
+  if (cashable) {
+    btns.push(`<button class="action-btn" style="background:#1f1a0d;color:#fbbf24;border:1px solid #4a3a1a" onclick="markAsCash('${id}')" title="Marcar como pago en efectivo">💵 Efectivo</button>`);
   }
 
   return btns.length ? `<div class="action-btns">${btns.join('')}</div>` : '<span style="color:#444;font-size:11px">—</span>';
@@ -840,30 +914,123 @@ function admModal({ title, body, inputLabel, inputType = 'text', inputPlaceholde
   });
 }
 
-// ─── Capture ─────────────────────────────────────────────────────────────────
-async function captureOrder(orderId) {
-  const confirmed = await admModal({
+// ─── Capture (full or partial) ───────────────────────────────────────────────
+async function captureOrder(orderId, authorizedAmountCents) {
+  const totalMXN = authorizedAmountCents ? (authorizedAmountCents / 100).toFixed(2) : null;
+  const bodyTxt = totalMXN
+    ? `Monto autorizado: $${totalMXN} MXN. Deja el campo en blanco para capturar el total. Para captura parcial, ingresa el monto en MXN.`
+    : 'Deja el campo en blanco para capturar el total autorizado, o ingresa un monto menor en MXN para captura parcial.';
+  const input = await admModal({
     title: '⚡ Capturar pago',
-    body: 'Se capturará el monto autorizado para esta orden. Esta acción es irreversible.',
+    body: bodyTxt,
+    inputLabel: 'Monto en MXN (opcional — vacío = total)',
+    inputType: 'number',
+    inputPlaceholder: totalMXN ? `Ej: ${totalMXN}` : 'Ej: 250.00',
     confirmText: 'Confirmar captura',
     confirmClass: 'adm-btn--ok'
   });
-  if (!confirmed) return;
+  if (input === null) return;
+
+  const rawMXN = String(input || '').trim();
+  let amountCents;
+  if (rawMXN) {
+    amountCents = Math.round(parseFloat(rawMXN) * 100);
+    if (isNaN(amountCents) || amountCents <= 0) { toast('Monto inválido.', 'err'); return; }
+    if (authorizedAmountCents && amountCents > authorizedAmountCents) {
+      toast('El monto excede lo autorizado.', 'err'); return;
+    }
+  }
 
   try {
+    const body = { orderId };
+    if (amountCents) body.amount = amountCents;
     const res = await fetch(API + '/capture-order', {
       method: 'POST',
       headers: headers(),
-      body: JSON.stringify({ orderId })
+      body: JSON.stringify(body)
     });
     const d = await res.json();
     if (!res.ok) throw new Error(d.error || `HTTP ${res.status}`);
-    alert(`✅ Capturado correctamente.\nEstado PI: ${d.status}`);
+    const capturedTxt = amountCents ? ` ($${(amountCents/100).toFixed(2)} MXN)` : '';
+    toast(`Capturado correctamente${capturedTxt}.`, 'ok');
     loadOrders(); loadStats();
     if (_openDetailOrderId === orderId) openOrderDetail(orderId);
   } catch (err) {
-    alert(`❌ Error al capturar:\n${err.message}`);
+    toast(`Error al capturar: ${err.message}`, 'err');
   }
+}
+
+// ─── Mark order as paid in cash (admin override) ─────────────────────────────
+async function markAsCash(orderId) {
+  const confirmed = await admModal({
+    title: '💵 Marcar como pago en efectivo',
+    body: 'La autorización en Stripe se cancelará y la orden quedará marcada como “Pending Cash”. Úsalo solo cuando el cliente vaya a pagar en efectivo al especialista.',
+    confirmText: 'Marcar en efectivo',
+    confirmClass: 'adm-btn--danger'
+  });
+  if (!confirmed) return;
+  try {
+    const res = await fetch(API + '/api/admin/orders/' + encodeURIComponent(orderId) + '/mark-cash', {
+      method: 'POST', headers: headers()
+    });
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.message || d.error || `HTTP ${res.status}`);
+    toast(`Marcada como efectivo. Estado: ${d.status}`, 'ok');
+    loadOrders(); loadStats();
+    if (_openDetailOrderId === orderId) openOrderDetail(orderId);
+  } catch (err) {
+    toast(`Error: ${err.message}`, 'err');
+  }
+}
+
+// ─── Regenerate payment link (resets 2h expiry) ──────────────────────────────
+async function regenerateLink(orderId) {
+  try {
+    const res = await fetch(API + '/api/admin/orders/' + encodeURIComponent(orderId) + '/regenerate-link', {
+      method: 'POST', headers: headers()
+    });
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.message || d.error || `HTTP ${res.status}`);
+    showCopyLinkModal(d.url, d.flow);
+  } catch (err) {
+    toast(`Error al regenerar enlace: ${err.message}`, 'err');
+  }
+}
+
+function showCopyLinkModal(url, flow) {
+  const overlay = document.createElement('div');
+  overlay.className = 'adm-overlay';
+  const box = document.createElement('div');
+  box.className = 'adm-box';
+  box.style.width = '480px';
+  box.style.maxWidth = '96%';
+  box.addEventListener('click', e => e.stopPropagation());
+
+  const h = document.createElement('h3'); h.textContent = '🔗 Enlace regenerado';
+  const p = document.createElement('p');
+  p.textContent = (flow === 'book' ? 'Enlace de cliente con tarjeta guardada.' : 'Enlace de pago con nueva tarjeta.') + ' Vence en 2 horas. Cópialo y envíalo por WhatsApp.';
+
+  const row = document.createElement('div'); row.className = 'copy-link-row';
+  const input = document.createElement('input'); input.type = 'text'; input.readOnly = true; input.value = url || '';
+  const copyBtn = document.createElement('button'); copyBtn.className = 'adm-btn adm-btn--ok'; copyBtn.textContent = 'Copiar';
+  copyBtn.addEventListener('click', () => {
+    navigator.clipboard.writeText(url || '').then(() => {
+      copyBtn.textContent = '✅ Copiado';
+      setTimeout(() => { copyBtn.textContent = 'Copiar'; }, 1800);
+    });
+  });
+  row.appendChild(input); row.appendChild(copyBtn);
+
+  const actions = document.createElement('div'); actions.className = 'adm-row';
+  const closeBtn = document.createElement('button'); closeBtn.className = 'adm-btn adm-btn--cancel'; closeBtn.textContent = 'Cerrar';
+  closeBtn.addEventListener('click', () => overlay.remove());
+  actions.appendChild(closeBtn);
+
+  box.appendChild(h); box.appendChild(p); box.appendChild(row); box.appendChild(actions);
+  overlay.appendChild(box);
+  overlay.addEventListener('click', () => overlay.remove());
+  document.body.appendChild(overlay);
+  setTimeout(() => { input.select(); }, 50);
 }
 
 // ─── Cancel ───────────────────────────────────────────────────────────────────
@@ -886,11 +1053,11 @@ async function cancelOrder(orderId) {
     });
     const d = await res.json();
     if (!res.ok) throw new Error(d.message || d.error || `HTTP ${res.status}`);
-    alert(`✅ Orden cancelada.\n${d.message || ''}`);
+    toast(`Orden cancelada. ${d.message || ''}`, 'ok');
     loadOrders(); loadStats();
     if (_openDetailOrderId === orderId) openOrderDetail(orderId);
   } catch (err) {
-    alert(`❌ Error al cancelar:\n${err.message}`);
+    toast(`Error al cancelar: ${err.message}`, 'err');
   }
 }
 
@@ -911,7 +1078,7 @@ async function refundOrder(orderId, totalAmountCents) {
   const rawMXN = String(input || '').trim();
   const amountCents = rawMXN ? Math.round(parseFloat(rawMXN) * 100) : undefined;
   if (rawMXN && (isNaN(amountCents) || amountCents <= 0)) {
-    alert('Monto inválido.');
+    toast('Monto inválido.', 'err');
     return;
   }
 
@@ -936,11 +1103,11 @@ async function refundOrder(orderId, totalAmountCents) {
     const d = await res.json();
     if (!res.ok) throw new Error(d.message || d.error || `HTTP ${res.status}`);
     const refundedMXN = ((d.refundedAmountCents || 0) / 100).toFixed(2);
-    alert(`✅ Reembolso procesado.\n$${refundedMXN} MXN reembolsados.\n${d.message || ''}`);
+    toast(`Reembolso procesado: $${refundedMXN} MXN`, 'ok');
     loadOrders(); loadStats();
     if (_openDetailOrderId === orderId) openOrderDetail(orderId);
   } catch (err) {
-    alert(`❌ Error al reembolsar:\n${err.message}`);
+    toast(`Error al reembolsar: ${err.message}`, 'err');
   }
 }
 
@@ -1148,24 +1315,82 @@ function resetAjuste() {
   document.getElementById('ajuste-error').style.display = 'none';
 }
 
-// ─── New-order notification polling ─────────────────────────────────────────
+// ─── Live updates: visibility-aware polling ─────────────────────────────────
+// Cadence: 15s when tab visible, paused when hidden, immediate refresh on focus.
+// Refreshes the active panel + any open order detail.
 let _lastOrderCount = null;
-async function pollNewOrders() {
+let _liveTickInFlight = false;
+
+function activePanelName() {
+  const el = document.querySelector('.panel-section--active');
+  if (!el) return null;
+  const id = el.id || '';
+  return id.startsWith('panel-') ? id.slice(6) : null;
+}
+
+async function pollNewOrders(silent = true) {
   if (!TOKEN) return;
   try {
     const res = await fetch(API + '/api/admin/stats', { headers: headers() });
     if (!res.ok) return;
     const d = await res.json();
     const total = (d.pendingOrders || 0) + (d.confirmedOrders || 0);
-    if (_lastOrderCount !== null && total > _lastOrderCount) {
+    const active = activePanelName();
+    if (_lastOrderCount !== null && total > _lastOrderCount && active !== 'orders') {
       const diff = total - _lastOrderCount;
       const badge = document.getElementById('orders-badge');
       if (badge) { badge.textContent = '+' + diff; badge.style.display = 'inline'; }
+      if (!silent) toast(`${diff} nueva${diff === 1 ? '' : 's'} orden${diff === 1 ? '' : 'es'}`, 'info', 3000);
     }
     _lastOrderCount = total;
+    // Update stat cards quietly
+    document.getElementById('stats-row').innerHTML = [
+      { num: d.requestsToday, label: 'Solicitudes hoy' },
+      { num: d.pendingOrders, label: 'Órdenes pendientes' },
+      { num: d.confirmedOrders, label: 'Confirmadas' },
+      { num: d.capturedOrders, label: 'Capturadas' },
+      { num: fmtMoney(d.capturedRevenue), label: 'Revenue capturado' },
+      { num: d.newReports, label: 'Reportes nuevos' },
+      { num: d.pendingApplications, label: 'Apps pendientes' },
+    ].map(s => `<div class="stat-card"><div class="num">${escapeHtml(s.num)}</div><div class="label">${escapeHtml(s.label)}</div></div>`).join('');
   } catch (_) {}
 }
-setInterval(pollNewOrders, 45000);
+
+async function liveTick() {
+  if (document.hidden || !TOKEN || _liveTickInFlight) return;
+  _liveTickInFlight = true;
+  try {
+    const active = activePanelName();
+    const tasks = [pollNewOrders()];
+    if (active === 'orders') tasks.push(loadOrders());
+    if (active === 'inbox') tasks.push(loadInbox());
+    if (active === 'providers') tasks.push(loadProviders());
+    if (_openDetailOrderId) tasks.push(refreshOpenOrderDetail());
+    await Promise.all(tasks.map(p => Promise.resolve(p).catch(() => {})));
+  } finally {
+    _liveTickInFlight = false;
+  }
+}
+
+async function refreshOpenOrderDetail() {
+  if (!_openDetailOrderId) return;
+  // Re-render in place without flashing the loading state.
+  const id = _openDetailOrderId;
+  try {
+    const res = await fetch(API + '/api/admin/orders/' + encodeURIComponent(id), { headers: headers() });
+    if (!res.ok) return;
+    const { order: o, adjustments } = await res.json();
+    if (_openDetailOrderId !== id) return; // user closed/changed during fetch
+    renderOrderDetail(o, adjustments);
+  } catch (_) {}
+}
+
+// Run every 15s while the tab is visible; pause when hidden, refresh on focus.
+let _liveTimer = setInterval(liveTick, 15000);
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) liveTick();
+});
+window.addEventListener('focus', () => liveTick());
 
 // ─── Order Detail Panel ───────────────────────────────────────────────────────
 let _openDetailOrderId = null;
@@ -1182,32 +1407,39 @@ async function openOrderDetail(orderId) {
     const res = await fetch(API + '/api/admin/orders/' + encodeURIComponent(orderId), { headers: headers() });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const { order: o, adjustments } = await res.json();
-    document.getElementById('op-title').textContent = o.public_code || o.id.slice(0,8);
-    const piLink = o.payment_intent_id
-      ? `<a class="sp-stripe-btn" href="https://dashboard.stripe.com/payments/${o.payment_intent_id}" target="_blank" rel="noopener">Ver en Stripe ↗</a>`
+    renderOrderDetail(o, adjustments);
+  } catch (err) {
+    document.getElementById('op-body').innerHTML = `<div style="padding:40px;text-align:center;color:#ef4444">Error: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+function renderOrderDetail(o, adjustments) {
+  document.getElementById('op-title').textContent = o.public_code || o.id.slice(0,8);
+  const piLink = o.payment_intent_id
+      ? `<a class="sp-stripe-btn" href="https://dashboard.stripe.com/payments/${encodeURIComponent(o.payment_intent_id)}" target="_blank" rel="noopener">Ver en Stripe ↗</a>`
       : '';
     const adjsHtml = (adjustments || []).length
-      ? adjustments.map(a => `<div class="sp-adj"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><span style="font-family:monospace;color:#a78bfa">${a.public_code || a.id.slice(0,8)}</span><span class="badge ${badgeClass(a.status)}">${a.status}</span></div><div style="color:#888">${a.service_description || '—'} · ${fmtMoney(a.pricing_total_amount || a.amount)}</div></div>`).join('')
+      ? adjustments.map(a => `<div class="sp-adj"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><span style="font-family:monospace;color:#a78bfa">${escapeHtml(a.public_code || a.id.slice(0,8))}</span><span class="badge ${badgeClass(a.status)}">${escapeHtml(a.status)}</span></div><div style="color:#888">${escapeHtml(a.service_description || '—')} · ${fmtMoney(a.pricing_total_amount || a.amount)}</div></div>`).join('')
       : '<div style="color:#555;font-size:12px">Sin ajustes</div>';
     document.getElementById('op-body').innerHTML = `
       <div class="sp-sec">
         <div class="sp-sec-t">Cliente</div>
         <div class="sp-grid">
-          <div><div class="sp-lbl">Nombre</div><div class="sp-val">${o.client_name || '—'}</div></div>
-          <div><div class="sp-lbl">Teléfono</div><div class="sp-val">${o.client_phone || '—'}</div></div>
-          <div><div class="sp-lbl">Email</div><div class="sp-val">${o.client_email || '—'}</div></div>
-          <div><div class="sp-lbl">Proveedor</div><div class="sp-val">${o.provider_name || '—'}</div></div>
-          ${o.service_address ? `<div style="grid-column:1/-1"><div class="sp-lbl">Dirección</div><div class="sp-val">${o.service_address}</div></div>` : ''}
+          <div><div class="sp-lbl">Nombre</div><div class="sp-val">${escapeHtml(o.client_name || '—')}</div></div>
+          <div><div class="sp-lbl">Teléfono</div><div class="sp-val">${escapeHtml(o.client_phone || '—')}</div></div>
+          <div><div class="sp-lbl">Email</div><div class="sp-val">${escapeHtml(o.client_email || '—')}</div></div>
+          <div><div class="sp-lbl">Proveedor</div><div class="sp-val">${escapeHtml(o.provider_name || '—')}</div></div>
+          ${o.service_address ? `<div style="grid-column:1/-1"><div class="sp-lbl">Dirección</div><div class="sp-val">${escapeHtml(o.service_address)}</div></div>` : ''}
         </div>
       </div>
       <div class="sp-sec">
         <div class="sp-sec-t">Servicio</div>
         <div class="sp-grid">
-          <div style="grid-column:1/-1"><div class="sp-lbl">Descripción</div><div class="sp-val">${o.service_description || '—'}</div></div>
+          <div style="grid-column:1/-1"><div class="sp-lbl">Descripción</div><div class="sp-val">${escapeHtml(o.service_description || '—')}</div></div>
           <div><div class="sp-lbl">Fecha</div><div class="sp-val">${fmtDate(o.service_date || o.service_datetime)}</div></div>
           <div><div class="sp-lbl">Hora</div><div class="sp-val">${o.service_datetime ? fmtTime(o.service_datetime) : '—'}</div></div>
-          <div><div class="sp-lbl">Tipo</div><div class="sp-val">${o.kind || '—'}</div></div>
-          <div><div class="sp-lbl">Estado</div><div class="sp-val"><span class="badge ${badgeClass(o.status)}">${o.status || '—'}</span></div></div>
+          <div><div class="sp-lbl">Tipo</div><div class="sp-val">${escapeHtml(o.kind || '—')}</div></div>
+          <div><div class="sp-lbl">Estado</div><div class="sp-val"><span class="badge ${badgeClass(o.status)}">${escapeHtml(o.status || '—')}</span></div></div>
         </div>
       </div>
       <div class="sp-sec">
@@ -1224,9 +1456,9 @@ async function openOrderDetail(orderId) {
       <div class="sp-sec">
         <div class="sp-sec-t">Stripe</div>
         <div class="sp-grid">
-          <div style="grid-column:1/-1"><div class="sp-lbl">Payment Intent ID</div><div class="sp-mono">${o.payment_intent_id || '—'}</div></div>
+          <div style="grid-column:1/-1"><div class="sp-lbl">Payment Intent ID</div><div class="sp-mono">${escapeHtml(o.payment_intent_id || '—')}</div></div>
           <div><div class="sp-lbl">Creado</div><div class="sp-val">${fmtDate(o.created_at)} ${fmtTime(o.created_at)}</div></div>
-          <div><div class="sp-lbl">Order ID</div><div class="sp-mono">${o.id}</div></div>
+          <div><div class="sp-lbl">Order ID</div><div class="sp-mono">${escapeHtml(o.id)}</div></div>
         </div>
         ${piLink ? `<div style="margin-top:12px">${piLink}</div>` : ''}
       </div>
@@ -1238,9 +1470,10 @@ async function openOrderDetail(orderId) {
             const ext = url.split('.').pop().toLowerCase();
             const isImg = ['jpg','jpeg','png','webp','gif'].includes(ext);
             const isVid = ['mp4','webm','mov'].includes(ext);
-            if (isImg) return `<a href="${url}" target="_blank" rel="noopener"><img src="${url}" style="width:80px;height:80px;object-fit:cover;border-radius:8px;border:1px solid #333"></a>`;
-            if (isVid) return `<a href="${url}" target="_blank" rel="noopener" style="display:flex;align-items:center;gap:6px;font-size:12px;color:#10b981">🎥 Ver video</a>`;
-            return `<a href="${url}" target="_blank" rel="noopener" style="display:flex;align-items:center;gap:6px;font-size:12px;color:#10b981">🎙 Escuchar audio</a>`;
+            const safeUrl = escapeUrl(url);
+            if (isImg) return `<a href="${safeUrl}" target="_blank" rel="noopener"><img src="${safeUrl}" style="width:80px;height:80px;object-fit:cover;border-radius:8px;border:1px solid #333"></a>`;
+            if (isVid) return `<a href="${safeUrl}" target="_blank" rel="noopener" style="display:flex;align-items:center;gap:6px;font-size:12px;color:#10b981">🎥 Ver video</a>`;
+            return `<a href="${safeUrl}" target="_blank" rel="noopener" style="display:flex;align-items:center;gap:6px;font-size:12px;color:#10b981">🎙 Escuchar audio</a>`;
           }).join('')}
         </div>
       </div>` : ''}
@@ -1250,9 +1483,6 @@ async function openOrderDetail(orderId) {
       </div>
       <div class="sp-acts">${buildActionBtns(o)}</div>
     `;
-  } catch (err) {
-    document.getElementById('op-body').innerHTML = `<div style="padding:40px;text-align:center;color:#ef4444">Error: ${err.message}</div>`;
-  }
 }
 
 function closeOrderDetail() {
@@ -1291,11 +1521,11 @@ async function loadProviders() {
     empty.style.display = 'none';
     body.innerHTML = items.map(i => `
       <tr onclick="openProviderDetail('${i.id}')" style="cursor:pointer">
-        <td style="font-weight:600">${i.name || '—'}</td>
-        <td>${i.phone || '—'}</td>
-        <td>${i.specialty || '—'}</td>
-        <td>${i.city || '—'}</td>
-        <td><span class="badge ${badgeClass(i.status)}">${i.status || 'pending'}</span></td>
+        <td style="font-weight:600">${escapeHtml(i.name || '—')}</td>
+        <td>${escapeHtml(i.phone || '—')}</td>
+        <td>${escapeHtml(i.specialty || '—')}</td>
+        <td>${escapeHtml(i.city || '—')}</td>
+        <td><span class="badge ${badgeClass(i.status)}">${escapeHtml(i.status || 'pending')}</span></td>
         <td>${fmtDate(i.created_at)}</td>
       </tr>
     `).join('');
@@ -1317,21 +1547,21 @@ function openProviderDetail(id) {
     <div class="sp-sec">
       <div class="sp-sec-t">Datos del aplicante</div>
       <div class="sp-grid">
-        <div><div class="sp-lbl">Nombre</div><div class="sp-val">${p.name || '—'}</div></div>
-        <div><div class="sp-lbl">Teléfono</div><div class="sp-val">${p.phone || '—'}</div></div>
-        <div><div class="sp-lbl">Email</div><div class="sp-val">${p.email || '—'}</div></div>
-        <div><div class="sp-lbl">Especialidad</div><div class="sp-val">${p.specialty || '—'}</div></div>
-        <div><div class="sp-lbl">Ciudad</div><div class="sp-val">${p.city || '—'}</div></div>
+        <div><div class="sp-lbl">Nombre</div><div class="sp-val">${escapeHtml(p.name || '—')}</div></div>
+        <div><div class="sp-lbl">Teléfono</div><div class="sp-val">${escapeHtml(p.phone || '—')}</div></div>
+        <div><div class="sp-lbl">Email</div><div class="sp-val">${escapeHtml(p.email || '—')}</div></div>
+        <div><div class="sp-lbl">Especialidad</div><div class="sp-val">${escapeHtml(p.specialty || '—')}</div></div>
+        <div><div class="sp-lbl">Ciudad</div><div class="sp-val">${escapeHtml(p.city || '—')}</div></div>
         <div><div class="sp-lbl">Fecha aplicación</div><div class="sp-val">${fmtDate(p.created_at)}</div></div>
-        ${p.services ? `<div style="grid-column:1/-1"><div class="sp-lbl">Servicios ofrecidos</div><div class="sp-val">${p.services}</div></div>` : ''}
-        ${p.coverage_areas ? `<div style="grid-column:1/-1"><div class="sp-lbl">Áreas de cobertura</div><div class="sp-val">${p.coverage_areas}</div></div>` : ''}
-        ${p.experience ? `<div style="grid-column:1/-1"><div class="sp-lbl">Experiencia</div><div class="sp-val">${p.experience}</div></div>` : ''}
+        ${p.services ? `<div style="grid-column:1/-1"><div class="sp-lbl">Servicios ofrecidos</div><div class="sp-val">${escapeHtml(p.services)}</div></div>` : ''}
+        ${p.coverage_areas ? `<div style="grid-column:1/-1"><div class="sp-lbl">Áreas de cobertura</div><div class="sp-val">${escapeHtml(p.coverage_areas)}</div></div>` : ''}
+        ${p.experience ? `<div style="grid-column:1/-1"><div class="sp-lbl">Experiencia</div><div class="sp-val">${escapeHtml(p.experience)}</div></div>` : ''}
       </div>
     </div>
     <div class="sp-sec">
       <div class="sp-sec-t">Estado</div>
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-        <span class="badge ${badgeClass(p.status)}">${p.status}</span>
+        <span class="badge ${badgeClass(p.status)}">${escapeHtml(p.status)}</span>
         <select class="filter-select" id="pp-status-${p.id}" onchange="updateProviderStatus('${p.id}', this.value)" style="font-size:12px">
           <option value="pending" ${p.status==='pending'?'selected':''}>pending</option>
           <option value="reviewed" ${p.status==='reviewed'?'selected':''}>reviewed</option>
@@ -1342,7 +1572,7 @@ function openProviderDetail(id) {
     </div>
     <div class="sp-sec">
       <div class="sp-sec-t">Notas del admin</div>
-      <textarea class="sp-notes" id="pp-notes-${p.id}" placeholder="Notas internas, resultado de entrevista, razón de estado...">${p.admin_notes || ''}</textarea>
+      <textarea class="sp-notes" id="pp-notes-${p.id}" placeholder="Notas internas, resultado de entrevista, razón de estado...">${escapeHtml(p.admin_notes || '')}</textarea>
       <button class="sp-save-btn" style="margin-top:8px" onclick="saveProviderNotes('${p.id}')">Guardar notas</button>
     </div>
     <div class="sp-acts">
@@ -1366,7 +1596,7 @@ async function updateProviderStatus(id, status) {
     _provsCache[id] = { ..._provsCache[id], status };
     loadProviders();
   } catch (err) {
-    alert('Error al actualizar estado: ' + err.message);
+    toast('Error al actualizar estado: ' + err.message, 'err');
   }
 }
 
@@ -1382,7 +1612,7 @@ async function saveProviderNotes(id) {
     const btn = document.querySelector(`button[onclick="saveProviderNotes('${id}')"]`);
     if (btn) { btn.textContent = '✅ Guardado'; setTimeout(() => { btn.textContent = 'Guardar notas'; }, 2000); }
   } catch (err) {
-    alert('Error al guardar notas: ' + err.message);
+    toast('Error al guardar notas: ' + err.message, 'err');
   }
 }
 

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" role="img" aria-labelledby="title desc">
+  <title id="title">Medicine Cross</title>
+  <desc id="desc">Flat service illustration for pharmacy discovery card.</desc>
+  <rect width="1200" height="900" fill="#F5F2E8"/>
+  <circle cx="958" cy="156" r="96" fill="#D88B55" opacity=".2"/>
+  <circle cx="198" cy="742" r="132" fill="#78975D" opacity=".12"/>
+  <path d="M130 705c150 72 291 101 464 85 184-17 286-84 476-52" fill="none" stroke="#463D2E" stroke-width="18" stroke-linecap="round" opacity=".12"/>
+  <g fill="none" stroke="#463D2E" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="372" y="317" width="456" height="366" rx="55" fill="#78975D" opacity=".82" stroke-width="28"/><path stroke-width="20" d="M524 250h152v67H524zM600 411v178M511 500h178M360 683h480"/><circle cx="785" cy="269" r="43" fill="#D88B55"/><path stroke-width="20" d="M754 269h62M785 238v62"/>
+  </g>
+  <g fill="#D88B55" opacity=".92">
+    <circle cx="214" cy="182" r="16"/>
+    <circle cx="997" cy="697" r="13"/>
+    <path d="M1017 264l19 36 37 18-37 18-19 36-18-36-37-18 37-18z"/>
+  </g>
+</svg>

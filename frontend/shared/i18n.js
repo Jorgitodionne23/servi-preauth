@@ -15,6 +15,7 @@ const T = {
     },
     header: {
       linkServices: "Servicios",
+      linkBrowse: "Explorar servicios",
       linkHelp: "Help Center",
       linkPartners: "Partners",
       pillPrompt: "Pide tu servicio",
@@ -121,6 +122,10 @@ const T = {
       prev: "Desplazar a la izquierda",
       next: "Desplazar a la derecha",
       empty: "Próximamente habrá más servicios en esta categoría.",
+      searchCardTitle: "¿No encontraste lo que buscabas?",
+      searchCardBody: "Descríbelo y nosotros lo encontramos.",
+      searchCardCta: "Describir servicio",
+      searchCardSeed: "Necesito ayuda con un servicio que no aparece aquí",
     },
     attachMenu: {
       title: "Adjuntar archivos",
@@ -630,6 +635,7 @@ const T = {
     },
     header: {
       linkServices: "Services",
+      linkBrowse: "Browse services",
       linkHelp: "Help Center",
       linkPartners: "Partners",
       pillPrompt: "Request your service",
@@ -736,6 +742,10 @@ const T = {
       prev: "Scroll left",
       next: "Scroll right",
       empty: "More services in this category are coming soon.",
+      searchCardTitle: "Didn't find what you were looking for?",
+      searchCardBody: "Describe it and we'll find it.",
+      searchCardCta: "Describe service",
+      searchCardSeed: "I need help with a service not listed here",
     },
     attachMenu: {
       title: "Attach files",

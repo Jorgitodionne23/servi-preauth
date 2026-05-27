@@ -6,7 +6,7 @@
   <title>SERVI — Servicio</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,700;1,9..40,400&family=Syne:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,700;1,9..40,400&family=Syne:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/shared/shared-styles.css">
   <link rel="stylesheet" href="/shared/landing-theme.css">
   <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -15,7 +15,7 @@
     .svc-page {
       max-width: 1200px;
       margin: 0 auto;
-      padding: 32px 24px 80px;
+      padding: 132px 24px 80px;
     }
     .svc-breadcrumb {
       font-size: 13px;
@@ -383,7 +383,7 @@
       .svc-mobile-form { display: block; }
     }
     @media (max-width: 600px) {
-      .svc-page { padding: 16px 16px 100px; }
+      .svc-page { padding: 112px 16px 100px; }
       .svc-hero-img { height: 240px; }
       .svc-title { font-size: 22px; }
     }
@@ -448,6 +448,85 @@
     const imgs = window.discoverySubcategoryImages || {};
     const fallbacks = window.discoveryFallbackByCategory || {};
     return (imgs[catKey] && imgs[catKey][subKey]) || fallbacks[catKey] || '/assets/partnerimage.png';
+  }
+
+  function getServiceIndex(subData) {
+    const serviceSets = [
+      subData.services && subData.services[getLocale()],
+      subData.services && subData.services.es,
+      subData.services && subData.services.en,
+    ].filter(Array.isArray);
+
+    for (const services of serviceSets) {
+      const index = services.findIndex(sv => sv === serviceName);
+      if (index !== -1) return index;
+    }
+    return -1;
+  }
+
+  function buildUnsplashUrl(photoId) {
+    return `https://images.unsplash.com/${photoId}?w=1200&q=85&auto=format&fit=crop`;
+  }
+
+  function buildLoremFlickrUrl(keywords, lockSeed) {
+    const safe = encodeURIComponent(keywords).replace(/%2C/gi, ',');
+    let lock = 0;
+    for (let i = 0; i < lockSeed.length; i++) lock = ((lock << 5) - lock + lockSeed.charCodeAt(i)) | 0;
+    return `https://loremflickr.com/1200/800/${safe}?lock=${Math.abs(lock)}`;
+  }
+
+  function slugifyServiceLabel(label) {
+    return String(label || '')
+      .toLowerCase()
+      .replace(/&/g, 'and')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+  }
+
+  function getOfficialServiceImage(subData, serviceIndex) {
+    const officialImageFolders = {
+      cleaning: 'cleaning/Website_AI_Images_Cleaning',
+      repair: 'repair/Website_AI_Images_Repair',
+      moving: 'moving/Website_AI_Images_Moving',
+      wellness: 'wellness/Website_AI_Images_Wellness',
+      suppliers: 'suppliers/Website_AI_Images_Suppliers',
+    };
+    const folder = officialImageFolders[catKey];
+    const englishServices = subData.services && subData.services.en;
+    if (!folder || !Array.isArray(englishServices) || !englishServices[serviceIndex]) return '';
+    const slug = slugifyServiceLabel(englishServices[serviceIndex]);
+    return slug ? `/assets/discovery/official/${folder}/${slug}.png` : '';
+  }
+
+  function buildImageFallbackHandler(urls) {
+    const chain = urls.filter(Boolean);
+    if (!chain.length) return 'this.onerror=null;';
+    return chain.reduceRight((next, url) => (
+      `this.onerror=function(){${next}};this.src='${url}';`
+    ), 'this.onerror=null;');
+  }
+
+  function getServiceHeroImage(subData) {
+    const subImage = getSubcategoryImage();
+    const categoryFallback = (window.discoveryFallbackByCategory || {})[catKey] || '/assets/partnerimage.png';
+    const serviceIndex = getServiceIndex(subData);
+    if (serviceIndex === -1) {
+      return { src: subImage, onerror: buildImageFallbackHandler([categoryFallback, '/assets/partnerimage.png']) };
+    }
+
+    const photoId = Array.isArray(subData.serviceImages) ? subData.serviceImages[serviceIndex] : '';
+    const keywords = Array.isArray(subData.serviceKeywords) ? subData.serviceKeywords[serviceIndex] : '';
+    const flickrUrl = keywords ? buildLoremFlickrUrl(keywords, `${catKey}-${subKey}-${serviceIndex}`) : subImage;
+    const legacyPrimarySrc = photoId ? buildUnsplashUrl(photoId) : flickrUrl;
+    const officialSrc = getOfficialServiceImage(subData, serviceIndex);
+    const src = officialSrc || legacyPrimarySrc || subImage;
+    const fallbackUrls = officialSrc
+      ? [legacyPrimarySrc, flickrUrl, subImage, categoryFallback, '/assets/partnerimage.png']
+      : (photoId
+          ? [flickrUrl, subImage, categoryFallback, '/assets/partnerimage.png']
+          : (keywords ? [subImage, categoryFallback, '/assets/partnerimage.png'] : [categoryFallback, '/assets/partnerimage.png']));
+
+    return { src, onerror: buildImageFallbackHandler(fallbackUrls) };
   }
 
   function getCategoryLabel() {
@@ -776,7 +855,7 @@
     }
 
     const { subData } = catalog;
-    const imgSrc = getSubcategoryImage();
+    const heroImage = getServiceHeroImage(subData);
     const subLabel = getLocalizedText(subData.label);
     const catLabel = getCategoryLabel();
     const otherServices = (subData.services[getLocale()] || subData.services.es || [])
@@ -794,8 +873,8 @@
 
         <div class="svc-layout">
           <div class="svc-left">
-            <img class="svc-hero-img" src="${esc(imgSrc)}" alt="${esc(serviceName)}"
-                 onerror="this.onerror=null;this.src='/assets/partnerimage.png'">
+            <img class="svc-hero-img" src="${esc(heroImage.src)}" alt="${esc(serviceName)}"
+                 onerror="${esc(heroImage.onerror)}">
             <h1 class="svc-title">${esc(serviceName)}</h1>
             <div class="svc-subcat-label">${esc(subLabel)} · ${esc(catLabel)}</div>
 

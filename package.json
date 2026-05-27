@@ -4,7 +4,11 @@
   "type": "module",
   "main": "backend/index.mjs",
   "scripts": {
-    "start": "node backend/index.mjs"
+    "start": "node backend/index.mjs",
+    "emulators:auth": "XDG_CONFIG_HOME=.firebase-config NO_UPDATE_NOTIFIER=1 firebase emulators:start --only auth --project servi-bec91",
+    "start:auth-emulator": "FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099 FIREBASE_PROJECT_ID=servi-bec91 DISABLE_RATE_LIMITS=1 node backend/index.mjs",
+    "test:e2e": "node tests/preflight.mjs && playwright test",
+    "test:e2e:install": "playwright install chromium"
   },
   "keywords": [],
   "author": "",
@@ -26,6 +30,7 @@
     "@eslint/js": "^9.32.0",
     "@playwright/test": "^1.59.1",
     "eslint": "^9.32.0",
+    "firebase-tools": "^15.16.0",
     "globals": "^16.3.0",
     "prettier": "^3.6.2"
   }

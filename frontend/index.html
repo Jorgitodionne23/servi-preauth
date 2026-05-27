@@ -103,7 +103,7 @@
 </div>
 
 <!-- ═══ HOW IT WORKS (light) ═══ -->
-<section id="how" class="section">
+<section id="how" class="section" style="padding-top:0">
   <div class="container">
     <h2 class="heading-lg" data-i18n="how.title" style="margin-bottom:56px">Así de fácil</h2>
     <div id="steps-grid"></div>
@@ -176,6 +176,12 @@
 
 <!-- ═══ BOOKING PANEL ═══ -->
 <div id="booking-panel"></div>
+<section id="bk-conversation" class="bk-convo" hidden>
+  <div class="bk-convo__container">
+    <button id="bk-convo-close" class="bk-convo__close" type="button" aria-label="Cerrar">×</button>
+    <div id="bk-convo-stream" class="bk-convo__stream"></div>
+  </div>
+</section>
 
 <!-- ═══ PAGE SCRIPT ═══ -->
 <script src="/config.js"></script>
@@ -313,22 +319,32 @@
     const tr = t();
     const dh = tr.dashHero || {};
 
+    window._dashGoToBrowse = function(catKey) {
+      const params = new URLSearchParams();
+      if (catKey) params.set('category', catKey);
+      window.location.href = '/browse.html' + (params.toString() ? ('?' + params.toString()) : '');
+    };
+
     const cards = catKeys.map(key => `
-      <div class="dash-cat-card">
+      <div class="dash-cat-card" role="button" tabindex="0"
+           onclick="window._dashGoToBrowse('${key}')"
+           onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window._dashGoToBrowse('${key}')}">
         <span class="dash-cat-card__emoji" aria-hidden="true">${catEmoji[key]}</span>
         <span class="dash-cat-card__name">${resolve(catI18n[key].name)}</span>
-        <button class="dash-cat-card__details" onclick="window._openBrowseDrawer('${key}')" type="button">
+        <span class="dash-cat-card__details">
           ${dh.details || 'Detalles'}
-        </button>
+        </span>
       </div>
     `).join('');
 
     const customCard = `
-      <div class="dash-cat-card dash-cat-card--custom">
+      <div class="dash-cat-card dash-cat-card--custom" role="button" tabindex="0"
+           onclick="openBooking('custom')"
+           onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openBooking('custom')}">
         <span class="dash-cat-card__name">${dh.cantFind || '¿No encuentras lo que buscas?'}</span>
-        <button class="dash-cat-card__details" onclick="openBooking('custom')" type="button">
+        <span class="dash-cat-card__details">
           ${dh.leaveItToUs || 'Déjalo en nuestras manos'}
-        </button>
+        </span>
       </div>
     `;
 
@@ -350,7 +366,7 @@
   }
 
   // ─── Browse Drawer ────────────────────────────────────────────
-  window._openBrowseDrawer = function(catKey) {
+  window._openBrowseDrawer = function(catKey, opts) {
     const tr = t();
     const browseStr = tr.browse || {};
     const catName = resolve(catI18n[catKey].name) || catKey;
@@ -362,11 +378,14 @@
     const listEl = document.getElementById('browse-drawer-list');
 
     if (!drawer) return;
+    const source = opts && opts.source ? opts.source : '';
+    if (source) drawer.setAttribute('data-source', source);
+    else drawer.removeAttribute('data-source');
     titleEl.textContent = catName;
     subtitleEl.textContent = browseStr.selectService || 'Selecciona un servicio';
     listEl.innerHTML = subs.map(sub => `
       <li>
-        <button class="browse-drawer__item" type="button" onclick="window._browseSelectService('${catKey}', ${JSON.stringify(sub)})">
+        <button class="browse-drawer__item" type="button" onclick="window._browseSelectService('${catKey}', '${encodeURIComponent(sub)}')">
           <span>${sub}</span>
           <span class="browse-drawer__item-arrow">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
@@ -387,12 +406,16 @@
   };
 
   window._browseSelectService = function(catKey, serviceName) {
+    let decodedService = serviceName;
+    try {
+      decodedService = decodeURIComponent(serviceName);
+    } catch (_) {}
     window._closeBrowseDrawer();
     setTimeout(() => {
       window.bookingState = {
         step: 1,
         category: catKey,
-        description: serviceName,
+        description: decodedService,
         whenType: 'asap',
         date: '',
         time: '',
@@ -1188,6 +1211,30 @@
     if (window.bookingState.step > 1) { window.bookingState.step--; renderBooking(); }
   };
 
+  window.__serviJsonAuthHeaders = function () {
+    const headers = { 'Content-Type': 'application/json' };
+    try {
+      const session = JSON.parse(localStorage.getItem('servi_user_session') || 'null');
+      if (session && session.token) headers.Authorization = 'Bearer ' + session.token;
+    } catch (_) {}
+    return headers;
+  };
+
+  window.__serviceRequestErrorMessage = function (error, fallback) {
+    const es = lang() === 'es';
+    if (error === 'email_required') {
+      return es
+        ? 'Verifica tu correo electrónico para confirmar tu solicitud.'
+        : 'Verify your email to confirm your request.';
+    }
+    if (error === 'phone_required') {
+      return es
+        ? 'Verifica tu número de teléfono para confirmar tu solicitud.'
+        : 'Verify your phone number to confirm your request.';
+    }
+    return fallback || (es ? 'Error al enviar. Inténtalo de nuevo.' : 'Submission error. Please try again.');
+  };
+
   window.submitBooking = function () {
     if (!window.__user) {
       const s = window.bookingState;
@@ -1213,7 +1260,7 @@
     const API = window.CONFIG?.API_BASE || '';
     fetch(API + '/api/service-requests', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: window.__serviJsonAuthHeaders(),
       body: JSON.stringify({
         category: s.category || 'custom',
         description: s.description,
@@ -1228,12 +1275,21 @@
         attachments: s.attachments.map(a => a.url),
       }),
     })
-    .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then(async r => {
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        const err = new Error(data.message || String(r.status));
+        err.status = r.status;
+        err.body = data;
+        throw err;
+      }
+      return data;
+    })
     .then(() => { window.bookingState.step = 4; renderBooking(); })
     .catch(err => {
       console.error('Booking submit error:', err);
       if (btn) { btn.disabled = false; btn.textContent = t().booking.confirm; }
-      alert(lang() === 'es' ? 'Error al enviar. Inténtalo de nuevo.' : 'Submission error. Please try again.');
+      alert(window.__serviceRequestErrorMessage(err && err.body && err.body.error));
     });
   };
 })();
@@ -1545,7 +1601,7 @@
     try {
       const res = await fetch(API + '/api/service-requests', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: window.__serviJsonAuthHeaders ? window.__serviJsonAuthHeaders() : { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           category: s.category || 'custom',
           description: s.description,
@@ -1560,13 +1616,20 @@
           attachments: s.attachments.map(a => a.url),
         }),
       });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        const err = new Error(data.message || ('HTTP ' + res.status));
+        err.status = res.status;
+        err.body = data;
+        throw err;
+      }
       addBot(tr().success || 'Request sent!');
       step = 5;
     } catch (err) {
       console.error('[convo] submit error:', err);
       if (btn) { btn.disabled = false; btn.textContent = tr().confirm || 'Confirm'; }
-      addBot(tr().error || 'Error. Please try again.');
+      const fallback = tr().error || 'Error. Please try again.';
+      addBot(window.__serviceRequestErrorMessage ? window.__serviceRequestErrorMessage(err && err.body && err.body.error, fallback) : fallback);
     }
   }
 
@@ -1649,6 +1712,30 @@
   if (document.readyState !== 'loading') {
     const close = document.getElementById('bk-convo-close');
     if (close) close.addEventListener('click', window.closeConversation);
+  }
+
+  function maybeAutoOpenFromBrowsePage() {
+    const params = new URLSearchParams(window.location.search);
+    const seededService = params.get('discover_service');
+    if (!seededService) return;
+    const seededCategory = params.get('discover_category');
+
+    setTimeout(() => {
+      if (window.openConversation) window.openConversation(seededService);
+      if (window.bookingState && seededCategory) window.bookingState.category = seededCategory;
+    }, 80);
+
+    const url = new URL(window.location.href);
+    url.searchParams.delete('discover_service');
+    url.searchParams.delete('discover_category');
+    const next = url.pathname + (url.search ? url.search : '') + url.hash;
+    window.history.replaceState({}, '', next);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', maybeAutoOpenFromBrowsePage);
+  } else {
+    maybeAutoOpenFromBrowsePage();
   }
 })();
 

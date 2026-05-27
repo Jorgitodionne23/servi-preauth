@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" role="img" aria-labelledby="title desc">
+  <title id="title">Lock Key</title>
+  <desc id="desc">Flat service illustration for locksmith discovery card.</desc>
+  <rect width="1200" height="900" fill="#F2EFE9"/>
+  <circle cx="958" cy="156" r="96" fill="#E09F4F" opacity=".2"/>
+  <circle cx="198" cy="742" r="132" fill="#8E6B4F" opacity=".12"/>
+  <path d="M130 705c150 72 291 101 464 85 184-17 286-84 476-52" fill="none" stroke="#40352D" stroke-width="18" stroke-linecap="round" opacity=".12"/>
+  <g fill="none" stroke="#40352D" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="425" y="423" width="350" height="282" rx="44" fill="#8E6B4F" opacity=".84" stroke-width="28"/><path stroke-width="20" d="M489 423V331c0-62 49-112 111-112s111 50 111 112v92M600 526v85"/><circle cx="600" cy="526" r="28" fill="#E09F4F" stroke="none"/><path stroke-width="20" d="M779 320h174M887 320v63M826 320v42"/><circle cx="730" cy="320" r="49" fill="none"/>
+  </g>
+  <g fill="#E09F4F" opacity=".92">
+    <circle cx="214" cy="182" r="16"/>
+    <circle cx="997" cy="697" r="13"/>
+    <path d="M1017 264l19 36 37 18-37 18-19 36-18-36-37-18 37-18z"/>
+  </g>
+</svg>

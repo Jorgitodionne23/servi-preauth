@@ -105,17 +105,113 @@
     zap: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>',
   };
 
+  // ─── Account icon (shown beside hamburger when logged in) ──────────────
+  function buildAccountBtn() {
+    if (!window.__user) return '';
+    const initial = ((window.__user.name || window.__user.email || '?')[0]).toUpperCase();
+    return `<a class="site-header__account-btn" href="/account.html" aria-label="Mi cuenta" title="${window.__user.name || window.__user.email || 'Mi cuenta'}">${initial}</a>`;
+  }
+
+  // ─── Section variant detection ──────────────────────────────────────────
+  // Section pages get a dedicated sub-brand header (no pill/browse).
+  //   partners:   /partners.html, /partners/*, /handbook.html, /handbook/*
+  //   helpcenter: /helpcenter.html, /helpcenter/*, /legal.html
+  function detectSectionVariant() {
+    const p = window.location.pathname;
+    if (p.startsWith('/partners') || p.startsWith('/handbook')) return 'partners';
+    if (p.startsWith('/helpcenter') || p === '/legal.html' || p.startsWith('/legal')) return 'helpcenter';
+    return null;
+  }
+
+  function buildSectionHeader(variant) {
+    const t = window.__t;
+    const lang = window.__lang || 'es';
+    const p = window.location.pathname;
+
+    // Sub-link lists per section — last link is the CTA.
+    const SECTION_CONFIG = {
+      partners: {
+        label: 'Partners',
+        logoHref: '/partners.html',
+        links: [
+          { href: '/partners.html#what',       match: () => p === '/partners.html' && (window.location.hash === '' || window.location.hash === '#what'), label: { es: '¿Qué es?',   en: 'What is it?' } },
+          { href: '/partners.html#how',        match: () => p === '/partners.html' && window.location.hash === '#how',                                   label: { es: '¿Cómo?',     en: 'How' } },
+          { href: '/handbook.html',            match: () => p === '/handbook.html' || p.startsWith('/handbook/'),                                         label: { es: 'Handbook',   en: 'Handbook' } },
+          { href: '/partners/registro.html',   match: () => p.startsWith('/partners/'),                                                                   label: { es: 'Regístrate', en: 'Register' }, cta: true },
+        ],
+      },
+      helpcenter: {
+        label: lang === 'es' ? 'Help Center' : 'Help Center',
+        logoHref: '/helpcenter.html',
+        links: [
+          { href: '/helpcenter/suggestion.html', match: () => p === '/helpcenter/suggestion.html', label: { es: 'Sugerencia',    en: 'Suggestion' } },
+          { href: '/helpcenter/quienes-somos.html', match: () => p === '/helpcenter/quienes-somos.html', label: { es: 'Quiénes Somos', en: 'About Us' } },
+          { href: '/helpcenter/contactanos.html',   match: () => p === '/helpcenter/contactanos.html',   label: { es: 'Contáctanos',   en: 'Contact' } },
+          { href: '/helpcenter/report.html',        match: () => p === '/helpcenter/report.html',        label: { es: 'Reportar',      en: 'Report' }, cta: true },
+        ],
+      },
+    };
+
+    const cfg = SECTION_CONFIG[variant];
+    const linksHtml = cfg.links.map(l => {
+      const active = l.match() ? 'true' : 'false';
+      const extra = l.cta ? ' site-header__link--cta' : '';
+      return `<a class="site-header__link${extra}" href="${l.href}" data-active="${active}">${l.label[lang] || l.label.es}</a>`;
+    }).join('');
+
+    return `
+    <header class="site-header" data-state="section" data-variant="section" id="site-header">
+      <div class="site-header__bar">
+        <div class="site-header__logo site-header__logo--section logo">
+          <a href="${(variant === 'partners' || variant === 'helpcenter') ? '/index.html' : cfg.logoHref}" class="site-header__logo-servi" style="text-decoration:none">SERVI</a>
+          <span class="site-header__logo-divider" aria-hidden="true"></span>
+          <a href="${cfg.logoHref}" class="site-header__logo-section" style="text-decoration:none">${cfg.label}<span class="logo-dot">.</span></a>
+        </div>
+
+        <nav class="site-header__links site-header__links--section" aria-label="Section">
+          ${linksHtml}
+        </nav>
+
+        <div class="site-header__right">
+          ${buildAccountBtn()}
+          <button type="button" class="site-header__hamburger" id="site-hamburger" aria-label="${t.header.menu}" aria-controls="site-drawer">
+            ${ICON.hamburger}
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <div class="site-header__scrim" id="site-scrim" aria-hidden="true"></div>
+
+    <aside id="site-drawer" class="site-drawer" aria-hidden="true" aria-label="${t.header.menu}"></aside>
+    <div class="site-drawer__scrim" id="site-drawer-scrim" aria-hidden="true"></div>
+    `;
+  }
+
   // ─── Build: the header bar ──────────────────────────────────────────────
   function buildHeader() {
+    const sectionVariant = detectSectionVariant();
+    if (sectionVariant) return buildSectionHeader(sectionVariant);
+
     const t = window.__t;
+    const isBrowsePage = window.location.pathname === '/browse.html';
+    const browseAttr = isBrowsePage ? ' data-page="browse"' : '';
+    const onHome = window.location.pathname === '/' || window.location.pathname === '/index.html';
+    const isServicesPage = onHome || window.location.pathname === '/browse.html' || window.location.pathname === '/service.html';
+    // Pre-compute correct initial state for browse so the bar renders at the
+    // right size immediately — avoids the height/grid-row transition on load.
+    const foldY = isBrowsePage ? Math.max(160, window.innerHeight - 220) : 0;
+    const initialState = isBrowsePage
+      ? (window.scrollY < foldY ? 'browse-expanded' : 'scrolled')
+      : 'hero';
     return `
-    <header class="site-header" data-state="hero" id="site-header">
+    <header class="site-header" data-state="${initialState}" id="site-header"${browseAttr}>
       <div class="site-header__bar">
-        <a class="site-header__logo" href="/index.html" aria-label="SERVI">SERVI<span class="site-header__logo-dot">.</span></a>
+        <a href="/index.html" class="site-header__logo logo" style="text-decoration:none;color:#000">SERVI<span class="logo-dot" style="color:#000">.</span></a>
 
         <nav class="site-header__links" aria-label="Primary">
-          <a class="site-header__link" href="#services" data-scroll="services"
-            data-active="${(window.location.pathname === '/' || window.location.pathname === '/index.html') ? 'true' : 'false'}"
+          <a class="site-header__link" href="${onHome ? '#services' : '/index.html#services'}" ${onHome ? 'data-scroll="services"' : ''}
+            data-active="${isServicesPage ? 'true' : 'false'}"
             >${t.header.linkServices}</a>
           <a class="site-header__link" href="/helpcenter.html"
             data-active="${window.location.pathname.startsWith('/helpcenter') ? 'true' : 'false'}"
@@ -136,16 +232,20 @@
               <span class="search-pill__label search-pill__label--when" id="pill-when-label">${t.header.pillWhen || 'When'}</span>
             </button>
           </div>
-          <button type="button" class="site-header__browse-btn" data-segment="browse" aria-label="${t.header.pillBrowse || 'Browse'}">
+          ${isBrowsePage ? '' : `<button type="button" class="site-header__browse-btn" data-segment="browse" aria-label="${t.header.pillBrowse || 'Browse'}">
             <span>${t.header.pillBrowse || 'Browse'}</span>
-          </button>
+          </button>`}
           <div class="search-pill-popover" id="search-pill-popover" aria-hidden="true" data-segment=""></div>
         </div>
 
-        <button type="button" class="site-header__hamburger" id="site-hamburger" aria-label="${t.header.menu}" aria-controls="site-drawer">
-          ${ICON.hamburger}
-        </button>
+        <div class="site-header__right">
+          ${buildAccountBtn()}
+          <button type="button" class="site-header__hamburger" id="site-hamburger" aria-label="${t.header.menu}" aria-controls="site-drawer">
+            ${ICON.hamburger}
+          </button>
+        </div>
       </div>
+
     </header>
 
     <div class="site-header__scrim" id="site-scrim" aria-hidden="true"></div>
@@ -204,6 +304,7 @@
         <a class="site-drawer__link" href="/partners.html">${t.header.linkPartners}</a>
         ${onHome ? `
           <div class="site-drawer__divider"></div>
+          <a class="site-drawer__link" href="/browse.html">${t.header.linkBrowse || t.header.pillBrowse || 'Browse services'}</a>
           ${scrollLink('how', t.nav.howItWorks)}
           ${scrollLink('testimonials', t.nav.testimonials)}
         ` : ''}
@@ -293,6 +394,8 @@
     const t = window.__t;
     const isAsap = state.whenChoice === 'asap';
     const isDate = state.whenChoice === 'date';
+    const lang = window.__lang || 'es';
+    const confirmLabel = lang === 'es' ? 'Confirmar' : 'Confirm';
     return `
       <div class="spp-panel" data-panel="when">
         <div class="spp-when-opts">
@@ -308,6 +411,11 @@
             ${isDate ? '' : 'hidden'}
             value="${state.whenDate}"
             min="${new Date().toISOString().split('T')[0]}">
+        </div>
+        <div class="spp-when-footer">
+          <button type="button" class="spp-when-confirm-btn" data-action="spp-when-confirm">
+            ${confirmLabel} ${ICON.arrow}
+          </button>
         </div>
       </div>
     `;
@@ -328,16 +436,40 @@
       el.textContent = t.header.pillWhen || 'When';
       el.style.color = '';
     }
+    requestAnimationFrame(_updatePillIndicator);
+  }
+
+  function _updatePillIndicator() {
+    const pill = document.querySelector('.site-header__pill');
+    if (!pill) return;
+
+    const activeSegName = (state.segment === 'when' || state.segment === 'describe')
+      ? state.segment
+      : 'describe';
+    const activeBtn = pill.querySelector(`.search-pill__segment[data-segment="${activeSegName}"]`);
+    if (!activeBtn) return;
+
+    const pillRect = pill.getBoundingClientRect();
+    const btnRect = activeBtn.getBoundingClientRect();
+    const inset = 2;
+    const x = Math.max(0, btnRect.left - pillRect.left - inset);
+    const width = Math.max(0, btnRect.width - (inset * 2));
+
+    pill.style.setProperty('--pill-indicator-x', `${x}px`);
+    pill.style.setProperty('--pill-indicator-width', `${width}px`);
   }
 
   // ─── State machine ─────────────────────────────────────────────────────
   const state = {
-    scroll: 'hero',      // 'hero' | 'scrolled'
-    segment: null,       // null | 'describe' | 'when' | 'browse'
+    scroll: 'hero',       // 'hero' | 'scrolled'
+    segment: null,        // null | 'describe' | 'when' | 'browse'
     drawerOpen: false,
-    whenChoice: 'asap',  // 'asap' | 'date'
-    whenDate: '',        // ISO date string when choice === 'date'
+    browseBarExpanded: false,
+    whenChoice: 'asap',   // 'asap' | 'date'
+    whenDate: '',         // ISO date string when choice === 'date'
+    _describeText: '',    // carried from describe panel to when panel
   };
+  let _pillIndicatorTimer = null;
 
   function _showActivePanel(segment) {
     const popover = document.getElementById('search-pill-popover');
@@ -366,18 +498,26 @@
     const scrim = document.getElementById('site-scrim');
     const popover = document.getElementById('search-pill-popover');
     if (!header) return;
+    // Section-variant header has no pill/browse/scroll state — bail early.
+    if (header.getAttribute('data-variant') === 'section') return;
 
     // Header data-state drives bar expansion + scrim
     let ds;
     if (state.segment === 'describe' || state.segment === 'when') ds = 'scrolled-expanded';
+    else if (header.getAttribute('data-page') === 'browse' && (state.scroll === 'hero' || state.browseBarExpanded)) ds = 'browse-expanded';
     else if (state.scroll === 'scrolled') ds = 'scrolled';
     else ds = 'hero';
     header.setAttribute('data-state', ds);
 
     // Pill segment active highlights
+    const pill = document.querySelector('.site-header__pill');
+    if (pill) pill.setAttribute('data-active-segment', state.segment === 'when' ? 'when' : 'describe');
     document.querySelectorAll('.search-pill__segment').forEach(btn => {
       btn.setAttribute('data-active', btn.getAttribute('data-segment') === state.segment ? 'true' : 'false');
     });
+    requestAnimationFrame(_updatePillIndicator);
+    if (_pillIndicatorTimer) clearTimeout(_pillIndicatorTimer);
+    _pillIndicatorTimer = setTimeout(_updatePillIndicator, 280);
 
     // Browse button active highlight
     const browseBtn = document.querySelector('.site-header__browse-btn');
@@ -417,9 +557,6 @@
         }
       }
 
-      // Clear legacy panel (no longer drives content)
-      if (panel) { panel.setAttribute('data-active-segment', ''); panel.setAttribute('aria-hidden', 'true'); panel.innerHTML = ''; }
-
     } else {
       // Closed
       scrim.removeAttribute('data-visible');
@@ -430,7 +567,6 @@
         popover.setAttribute('data-segment', '');
         setTimeout(() => { if (popover.getAttribute('data-open') !== 'true') popover.innerHTML = ''; }, 260);
       }
-      if (panel) { panel.setAttribute('data-active-segment', ''); panel.setAttribute('aria-hidden', 'true'); panel.innerHTML = ''; }
     }
   }
 
@@ -438,11 +574,13 @@
     if (seg === 'browse') {
       state.segment = null;
       applyHeaderState();
-      // Scroll to categories on the landing page, or navigate there
-      if (window.location.pathname === '/' || window.location.pathname === '/index.html') {
-        document.getElementById('landing-hero')?.scrollIntoView({ behavior: 'smooth' });
+      // Route to dedicated browse page.
+      if (window.location.pathname === '/browse.html') {
+        const target = document.getElementById('browse-discovery');
+        if (target) target.scrollIntoView({ behavior: 'smooth' });
+        else window.scrollTo({ top: 0, behavior: 'smooth' });
       } else {
-        window.location.href = '/index.html#services';
+        window.location.href = '/browse.html';
       }
       return;
     }
@@ -519,6 +657,12 @@
       else openSegment(which);
       return;
     }
+    // Standalone browse button
+    const browseBtn = e.target.closest('.site-header__browse-btn');
+    if (browseBtn) {
+      openSegment('browse');
+      return;
+    }
     // Scrim (page dim): close segment
     if (e.target.id === 'site-scrim') { closeSegment(); return; }
     // Drawer scrim
@@ -527,6 +671,18 @@
     if (e.target.closest('#site-hamburger')) {
       if (state.drawerOpen) closeDrawer(); else openDrawer();
       return;
+    }
+    // Browse page: after scroll collapse, clicking the header bar reveals links again
+    // without activating the search pill or opening its popover.
+    const bar = e.target.closest('.site-header__bar');
+    if (bar) {
+      const header = bar.closest('#site-header');
+      const interactive = e.target.closest('a, button, input, select, textarea, [role="button"]');
+      if (!interactive && header && header.getAttribute('data-page') === 'browse' && state.scroll === 'scrolled' && !state.segment) {
+        state.browseBarExpanded = true;
+        applyHeaderState();
+        return;
+      }
     }
     // Inside drawer
     const drawer = e.target.closest('#site-drawer');
@@ -582,15 +738,22 @@
       const suggestion = e.target.closest('[data-suggestion]')?.getAttribute('data-suggestion');
 
       if (suggestion) {
-        closeSegment();
-        routeToBookingIntake(suggestion);
+        // Fill the describe input with the suggestion text
+        const inp = document.getElementById('spp-describe-input');
+        if (inp) { inp.value = suggestion; inp.focus(); }
         return;
       }
       if (action === 'spp-submit') {
+        // Advance from describe → when panel
         const inp = document.getElementById('spp-describe-input');
-        const val = inp ? inp.value.trim() : '';
+        if (inp) state._describeText = inp.value.trim();
+        openSegment('when');
+        return;
+      }
+      if (action === 'spp-when-confirm') {
+        const text = state._describeText || '';
         closeSegment();
-        routeToBookingIntake(val);
+        routeToBookingIntake(text);
         return;
       }
       if (action === 'spp-camera') {
@@ -638,7 +801,6 @@
       }
       return; // swallow unhandled clicks inside popover
     }
-
   }
 
   function onRootChange(e) {
@@ -665,14 +827,51 @@
 
   // ─── Scroll state observation ─────────────────────────────────────────
   let _scrollObserver = null;
+  let _browseScrollHandler = null;
   function initScrollObserver() {
     if (_scrollObserver) _scrollObserver.disconnect();
+    if (_browseScrollHandler) {
+      window.removeEventListener('scroll', _browseScrollHandler);
+      window.removeEventListener('resize', _browseScrollHandler);
+      _browseScrollHandler = null;
+    }
+    // Skip scroll/morph behavior on section-variant headers (static sub-brand bar).
+    const header = document.getElementById('site-header');
+    if (header && header.getAttribute('data-variant') === 'section') return;
+    if (window.location.pathname === '/browse.html') {
+      let ticking = false;
+      const updateBrowseScroll = () => {
+        const foldY = Math.max(160, window.innerHeight - 220);
+        const nextScroll = window.scrollY < foldY ? 'hero' : 'scrolled';
+        if (nextScroll !== state.scroll) {
+          state.scroll = nextScroll;
+          if (state.scroll === 'scrolled') state.browseBarExpanded = false;
+          applyHeaderState();
+        } else {
+          applyHeaderState();
+        }
+        ticking = false;
+      };
+      _browseScrollHandler = () => {
+        if (!ticking) {
+          ticking = true;
+          requestAnimationFrame(updateBrowseScroll);
+        }
+      };
+      updateBrowseScroll();
+      window.addEventListener('scroll', _browseScrollHandler, { passive: true });
+      window.addEventListener('resize', _browseScrollHandler, { passive: true });
+      return;
+    }
     const heroSearch = document.getElementById('hero-search-bar');
     const hero = document.querySelector('.landing-hero') || document.querySelector('.dash-hero');
     const sentinel = heroSearch || hero;
 
     if (!sentinel) {
-      state.scroll = 'scrolled';
+      // No hero on this page: keep the header in its default 'hero' layout
+      // (logo + nav links + hamburger). Otherwise it collapses to the
+      // search pill and visually drifts from the rest of the customer site.
+      state.scroll = 'hero';
       applyHeaderState();
       return;
     }
@@ -682,6 +881,9 @@
     _scrollObserver = new IntersectionObserver((entries) => {
       entries.forEach(entry => {
         state.scroll = entry.isIntersecting ? 'hero' : 'scrolled';
+        if (window.location.pathname === '/browse.html' && state.scroll === 'scrolled') {
+          state.browseBarExpanded = false;
+        }
         applyHeaderState();
       });
     }, { threshold: 0, rootMargin: '-72px 0px 0px 0px' });
@@ -747,11 +949,19 @@
     const el = document.getElementById('navbar');
     if (!el) return;
     el.innerHTML = buildHeader();
-    el.style.visibility = 'visible';
 
-    // Reset internal state; DOM was wiped
+    // Reset internal state; DOM was wiped.
+    // Pre-seed scroll state to match the data-state stamped into the HTML so
+    // initScrollObserver → applyHeaderState sees no change and fires no transition.
+    if (window.location.pathname === '/browse.html') {
+      const foldY = Math.max(160, window.innerHeight - 220);
+      state.scroll = window.scrollY < foldY ? 'hero' : 'scrolled';
+    } else {
+      state.scroll = 'hero';
+    }
     state.segment = null;
     state.drawerOpen = false;
+    state.browseBarExpanded = false;
 
     // Attach delegated listeners once
     if (!document.body.__servisiteHeaderBound) {
@@ -761,7 +971,11 @@
       document.body.__servisiteHeaderBound = true;
     }
     initScrollObserver();
+    // Make visible only after state is applied, so browse-expanded / scrolled
+    // states are set before the first paint (prevents a one-frame hero flash).
+    el.style.visibility = 'visible';
     initHeroParallax();
+    requestAnimationFrame(_updatePillIndicator);
   };
 
   window.updateNavForAuth = function () {
@@ -775,6 +989,7 @@
     window.buildNavbar();
   }
   window.addEventListener('langchange', () => { window.buildNavbar(); });
+  window.addEventListener('resize', () => { requestAnimationFrame(_updatePillIndicator); }, { passive: true });
 
   // ─── Legacy hamburger shim (used by some shared scripts) ──────────────
   window.toggleMobileMenu = function (show) {
