@@ -763,7 +763,10 @@ const emailTransporter = (GMAIL_USER && GMAIL_APP_PASSWORD)
       host: 'smtp.gmail.com',
       port: 465,
       secure: true,
-      auth: { user: GMAIL_USER, pass: GMAIL_APP_PASSWORD }
+      auth: { user: GMAIL_USER, pass: GMAIL_APP_PASSWORD },
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 15000,
     })
   : null;
 
@@ -5314,7 +5317,7 @@ app.post('/api/auth/send-email-verification', publicFormLimit, async (req, res) 
     });
     return res.json({ sent: true });
   } catch (err) {
-    console.error('[POST /api/auth/send-email-verification]', err);
+    console.error('[POST /api/auth/send-email-verification] code=%s message=%s', err.code, err.message, err);
     return res.status(500).json({ error: 'internal_error' });
   }
 });
