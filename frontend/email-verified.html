@@ -44,34 +44,9 @@
       position: relative;
       z-index: 1;
     }
-    .brand-link {
-      display: inline-flex;
-      align-items: center;
-      gap: 2px;
-      margin: 0 0 18px 4px;
-      color: var(--color-text, #111111);
-      font-family: var(--font-heading, 'Syne', sans-serif);
-      font-size: 28px;
-      font-weight: 800;
-      letter-spacing: 0.01em;
-      text-decoration: none;
-      transition: transform var(--duration-fast, 0.2s), opacity var(--duration-fast, 0.2s);
-    }
-    .brand-link:hover {
-      opacity: 0.84;
-      transform: translateY(-1px);
-    }
-    .brand-link:focus-visible,
     .close-btn:focus-visible {
       outline: 3px solid rgba(149, 204, 213, 0.45);
       outline-offset: 4px;
-    }
-    .brand-dot {
-      width: 0.34em;
-      height: 0.19em;
-      border-radius: 0.34em 0.34em 0 0;
-      background: currentColor;
-      transform: translateY(0.16em);
     }
     .verification-card {
       width: 100%;
@@ -204,7 +179,7 @@
         padding: 30px 24px;
         border-radius: 20px;
       }
-      .brand-link {
+      .logo {
         margin-bottom: 14px;
         font-size: 25px;
       }
@@ -250,9 +225,7 @@
       document.body.className = 'email-verified-page';
       document.body.innerHTML =
         '<main class="verification-shell" aria-live="polite">' +
-          '<a class="brand-link" href="/" aria-label="SERVI">' +
-            '<span>SERVI</span><span class="brand-dot" aria-hidden="true"></span>' +
-          '</a>' +
+          '<a href="/index.html" class="logo" style="text-decoration:none;display:block;margin:0 0 18px 4px">SERVI<span class="logo-dot">.</span></a>' +
           '<section class="verification-card' + (opts.loading ? ' is-loading' : '') + '" id="verification-card" aria-labelledby="verification-title">' +
             '<div class="success-icon" role="img" aria-label="' + (opts.loading ? (es ? 'Verificando' : 'Verifying') : (es ? 'Verificación exitosa' : 'Verified')) + '">' + (opts.loading ? '' : '✓') + '</div>' +
             '<h1 id="verification-title">' + title + '</h1>' +
@@ -281,9 +254,7 @@
 <body class="email-verified-page">
 
 <main class="verification-shell" aria-live="polite">
-  <a class="brand-link" href="/" aria-label="SERVI">
-    <span>SERVI</span><span class="brand-dot" aria-hidden="true"></span>
-  </a>
+  <a href="/index.html" class="logo" style="text-decoration:none;display:block;margin:0 0 18px 4px">SERVI<span class="logo-dot">.</span></a>
   <section class="verification-card is-loading" id="verification-card" aria-labelledby="verification-title">
     <div class="success-icon" role="img" aria-label="Verificando"></div>
     <h1 id="verification-title">Verificando correo</h1>

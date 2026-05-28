@@ -520,15 +520,66 @@
     // Manual escape hatch: user taps "Ya verifiqué" — bypasses storage event
     // (needed when link opens on another device or in a webview that doesn't
     // share localStorage with the original tab).
-    window.__uslManualEmailContinue = function () {
+    window.__uslManualEmailContinue = async function () {
       var btn = document.getElementById('manual-email-continue-btn');
       var hint = document.getElementById('manual-email-hint');
+
       if (auth && auth.currentUser && auth.currentUser.email) {
-        if (checkVerifiedFlag()) { continueAfterVerification(); return; }
-        try { localStorage.setItem('servi_email_verified_at', Date.now().toString()); } catch (_) {}
-        continueAfterVerification();
+        if (btn) { btn.disabled = true; btn.textContent = isEs() ? 'Verificando...' : 'Verifying...'; }
+        try {
+          // Force-refresh Firebase user state — the local object may be stale and
+          // not yet reflect the email_verified flag set after the link was clicked.
+          await auth.currentUser.reload();
+          if (auth.currentUser.emailVerified === true) {
+            var idToken = await auth.currentUser.getIdToken(true);
+            var res = await fetch(API() + '/api/auth/firebase', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + idToken },
+              body: JSON.stringify({})
+            });
+            if (res.ok) {
+              var data = await res.json();
+              if (data && data.token) {
+                try {
+                  var sess = JSON.parse(localStorage.getItem('servi_user_session') || 'null') || {};
+                  sess.token = data.token;
+                  if (data.user) sess.user = Object.assign({}, sess.user, data.user);
+                  localStorage.setItem('servi_user_session', JSON.stringify(sess));
+                } catch (_) {}
+              }
+              try { localStorage.setItem('servi_email_verified_at', Date.now().toString()); } catch (_) {}
+              continueAfterVerification();
+            } else {
+              if (btn) { btn.disabled = false; btn.textContent = isEs() ? 'Ya verifiqué mi correo' : 'I verified my email'; }
+              if (hint) {
+                hint.textContent = isEs()
+                  ? 'Hubo un problema al confirmar la verificación. Intenta de nuevo.'
+                  : 'There was a problem confirming verification. Please try again.';
+                hint.style.display = 'block';
+              }
+            }
+          } else {
+            if (btn) { btn.disabled = false; btn.textContent = isEs() ? 'Ya verifiqué mi correo' : 'I verified my email'; }
+            if (hint) {
+              hint.textContent = isEs()
+                ? 'Aún no detectamos la verificación. Abre el enlace en este mismo navegador.'
+                : "We haven't detected the verification yet. Open the link in this browser.";
+              hint.style.display = 'block';
+            }
+          }
+        } catch (err) {
+          if (btn) { btn.disabled = false; btn.textContent = isEs() ? 'Ya verifiqué mi correo' : 'I verified my email'; }
+          if (hint) {
+            hint.textContent = isEs()
+              ? 'Error de red. Verifica tu conexión e intenta de nuevo.'
+              : 'Network error. Check your connection and try again.';
+            hint.style.display = 'block';
+          }
+        }
         return;
       }
+
+      // No Firebase user yet — poll until auth state resolves
       if (btn) { btn.disabled = true; btn.textContent = '...'; }
       var waited = 0;
       var waitForAuth = setInterval(function () {
