@@ -18,6 +18,7 @@ import { randomUUID, randomBytes, createHash, createHmac, scryptSync, timingSafe
 import { rateLimit } from 'express-rate-limit';
 import firebaseAdmin from 'firebase-admin';
 import multer from 'multer';
+import nodemailer from 'nodemailer';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 
 // --- R2 / S3 Client ---
@@ -755,6 +756,14 @@ const GOOGLE_SCRIPT_WEBHOOK_URL = process.env.SHEETS_WEBHOOK_URL || '';
 const ADMIN_API_TOKEN = process.env.ADMIN_API_TOKEN || '';
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET || '';
 const FRONTEND_BASE_URL = (process.env.FRONTEND_BASE_URL || process.env.PUBLIC_BASE_URL || 'https://servi-preauth.pages.dev').replace(/\/+$/, '');
+const GMAIL_USER = process.env.GMAIL_USER || '';
+const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD || '';
+const emailTransporter = (GMAIL_USER && GMAIL_APP_PASSWORD)
+  ? nodemailer.createTransport({
+      service: 'gmail',
+      auth: { user: GMAIL_USER, pass: GMAIL_APP_PASSWORD }
+    })
+  : null;
 
 if (!process.env.STRIPE_SECRET_KEY) {
   throw new Error('STRIPE_SECRET_KEY must be configured before starting the server');
@@ -5259,28 +5268,72 @@ app.patch('/api/auth/me', publicFormLimit, async (req, res) => {
   }
 });
 
-// POST /api/auth/send-email-verification — send verification email to user's current email
+// POST /api/auth/send-email-verification — send verification email via Gmail + token
 app.post('/api/auth/send-email-verification', publicFormLimit, async (req, res) => {
   const payload = await requireUserAuth(req, res);
   if (!payload) return;
   try {
+    if (!emailTransporter) {
+      return res.status(503).json({ error: 'email_not_configured', message: 'Email service not configured.' });
+    }
     const { rows } = await pool.query('SELECT email FROM auth_users WHERE id = $1', [payload.user_id]);
     if (!rows.length || !rows[0].email) {
       return res.status(400).json({ error: 'no_email', message: 'No hay correo electrónico registrado.' });
     }
     const email = rows[0].email;
-    // Call Firebase to send sign-in link (which verifies the email)
-    const idToken = req.headers.authorization?.replace('Bearer ', '');
-    if (!idToken) {
-      return res.status(401).json({ error: 'no_token' });
-    }
-    // Send verification link via Firebase
-    // Note: In a real implementation, you might use Firebase Admin SDK to send custom emails
-    // For now, we'll rely on the frontend to send the link using Firebase client SDK
-    // This endpoint just confirms the email is unverified and ready to receive a verification link
-    return res.json({ email, ready: true, message: 'El enlace será enviado a tu correo.' });
+    const verifyToken = randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    await pool.query(
+      'UPDATE auth_users SET email_verify_token = $1, email_verify_token_expires_at = $2 WHERE id = $3',
+      [verifyToken, expiresAt, payload.user_id]
+    );
+    const verifyUrl = `${FRONTEND_BASE_URL}/email-verified.html?token=${verifyToken}`;
+    const htmlContent = `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 480px; margin: 0 auto; padding: 32px 24px; color: #333;">
+        <h2 style="font-size: 20px; font-weight: 600; margin: 0 0 8px 0;">Verifica tu correo en SERVI</h2>
+        <p style="color: #666; font-size: 15px; margin: 0 0 24px 0; line-height: 1.5;">
+          Haz clic en el botón para confirmar tu dirección de correo y activar tu cuenta.
+        </p>
+        <div style="margin-bottom: 24px;">
+          <a href="${verifyUrl}" style="display: inline-block; background: #000; color: #fff; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-size: 15px; font-weight: 500;">
+            Verificar correo
+          </a>
+        </div>
+        <p style="color: #999; font-size: 13px; margin: 0; line-height: 1.5;">
+          Este enlace expira en 24 horas. Si no solicitaste esto, ignora este correo.
+        </p>
+      </div>
+    `;
+    await emailTransporter.sendMail({
+      from: `"SERVI" <${GMAIL_USER}>`,
+      to: email,
+      subject: 'Verifica tu correo en SERVI',
+      html: htmlContent
+    });
+    return res.json({ sent: true });
   } catch (err) {
     console.error('[POST /api/auth/send-email-verification]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// GET /api/auth/verify-email — verify email token and mark email as verified
+app.get('/api/auth/verify-email', async (req, res) => {
+  try {
+    const { token } = req.query;
+    if (!token) return res.status(400).json({ error: 'missing_token' });
+    const { rows } = await pool.query(
+      `SELECT id FROM auth_users WHERE email_verify_token = $1 AND email_verify_token_expires_at > NOW()`,
+      [token]
+    );
+    if (!rows.length) return res.status(400).json({ error: 'invalid_or_expired_token' });
+    await pool.query(
+      `UPDATE auth_users SET email_verified = true, email_verify_token = NULL, email_verify_token_expires_at = NULL WHERE id = $1`,
+      [rows[0].id]
+    );
+    return res.json({ verified: true });
+  } catch (err) {
+    console.error('[GET /api/auth/verify-email]', err);
     return res.status(500).json({ error: 'internal_error' });
   }
 });

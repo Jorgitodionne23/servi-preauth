@@ -1237,13 +1237,17 @@
   // ── Send email verification (for account page) ─────────────────────────────────
   window.__sendEmailVerification = async function (email) {
     if (!email) return false;
-    var ok = await ensureFirebase();
-    if (!ok) return false;
     try {
-      await auth.sendSignInLinkToEmail(email.toLowerCase(), { url: window.location.origin + '/email-verified.html', handleCodeInApp: true });
-      return true;
+      var token = getSessionToken ? getSessionToken() : null;
+      if (!token) return false;
+      var apiBase = (window.CONFIG && window.CONFIG.API_BASE) || '';
+      var res = await fetch(apiBase + '/api/auth/send-email-verification', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }
+      });
+      return res.ok;
     } catch (err) {
-      console.error('[sendEmailVerification] Firebase error:', err.code, err.message);
+      console.error('[sendEmailVerification] Error:', err);
       return false;
     }
   };

@@ -381,6 +381,8 @@ export async function initDb() {
     ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS first_identifier_type VARCHAR(10);
     ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS terms_accepted_at TIMESTAMPTZ;
     ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS email_skipped_at TIMESTAMPTZ;
+    ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS email_verify_token TEXT;
+    ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS email_verify_token_expires_at TIMESTAMPTZ;
 
     -- Backfill: existing phone-OTP users are phone-verified
     UPDATE auth_users SET phone_verified = true, first_identifier_type = 'phone'

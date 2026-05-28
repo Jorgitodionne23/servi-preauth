@@ -314,6 +314,55 @@
       window.__renderEmailVerifiedScreen({ loading: true, es: es });
     }
 
+    // Check for token-based email verification (Nodemailer path)
+    var urlParams = new URLSearchParams(window.location.search);
+    var verifyToken = urlParams.get('token');
+    if (verifyToken) {
+      try {
+        var apiBase = (window.CONFIG && window.CONFIG.API_BASE) || '';
+        var res = await fetch(apiBase + '/api/auth/verify-email?token=' + encodeURIComponent(verifyToken));
+        var data = await res.json();
+        if (res.ok && data.verified) {
+          if (window.__broadcastEmailVerified) {
+            window.__broadcastEmailVerified();
+          }
+          window.__renderEmailVerifiedScreen({ loading: false, es: es, canClose: !!window.opener });
+          // Auto-close countdown
+          var countdownNum = COUNTDOWN_DURATION;
+          if (window.opener) {
+            var countdown = document.getElementById('countdown');
+            countdown.classList.remove('hidden');
+            countdown.textContent = es ? 'Cerrando en ' + countdownNum + ' segundos' : 'Closing in ' + countdownNum + ' seconds';
+            var interval = setInterval(function() {
+              countdownNum--;
+              countdown.textContent = es ? 'Cerrando en ' + countdownNum + ' segundos' : 'Closing in ' + countdownNum + ' seconds';
+              if (countdownNum <= 0) {
+                clearInterval(interval);
+                window.close();
+              }
+            }, 1000);
+          }
+          return;
+        } else {
+          throw new Error('Verification failed: ' + (data.error || 'unknown'));
+        }
+      } catch (err) {
+        console.error('[email-verified] Token verification error:', err);
+        // Show error UI: render success card but with error message
+        window.__renderEmailVerifiedScreen({ loading: false, es: es, canClose: !!window.opener });
+        var msgEl = document.getElementById('verification-message');
+        if (msgEl) {
+          msgEl.textContent = es ? 'Este enlace es inválido o ya expiró.' : 'This link is invalid or has expired.';
+          msgEl.style.color = '#c55d49';
+        }
+        var titleEl = document.getElementById('verification-title');
+        if (titleEl) {
+          titleEl.textContent = es ? 'Enlace inválido' : 'Invalid link';
+        }
+        return;
+      }
+    }
+
     // Wait for handleEmailLinkSignIn to complete — this ensures:
     // 1. Firebase sign-in is done before we show success UI (so user can't close early)
     // 2. __broadcastEmailVerified has already been called for email-first signups
