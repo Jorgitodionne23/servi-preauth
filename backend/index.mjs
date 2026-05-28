@@ -5347,14 +5347,18 @@ app.delete('/api/auth/me', publicFormLimit, async (req, res) => {
   if (!payload) return;
   const userId = payload.user_id;
   try {
-    const { rows } = await pool.query('SELECT firebase_uid FROM auth_users WHERE id = $1', [userId]);
+    const { rows } = await pool.query('SELECT firebase_uid, stripe_customer_id FROM auth_users WHERE id = $1', [userId]);
     if (!rows.length) {
       console.warn('[DELETE /api/auth/me] user row not found for id:', userId);
       return res.status(404).json({ error: 'user_not_found' });
     }
     const firebaseUid = rows[0]?.firebase_uid;
+    const stripeCustomerId = rows[0]?.stripe_customer_id;
 
     await pool.query('DELETE FROM user_addresses WHERE user_id = $1', [userId]);
+    if (stripeCustomerId) {
+      await pool.query('DELETE FROM saved_servi_users WHERE customer_id = $1', [stripeCustomerId]);
+    }
     const delRes = await pool.query('DELETE FROM auth_users WHERE id = $1', [userId]);
     console.log('[DELETE /api/auth/me] deleted user row, rowCount=', delRes.rowCount, 'userId=', userId);
 

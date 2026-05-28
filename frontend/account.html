@@ -1144,13 +1144,26 @@ async function openAddPaymentModal() {
     </div>`;
   document.body.appendChild(overlay);
 
-  if (!_stripe) _stripe = Stripe(window.CONFIG?.STRIPE_PUBLISHABLE_KEY);
-
   const confirmBtn = document.getElementById('pm-confirm-btn');
   const confirmLbl = document.getElementById('pm-confirm-label');
   if (confirmBtn) { confirmBtn.disabled = true; }
 
   try {
+    if (!_stripe) {
+      let pk = window.CONFIG?.STRIPE_PUBLISHABLE_KEY || '';
+      try {
+        const pkResp = await fetch(`${API}/config/stripe`);
+        if (pkResp.ok) {
+          const { pk: fetched } = await pkResp.json();
+          if (fetched) pk = fetched;
+        }
+      } catch (e) {
+        console.warn('[account] Could not fetch dynamic Stripe PK, falling back to config.js');
+      }
+      if (!pk) throw new Error('missing_stripe_pk');
+      _stripe = Stripe(pk);
+    }
+
     const res = await fetch(API + '/api/auth/payment-methods/setup', { method: 'POST', headers: authHeaders() });
     if (!res.ok) throw new Error('setup_failed');
     const d = await res.json();
