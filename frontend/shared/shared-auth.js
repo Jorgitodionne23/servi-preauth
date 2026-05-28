@@ -29,6 +29,16 @@
   let uslCompletingExisting = false; // true when forcing an incomplete existing profile through required fields
   let uslNewUserData = {};           // accumulates { phone, email, name } for new user
 
+  // ── Email-login routing state (Uber-style) ──────────────────────────────────
+  // When a returning user types their email at the identifier screen, we default
+  // to phone OTP and show only first name + masked phone. These vars capture the
+  // context needed by the OTP screen and the "More options" chooser.
+  let uslLoginViaEmail = false;      // true when user typed email but we're sending phone OTP
+  let uslTypedEmail = '';            // the email the user typed (used for magic-link fallback)
+  let uslAccountFirstName = '';      // first name returned by backend
+  let uslAccountPhoneLast4 = '';     // last 4 digits of phone for masked display
+  let uslAccountEmailVerified = false; // whether email is verified (controls More options visibility)
+
   // ── Constants ───────────────────────────────────────────────────────────────
   const COUNTRIES = [
     { code: 'MX', dial: '+52', flag: '🇲🇽', label: 'MX +52' },
@@ -653,6 +663,11 @@
     uslIdentifierType = isEmail ? 'email' : 'phone';
     uslFirstIdentifierType = uslIdentifierType;
     uslNewUserData = {};
+    uslLoginViaEmail = false;
+    uslTypedEmail = '';
+    uslAccountFirstName = '';
+    uslAccountPhoneLast4 = '';
+    uslAccountEmailVerified = false;
 
     var btn = document.getElementById('usl-continue-btn');
     if (btn) { btn.disabled = true; btn.textContent = '...'; }
@@ -674,6 +689,22 @@
           setError(isEs() ? 'Esta cuenta usa Google. Usa el botón "Continuar con Google".' : 'This account uses Google. Use the "Continue with Google" button.');
           return;
         }
+
+        // Email-identifier login → default to phone OTP (Uber-style).
+        // All accounts have a phone, so backend returns phone_e164 + masked details.
+        if (isEmail && data.phone_e164) {
+          uslLoginViaEmail = true;
+          uslTypedEmail = identifier;
+          uslAccountFirstName = data.first_name || '';
+          uslAccountPhoneLast4 = data.phone_last4 || '';
+          uslAccountEmailVerified = !!data.email_verified;
+          // Switch identifier to the account's phone so Firebase sends SMS there.
+          uslIdentifier = data.phone_e164;
+          uslIdentifierType = 'phone';
+          renderOTPScreen('phone', /* isLogin= */ true);
+          return;
+        }
+
         renderOTPScreen(provider === 'email' ? 'email' : 'phone', /* isLogin= */ true);
       } else {
         // New user — go directly to primary OTP
@@ -701,11 +732,30 @@
     document.getElementById('auth-modal-global').innerHTML = modalShell(title, true, 'window.__uslBack');
 
     if (isPhone) {
+      // When login was initiated via email, mask the phone and greet by first name.
+      var phoneDisplay = uslLoginViaEmail && uslAccountPhoneLast4
+        ? '••••••' + uslAccountPhoneLast4
+        : uslIdentifier;
+      var greeting = uslLoginViaEmail && uslAccountFirstName
+        ? '<p style="font-size:15px;font-weight:600;margin-bottom:6px">' +
+            (es ? 'Hola, ' : 'Hi, ') + escapeHtml(uslAccountFirstName) +
+          '</p>'
+        : '';
+      var moreOptionsBtn = (uslLoginViaEmail && uslAccountEmailVerified)
+        ? '<div style="margin-top:12px;text-align:center">' +
+            '<button onclick="window.__uslShowMoreOptions()" id="usl-more-options-btn" ' +
+              'style="background:#f3f4f6;border:none;border-radius:999px;padding:8px 18px;font-size:13px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif;color:#0a0a0a">' +
+              (es ? 'Más opciones' : 'More options') +
+            '</button>' +
+          '</div>'
+        : '';
+
       setScreen(
         progressDots(2) +
+        greeting +
         '<p style="font-size:14px;color:#666;margin-bottom:16px">' +
           (es ? 'Enviaremos un código SMS a ' : 'We\'ll send an SMS code to ') +
-          '<strong>' + uslIdentifier + '</strong>' +
+          '<strong>' + phoneDisplay + '</strong>' +
         '</p>' +
         errorBox() +
         '<div id="recaptcha-container" style="margin-bottom:8px"></div>' +
@@ -725,7 +775,8 @@
             (es ? 'Reenviar código' : 'Resend code') +
           '</button>' +
         '</div>' +
-        (isLogin
+        moreOptionsBtn +
+        (isLogin && !uslLoginViaEmail
           ? '<div style="margin-top:16px;text-align:center"><button onclick="window.__uslStartRecovery()" style="background:none;border:none;font-size:13px;color:#888;cursor:pointer;font-family:\'DM Sans\',sans-serif;text-decoration:underline">' + (es ? '¿No tienes acceso a tu teléfono?' : 'Can\'t access your phone?') + '</button></div>'
           : '')
       );
@@ -857,6 +908,44 @@
     if (btn) { btn.style.display = 'block'; btn.disabled = false; btn.textContent = isEs() ? 'Enviar código SMS' : 'Send SMS code'; }
     if (entry) entry.style.display = 'none';
     setupRecaptchaInner();
+  };
+
+  // ── More options chooser (email-login only) ───────────────────────────────────
+  // Lets a user who started login via email switch to a magic-link instead of SMS.
+  window.__uslShowMoreOptions = function () {
+    if (!uslLoginViaEmail) return;
+    var es = isEs();
+    var phoneDisplay = uslAccountPhoneLast4 ? '••••••' + uslAccountPhoneLast4 : '';
+    setScreen(
+      progressDots(2) +
+      '<p style="font-size:15px;font-weight:600;margin-bottom:14px">' +
+        (es ? 'Elige cómo verificarte' : 'Choose how to verify') +
+      '</p>' +
+      errorBox() +
+      '<button onclick="window.__uslBackToPhoneOTP()" ' +
+        'style="width:100%;padding:14px;border:1.5px solid #e0e0e0;border-radius:12px;background:#fff;font-size:14px;font-weight:500;cursor:pointer;font-family:\'DM Sans\',sans-serif;margin-bottom:10px;text-align:left">' +
+        '<div style="font-weight:600;margin-bottom:2px">' + (es ? 'Código SMS' : 'SMS code') + '</div>' +
+        '<div style="font-size:13px;color:#666">' + phoneDisplay + '</div>' +
+      '</button>' +
+      '<button onclick="window.__uslSwitchToEmailLink()" ' +
+        'style="width:100%;padding:14px;border:1.5px solid #e0e0e0;border-radius:12px;background:#fff;font-size:14px;font-weight:500;cursor:pointer;font-family:\'DM Sans\',sans-serif;text-align:left">' +
+        '<div style="font-weight:600;margin-bottom:2px">' + (es ? 'Enlace por correo' : 'Email link') + '</div>' +
+        '<div style="font-size:13px;color:#666">' + escapeHtml(uslTypedEmail) + '</div>' +
+      '</button>'
+    );
+  };
+
+  window.__uslBackToPhoneOTP = function () {
+    renderOTPScreen('phone', /* isLogin= */ true);
+  };
+
+  window.__uslSwitchToEmailLink = function () {
+    // Switch identifier back to the typed email and send a magic link.
+    uslIdentifier = uslTypedEmail;
+    uslIdentifierType = 'email';
+    renderOTPScreen('email', /* isLogin= */ true);
+    // Auto-trigger the magic-link send for parity with the SMS flow's one-tap feel.
+    setTimeout(function () { if (window.__uslSendOTP) window.__uslSendOTP(); }, 0);
   };
 
   // ══════════════════════════════════════════════════════════════════════════════
@@ -1282,6 +1371,11 @@
     uslSignupComplete = false;
     uslSuppressAutoSync = false;
     uslCompletingExisting = false;
+    uslLoginViaEmail = false;
+    uslTypedEmail = '';
+    uslAccountFirstName = '';
+    uslAccountPhoneLast4 = '';
+    uslAccountEmailVerified = false;
     renderIdentifierScreen();
   };
 

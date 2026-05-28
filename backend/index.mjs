@@ -4803,16 +4803,23 @@ app.post('/api/auth/check-identifier', publicFormLimit, async (req, res) => {
     const isEmail = identifier.includes('@');
     let exists = false;
     let provider = null;
+    let accountRow = null;
 
     if (isEmail) {
       const emailNorm = identifier.toLowerCase().trim();
-      const { rows } = await pool.query('SELECT id, auth_provider FROM auth_users WHERE email = $1', [emailNorm]);
-      if (rows.length > 0) { exists = true; provider = rows[0].auth_provider || 'email'; }
+      const { rows } = await pool.query(
+        'SELECT id, name, phone, email_verified, auth_provider FROM auth_users WHERE email = $1',
+        [emailNorm]
+      );
+      if (rows.length > 0) { exists = true; accountRow = rows[0]; provider = rows[0].auth_provider || 'email'; }
     } else {
       const phoneNorm = normalizePhoneToE164(identifier);
       if (phoneNorm) {
-        const { rows } = await pool.query('SELECT id FROM auth_users WHERE phone = $1', [phoneNorm]);
-        if (rows.length > 0) { exists = true; provider = 'phone'; }
+        const { rows } = await pool.query(
+          'SELECT id, name, phone, email_verified, auth_provider FROM auth_users WHERE phone = $1',
+          [phoneNorm]
+        );
+        if (rows.length > 0) { exists = true; accountRow = rows[0]; provider = 'phone'; }
       }
     }
 
@@ -4828,7 +4835,20 @@ app.post('/api/auth/check-identifier', publicFormLimit, async (req, res) => {
     // Normalise provider to the three values the frontend needs
     provider = normalizeFirebaseProvider(provider);
 
-    return res.json({ exists, provider });
+    const response = { exists, provider };
+
+    // For email-identifier logins on existing accounts, return the account's phone
+    // so the frontend can default to phone OTP (Uber-style). UI shows only masked phone + first name.
+    if (isEmail && accountRow && accountRow.phone) {
+      const firstName = String(accountRow.name || '').trim().split(/\s+/)[0] || '';
+      const phoneDigits = String(accountRow.phone).replace(/\D/g, '');
+      response.first_name = firstName;
+      response.phone_e164 = accountRow.phone;
+      response.phone_last4 = phoneDigits.slice(-4);
+      response.email_verified = !!accountRow.email_verified;
+    }
+
+    return res.json(response);
   } catch (err) {
     console.error('[POST /api/auth/check-identifier]', err);
     return res.status(500).json({ error: 'internal_error' });
