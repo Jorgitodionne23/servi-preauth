@@ -72,6 +72,15 @@
     .account-sidebar-item.danger { color: var(--account-danger); }
     .account-sidebar-item.danger:hover { background: var(--account-danger-soft); }
     .account-sidebar-item.danger.active { background: var(--account-danger-soft); border-left-color: var(--account-danger); }
+    .account-sidebar-icon {
+      width: 20px;
+      flex: 0 0 20px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      line-height: 1;
+    }
     .account-card {
       background: rgba(255, 255, 255, 0.84);
       border: 1px solid var(--color-border);
@@ -628,14 +637,14 @@ function buildNav() {
     { id: 'info',      label: t.navInfo,      icon: '👤', danger: false },
     { id: 'security',  label: t.navSecurity,   icon: '🔒', danger: false },
     { id: 'addresses', label: t.navAddresses,  icon: '📍', danger: false },
-    { id: 'favorites', label: t.navFavorites,  icon: '♡', danger: false },
+    { id: 'favorites', label: t.navFavorites,  icon: '🤍', danger: false },
     { id: 'payments',  label: t.navPayments,   icon: '💳', danger: false },
     { id: 'delete',    label: t.navDelete,     icon: '🗑',  danger: true  },
   ];
   const html = items.map(item => `
     <button class="account-sidebar-item ${item.danger ? 'danger' : ''} ${item.id === activeSection ? 'active' : ''}"
       onclick="switchSection('${item.id}')">
-      <span>${item.icon}</span><span>${item.label}</span>
+      <span class="account-sidebar-icon">${item.icon}</span><span>${item.label}</span>
     </button>
   `).join('');
   document.getElementById('sidebar').innerHTML = html;
@@ -773,7 +782,7 @@ async function saveProfile() {
       return;
     }
     let reauthToken = null;
-    if (emailChangedReq || phoneChanged) {
+    if (phoneChanged) {
       try {
         reauthToken = await reauthenticate();
       } catch (err) {

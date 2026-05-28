@@ -5197,9 +5197,9 @@ const RECENT_AUTH_ROUTINE_SECS = 300;      // name, address, etc.
 app.patch('/api/auth/me', publicFormLimit, async (req, res) => {
   const payload = await requireUserAuth(req, res);
   if (!payload) return;
-  // A7: destructive identifier changes (phone, email) require fresh re-auth (60s window).
-  // Name-only edits don't need it.
-  const isDestructive = req.body?.phone !== undefined || req.body?.email !== undefined;
+  // A7: phone changes require fresh re-auth (60s window); email changes do not —
+  // phone is verified at signup and email changes force re-verification via email_verified=false.
+  const isDestructive = req.body?.phone !== undefined;
   if (isDestructive) {
     const reauthed = await requireRecentAuth(req, res, RECENT_AUTH_DESTRUCTIVE_SECS, payload);
     if (!reauthed) return;
