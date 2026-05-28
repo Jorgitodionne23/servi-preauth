@@ -347,6 +347,50 @@
   }
 
   // ── Country select ───────────────────────────────────────────────────────────
+  function setSelectedDial(dial) {
+    selectedDial = dial || selectedDial;
+    var select = document.getElementById('auth-country-code');
+    if (select && select.value !== selectedDial) select.value = selectedDial;
+  }
+
+  function countryForInternationalDigits(digits) {
+    if (!digits) return null;
+    var sorted = COUNTRIES.slice().sort(function (a, b) { return b.dial.length - a.dial.length; });
+    for (var i = 0; i < sorted.length; i++) {
+      var dialDigits = sorted[i].dial.replace(/\D/g, '');
+      if (digits.indexOf(dialDigits) === 0) return sorted[i];
+    }
+    return null;
+  }
+
+  function detectDialFromPhoneInput(input) {
+    if (!input) return;
+    var raw = String(input.value || '').trim();
+    var explicitInternational = raw.indexOf('+') === 0 || raw.indexOf('00') === 0;
+    if (!explicitInternational) return;
+
+    var digits = raw.replace(/\D/g, '');
+    if (raw.indexOf('00') === 0) digits = digits.replace(/^00/, '');
+    var country = countryForInternationalDigits(digits);
+    if (!country) return;
+
+    setSelectedDial(country.dial);
+    var national = digits.slice(country.dial.replace(/\D/g, '').length);
+    if (national && input.value !== national) input.value = national;
+  }
+
+  function phoneIdentifierFromInput(raw) {
+    raw = String(raw || '').trim();
+    if (raw.indexOf('+') === 0) return '+' + raw.replace(/\D/g, '');
+    if (raw.indexOf('00') === 0) {
+      var intlDigits = raw.replace(/\D/g, '').replace(/^00/, '');
+      var country = countryForInternationalDigits(intlDigits);
+      if (country) setSelectedDial(country.dial);
+      return '+' + intlDigits;
+    }
+    return selectedDial + raw.replace(/\D/g, '');
+  }
+
   function countrySelect(inputId) {
     var opts = COUNTRIES.map(function (c) {
       return '<option value="' + c.dial + '"' + (c.dial === selectedDial ? ' selected' : '') + '>' + c.flag + ' ' + c.label + '</option>';
@@ -359,7 +403,7 @@
     );
   }
 
-  window.__uslSetDial = function (val) { selectedDial = val; };
+  window.__uslSetDial = function (val) { setSelectedDial(val); };
 
   // ── Monitor for email verification in other tab ─────────────────────────────────
   // When user clicks email link in a new tab, that tab verifies and broadcasts.
@@ -523,7 +567,7 @@
       errorBox() +
       '<div id="usl-input-wrap" style="display:flex;margin-bottom:12px;border:1.5px solid #e8e8e8;border-radius:10px;overflow:hidden">' +
         '<div id="usl-country-wrap">' + countrySelect() + '</div>' +
-        '<input id="auth-identifier" type="tel" inputmode="numeric" ' +
+        '<input id="auth-identifier" type="tel" inputmode="tel" ' +
           'placeholder="' + (es ? 'Teléfono o correo electrónico' : 'Phone number or email') + '" ' +
           'style="flex:1;border:none;padding:12px;font-size:15px;font-family:\'DM Sans\',sans-serif;outline:none" ' +
           'onkeydown="if(event.key===\'Enter\') window.__uslSubmitIdentifier()">' +
@@ -539,8 +583,9 @@
       inp.addEventListener('input', function () {
         var hasLetter = /[a-zA-Z]/.test(inp.value);
         inp.setAttribute('type', hasLetter ? 'email' : 'tel');
-        inp.setAttribute('inputmode', hasLetter ? 'email' : 'numeric');
+        inp.setAttribute('inputmode', hasLetter ? 'email' : 'tel');
         if (countryWrap) countryWrap.style.display = hasLetter ? 'none' : '';
+        if (!hasLetter) detectDialFromPhoneInput(inp);
       });
     }
     ensureFirebase().then(setupRecaptchaInner);
@@ -551,7 +596,7 @@
     if (!raw) { setError(isEs() ? 'Ingresa tu teléfono o correo.' : 'Enter your phone or email.'); return; }
 
     var isEmail = raw.includes('@');
-    var identifier = isEmail ? raw.toLowerCase() : (selectedDial + raw.replace(/\D/g, ''));
+    var identifier = isEmail ? raw.toLowerCase() : phoneIdentifierFromInput(raw);
 
     uslIdentifier = identifier;
     uslIdentifierType = isEmail ? 'email' : 'phone';
