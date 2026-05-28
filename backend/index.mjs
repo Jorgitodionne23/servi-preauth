@@ -761,8 +761,9 @@ const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD || '';
 const emailTransporter = (GMAIL_USER && GMAIL_APP_PASSWORD)
   ? nodemailer.createTransport({
       host: 'smtp.gmail.com',
-      port: 465,
-      secure: true,
+      port: 587,
+      secure: false,
+      requireTLS: true,
       auth: { user: GMAIL_USER, pass: GMAIL_APP_PASSWORD },
       connectionTimeout: 10000,
       greetingTimeout: 10000,
@@ -4835,16 +4836,6 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
     const authHeader = req.headers.authorization || '';
     const idToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
     if (!idToken) return res.status(401).json({ error: 'missing_token' });
-
-    // A9: per-identifier rate limit (IP rate limit alone can be bypassed by botnet IP rotation)
-    const rateLimitIdentifier = (req.body?.email || req.body?.phone || '').toString().toLowerCase().trim();
-    if (rateLimitIdentifier) {
-      const ok = await checkAndRecordIdentifierAttempt(
-        rateLimitIdentifier, 'firebase_sync',
-        req.ip, 20, 60 * 60 * 1000  // 20 attempts/hour per identifier
-      );
-      if (!ok) return res.status(429).json({ error: 'too_many_attempts', message: 'Demasiados intentos. Espera unos minutos.' });
-    }
 
     // Verify the Firebase ID token
     let decoded;
