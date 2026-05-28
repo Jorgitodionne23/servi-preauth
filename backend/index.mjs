@@ -1370,6 +1370,11 @@ app.use((req, res, next) => {
 // 🚫 Block direct access to the static success.html; force gated route instead
 app.get('/success.html', successGate);
 
+// Apple Pay domain verification (required for Apple Pay to appear in Payment Element)
+app.get('/.well-known/apple-developer-merchantid-domain-association', (_req, res) => {
+  res.sendFile(path.join(FRONTEND_DIR, '.well-known', 'apple-developer-merchantid-domain-association'));
+});
+
 app.use(express.static(FRONTEND_DIR));
 
 // 🎯 Create PaymentIntent (save card for later off-session charges)

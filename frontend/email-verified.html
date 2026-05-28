@@ -213,7 +213,7 @@
         : (es ? 'Tu correo ha sido verificado. Puedes volver a la ventana donde empezaste el registro.' : 'Your email has been verified. You can return to the window where you started signing up.');
       var buttonText = opts.loading
         ? (es ? 'Verificando...' : 'Verifying...')
-        : (canClose ? (es ? 'Cerrar ventana' : 'Close window') : (es ? 'Ir a SERVI' : 'Go to SERVI'));
+        : (canClose ? (es ? 'Cerrar ventana' : 'Close window') : (es ? 'Cerrar pestaña' : 'Close tab'));
 
       if (!document.body) {
         document.addEventListener('DOMContentLoaded', function() {
@@ -232,7 +232,7 @@
             '<p id="verification-message">' + message + '</p>' +
             '<div class="countdown hidden" id="countdown"></div>' +
             '<button class="close-btn" id="close-btn" type="button"' + (opts.loading ? ' disabled' : '') + '>' + buttonText + '</button>' +
-            '<div class="verification-note" id="verification-note">' + (canClose ? (es ? 'Si la ventana no se cierra sola, puedes cerrarla manualmente.' : 'If the window does not close automatically, you can close it manually.') : (es ? 'Si estabas en otra pestaña, vuelve a ella para continuar.' : 'If you were in another tab, return to it to continue.')) + '</div>' +
+            '<div class="verification-note" id="verification-note">' + (canClose ? (es ? 'Si la ventana no se cierra sola, puedes cerrarla manualmente.' : 'If the window does not close automatically, you can close it manually.') : (es ? 'Para terminar tu registro, vuelve a la pestaña donde lo iniciaste. Tu correo ya está verificado allí.' : 'To finish signing up, return to the tab where you started. Your email is already verified there.')) + '</div>' +
           '</section>' +
         '</main>' +
         '<div id="auth-modal-global"></div>';
@@ -240,11 +240,7 @@
       var closeBtn = document.getElementById('close-btn');
       if (closeBtn && !opts.loading) {
         closeBtn.addEventListener('click', function() {
-          if (canClose) {
-            window.close();
-            return;
-          }
-          window.location.href = '/';
+          window.close();
         });
       }
     };
