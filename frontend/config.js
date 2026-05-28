@@ -2,8 +2,8 @@
 // to point the UI at the correct backend and Stripe publishable key.
 //
 // HOW ENVIRONMENT SWITCHING WORKS:
-// - Local dev  : placeholders are token strings → rawApi falls back to window.location.origin
-//                (backend serves frontend on the same port), Stripe uses the test key below.
+// - Local/Render: placeholders are token strings → rawApi falls back to window.location.origin
+//                 (backend serves frontend on the same origin), Stripe uses the test key below.
 // - Production : Cloudflare Pages middleware (_middleware.js) replaces __API_BASE__ and
 //                __STRIPE_PK__ with the real values from Cloudflare env vars before serving
 //                this file. Set API_BASE and STRIPE_PUBLISHABLE_KEY in the Cloudflare Pages
@@ -20,11 +20,12 @@
   const localTestPk   = 'pk_test_51QzK6tG7utWo2rQvhFzSBxh59IMDentv5zN7jfKWtf5vkFiGkcuEENhumOpKGjkf33tGqrL3b3o05pp0DDvcJn4r00pQcvaQXR';
 
   const explicit = window.CONFIG || {};
-  const isLocalHost =
+  const isSameOriginBackend =
     window.location.hostname === 'localhost' ||
     window.location.hostname === '127.0.0.1' ||
-    window.location.hostname === '::1';
-  const fallbackApi = isLocalHost ? window.location.origin : 'https://servi-preauth.onrender.com';
+    window.location.hostname === '::1' ||
+    window.location.hostname.endsWith('.onrender.com');
+  const fallbackApi = isSameOriginBackend ? window.location.origin : 'https://servi-preauth.onrender.com';
 
   // If the middleware replaced __API_BASE__ with a real URL, use it.
   // Otherwise local dev uses the same Express origin, while static deployments
