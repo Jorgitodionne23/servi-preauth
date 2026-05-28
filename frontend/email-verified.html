@@ -225,7 +225,7 @@
       document.body.className = 'email-verified-page';
       document.body.innerHTML =
         '<main class="verification-shell" aria-live="polite">' +
-          '<a href="/index.html" class="logo" style="text-decoration:none;display:block;margin:0 0 18px 4px">SERVI<span class="logo-dot">.</span></a>' +
+          '<a href="/index.html" class="site-header__logo logo" style="text-decoration:none;color:#000;display:block;margin:0 0 18px 4px">SERVI<span class="logo-dot" style="color:#000">.</span></a>' +
           '<section class="verification-card' + (opts.loading ? ' is-loading' : '') + '" id="verification-card" aria-labelledby="verification-title">' +
             '<div class="success-icon" role="img" aria-label="' + (opts.loading ? (es ? 'Verificando' : 'Verifying') : (es ? 'Verificación exitosa' : 'Verified')) + '">' + (opts.loading ? '' : '✓') + '</div>' +
             '<h1 id="verification-title">' + title + '</h1>' +
@@ -250,7 +250,7 @@
 <body class="email-verified-page">
 
 <main class="verification-shell" aria-live="polite">
-  <a href="/index.html" class="logo" style="text-decoration:none;display:block;margin:0 0 18px 4px">SERVI<span class="logo-dot">.</span></a>
+  <a href="/index.html" class="site-header__logo logo" style="text-decoration:none;color:#000;display:block;margin:0 0 18px 4px">SERVI<span class="logo-dot" style="color:#000">.</span></a>
   <section class="verification-card is-loading" id="verification-card" aria-labelledby="verification-title">
     <div class="success-icon" role="img" aria-label="Verificando"></div>
     <h1 id="verification-title">Verificando correo</h1>
