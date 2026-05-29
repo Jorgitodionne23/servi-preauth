@@ -1507,19 +1507,50 @@
   window.__sendEmailVerification = async function (email) {
     if (!email) return false;
     try {
-      var token = getSessionToken ? getSessionToken() : null;
-      if (!token) return false;
-      var apiBase = (window.CONFIG && window.CONFIG.API_BASE) || '';
-      var res = await fetch(apiBase + '/api/auth/send-email-verification', {
-        method: 'POST',
-        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }
-      });
-      return res.ok;
+      var ok = await ensureFirebase();
+      if (!ok) return false;
+      var user = await waitForCurrentFirebaseUser(1500);
+      if (!user || !user.verifyBeforeUpdateEmail) return false;
+      var emailNorm = String(email || '').trim().toLowerCase();
+      if (!emailNorm || !emailNorm.includes('@')) return false;
+      var actionSettings = {
+        url: window.location.origin + '/email-verified.html',
+        handleCodeInApp: true
+      };
+      if (user.email) {
+        await user.verifyBeforeUpdateEmail(emailNorm, actionSettings);
+      } else {
+        await auth.sendSignInLinkToEmail(emailNorm, actionSettings);
+      }
+      return true;
     } catch (err) {
       console.error('[sendEmailVerification] Error:', err);
       return false;
     }
   };
+
+  function waitForCurrentFirebaseUser(timeoutMs) {
+    if (auth && auth.currentUser) return Promise.resolve(auth.currentUser);
+    return new Promise(function (resolve) {
+      var done = false;
+      var timer = null;
+      var unsubscribe = null;
+      var finish = function (user) {
+        if (done) return;
+        done = true;
+        if (timer) clearTimeout(timer);
+        try { unsubscribe && unsubscribe(); } catch (_) {}
+        resolve(user || (auth && auth.currentUser) || null);
+      };
+      try {
+        unsubscribe = auth.onAuthStateChanged(function (user) { finish(user); });
+      } catch (_) {
+        finish(null);
+        return;
+      }
+      timer = setTimeout(function () { finish(null); }, timeoutMs || 1500);
+    });
+  }
 
   async function exchangeEmailLinkForIdToken(email, href) {
     var linkUrl = new URL(href);
@@ -1712,7 +1743,16 @@
   async function handleEmailLinkSignIn() {
     var ok = await ensureFirebase();
     if (!ok) return;
-    if (!auth.isSignInWithEmailLink(window.location.href)) return;
+    var initialLinkUrl = new URL(window.location.href);
+    var initialMode = initialLinkUrl.searchParams.get('mode');
+    var initialOobCode = initialLinkUrl.searchParams.get('oobCode');
+    var pendingAccountEmailVerification = localStorage.getItem('servi_email_verification_mode');
+    var isAccountActionCode = !!(
+      pendingAccountEmailVerification &&
+      initialOobCode &&
+      (initialMode === 'verifyAndChange' || initialMode === 'verifyAndChangeEmail' || initialMode === 'verifyEmail')
+    );
+    if (!auth.isSignInWithEmailLink(window.location.href) && !isAccountActionCode) return;
 
     // Retrieve the email address from localStorage (saved before the link was sent)
     var email = localStorage.getItem('servi_email_link_target');
@@ -1742,30 +1782,92 @@
     localStorage.removeItem('servi_email_verification_mode');
 
     try {
+      var linkUrl = new URL(window.location.href);
+      var mode = linkUrl.searchParams.get('mode');
+      var oobCode = linkUrl.searchParams.get('oobCode');
+      if (isEmailVerification && oobCode && (mode === 'verifyAndChange' || mode === 'verifyAndChangeEmail' || mode === 'verifyEmail')) {
+        await auth.applyActionCode(oobCode);
+        var accountActionUser = await waitForCurrentFirebaseUser(1500);
+        if (!accountActionUser) throw new Error('missing_current_user');
+        await accountActionUser.reload();
+        accountActionUser = auth.currentUser || accountActionUser;
+        var verifiedEmail = String((accountActionUser && accountActionUser.email) || email || '').trim().toLowerCase();
+        var accountActionToken = await accountActionUser.getIdToken(true);
+        var accountSessionToken = getSessionToken();
+        if (!accountSessionToken) throw new Error('missing_session_token');
+        var accountActionRes = await fetch(API() + '/api/auth/add-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + accountSessionToken },
+          body: JSON.stringify({ email: verifiedEmail, firebase_id_token: accountActionToken })
+        });
+        var accountActionData = await accountActionRes.json().catch(function () { return {}; });
+        if (!accountActionRes.ok) {
+          throw new Error(accountActionData.error || 'account_email_sync_failed');
+        }
+        localStorage.removeItem('servi_email_link_target');
+        window.history.replaceState({}, document.title, window.location.pathname);
+        if (window.__user) {
+          window.__user.email = accountActionData.email || verifiedEmail;
+          window.__user.email_verified = true;
+          window.__user.email_skipped_at = null;
+        }
+        var accountActionRaw = localStorage.getItem('servi_user_session');
+        if (accountActionRaw) {
+          try {
+            var accountActionSess = JSON.parse(accountActionRaw);
+            if (accountActionSess.user) {
+              accountActionSess.user.email = accountActionData.email || verifiedEmail;
+              accountActionSess.user.email_verified = true;
+              accountActionSess.user.email_skipped_at = null;
+            }
+            localStorage.setItem('servi_user_session', JSON.stringify(accountActionSess));
+          } catch (_) {}
+        }
+        window.__broadcastEmailVerified();
+        if (window.buildNavbar) window.buildNavbar();
+        window.__emailLinkProcessingStatus = 'account-email-verified';
+        window.location.href = '/account.html?section=info';
+        return;
+      }
+
       if (isEmailVerification) {
         var accountVerifyToken = getSessionToken();
-        var accountEmailToken = await exchangeEmailLinkForIdToken(email, window.location.href);
+        var accountEmailToken = null;
+        var accountLinkUser = await waitForCurrentFirebaseUser(1500);
+        if (accountLinkUser) {
+          var accountCredential = firebase.auth.EmailAuthProvider.credentialWithLink(email, window.location.href);
+          await accountLinkUser.linkWithCredential(accountCredential);
+          accountLinkUser = auth.currentUser || accountLinkUser;
+          await accountLinkUser.reload();
+          accountEmailToken = await (auth.currentUser || accountLinkUser).getIdToken(true);
+        } else {
+          accountEmailToken = await exchangeEmailLinkForIdToken(email, window.location.href);
+        }
         localStorage.removeItem('servi_email_link_target');
         window.history.replaceState({}, document.title, window.location.pathname);
 
-        if (accountVerifyToken && accountEmailToken) {
-          var accountVerifyRes = await fetch(API() + '/api/auth/add-email', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + accountVerifyToken },
-            body: JSON.stringify({ email: email, firebase_id_token: accountEmailToken })
-          });
-          if (!accountVerifyRes.ok) {
-            console.warn('[SERVI] Account email verification backend sync failed:', accountVerifyRes.status);
-          }
+        if (!accountVerifyToken || !accountEmailToken) throw new Error('missing_account_email_proof');
+        var accountVerifyRes = await fetch(API() + '/api/auth/add-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + accountVerifyToken },
+          body: JSON.stringify({ email: email, firebase_id_token: accountEmailToken })
+        });
+        var accountVerifyData = await accountVerifyRes.json().catch(function () { return {}; });
+        if (!accountVerifyRes.ok) {
+          throw new Error(accountVerifyData.error || 'account_email_sync_failed');
         }
 
-        if (window.__user) window.__user.email_verified = true;
+        if (window.__user) {
+          window.__user.email = accountVerifyData.email || email;
+          window.__user.email_verified = true;
+          window.__user.email_skipped_at = null;
+        }
         var accountRaw = localStorage.getItem('servi_user_session');
         if (accountRaw) {
           try {
             var accountSess = JSON.parse(accountRaw);
             if (accountSess.user) {
-              accountSess.user.email = email;
+              accountSess.user.email = accountVerifyData.email || email;
               accountSess.user.email_verified = true;
               accountSess.user.email_skipped_at = null;
             }
@@ -1774,6 +1876,7 @@
         }
         window.__broadcastEmailVerified();
         if (window.buildNavbar) window.buildNavbar();
+        window.__emailLinkProcessingStatus = 'account-email-verified';
         window.location.href = '/account.html?section=info';
         return;
       }
@@ -1870,6 +1973,7 @@
       }
     } catch (err) {
       console.error('[SERVI] Email link sign-in failed:', err);
+      window.__emailLinkProcessingStatus = 'error';
       if (err.code === 'auth/invalid-action-code') {
         var es = isEs();
         document.getElementById('auth-modal-global').innerHTML = modalShell(es ? 'Enlace inválido' : 'Invalid link', false, '');

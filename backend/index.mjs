@@ -5063,12 +5063,22 @@ app.post('/api/auth/add-email', publicFormLimit, async (req, res) => {
     const emailNorm = normalizeEmail(email);
     if (!emailNorm) return res.status(400).json({ error: 'invalid_email' });
 
-    // Verify Firebase token proves ownership of this email
+    const { rows: userRows } = await pool.query('SELECT firebase_uid FROM auth_users WHERE id = $1', [payload.user_id]);
+    const currentFirebaseUid = userRows[0]?.firebase_uid || null;
+    if (!currentFirebaseUid) return res.status(401).json({ error: 'firebase_user_missing' });
+
+    // Verify Firebase token proves this same SERVI user owns a verified email.
     let decoded;
-    try { decoded = await verifyFirebaseIdToken(firebase_id_token, false); }
+    try { decoded = await verifyFirebaseIdToken(firebase_id_token, true); }
     catch (e) { return res.status(401).json({ error: 'invalid_token' }); }
+    if (decoded.uid !== currentFirebaseUid) {
+      return res.status(401).json({ error: 'firebase_user_mismatch' });
+    }
     if (!decoded.email || decoded.email.toLowerCase() !== emailNorm) {
       return res.status(400).json({ error: 'email_mismatch', message: 'Token email does not match supplied email.' });
+    }
+    if (!decoded.email_verified) {
+      return res.status(400).json({ error: 'email_not_verified', message: 'Firebase email is not verified.' });
     }
 
     // Check not already taken by another account
@@ -5247,9 +5257,9 @@ const RECENT_AUTH_ROUTINE_SECS = 300;      // name, address, etc.
 app.patch('/api/auth/me', publicFormLimit, async (req, res) => {
   const payload = await requireUserAuth(req, res);
   if (!payload) return;
-  // A7: phone changes require fresh re-auth (60s window); email changes do not —
-  // phone is verified at signup and email changes force re-verification via email_verified=false.
-  const isDestructive = req.body?.phone !== undefined;
+  // A7: identifier changes require fresh re-auth (60s window).
+  // Email changes are persisted as unverified until Firebase proves the new address.
+  const isDestructive = req.body?.phone !== undefined || req.body?.email !== undefined;
   if (isDestructive) {
     const reauthed = await requireRecentAuth(req, res, RECENT_AUTH_DESTRUCTIVE_SECS, payload);
     if (!reauthed) return;

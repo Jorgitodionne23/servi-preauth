@@ -282,6 +282,8 @@
     // Check for token-based email verification (Nodemailer path)
     var urlParams = new URLSearchParams(window.location.search);
     var verifyToken = urlParams.get('token');
+    var firebaseMode = urlParams.get('mode');
+    var isAccountEmailAction = firebaseMode === 'verifyAndChange' || firebaseMode === 'verifyAndChangeEmail' || firebaseMode === 'verifyEmail';
     if (verifyToken) {
       try {
         var apiBase = (window.CONFIG && window.CONFIG.API_BASE) || '';
@@ -335,6 +337,21 @@
       try { await window.__emailLinkProcessingPromise; } catch (_) {}
     } else if (window.__syncPromise) {
       try { await window.__syncPromise; } catch (_) {}
+    }
+
+    if (isAccountEmailAction) {
+      if (window.__emailLinkProcessingStatus === 'account-email-verified') return;
+      window.__renderEmailVerifiedScreen({ loading: false, es: es, canClose: !!window.opener });
+      var accountMsgEl = document.getElementById('verification-message');
+      if (accountMsgEl) {
+        accountMsgEl.textContent = es ? 'No pudimos confirmar este correo. Solicita un nuevo enlace desde tu cuenta.' : 'We could not confirm this email. Request a new link from your account.';
+        accountMsgEl.style.color = '#c55d49';
+      }
+      var accountTitleEl = document.getElementById('verification-title');
+      if (accountTitleEl) {
+        accountTitleEl.textContent = es ? 'Verificación pendiente' : 'Verification pending';
+      }
+      return;
     }
 
     // Broadcast unconditionally — works cross-tab via localStorage storage event

@@ -55,7 +55,9 @@ async function latestSmsCode(phoneNumber) {
 
 async function latestEmailLink(targetEmail) {
   const data = await emulatorJson(`/emulator/v1/projects/${PROJECT_ID}/oobCodes`);
-  const matches = (data.oobCodes || []).filter((entry) => entry.email === targetEmail);
+  const matches = (data.oobCodes || []).filter((entry) =>
+    entry.email === targetEmail || entry.newEmail === targetEmail
+  );
   if (!matches.length) throw new Error(`No email link found for ${targetEmail}: ${JSON.stringify(data)}`);
   const last = matches[matches.length - 1];
   return last.oobLink || last.link || last.url;
@@ -292,6 +294,20 @@ async function syncFirebaseSession(page) {
   }, { baseUrl: BASE_URL });
 }
 
+async function firebaseUserSnapshot(page) {
+  return page.evaluate(async () => {
+    const firebaseUser = window.firebase?.auth()?.currentUser;
+    if (!firebaseUser) return null;
+    await firebaseUser.reload();
+    const refreshed = window.firebase.auth().currentUser || firebaseUser;
+    return {
+      uid: refreshed.uid,
+      email: refreshed.email || null,
+      phoneNumber: refreshed.phoneNumber || null,
+    };
+  });
+}
+
 async function attemptIncompleteGoogleBackendSync(extraBody = {}) {
   const targetEmail = email('google');
   const idp = await emulatorJson(`/identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=fake-api-key`, {
@@ -401,6 +417,7 @@ test('phone-first signup, skipped email, ordering gate returns email_required', 
   await expect(page.locator('#email-warning-action')).toContainText(/agregar|add/i);
 
   const skippedEmail = email('phone-skipped-added');
+  const skippedFirebaseBefore = await firebaseUserSnapshot(page);
   await page.fill('#info-email', skippedEmail);
   await page.click('#info-save-btn');
   await page.waitForSelector('#reauth-step');
@@ -409,9 +426,19 @@ test('phone-first signup, skipped email, ordering gate returns email_required', 
   const reauthCode = await latestSmsCode(e164(phones.phoneSkippedEmail));
   await page.fill('#reauth-otp-input', reauthCode);
   await page.click('#reauth-confirm-btn');
+  await expect.poll(async () => (await authMe(page)).body.user.email_verified, { timeout: 10_000 }).toBe(false);
+  const staleSkippedSync = await syncFirebaseSession(page);
+  expect(staleSkippedSync.status).toBe(200);
+  expect(staleSkippedSync.body.user.email_verified).toBe(false);
   await openLatestEmailLink(page, skippedEmail);
   await page.goto(`${BASE_URL}/account.html`);
-  await expect.poll(async () => (await authMe(page)).body.user.email_verified, { timeout: 15_000 }).toBe(true);
+  await expect.poll(async () => {
+    const me = await authMe(page);
+    return me.body.user.email === skippedEmail && me.body.user.email_verified === true;
+  }, { timeout: 15_000 }).toBe(true);
+  const skippedFirebaseAfter = await firebaseUserSnapshot(page);
+  expect(skippedFirebaseAfter.uid).toBe(skippedFirebaseBefore.uid);
+  expect(skippedFirebaseAfter.email).toBe(skippedEmail);
   await expect(page.locator('#email-verify-warning')).toBeHidden();
 
   const verifiedRequest = await serviceRequest(page);
@@ -487,6 +514,7 @@ test('account page email change, verification, phone reauth, and phone_exists co
 
   await page.goto(`${BASE_URL}/account.html?section=info`);
   await page.waitForSelector('#info-email');
+  const accountFirebaseBefore = await firebaseUserSnapshot(page);
   const changedEmail = email('account-changed');
   await page.fill('#info-email', changedEmail);
   await page.click('#info-save-btn');
@@ -497,10 +525,19 @@ test('account page email change, verification, phone reauth, and phone_exists co
   await page.fill('#reauth-otp-input', emailChangeReauthCode);
   await page.click('#reauth-confirm-btn');
   await expect.poll(async () => (await authMe(page)).body.user.email_verified, { timeout: 10_000 }).toBe(false);
+  const staleAccountSync = await syncFirebaseSession(page);
+  expect(staleAccountSync.status).toBe(200);
+  expect(staleAccountSync.body.user.email_verified).toBe(false);
 
   await openLatestEmailLink(page, changedEmail);
   await page.goto(`${BASE_URL}/account.html?section=info`);
-  await expect.poll(async () => (await authMe(page)).body.user.email_verified, { timeout: 15_000 }).toBe(true);
+  await expect.poll(async () => {
+    const me = await authMe(page);
+    return me.body.user.email === changedEmail && me.body.user.email_verified === true;
+  }, { timeout: 15_000 }).toBe(true);
+  const accountFirebaseAfter = await firebaseUserSnapshot(page);
+  expect(accountFirebaseAfter.uid).toBe(accountFirebaseBefore.uid);
+  expect(accountFirebaseAfter.email).toBe(changedEmail);
 
   await page.fill('#info-phone', e164(phones.accountNewPhone));
   await page.click('#info-save-btn');
