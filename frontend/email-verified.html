@@ -27,18 +27,6 @@
       position: relative;
       overflow-x: hidden;
     }
-    body::before {
-      content: "";
-      position: fixed;
-      inset: 0;
-      pointer-events: none;
-      background-image:
-        linear-gradient(rgba(10, 10, 10, 0.035) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(10, 10, 10, 0.035) 1px, transparent 1px);
-      background-size: 42px 42px;
-      -webkit-mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.5), transparent 68%);
-      mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.5), transparent 68%);
-    }
     .verification-shell {
       width: min(100%, 500px);
       position: relative;
@@ -49,6 +37,7 @@
       width: fit-content;
       margin: 0 0 18px 4px;
       color: #000000;
+      font-size: 38px;
       text-decoration: none;
     }
     .close-btn:focus-visible {
@@ -189,7 +178,7 @@
       }
       .email-verified-page .verification-logo {
         margin-bottom: 14px;
-        font-size: 25px;
+        font-size: 32px;
       }
       .success-icon {
         width: 58px;

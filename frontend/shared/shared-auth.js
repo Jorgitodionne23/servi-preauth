@@ -196,7 +196,11 @@
         } else {
           window.__syncError = { code: 'backend_sync_failed', status: res.status, message: errData.message };
         }
-        console.error('[SERVI] Backend sync failed:', res.status, errData);
+        if (res.status === 409 && errData.error === 'signup_incomplete') {
+          console.info('[SERVI] Signup continuation needed:', errData.error);
+        } else {
+          console.error('[SERVI] Backend sync failed:', res.status, errData);
+        }
       }
     } catch (err) {
       window.__syncError = { code: 'network_error', message: err.message };
@@ -291,14 +295,15 @@
   }
 
   // ── Modal shell ──────────────────────────────────────────────────────────────
-  function modalShell(title, showBack, backFn) {
+  function modalShell(title, showBack, backFn, forceShowBack) {
     var locked = isSignupFlowLocked();
+    var renderBack = !!showBack && (!locked || !!forceShowBack);
     return (
       '<div class="modal-overlay" onclick="window.__authOverlayClick(event)">' +
         '<div class="modal-content" onclick="event.stopPropagation()" style="max-width:420px">' +
           '<div style="padding:32px">' +
             '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">' +
-              (showBack && !locked
+              (renderBack
                 ? '<button onclick="' + backFn + '()" style="background:none;border:none;cursor:pointer;padding:4px;display:flex;align-items:center;gap:6px;font-size:14px;color:#666;font-family:\'DM Sans\',sans-serif">' + icons.back + (isEs() ? ' Volver' : ' Back') + '</button>'
                 : '<div></div>') +
               '<h2 class="heading-md" style="margin:0">' + title + '</h2>' +
@@ -729,7 +734,11 @@
       ? (es ? 'Verificar teléfono' : 'Verify phone')
       : (es ? 'Verificar correo'   : 'Verify email');
 
-    document.getElementById('auth-modal-global').innerHTML = modalShell(title, true, 'window.__uslBack');
+    // Secondary-phone OTP during email-first signup gets a scoped back that
+    // returns to phone entry without wiping Google/email signup state.
+    var isSecondaryPhoneOTP = isPhone && uslIsNew && uslFirstIdentifierType === 'email';
+    var backFn = isSecondaryPhoneOTP ? 'window.__uslBackToPhoneEntry' : 'window.__uslBack';
+    document.getElementById('auth-modal-global').innerHTML = modalShell(title, true, backFn, isSecondaryPhoneOTP);
 
     if (isPhone) {
       // When login was initiated via email, mask the phone and greet by first name.
@@ -1184,14 +1193,41 @@
     if (el) el.focus();
   }
 
-  window.__uslSecondaryNext = function () {
+  window.__uslSecondaryNext = async function () {
     var es = isEs();
     var collectPhone = uslFirstIdentifierType === 'email';
 
     if (collectPhone) {
       var digits = (document.getElementById('secondary-phone') || {}).value.replace(/\D/g, '');
       if (!digits) { setError(es ? 'Ingresa tu teléfono.' : 'Enter your phone.'); return; }
-      uslNewUserData.phone = selectedDial + digits;
+      var candidatePhone = selectedDial + digits;
+      var nextBtn = document.querySelector('button[onclick="window.__uslSecondaryNext()"]');
+      var nextBtnLabel = nextBtn ? nextBtn.textContent : '';
+      if (nextBtn) { nextBtn.disabled = true; nextBtn.textContent = '...'; }
+      setError('');
+      try {
+        var checkRes = await fetch(API() + '/api/auth/check-phone-available', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone: candidatePhone })
+        });
+        if (checkRes.ok) {
+          var checkData = await checkRes.json();
+          if (checkData && checkData.available === false) {
+            if (nextBtn) { nextBtn.disabled = false; nextBtn.textContent = nextBtnLabel || (es ? 'Verificar' : 'Verify'); }
+            setError(es
+              ? 'Este número ya está registrado con otra cuenta. Inicia sesión o usa otro número.'
+              : 'This phone is already registered with another account. Log in or use a different number.');
+            return;
+          }
+        } else {
+          console.warn('[SERVI] check-phone-available non-OK:', checkRes.status);
+        }
+      } catch (err) {
+        console.warn('[SERVI] check-phone-available failed:', err && err.message);
+      }
+      if (nextBtn) { nextBtn.disabled = false; nextBtn.textContent = nextBtnLabel || (es ? 'Verificar' : 'Verify'); }
+      uslNewUserData.phone = candidatePhone;
       uslIdentifier = uslNewUserData.phone;
       uslIdentifierType = 'phone';
       renderOTPScreen('phone', false);
@@ -1359,6 +1395,18 @@
   };
 
   // ── Back navigation ──────────────────────────────────────────────────────────
+  window.__uslBackToPhoneEntry = function () {
+    // Used from the secondary-phone OTP screen when the user wants to correct
+    // a wrong phone without losing Google/email signup state.
+    uslCurrentOTPType = '';
+    try { if (recaptchaVerifier) { recaptchaVerifier.clear(); recaptchaVerifier = null; } } catch (_) {}
+    confirmationResult = null;
+    uslNewUserData.phone = null;
+    uslNewUserData.phone_verified = false;
+    uslIdentifier = '';
+    renderSecondaryIdentifierScreen();
+  };
+
   window.__uslBack = function () {
     if (isSignupFlowLocked()) {
       setError(isEs()

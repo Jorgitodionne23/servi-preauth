@@ -5124,6 +5124,25 @@ app.post('/api/auth/add-phone', publicFormLimit, async (req, res) => {
   }
 });
 
+// POST /api/auth/check-phone-available — public pre-check used during signup
+// to warn users before sending an OTP to a phone already tied to another account.
+app.post('/api/auth/check-phone-available', publicFormLimit, async (req, res) => {
+  try {
+    const { phone } = req.body || {};
+    if (!phone) return res.status(400).json({ error: 'missing_phone' });
+    const phoneNorm = normalizePhoneToE164(phone);
+    if (!phoneNorm) return res.status(400).json({ error: 'invalid_phone' });
+    const { rows } = await pool.query(
+      'SELECT 1 FROM auth_users WHERE phone = $1 LIMIT 1',
+      [phoneNorm]
+    );
+    return res.json({ available: rows.length === 0 });
+  } catch (err) {
+    console.error('[POST /api/auth/check-phone-available]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
 // POST /api/auth/resolve-identifier-mismatch — detect orphaned phone account for an email that isn't registered.
 // Requires a valid Firebase ID token proving ownership of the email BEFORE returning any hint.
 // Rate-limited via publicFormLimit (5/min per IP from express-rate-limit config).
