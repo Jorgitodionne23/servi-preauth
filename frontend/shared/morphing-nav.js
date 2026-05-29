@@ -310,7 +310,7 @@
         ` : ''}
       </nav>
       <div class="site-drawer__divider"></div>
-      <div class="site-drawer__section">
+      <div class="site-drawer__section site-drawer__section--language">
         <div class="site-drawer__section-label">
           <span class="site-drawer__row-icon">${ICON.globe}</span>
           ${t.header.language}

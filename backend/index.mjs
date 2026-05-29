@@ -4836,13 +4836,14 @@ app.post('/api/auth/check-identifier', publicFormLimit, async (req, res) => {
     provider = normalizeFirebaseProvider(provider);
 
     const response = { exists, provider };
+    if (accountRow) {
+      response.first_name = String(accountRow.name || '').trim().split(/\s+/)[0] || '';
+    }
 
     // For email-identifier logins on existing accounts, return the account's phone
     // so the frontend can default to phone OTP (Uber-style). UI shows only masked phone + first name.
     if (isEmail && accountRow && accountRow.phone) {
-      const firstName = String(accountRow.name || '').trim().split(/\s+/)[0] || '';
       const phoneDigits = String(accountRow.phone).replace(/\D/g, '');
-      response.first_name = firstName;
       response.phone_e164 = accountRow.phone;
       response.phone_last4 = phoneDigits.slice(-4);
       response.email_verified = !!accountRow.email_verified;
@@ -4879,7 +4880,7 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
 
     const firebaseUid = decoded.uid;
     const email = decoded.email || req.body.email || null;
-    const name = decoded.name || req.body.name || null;
+    const name = req.body.name || decoded.name || null;
     const phone = decoded.phone_number || req.body.phone || null;
     const emailNormFromToken = email ? normalizeEmail(email) : null;
     const phoneNormFromToken = phone ? normalizePhoneToE164(phone) : null;

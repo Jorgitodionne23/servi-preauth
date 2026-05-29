@@ -40,6 +40,9 @@
   let uslAccountEmailVerified = false; // whether email is verified (controls More options visibility)
 
   // ── Constants ───────────────────────────────────────────────────────────────
+  // Firebase Phone Auth controls the real SMS code length. Keep this at 6 unless
+  // the SMS provider is replaced with a custom OTP implementation.
+  const PHONE_OTP_CODE_LENGTH = 6;
   const COUNTRIES = [
     { code: 'MX', dial: '+52', flag: '🇲🇽', label: 'MX +52' },
     { code: 'US', dial: '+1',  flag: '🇺🇸', label: 'US +1'  },
@@ -349,6 +352,59 @@
 
   function infoBanner(text) {
     return '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 12px;font-size:13px;color:#166534;margin-bottom:16px">' + text + '</div>';
+  }
+
+  function otpInputMarkup(es) {
+    var boxes = '';
+    for (var i = 0; i < PHONE_OTP_CODE_LENGTH; i++) {
+      boxes += '<div class="auth-otp-box" data-otp-index="' + i + '" ' +
+        'style="height:54px;border:1.5px solid #d9d9d9;border-radius:10px;background:#fff;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:600;color:#0a0a0a;box-sizing:border-box"></div>';
+    }
+    return (
+      '<div id="auth-otp-wrap" role="group" aria-label="' + (es ? 'Código de verificación' : 'Verification code') + '" ' +
+        'style="position:relative;display:grid;grid-template-columns:repeat(' + PHONE_OTP_CODE_LENGTH + ',minmax(0,1fr));gap:8px;margin-bottom:12px;cursor:text">' +
+        boxes +
+        '<input id="auth-otp" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="' + PHONE_OTP_CODE_LENGTH + '" ' +
+          'aria-label="' + (es ? 'Código de ' + PHONE_OTP_CODE_LENGTH + ' dígitos' : PHONE_OTP_CODE_LENGTH + '-digit code') + '" ' +
+          'style="position:absolute;inset:0;width:100%;height:100%;opacity:0;border:0;padding:0;margin:0;cursor:text" />' +
+      '</div>'
+    );
+  }
+
+  function updateOTPBoxes() {
+    var input = document.getElementById('auth-otp');
+    if (!input) return;
+    var value = String(input.value || '').replace(/\D/g, '').slice(0, PHONE_OTP_CODE_LENGTH);
+    if (input.value !== value) input.value = value;
+    var boxes = document.querySelectorAll('.auth-otp-box');
+    var focused = document.activeElement === input;
+    var activeIndex = Math.min(value.length, PHONE_OTP_CODE_LENGTH - 1);
+    boxes.forEach(function (box, index) {
+      box.textContent = value[index] || '';
+      var isActive = focused && index === activeIndex;
+      var isFilled = !!value[index];
+      box.style.borderColor = isActive ? '#0a0a0a' : (isFilled ? '#9ca3af' : '#d9d9d9');
+      box.style.boxShadow = isActive ? '0 0 0 3px rgba(10,10,10,0.08)' : 'none';
+      box.style.background = isFilled ? '#fafafa' : '#fff';
+    });
+  }
+
+  function attachOTPInputHandlers() {
+    var input = document.getElementById('auth-otp');
+    var wrap = document.getElementById('auth-otp-wrap');
+    if (!input || !wrap) return;
+    wrap.addEventListener('click', function () { input.focus(); });
+    input.addEventListener('input', updateOTPBoxes);
+    input.addEventListener('focus', updateOTPBoxes);
+    input.addEventListener('blur', updateOTPBoxes);
+    input.addEventListener('keydown', function (event) {
+      if (event.key === 'Enter') window.__uslVerifyOTP();
+    });
+    updateOTPBoxes();
+  }
+
+  function getOTPCode() {
+    return String((document.getElementById('auth-otp') || {}).value || '').replace(/\D/g, '').slice(0, PHONE_OTP_CODE_LENGTH);
   }
 
   function progressDots(active) {
@@ -689,6 +745,7 @@
       if (!uslIsNew) {
         // Existing user
         var provider = data.provider || uslIdentifierType;
+        uslAccountFirstName = data.first_name || '';
         if (provider === 'google') {
           if (btn) { btn.disabled = false; btn.textContent = isEs() ? 'Continuar' : 'Continue'; }
           setError(isEs() ? 'Esta cuenta usa Google. Usa el botón "Continuar con Google".' : 'This account uses Google. Use the "Continue with Google" button.');
@@ -745,11 +802,16 @@
       var phoneDisplay = uslLoginViaEmail && uslAccountPhoneLast4
         ? '••••••' + uslAccountPhoneLast4
         : uslIdentifier;
-      var greeting = uslLoginViaEmail && uslAccountFirstName
-        ? '<p style="font-size:15px;font-weight:600;margin-bottom:6px">' +
-            (es ? 'Hola, ' : 'Hi, ') + escapeHtml(uslAccountFirstName) +
+      var isReturningUser = !!isLogin;
+      var greeting = isReturningUser
+        ? '<p style="font-size:15px;font-weight:700;margin-bottom:6px">' +
+            (es ? 'Bienvenido de vuelta' : 'Welcome back') +
+            (uslAccountFirstName ? ', ' + escapeHtml(uslAccountFirstName) : '') +
           '</p>'
         : '';
+      var bodyCopy = isReturningUser
+        ? (es ? 'Verifica tu identidad con el código SMS enviado a ' : 'Verify your identity with the SMS code sent to ')
+        : (es ? 'Enviaremos un código SMS a ' : 'We\'ll send an SMS code to ');
       var moreOptionsBtn = (uslLoginViaEmail && uslAccountEmailVerified)
         ? '<div style="margin-top:12px;text-align:center">' +
             '<button onclick="window.__uslShowMoreOptions()" id="usl-more-options-btn" ' +
@@ -763,7 +825,7 @@
         progressDots(2) +
         greeting +
         '<p style="font-size:14px;color:#666;margin-bottom:16px">' +
-          (es ? 'Enviaremos un código SMS a ' : 'We\'ll send an SMS code to ') +
+          bodyCopy +
           '<strong>' + phoneDisplay + '</strong>' +
         '</p>' +
         errorBox() +
@@ -773,10 +835,7 @@
         '</button>' +
         '<div id="otp-entry" style="display:none">' +
           '<p id="otp-sent-msg" style="font-size:14px;color:#666;margin-bottom:12px"></p>' +
-          '<input class="input-field" id="auth-otp" type="text" inputmode="numeric" maxlength="6" ' +
-            'placeholder="' + (es ? 'Código de 6 dígitos' : '6-digit code') + '" ' +
-            'style="text-align:center;font-size:22px;letter-spacing:10px;margin-bottom:12px" ' +
-            'onkeydown="if(event.key===\'Enter\') window.__uslVerifyOTP()">' +
+          otpInputMarkup(es) +
           '<button class="btn-primary" onclick="window.__uslVerifyOTP()" id="verify-otp-btn" style="width:100%;justify-content:center;margin-bottom:8px">' +
             (es ? 'Verificar' : 'Verify') +
           '</button>' +
@@ -792,10 +851,20 @@
       ensureFirebase().then(setupRecaptchaInner);
     } else {
       // Email — magic link
+      var emailGreeting = isLogin
+        ? '<p style="font-size:15px;font-weight:700;margin-bottom:6px">' +
+            (es ? 'Bienvenido de vuelta' : 'Welcome back') +
+            (uslAccountFirstName ? ', ' + escapeHtml(uslAccountFirstName) : '') +
+          '</p>'
+        : '';
+      var emailCopy = isLogin
+        ? (es ? 'Verifica tu identidad con un enlace enviado a ' : 'Verify your identity with a link sent to ')
+        : (es ? 'Te enviaremos un enlace de verificación a ' : 'We\'ll send a verification link to ');
       setScreen(
         progressDots(2) +
+        emailGreeting +
         '<p style="font-size:14px;color:#666;margin-bottom:16px">' +
-          (es ? 'Te enviaremos un enlace de verificación a ' : 'We\'ll send a verification link to ') +
+          emailCopy +
           '<strong>' + uslIdentifier + '</strong>' +
         '</p>' +
         errorBox() +
@@ -824,6 +893,7 @@
         var sentMsg = document.getElementById('otp-sent-msg');
         if (sentMsg) sentMsg.textContent = (isEs() ? 'Código enviado a ' : 'Code sent to ') + uslIdentifier;
         var otpInput = document.getElementById('auth-otp');
+        attachOTPInputHandlers();
         if (otpInput) otpInput.focus();
       } catch (err) {
         if (btn) { btn.disabled = false; btn.textContent = isEs() ? 'Enviar código SMS' : 'Send SMS code'; }
@@ -879,9 +949,12 @@
   // ── Phone OTP verify ─────────────────────────────────────────────────────────
   // Only called for phone OTP screens. Email verification is handled via handleEmailLinkSignIn.
   window.__uslVerifyOTP = async function () {
-    var code = (document.getElementById('auth-otp') || {}).value.trim();
+    var code = getOTPCode();
     var es = isEs();
-    if (!code || code.length !== 6) { setError(es ? 'Ingresa el código de 6 dígitos.' : 'Enter the 6-digit code.'); return; }
+    if (!code || code.length !== PHONE_OTP_CODE_LENGTH) {
+      setError(es ? 'Ingresa el código de ' + PHONE_OTP_CODE_LENGTH + ' dígitos.' : 'Enter the ' + PHONE_OTP_CODE_LENGTH + '-digit code.');
+      return;
+    }
 
     var btn = document.getElementById('verify-otp-btn');
     if (btn) { btn.disabled = true; btn.textContent = '...'; }
@@ -1270,9 +1343,12 @@
       var isSecondaryPhoneOTP = ((uslIsNew && uslFirstIdentifierType === 'email') || uslCompletingExisting) && uslCurrentOTPType === 'phone';
       if (isSecondaryPhoneOTP) {
         // Let confirmationResult.confirm run, then mark phone verified and finish
-        var code = (document.getElementById('auth-otp') || {}).value.trim();
+        var code = getOTPCode();
         var es = isEs();
-        if (!code || code.length !== 6) { setError(es ? 'Ingresa el código de 6 dígitos.' : 'Enter the 6-digit code.'); return; }
+        if (!code || code.length !== PHONE_OTP_CODE_LENGTH) {
+          setError(es ? 'Ingresa el código de ' + PHONE_OTP_CODE_LENGTH + ' dígitos.' : 'Enter the ' + PHONE_OTP_CODE_LENGTH + '-digit code.');
+          return;
+        }
         var btn = document.getElementById('verify-otp-btn');
         if (btn) { btn.disabled = true; btn.textContent = '...'; }
         setError('');

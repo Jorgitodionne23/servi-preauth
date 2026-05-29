@@ -1123,6 +1123,12 @@
 .site-drawer__link:hover { background: var(--color-surface); color: var(--color-accent); }
 .site-drawer__divider { height: 1px; background: var(--color-border); margin: 12px 0; }
 .site-drawer__section { padding: 0 4px; }
+.site-drawer__section--language {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
 .site-drawer__section-label {
   display: inline-flex; align-items: center; gap: 8px;
   font-size: 12px; font-weight: 600;
@@ -1130,8 +1136,12 @@
   color: var(--color-text-muted);
   margin-bottom: 10px;
 }
+.site-drawer__section--language .site-drawer__section-label {
+  margin-bottom: 0;
+}
 .site-drawer__lang {
   display: inline-flex; gap: 0;
+  flex-shrink: 0;
   background: var(--color-surface);
   padding: 3px;
   border-radius: 999px;
