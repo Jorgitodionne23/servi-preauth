@@ -191,21 +191,19 @@
 
     <!-- Inbox Panel -->
     <div id="panel-inbox" class="panel-section panel-section--active">
-      <div class="filter-row">
-        <select class="filter-select" id="inbox-type" onchange="loadInbox()">
-          <option value="">Todos los tipos</option>
-          <option value="incidents">Reportes</option>
-          <option value="suggestions">Sugerencias</option>
-        </select>
+      <div class="inbox-stats" id="inbox-stats"></div>
+      <div class="filter-pill-row" id="inbox-filter-row">
+        <span class="filter-pill-label">Estado:</span>
+        <button class="filter-pill" data-status-filter="all">Todos</button>
+        <button class="filter-pill" data-status-filter="new">Nuevos</button>
+        <button class="filter-pill" data-status-filter="reviewed">Revisados</button>
+        <button class="filter-pill" data-status-filter="resolved">Resueltos</button>
+        <span class="filter-pill-label" style="margin-left:8px">Tipo:</span>
+        <button class="filter-pill" data-type-filter="all">Todos</button>
+        <button class="filter-pill" data-type-filter="incident">Reportes</button>
+        <button class="filter-pill" data-type-filter="suggestion">Sugerencias</button>
       </div>
-      <div class="table-scroll">
-        <table class="admin-table">
-          <thead>
-            <tr><th>Fecha</th><th>Hora</th><th>Tipo</th><th>Nombre</th><th>Detalle</th><th>Estado</th></tr>
-          </thead>
-          <tbody id="inbox-body"></tbody>
-        </table>
-      </div>
+      <div class="inbox-list" id="inbox-list"></div>
       <div id="inbox-empty" class="empty-state" style="display:none">No hay elementos.</div>
     </div>
 
@@ -380,6 +378,70 @@
   .form-label { display:block; font-size:12px; color:#888; font-weight:600; margin-bottom:5px; text-transform:uppercase; letter-spacing:0.04em; }
   #panel-nueva .auth-input, #panel-ajustes .auth-input { width:100%; }
   #panel-nueva select.auth-input, #panel-ajustes select.auth-input { background:#222; }
+
+  /* ─── Inbox redesign ──────────────────────────────────────────────── */
+  .inbox-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:20px; }
+  .inbox-stat { background:#181B25; border:1px solid #252836; border-radius:12px; padding:14px 18px; }
+  .inbox-stat-icon { font-size:20px; margin-bottom:4px; }
+  .inbox-stat-num { font-size:22px; font-weight:700; }
+  .inbox-stat-label { font-size:11px; color:#7B8099; margin-top:2px; }
+
+  .inbox-list { display:flex; flex-direction:column; gap:10px; }
+  .inbox-card { background:#181B25; border:1px solid #252836; border-radius:12px; padding:14px 18px; cursor:pointer; transition:border-color 0.2s, background 0.2s; }
+  .inbox-card:hover { border-color:#3a3f54; background:#1c1f2b; }
+  .inbox-card--selected { border-color:rgba(255,107,53,0.5); }
+  .inbox-card-head { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px; gap:10px; }
+  .inbox-card-who { display:flex; align-items:center; gap:9px; min-width:0; }
+  .inbox-avatar { width:30px; height:30px; border-radius:50%; background:linear-gradient(135deg,#667eea,#764ba2); display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; color:#fff; flex-shrink:0; }
+  .inbox-who-text { min-width:0; }
+  .inbox-who-name { font-weight:600; font-size:13px; color:#eee; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .inbox-who-time { font-size:11px; color:#7B8099; margin-top:1px; }
+  .inbox-badges { display:flex; gap:5px; flex-wrap:wrap; justify-content:flex-end; }
+
+  .inbox-pill { display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:20px; font-size:10px; font-weight:700; }
+  .pill-type-incident { background:rgba(220,53,69,0.12); color:#FF6B6B; border:1px solid rgba(220,53,69,0.3); }
+  .pill-type-suggestion { background:rgba(102,126,234,0.12); color:#667eea; border:1px solid rgba(102,126,234,0.3); }
+  .pill-prio-high { background:rgba(255,107,53,0.15); color:#FF6B35; }
+  .pill-prio-medium { background:rgba(255,193,7,0.15); color:#FFC107; }
+  .pill-prio-low { background:rgba(40,167,69,0.15); color:#28A745; }
+  .pill-status-new { background:rgba(255,107,53,0.12); color:#FF6B35; }
+  .pill-status-reviewed { background:rgba(0,123,255,0.12); color:#007BFF; }
+  .pill-status-resolved { background:rgba(40,167,69,0.12); color:#28A745; }
+  .pill-dot { width:5px; height:5px; border-radius:50%; display:inline-block; }
+  .dot-new { background:#FF6B35; }
+  .dot-reviewed { background:#007BFF; }
+  .dot-resolved { background:#28A745; }
+
+  .inbox-card-desc { font-size:12px; color:#7B8099; margin:0; padding-left:39px; line-height:1.55; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .inbox-resolution { margin-top:10px; margin-left:39px; background:rgba(40,167,69,0.08); border:1px solid rgba(40,167,69,0.2); border-radius:8px; padding:8px 12px; font-size:12px; color:#28A745; line-height:1.5; }
+  .inbox-resolution strong { color:#28A745; }
+
+  .filter-pill-row { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-bottom:14px; }
+  .filter-pill-label { font-size:11px; color:#555B75; }
+  .filter-pill { padding:4px 12px; border-radius:20px; border:1px solid #252836; font-size:11px; font-weight:600; cursor:pointer; background:transparent; color:#7B8099; font-family:inherit; transition:all 0.2s; }
+  .filter-pill:hover { color:#eee; }
+  .filter-pill--active-status { background:#FF6B35; color:#fff; border-color:#FF6B35; }
+  .filter-pill--active-type { background:#667eea; color:#fff; border-color:#667eea; }
+
+  /* Inbox side panel content */
+  .ip-sec { background:#13151E; border-radius:10px; padding:13px; margin:0 24px 13px; }
+  .ip-sec-t { font-size:10px; color:#555B75; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.06em; font-weight:700; }
+  .ip-val { font-size:13px; color:#ddd; line-height:1.6; }
+  .ip-val-sub { font-size:12px; color:#A0A8C0; line-height:1.6; }
+  .ip-who { display:flex; align-items:center; gap:10px; }
+  .ip-resolved-box { background:rgba(40,167,69,0.08); border:1px solid rgba(40,167,69,0.2); border-radius:10px; padding:13px; margin:0 24px 13px; }
+  .ip-resolved-t { font-size:10px; color:#28A745; margin-bottom:6px; text-transform:uppercase; letter-spacing:0.06em; font-weight:700; }
+  .sp-btn { width:100%; padding:9px; border-radius:8px; border:none; font-weight:600; font-size:13px; cursor:pointer; font-family:inherit; color:#fff; }
+  .sp-btn-blue { background:#007BFF; }
+  .sp-btn-blue:hover { background:#0069d9; }
+  .sp-btn-green { background:#28A745; }
+  .sp-btn-green:hover { background:#218838; }
+  .sp-textarea { width:100%; box-sizing:border-box; background:#0F1117; border:1px solid #252836; color:#E8EAF0; border-radius:8px; padding:9px 12px; font-size:12px; font-family:inherit; min-height:68px; outline:none; resize:vertical; margin-bottom:8px; }
+  .sp-textarea:focus { border-color:#10b981; }
+  .sp-info-box { background:rgba(102,126,234,0.08); border:1px solid rgba(102,126,234,0.2); border-radius:10px; padding:13px; margin:0 24px 18px; }
+  .sp-info-title { font-size:10px; color:#667eea; margin-bottom:8px; text-transform:uppercase; letter-spacing:0.06em; font-weight:700; }
+  .sp-info-line { font-size:11px; color:#A0A8C0; line-height:1.5; margin-bottom:6px; }
+  .sp-info-line strong { color:#E8EAF0; font-weight:700; }
 </style>
 <!-- Order Detail Side Panel -->
 <div id="order-overlay" class="side-overlay" onclick="closeOrderDetail()"></div>
@@ -392,6 +454,19 @@
     <button class="sp-close" onclick="closeOrderDetail()">✕</button>
   </div>
   <div id="op-body"></div>
+</div>
+
+<!-- Inbox Detail Side Panel -->
+<div id="inbox-overlay" class="side-overlay" onclick="closeInboxDetail()"></div>
+<div id="inbox-panel-detail" class="side-panel">
+  <div class="sp-hdr">
+    <div>
+      <div style="font-size:11px;color:#555;margin-bottom:2px" id="inbox-detail-kind">INBOX</div>
+      <div id="inbox-detail-id" style="font-size:14px;font-weight:700;font-family:monospace;color:#A0A8C0"></div>
+    </div>
+    <button class="sp-close" onclick="closeInboxDetail()">✕</button>
+  </div>
+  <div id="inbox-detail-body" style="padding-top:18px"></div>
 </div>
 
 <!-- Provider Detail Side Panel -->
@@ -496,6 +571,7 @@ async function testAuth() {
     document.getElementById('auth-gate').style.display = 'none';
     document.getElementById('dashboard').style.display = 'block';
     loadStats();
+    wireInboxFilters();
     loadInbox();
   } catch {
     document.getElementById('auth-error').style.display = 'block';
@@ -536,51 +612,294 @@ function switchPanel(name) {
 }
 
 // Inbox
-async function loadInbox() {
-  const type = document.getElementById('inbox-type').value;
-  const body = document.getElementById('inbox-body');
-  const empty = document.getElementById('inbox-empty');
-  body.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:#666">Cargando...</td></tr>';
+let _inboxItems = [];
+let _inboxStatusFilter = 'all';
+let _inboxTypeFilter = 'all';
+let _currentInboxId = null;
 
-  let items = [];
-  try {
-    if (!type || type === 'incidents') {
-      const r = await fetch(API + '/api/reports?type=incident&limit=30', { headers: headers() });
-      const d = await r.json();
-      items.push(...d.items.map(i => ({ id: i.id, apiPath: '/api/reports', date: i.created_at, type: 'Reporte', name: i.name || '—', detail: (i.category || '') + ' — ' + (i.description || '').slice(0,60), status: i.status || 'new', options: ['new','reviewed','resolved'] })));
-    }
-    if (!type || type === 'suggestions') {
-      const r = await fetch(API + '/api/reports?type=suggestion&limit=30', { headers: headers() });
-      const d = await r.json();
-      items.push(...d.items.map(i => ({ id: i.id, apiPath: '/api/reports', date: i.created_at, type: 'Sugerencia', name: i.name || '—', detail: (i.description || '').slice(0,80), status: i.status || 'new', options: ['new','reviewed','resolved'] })));
-    }
-    items.sort((a, b) => new Date(b.date) - new Date(a.date));
-    if (!items.length) { body.innerHTML = ''; empty.style.display = 'block'; return; }
-    empty.style.display = 'none';
-    body.innerHTML = items.map(i => {
-      const selOpts = i.options.map(opt => `<option value="${opt}" ${i.status.toLowerCase()===opt?'selected':''}>${opt}</option>`).join('');
-      const safeDetail = escapeHtml(i.detail);
-      return `
-      <tr>
-        <td>${fmtDate(i.date)}</td>
-        <td>${fmtTime(i.date)}</td>
-        <td>${i.type}</td>
-        <td>${escapeHtml(i.name)}</td>
-        <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${safeDetail}">${safeDetail}</td>
-        <td>
-          <div style="display:flex;align-items:center;gap:8px">
-            <span class="badge ${badgeClass(i.status)}" style="min-width:70px;text-align:center">${escapeHtml(i.status)}</span>
-            <select class="auth-input" style="padding:4px;font-size:11px;width:auto;height:auto;background:#222;border-radius:4px" onchange="updateInboxStatus('${i.apiPath}', '${i.id}', this.value)">
-              <option value="" disabled hidden ${!i.options.includes(i.status.toLowerCase()) ? 'selected' : ''}>—</option>
-              ${selOpts}
-            </select>
+function initials(name) {
+  const s = (name || '').trim();
+  if (!s) return '?';
+  const parts = s.split(/\s+/).filter(Boolean);
+  const first = parts[0]?.[0] || '';
+  const second = parts[1]?.[0] || parts[0]?.[1] || '';
+  return (first + second).toUpperCase();
+}
+
+function inboxStatusLabel(s) {
+  if (s === 'new') return 'Nuevo';
+  if (s === 'reviewed') return 'Revisado';
+  if (s === 'resolved') return 'Resuelto';
+  return s || '—';
+}
+
+function inboxTypeLabel(type) {
+  return type === 'incident' ? '🚨 Reporte' : '💡 Sugerencia';
+}
+
+function inboxPriorityFor(type) {
+  return type === 'incident' ? 'high' : 'medium';
+}
+
+function inboxSubjectFor(item) {
+  const cat = (item.category || '').trim();
+  if (cat) return cat;
+  return (item.description || '').slice(0, 60);
+}
+
+function renderInboxStats(items) {
+  const stats = [
+    { icon:'🚨', label:'Reportes abiertos', value: items.filter(i => i.status === 'new').length, color:'#FF6B35' },
+    { icon:'🔍', label:'En revisión', value: items.filter(i => i.status === 'reviewed').length, color:'#007BFF' },
+    { icon:'✅', label:'Resueltos', value: items.filter(i => i.status === 'resolved').length, color:'#28A745' },
+    { icon:'💡', label:'Sugerencias', value: items.filter(i => i.type === 'suggestion').length, color:'#667eea' },
+  ];
+  document.getElementById('inbox-stats').innerHTML = stats.map(s => `
+    <div class="inbox-stat">
+      <div class="inbox-stat-icon">${s.icon}</div>
+      <div class="inbox-stat-num" style="color:${s.color}">${s.value}</div>
+      <div class="inbox-stat-label">${escapeHtml(s.label)}</div>
+    </div>
+  `).join('');
+}
+
+function filteredInboxItems() {
+  return _inboxItems.filter(i => {
+    const s = _inboxStatusFilter === 'all' || i.status === _inboxStatusFilter;
+    const t = _inboxTypeFilter === 'all' || i.type === _inboxTypeFilter;
+    return s && t;
+  });
+}
+
+function renderInboxList() {
+  const list = document.getElementById('inbox-list');
+  const empty = document.getElementById('inbox-empty');
+  const items = filteredInboxItems();
+  if (!items.length) {
+    list.innerHTML = '';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+  list.innerHTML = items.map(i => {
+    const selected = _currentInboxId === i.id ? ' inbox-card--selected' : '';
+    const prio = i.priority;
+    const status = i.status;
+    const resolution = (status === 'resolved' && i.admin_notes)
+      ? `<div class="inbox-resolution">✅ <strong>Resolución:</strong> ${escapeHtml(i.admin_notes)}</div>`
+      : '';
+    return `
+      <div class="inbox-card${selected}" onclick="openInboxDetail('${i.id}')">
+        <div class="inbox-card-head">
+          <div class="inbox-card-who">
+            <div class="inbox-avatar">${escapeHtml(initials(i.name))}</div>
+            <div class="inbox-who-text">
+              <div class="inbox-who-name">${escapeHtml(i.name || '—')}</div>
+              <div class="inbox-who-time">${fmtDate(i.created_at)} · ${fmtTime(i.created_at)}</div>
+            </div>
           </div>
-        </td>
-      </tr>
-      `;
-    }).join('');
+          <div class="inbox-badges">
+            <span class="inbox-pill pill-type-${i.type}">${inboxTypeLabel(i.type)}</span>
+            <span class="inbox-pill pill-prio-${prio}">${prio.toUpperCase()}</span>
+            <span class="inbox-pill pill-status-${status}">
+              <span class="pill-dot dot-${status}"></span>${escapeHtml(inboxStatusLabel(status))}
+            </span>
+          </div>
+        </div>
+        <p class="inbox-card-desc">${escapeHtml(i.description || '')}</p>
+        ${resolution}
+      </div>
+    `;
+  }).join('');
+}
+
+async function loadInbox() {
+  const list = document.getElementById('inbox-list');
+  const empty = document.getElementById('inbox-empty');
+  if (list) list.innerHTML = '<div style="text-align:center;padding:24px;color:#666">Cargando...</div>';
+  if (empty) empty.style.display = 'none';
+
+  const merged = [];
+  try {
+    const [rInc, rSug] = await Promise.all([
+      fetch(API + '/api/reports?type=incident&limit=30', { headers: headers() }),
+      fetch(API + '/api/reports?type=suggestion&limit=30', { headers: headers() }),
+    ]);
+    const dInc = await rInc.json();
+    const dSug = await rSug.json();
+    for (const i of (dInc.items || [])) {
+      merged.push({
+        ...i,
+        type: 'incident',
+        status: (i.status || 'new').toLowerCase(),
+        priority: inboxPriorityFor('incident'),
+        subject: inboxSubjectFor(i),
+      });
+    }
+    for (const i of (dSug.items || [])) {
+      merged.push({
+        ...i,
+        type: 'suggestion',
+        status: (i.status || 'new').toLowerCase(),
+        priority: inboxPriorityFor('suggestion'),
+        subject: inboxSubjectFor(i),
+      });
+    }
+    merged.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    _inboxItems = merged;
+    renderInboxStats(_inboxItems);
+    renderInboxList();
+    if (_currentInboxId) {
+      const still = _inboxItems.find(x => x.id === _currentInboxId);
+      if (still) renderInboxDetail(still);
+    }
   } catch (err) {
-    body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#ef4444">Error al cargar datos</td></tr>';
+    if (list) list.innerHTML = '<div style="text-align:center;color:#ef4444;padding:24px">Error al cargar datos</div>';
+  }
+}
+
+function setInboxFilter(kind, value) {
+  if (kind === 'status') _inboxStatusFilter = value;
+  if (kind === 'type') _inboxTypeFilter = value;
+  document.querySelectorAll('#inbox-filter-row [data-status-filter]').forEach(b => {
+    b.classList.toggle('filter-pill--active-status', b.dataset.statusFilter === _inboxStatusFilter);
+  });
+  document.querySelectorAll('#inbox-filter-row [data-type-filter]').forEach(b => {
+    b.classList.toggle('filter-pill--active-type', b.dataset.typeFilter === _inboxTypeFilter);
+  });
+  renderInboxList();
+}
+
+function wireInboxFilters() {
+  const row = document.getElementById('inbox-filter-row');
+  if (!row || row.dataset.wired) return;
+  row.dataset.wired = '1';
+  row.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-status-filter], button[data-type-filter]');
+    if (!btn) return;
+    if (btn.dataset.statusFilter) setInboxFilter('status', btn.dataset.statusFilter);
+    else if (btn.dataset.typeFilter) setInboxFilter('type', btn.dataset.typeFilter);
+  });
+  // initial active state
+  setInboxFilter('status', _inboxStatusFilter);
+  setInboxFilter('type', _inboxTypeFilter);
+}
+
+function inboxPlatformLines(type) {
+  if (type === 'incident') {
+    return [
+      ['Uber Eats', 'Auto-refund triggered if delivery is 15+ min late'],
+      ['Rappi', 'Live chat escalation assigned within 2 min'],
+      ['Airbnb', '24hr resolution SLA; host penalized for repeat issues'],
+      ['DoorDash', 'Instant credit issued; case reviewed async by team'],
+    ];
+  }
+  return [
+    ['Uber', 'Public idea board — customers upvote features'],
+    ['Airbnb', 'Suggestions reviewed quarterly by product team'],
+    ['Rappi', 'AI auto-clusters similar suggestions for review'],
+    ['DoorDash', 'Accepted ideas get a public ETA communicated back'],
+  ];
+}
+
+function renderInboxDetail(item) {
+  document.getElementById('inbox-detail-kind').textContent = item.type === 'incident' ? 'REPORTE' : 'SUGERENCIA';
+  document.getElementById('inbox-detail-id').textContent = item.id;
+  const contactLine = [item.email, item.phone].filter(Boolean).map(escapeHtml).join(' · ');
+  const linkedDate = item.incident_date
+    ? `<div class="ip-sec"><div class="ip-sec-t">Fecha del incidente</div><div class="ip-val">${escapeHtml(item.incident_date)}</div></div>`
+    : '';
+  const resolvedBox = (item.status === 'resolved' && item.admin_notes)
+    ? `<div class="ip-resolved-box"><div class="ip-resolved-t">✅ Resolución</div><div class="ip-val-sub">${escapeHtml(item.admin_notes)}</div></div>`
+    : '';
+  const reviewedBtn = item.status === 'new'
+    ? `<button class="sp-btn sp-btn-blue" onclick="markInboxReviewed()" style="margin-bottom:8px">🔍 Marcar como Revisado</button>`
+    : '';
+  const actionBox = item.status !== 'resolved'
+    ? `
+      <div class="ip-sec">
+        <div class="ip-sec-t">Acción</div>
+        ${reviewedBtn}
+        <textarea class="sp-textarea" id="inbox-resolution-text" placeholder="Escribe notas de resolución..."></textarea>
+        <button class="sp-btn sp-btn-green" onclick="markInboxResolved()">✅ Marcar como Resuelto</button>
+      </div>
+    `
+    : '';
+  const platforms = inboxPlatformLines(item.type);
+  document.getElementById('inbox-detail-body').innerHTML = `
+    <div class="ip-sec">
+      <div class="ip-sec-t">De</div>
+      <div class="ip-who">
+        <div class="inbox-avatar" style="width:36px;height:36px;font-size:13px">${escapeHtml(initials(item.name))}</div>
+        <div>
+          <div class="ip-val" style="font-weight:600">${escapeHtml(item.name || '—')}</div>
+          ${contactLine ? `<div class="ip-val-sub">${contactLine}</div>` : ''}
+        </div>
+      </div>
+    </div>
+    <div class="ip-sec">
+      <div class="ip-sec-t">Tipo</div>
+      <div><span class="inbox-pill pill-type-${item.type}">${inboxTypeLabel(item.type)}</span></div>
+    </div>
+    <div class="ip-sec">
+      <div class="ip-sec-t">Asunto</div>
+      <div class="ip-val">${escapeHtml(item.subject || '—')}</div>
+    </div>
+    <div class="ip-sec">
+      <div class="ip-sec-t">Descripción</div>
+      <div class="ip-val-sub">${escapeHtml(item.description || '—')}</div>
+    </div>
+    ${linkedDate}
+    <div class="ip-sec">
+      <div class="ip-sec-t">Estado actual</div>
+      <div><span class="inbox-pill pill-status-${item.status}"><span class="pill-dot dot-${item.status}"></span>${escapeHtml(inboxStatusLabel(item.status))}</span></div>
+    </div>
+    ${resolvedBox}
+    ${actionBox}
+    <div class="sp-info-box">
+      <div class="sp-info-title">💡 Cómo lo manejan otras plataformas</div>
+      ${platforms.map(([p, d]) => `<div class="sp-info-line"><strong>${escapeHtml(p)}:</strong> ${escapeHtml(d)}</div>`).join('')}
+    </div>
+  `;
+}
+
+function openInboxDetail(id) {
+  const item = _inboxItems.find(x => x.id === id);
+  if (!item) return;
+  _currentInboxId = id;
+  renderInboxDetail(item);
+  document.getElementById('inbox-overlay').classList.add('open');
+  document.getElementById('inbox-panel-detail').classList.add('open');
+  renderInboxList();
+}
+
+function closeInboxDetail() {
+  _currentInboxId = null;
+  document.getElementById('inbox-overlay').classList.remove('open');
+  document.getElementById('inbox-panel-detail').classList.remove('open');
+  renderInboxList();
+}
+
+async function markInboxReviewed() {
+  if (!_currentInboxId) return;
+  await updateInboxStatus('/api/reports', _currentInboxId, 'reviewed');
+}
+
+async function markInboxResolved() {
+  if (!_currentInboxId) return;
+  const ta = document.getElementById('inbox-resolution-text');
+  const notes = (ta?.value || '').trim();
+  try {
+    const res = await fetch(API + '/api/reports/' + _currentInboxId, {
+      method: 'PATCH',
+      headers: headers(),
+      body: JSON.stringify({ status: 'resolved', adminNotes: notes || 'Resuelto por admin.' })
+    });
+    if (!res.ok) throw new Error();
+    await loadInbox();
+    loadStats();
+  } catch (err) {
+    toast('Error al marcar como resuelto.', 'err');
   }
 }
 
@@ -593,7 +912,7 @@ async function updateInboxStatus(apiPath, id, newStatus) {
       body: JSON.stringify({ status: newStatus })
     });
     if (!res.ok) throw new Error();
-    loadInbox();
+    await loadInbox();
     loadStats();
   } catch (err) {
     toast('Error al actualizar estado.', 'err');

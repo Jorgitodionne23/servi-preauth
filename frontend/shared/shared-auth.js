@@ -867,6 +867,11 @@
           emailCopy +
           '<strong>' + uslIdentifier + '</strong>' +
         '</p>' +
+        '<p style="font-size:12px;color:#8a6d3b;line-height:1.5;margin:-6px 0 16px">' +
+          (es
+            ? 'Si no ves el correo, revisa tu carpeta de spam o correo no deseado.'
+            : 'If you do not see the email, check your spam or junk folder.') +
+        '</p>' +
         errorBox() +
         '<button class="btn-primary" onclick="window.__uslSendOTP()" id="send-email-link-btn" style="width:100%;justify-content:center">' +
           (es ? 'Enviar enlace' : 'Send link') +
@@ -927,8 +932,8 @@
             '<p style="font-size:15px;font-weight:600;margin-bottom:8px">' + (isEs() ? '¡Enlace enviado!' : 'Link sent!') + '</p>' +
             '<p style="font-size:14px;color:#666;line-height:1.6;margin-bottom:20px">' +
               (isEs()
-                ? 'Revisa <strong>' + uslIdentifier + '</strong> y haz clic en el enlace para continuar.'
-                : 'Check <strong>' + uslIdentifier + '</strong> and click the link to continue.') +
+                ? 'Revisa <strong>' + uslIdentifier + '</strong> y haz clic en el enlace para continuar. Si no lo encuentras, revisa spam o correo no deseado.'
+                : 'Check <strong>' + uslIdentifier + '</strong> and click the link to continue. If you cannot find it, check your spam or junk folder.') +
             '</p>' +
             '<button id="manual-email-continue-btn" onclick="window.__uslManualEmailContinue && window.__uslManualEmailContinue()" ' +
               'style="background:#0a0a0a;color:#fff;border:none;border-radius:10px;padding:12px 20px;font-size:14px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif;width:100%">' +
@@ -1459,8 +1464,8 @@
           '<p style="font-size:15px;font-weight:600;margin-bottom:8px">' + (es ? 'Enlace enviado' : 'Link sent') + '</p>' +
           '<p style="font-size:14px;color:#666;line-height:1.6">' +
             (es
-              ? 'Revisa tu correo y haz clic en el enlace. Después podrás actualizar tu teléfono desde <strong>Mi cuenta</strong>.'
-              : 'Check your email and click the link. You can then update your phone from <strong>My account</strong>.') +
+              ? 'Revisa tu correo y haz clic en el enlace. Si no lo encuentras, revisa spam o correo no deseado. Después podrás actualizar tu teléfono desde <strong>Mi cuenta</strong>.'
+              : 'Check your email and click the link. If you cannot find it, check your spam or junk folder. You can then update your phone from <strong>My account</strong>.') +
           '</p>' +
         '</div>'
       );

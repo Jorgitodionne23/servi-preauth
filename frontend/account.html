@@ -81,7 +81,6 @@
       font-size: 16px;
       line-height: 1;
     }
-    .account-sidebar-icon.favorite { color: #d94b5f; }
     .account-card {
       background: rgba(255, 255, 255, 0.84);
       border: 1px solid var(--color-border);
@@ -199,7 +198,7 @@
       margin-bottom: 20px;
       border-radius: 18px;
       border: 1px solid rgba(161, 98, 7, 0.22);
-      background: linear-gradient(135deg, rgba(255, 251, 235, 0.94), rgba(255, 255, 255, 0.78));
+      background: rgba(255, 251, 235, 0.94);
       box-shadow: 0 18px 40px -34px rgba(120, 53, 15, 0.45);
     }
     .verify-warning.visible { display: flex; }
@@ -545,12 +544,12 @@ const TX = {
     securityInfo: 'Tu cuenta usa inicio de sesión con teléfono o Google. No se requiere contraseña.',
     securityProvider: 'Método de acceso:',
     emailWarnTitle: 'Verifica tu correo',
-    emailWarnText: 'Verifica tu correo para proteger tu cuenta y confirmar solicitudes.',
-    emailWarnNoEmail: 'Agrega un correo para proteger tu cuenta y confirmar solicitudes.',
+    emailWarnText: 'Verifica tu correo para proteger tu cuenta y confirmar solicitudes. Si no ves el enlace, revisa spam o correo no deseado.',
+    emailWarnNoEmail: 'Agrega un correo para proteger tu cuenta y confirmar solicitudes. Si no ves el enlace, revisa spam o correo no deseado.',
     emailWarnAction: 'Verificar correo',
     emailWarnAddAction: 'Agregar correo',
     emailWarnSending: 'Enviando...',
-    emailWarnSent: 'Enlace enviado. Revisa tu correo.',
+    emailWarnSent: 'Enlace enviado. Revisa tu correo y también spam o correo no deseado.',
     emailWarnFailed: 'No pudimos enviar el enlace. Intenta de nuevo.',
     lblAddrLabel: 'Etiqueta (opcional)', lblAddrStreet: 'Calle y número *', lblAddrCity: 'Ciudad', lblAddrState: 'Estado', lblAddrPostal: 'Código postal', lblAddrDefault: 'Predeterminada',
     saveBtn: 'Guardar cambios', saving: 'Guardando...', saved: 'Cambios guardados.',
@@ -584,12 +583,12 @@ const TX = {
     securityInfo: 'Your account uses phone or Google sign-in. No password required.',
     securityProvider: 'Sign-in method:',
     emailWarnTitle: 'Verify your email',
-    emailWarnText: 'Verify your email to protect your account and confirm requests.',
-    emailWarnNoEmail: 'Add an email to protect your account and confirm requests.',
+    emailWarnText: 'Verify your email to protect your account and confirm requests. If you do not see the link, check your spam or junk folder.',
+    emailWarnNoEmail: 'Add an email to protect your account and confirm requests. If you do not see the link, check your spam or junk folder.',
     emailWarnAction: 'Verify email',
     emailWarnAddAction: 'Add email',
     emailWarnSending: 'Sending...',
-    emailWarnSent: 'Link sent. Check your email.',
+    emailWarnSent: 'Link sent. Check your email and your spam or junk folder.',
     emailWarnFailed: 'We could not send the link. Try again.',
     lblAddrLabel: 'Label (optional)', lblAddrStreet: 'Street and number *', lblAddrCity: 'City', lblAddrState: 'State', lblAddrPostal: 'Postal code', lblAddrDefault: 'Set as default',
     saveBtn: 'Save changes', saving: 'Saving...', saved: 'Changes saved.',
@@ -638,14 +637,14 @@ function buildNav() {
     { id: 'info',      label: t.navInfo,      icon: '👤', danger: false },
     { id: 'security',  label: t.navSecurity,   icon: '🔒', danger: false },
     { id: 'addresses', label: t.navAddresses,  icon: '📍', danger: false },
-    { id: 'favorites', label: t.navFavorites,  icon: '♥', iconClass: 'favorite', danger: false },
+    { id: 'favorites', label: t.navFavorites,  icon: '❤️', danger: false },
     { id: 'payments',  label: t.navPayments,   icon: '💳', danger: false },
     { id: 'delete',    label: t.navDelete,     icon: '🗑',  danger: true  },
   ];
   const html = items.map(item => `
     <button class="account-sidebar-item ${item.danger ? 'danger' : ''} ${item.id === activeSection ? 'active' : ''}"
       onclick="switchSection('${item.id}')">
-      <span class="account-sidebar-icon ${item.iconClass || ''}">${item.icon}</span><span>${item.label}</span>
+      <span class="account-sidebar-icon">${item.icon}</span><span>${item.label}</span>
     </button>
   `).join('');
   document.getElementById('sidebar').innerHTML = html;
@@ -841,7 +840,9 @@ async function saveProfile() {
     const emailChanged = email && email !== (_originalEmail || '');
     if (emailChanged && !d.user.email_verified) {
       document.getElementById('info-success-text').textContent =
-        isEs() ? 'Cambios guardados. Por favor verifica tu nuevo correo.' : 'Changes saved. Please verify your new email.';
+        isEs()
+          ? 'Cambios guardados. Verifica tu nuevo correo. Si no ves el enlace, revisa spam o correo no deseado.'
+          : 'Changes saved. Please verify your new email. If you do not see the link, check your spam or junk folder.';
       sucEl.style.display = 'flex';
       setTimeout(() => { sucEl.style.display = 'none'; }, 5000);
       // Try to send verification email via Firebase

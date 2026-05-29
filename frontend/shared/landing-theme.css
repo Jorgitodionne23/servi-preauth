@@ -812,7 +812,7 @@
   border-color: var(--color-text);
 }
 .site-header__account-btn {
-  width: 36px; height: 36px;
+  width: 44px; height: 44px;
   border-radius: 50%;
   border: 1.5px solid var(--color-accent, #000);
   background: var(--color-accent, #000);
