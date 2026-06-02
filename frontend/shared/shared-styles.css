@@ -112,7 +112,7 @@ button { font-family: var(--font-body); }
   color: #000000;
   display: inline-block;
   width: 0.34em;
-  height: 0.23em;
+  height: 0.20em;
   border-radius: 0.34em 0.34em 0 0;
   background: currentColor;
   margin-left: 2px;

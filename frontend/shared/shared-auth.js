@@ -205,6 +205,11 @@
       } else {
         window.__user = { id: firebaseUser.uid, email: firebaseUser.email, name: firebaseUser.displayName, phone: firebaseUser.phoneNumber };
         window.__syncPromise = syncWithBackend(firebaseUser);
+        // Ghost user (Firebase identity exists but auth_users row was never finished)
+        // → surface the name-collection screen instead of silently sitting on
+        // an unauthenticated navbar. Triggered on cold-start and cross-tab
+        // Firebase sync (e.g. email magic link clicked in another tab).
+        window.__syncPromise.then(function () { maybeAutoResumeGhost(firebaseUser); });
       }
     } else {
       if (localStorage.getItem('servi_pending_logout')) localStorage.removeItem('servi_pending_logout');
@@ -214,6 +219,16 @@
       window.__syncPromise = null;
     }
     if (window.buildNavbar) window.buildNavbar();
+  }
+
+  async function maybeAutoResumeGhost(firebaseUser) {
+    if (!window.__syncError || window.__syncError.code !== 'signup_incomplete') return;
+    if (uslSuppressAutoSync || uslIsNew || uslCompletingExisting) return;
+    var modalEl = document.getElementById('auth-modal-global');
+    if (modalEl && modalEl.innerHTML.trim() !== '') return;
+    var resumeType = (firebaseUser && firebaseUser.phoneNumber) ? 'phone' : 'email';
+    document.body.style.overflow = 'hidden';
+    await resumeIncompleteSignupIfNeeded(firebaseUser, resumeType);
   }
 
   async function syncWithBackend(firebaseUser, options) {
@@ -288,6 +303,41 @@
       setError(errMsg);
       return false;
     }
+    return true;
+  }
+
+  async function resumeIncompleteSignupIfNeeded(firebaseUser, firstIdentifierType) {
+    if (window.__syncPromise) { try { await window.__syncPromise; } catch (_) {} }
+    if (!window.__syncError || window.__syncError.code !== 'signup_incomplete') return false;
+
+    var resumeType = firstIdentifierType || ((firebaseUser && firebaseUser.phoneNumber) ? 'phone' : 'email');
+    uslIsNew = true;
+    uslSignupComplete = false;
+    uslSuppressAutoSync = true;
+    uslCompletingExisting = false;
+    uslFirstIdentifierType = resumeType;
+    uslIdentifierType = resumeType;
+    uslCurrentOTPType = resumeType;
+
+    uslNewUserData = Object.assign({}, uslNewUserData || {});
+    if (resumeType === 'phone') {
+      uslIdentifier = (firebaseUser && firebaseUser.phoneNumber) || uslIdentifier;
+      uslNewUserData.phone = uslIdentifier;
+      uslNewUserData.phone_verified = true;
+    } else {
+      uslIdentifier = ((firebaseUser && firebaseUser.email) || uslIdentifier || '').toLowerCase();
+      uslNewUserData.email = uslIdentifier;
+      uslNewUserData.email_verified = true;
+      if (firebaseUser && firebaseUser.displayName && !uslNewUserData.name) {
+        uslNewUserData.name = firebaseUser.displayName;
+      }
+    }
+
+    window.__syncError = null;
+    window.__syncPromise = null;
+    window.__user = null;
+    localStorage.removeItem('servi_user_session');
+    renderNameCollectionScreen();
     return true;
   }
 
@@ -415,7 +465,7 @@
   };
 
   function infoBanner(text) {
-    return '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 12px;font-size:13px;color:#166534;margin-bottom:16px">' + text + '</div>';
+    return '<div style="background:rgba(149,204,213,0.14);border:1px solid rgba(149,204,213,0.34);border-radius:8px;padding:10px 12px;font-size:13px;color:#4f9fab;margin-bottom:16px">' + text + '</div>';
   }
 
   function otpInputMarkup(es) {
@@ -475,7 +525,7 @@
     // active is 1-indexed (1=screen1, 2=OTP, 3=name, 4=secondary)
     var dots = '';
     for (var i = 1; i <= 4; i++) {
-      var bg = i < active ? '#0a0a0a' : i === active ? '#10b981' : '#e8e8e8';
+      var bg = i < active ? '#0a0a0a' : i === active ? 'var(--color-accent, #95ccd5)' : '#e8e8e8';
       dots += '<div style="flex:1;height:3px;border-radius:2px;background:' + bg + '"></div>';
     }
     return '<div style="display:flex;gap:4px;margin-bottom:20px">' + dots + '</div>';
@@ -588,6 +638,18 @@
         uslNewUserData.email = primaryEmail;
         uslNewUserData.email_verified = true;
         renderNameCollectionScreen();
+        return;
+      }
+
+      // Existing-user login that landed on a ghost: the "check email" screen
+      // is currently shown, so onAuthStateChanged's auto-resume will skip
+      // (modal not empty). Resume here directly instead of looping the server
+      // poll until timeout.
+      if (window.__syncPromise) { try { await window.__syncPromise; } catch (_) {} }
+      if (window.__syncError && window.__syncError.code === 'signup_incomplete') {
+        var emailForResume = uslIdentifier || localStorage.getItem('servi_email_link_target');
+        var fbUser = await waitForFirebaseEmail(emailForResume, 5000);
+        if (fbUser) await resumeIncompleteSignupIfNeeded(fbUser, 'email');
         return;
       }
 
@@ -888,7 +950,7 @@
       setScreen(
         progressDots(2) +
         greeting +
-        '<p style="font-size:14px;color:#666;margin-bottom:16px">' +
+        '<p id="otp-pre-send-msg" style="font-size:14px;color:#666;margin-bottom:16px">' +
           bodyCopy +
           '<strong>' + phoneDisplay + '</strong>' +
         '</p>' +
@@ -903,7 +965,7 @@
           '<button class="btn-primary" onclick="window.__uslVerifyOTP()" id="verify-otp-btn" style="width:100%;justify-content:center;margin-bottom:8px">' +
             (es ? 'Verificar' : 'Verify') +
           '</button>' +
-          '<button onclick="window.__uslResendOTP()" style="background:none;border:none;font-size:13px;color:#10b981;font-weight:500;cursor:pointer;font-family:\'DM Sans\',sans-serif;width:100%;text-align:center">' +
+          '<button onclick="window.__uslResendOTP()" style="background:none;border:none;font-size:13px;color:var(--color-accent-hover, #74b8c4);font-weight:500;cursor:pointer;font-family:\'DM Sans\',sans-serif;width:100%;text-align:center">' +
             (es ? 'Reenviar código' : 'Resend code') +
           '</button>' +
         '</div>' +
@@ -957,6 +1019,8 @@
         if (!recaptchaVerifier) setupRecaptchaInner();
         confirmationResult = await auth.signInWithPhoneNumber(uslIdentifier, recaptchaVerifier);
         if (btn) btn.style.display = 'none';
+        var preSendMsg = document.getElementById('otp-pre-send-msg');
+        if (preSendMsg) preSendMsg.style.display = 'none';
         var entry = document.getElementById('otp-entry');
         if (entry) entry.style.display = 'block';
         var sentMsg = document.getElementById('otp-sent-msg');
@@ -1030,7 +1094,8 @@
     setError('');
 
     try {
-      await confirmationResult.confirm(code);
+      var verifiedCredential = await confirmationResult.confirm(code);
+      var verifiedUser = (verifiedCredential && verifiedCredential.user) || (auth && auth.currentUser);
 
       if (uslIsNew) {
         // Signup: mark phone as verified in flow state, then collect name
@@ -1039,6 +1104,11 @@
         renderNameCollectionScreen();
       } else {
         // Login: await sync then close
+        if (!window.__syncPromise && verifiedUser) {
+          window.__syncError = null;
+          window.__syncPromise = syncWithBackend(verifiedUser);
+        }
+        if (await resumeIncompleteSignupIfNeeded(verifiedUser, 'phone')) return;
         var syncOk = await awaitSyncAndCheck();
         if (!syncOk) { if (btn) { btn.disabled = false; btn.textContent = es ? 'Verificar' : 'Verify'; } return; }
         if (requiresProfileCompletion(window.__user)) {
@@ -1121,11 +1191,11 @@
         '<input id="signup-last-name"  class="input-field" type="text" placeholder="' + (es ? 'Apellido' : 'Last name') + '" style="flex:1">' +
       '</div>' +
       '<label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;margin-bottom:20px">' +
-        '<input type="checkbox" id="terms-check" style="margin-top:3px;accent-color:#10b981">' +
+        '<input type="checkbox" id="terms-check" style="margin-top:3px;accent-color:var(--color-accent, #95ccd5)">' +
         '<span style="font-size:13px;color:#555;line-height:1.5">' +
           (es
-            ? 'Acepto los <a href="/legal.html" target="_blank" style="color:#10b981;text-decoration:none">Términos de Servicio</a> y la <a href="/legal.html#privacy" target="_blank" style="color:#10b981;text-decoration:none">Política de Privacidad</a>.'
-            : 'I agree to the <a href="/legal.html" target="_blank" style="color:#10b981;text-decoration:none">Terms of Service</a> and <a href="/legal.html#privacy" target="_blank" style="color:#10b981;text-decoration:none">Privacy Policy</a>.') +
+            ? 'Acepto los <a href="/legal.html" target="_blank" style="color:var(--color-accent-hover, #74b8c4);text-decoration:none">Términos de Servicio</a> y la <a href="/legal.html#privacy" target="_blank" style="color:var(--color-accent-hover, #74b8c4);text-decoration:none">Política de Privacidad</a>.'
+            : 'I agree to the <a href="/legal.html" target="_blank" style="color:var(--color-accent-hover, #74b8c4);text-decoration:none">Terms of Service</a> and <a href="/legal.html#privacy" target="_blank" style="color:var(--color-accent-hover, #74b8c4);text-decoration:none">Privacy Policy</a>.') +
         '</span>' +
       '</label>' +
       '<button class="btn-primary" onclick="window.__uslNameNext()" id="name-next-btn" style="width:100%;justify-content:center">' +
@@ -1699,7 +1769,7 @@
     var icon = document.createElement('div');
     icon.innerHTML = '✓';
     icon.style.fontSize = '56px';
-    icon.style.color = '#10b981';
+    icon.style.color = 'var(--color-accent, #95ccd5)';
     icon.style.marginBottom = '24px';
     icon.style.fontWeight = 'bold';
     card.appendChild(icon);
@@ -2034,6 +2104,14 @@
       } else {
         // Email login for existing user
         if (window.__syncPromise) { try { await window.__syncPromise; } catch (_) {} }
+        // Ghost user: Firebase email is verified but no auth_users row exists.
+        // Broadcast so any opener tab can route into the resume-signup flow via
+        // its onAuthStateChanged auto-resume; don't call onAuthSuccess (which
+        // would falsely close a modal the user still needs).
+        if (window.__syncError && window.__syncError.code === 'signup_incomplete') {
+          if (window.__broadcastEmailVerified) window.__broadcastEmailVerified();
+          return;
+        }
         if (requiresProfileCompletion(window.__user)) {
           startExistingProfileCompletion(window.__user);
           return;
@@ -2088,13 +2166,8 @@
       window.__syncError = null;
       window.__syncPromise = syncWithBackend(googleUser);
       if (window.__syncPromise) { try { await window.__syncPromise; } catch (_) {} }
-      if (window.__syncError && window.__syncError.code === 'signup_incomplete') {
-        uslIsNew = true;
-        uslSignupComplete = false;
-        uslSuppressAutoSync = true;
-        window.__syncError = null;
+      if (await resumeIncompleteSignupIfNeeded(googleUser, 'email')) {
         if (btn) { btn.disabled = false; btn.style.opacity = ''; }
-        renderNameCollectionScreen();
         return;
       }
       var syncOk = await awaitSyncAndCheck();
