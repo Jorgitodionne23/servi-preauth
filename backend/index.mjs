@@ -6152,6 +6152,366 @@ app.post('/api/admin/orders/:id/mark-cash', adminRateLimit, requireAdminAuth, as
   }
 });
 
+// ─── Admin: Order Changes (reschedule / cancel / address_update / inline_edit) ─────
+
+const ORDER_EDITABLE_STATUSES = new Set([
+  'Pending', 'Setup required', 'Setup created', 'Pending (3DS)',
+  'Scheduled', 'Confirmed', 'Pending Cash', 'New'
+]);
+const ORDER_TERMINAL_STATUSES = new Set([
+  'Captured', 'Refunded', 'Canceled', 'Cancelled', 'Declined', 'Failed', 'Captured (partial refund)'
+]);
+
+function newChangeId() {
+  const d = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  const stamp = `${d.getUTCFullYear()}${pad(d.getUTCMonth()+1)}${pad(d.getUTCDate())}${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}`;
+  const tail = Math.random().toString(36).slice(2, 8);
+  return `CHG-${stamp}-${tail}`;
+}
+
+app.get('/api/admin/orders/:id/changes', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT * FROM order_changes WHERE order_id = $1 ORDER BY created_at DESC`,
+      [req.params.id]
+    );
+    return res.json({ items: rows });
+  } catch (err) {
+    console.error('[GET /api/admin/orders/:id/changes]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+app.post('/api/admin/orders/:id/changes', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { change_type, requested_service_datetime, requested_service_address, notes, requested_by } = req.body || {};
+    const allowedTypes = new Set(['reschedule', 'cancel', 'address_update']);
+    if (!allowedTypes.has(change_type)) {
+      return res.status(400).json({ error: 'invalid_change_type' });
+    }
+    if (change_type === 'reschedule' && !requested_service_datetime) {
+      return res.status(400).json({ error: 'requested_datetime_required' });
+    }
+    if (change_type === 'address_update' && !String(requested_service_address || '').trim()) {
+      return res.status(400).json({ error: 'requested_address_required' });
+    }
+    const { rows } = await pool.query(
+      `SELECT id, service_datetime, service_address, status FROM all_bookings WHERE id = $1 LIMIT 1`,
+      [id]
+    );
+    const order = rows[0];
+    if (!order) return res.status(404).json({ error: 'order_not_found' });
+
+    const changeId = newChangeId();
+    await pool.query(
+      `INSERT INTO order_changes
+        (id, order_id, change_type, requested_by,
+         original_service_datetime, original_service_address, original_status,
+         requested_service_datetime, requested_service_address, notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [
+        changeId, id, change_type, String(requested_by || 'cliente').slice(0, 80),
+        order.service_datetime, order.service_address, order.status,
+        change_type === 'reschedule' ? requested_service_datetime : null,
+        change_type === 'address_update' ? String(requested_service_address || '').trim() : null,
+        String(notes || '').slice(0, 1000) || null
+      ]
+    );
+    return res.json({ ok: true, id: changeId });
+  } catch (err) {
+    console.error('[POST /api/admin/orders/:id/changes]', err);
+    return res.status(500).json({ error: 'internal_error', message: err.message });
+  }
+});
+
+app.post('/api/admin/changes/:changeId/apply', adminRateLimit, requireAdminAuth, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: changeRows } = await client.query(
+      `SELECT * FROM order_changes WHERE id = $1 FOR UPDATE`,
+      [req.params.changeId]
+    );
+    const change = changeRows[0];
+    if (!change) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'change_not_found' }); }
+    if (change.status !== 'pending') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'change_not_pending', message: `Estado actual: ${change.status}` });
+    }
+    const { rows: orderRows } = await client.query(
+      `SELECT id, status, payment_intent_id, service_datetime, service_address FROM all_bookings WHERE id = $1 FOR UPDATE`,
+      [change.order_id]
+    );
+    const order = orderRows[0];
+    if (!order) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'order_not_found' }); }
+
+    let appliedNote = '';
+    if (change.change_type === 'reschedule') {
+      if (ORDER_TERMINAL_STATUSES.has(order.status)) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'order_terminal', message: 'No se puede reagendar una orden en estado terminal.' });
+      }
+      const newDt = change.requested_service_datetime;
+      const newDate = newDt ? String(newDt).slice(0, 10) : null;
+      await client.query(
+        `UPDATE all_bookings SET service_datetime = $1, service_date = $2 WHERE id = $3`,
+        [newDt, newDate, order.id]
+      );
+      appliedNote = `Reagendado: ${order.service_datetime || '—'} → ${newDt}`;
+    } else if (change.change_type === 'address_update') {
+      if (ORDER_TERMINAL_STATUSES.has(order.status)) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'order_terminal', message: 'No se puede actualizar la dirección en estado terminal.' });
+      }
+      const newAddr = change.requested_service_address;
+      await client.query(`UPDATE all_bookings SET service_address = $1 WHERE id = $2`, [newAddr, order.id]);
+      appliedNote = `Dirección: ${order.service_address || '—'} → ${newAddr}`;
+    } else if (change.change_type === 'cancel') {
+      if (String(order.status).toLowerCase() === 'captured') {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'already_captured', message: 'Orden ya capturada — debe reembolsarse.' });
+      }
+      if (order.payment_intent_id) {
+        try {
+          const pi = await stripe.paymentIntents.retrieve(order.payment_intent_id);
+          const cancelable = new Set(['requires_payment_method','requires_confirmation','requires_action','processing','requires_capture']);
+          if (cancelable.has(pi.status)) {
+            await stripe.paymentIntents.cancel(pi.id, { cancellation_reason: 'requested_by_customer' });
+          }
+        } catch (e) {
+          console.warn('[changes/apply cancel] PI cancel failed:', e?.message || e);
+        }
+      }
+      await client.query(`UPDATE all_bookings SET status = 'Canceled' WHERE id = $1`, [order.id]);
+      appliedNote = `Cancelado (vía cambio ${change.id}). Estado previo: ${order.status}.`;
+    } else {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'unsupported_change_type' });
+    }
+
+    await client.query(
+      `UPDATE order_changes SET status='applied', applied_note=$1, processed_at=NOW() WHERE id=$2`,
+      [appliedNote, change.id]
+    );
+    await client.query('COMMIT');
+    return res.json({ ok: true, applied_note: appliedNote });
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    console.error('[POST /api/admin/changes/:changeId/apply]', err);
+    return res.status(500).json({ error: 'internal_error', message: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/api/admin/changes/:changeId/reject', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const { reason } = req.body || {};
+    const note = String(reason || 'Rechazado por admin').slice(0, 500);
+    const { rowCount } = await pool.query(
+      `UPDATE order_changes SET status='rejected', applied_note=$1, processed_at=NOW() WHERE id=$2 AND status='pending'`,
+      [note, req.params.changeId]
+    );
+    if (!rowCount) return res.status(404).json({ error: 'change_not_found_or_not_pending' });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('[POST /api/admin/changes/:changeId/reject]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// Inline edit of order fields (B3). Writes an audit row to order_changes.
+app.patch('/api/admin/orders/:id', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const allowed = ['service_description','service_address','service_datetime','provider_amount','provider_name','client_name','client_email','client_phone'];
+    const body = req.body || {};
+    const updates = {};
+    for (const k of allowed) {
+      if (Object.prototype.hasOwnProperty.call(body, k)) updates[k] = body[k];
+    }
+    if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'no_fields_to_update' });
+
+    const { rows } = await pool.query(`SELECT * FROM all_bookings WHERE id = $1 LIMIT 1`, [id]);
+    const before = rows[0];
+    if (!before) return res.status(404).json({ error: 'order_not_found' });
+    if (!ORDER_EDITABLE_STATUSES.has(before.status)) {
+      return res.status(409).json({ error: 'order_not_editable', message: `Estado "${before.status}" no permite edición inline.` });
+    }
+
+    // provider_amount from the admin form is MXN (pesos). Convert to cents for storage.
+    if ('provider_amount' in updates) {
+      const pesos = Number(updates.provider_amount);
+      if (!isFinite(pesos) || pesos <= 0) return res.status(400).json({ error: 'invalid_provider_amount' });
+      updates.provider_amount = Math.round(pesos * 100);
+    }
+    if ('service_datetime' in updates && updates.service_datetime) {
+      const t = new Date(updates.service_datetime);
+      if (isNaN(t.getTime())) return res.status(400).json({ error: 'invalid_service_datetime' });
+      updates.service_date = String(updates.service_datetime).slice(0, 10);
+    }
+
+    // Recompute pricing if provider_amount changed (visita keeps fixed pricing)
+    if ('provider_amount' in updates) {
+      try {
+        const bookingType = String(before.booking_type || '').toLowerCase();
+        const isVisita = bookingType.includes('visita');
+        const targetDt = updates.service_datetime || before.service_datetime;
+        const leadHrs = targetDt ? Math.max(0, (new Date(targetDt).getTime() - Date.now()) / 3.6e6) : null;
+        const priced = isVisita
+          ? computeVisitPreauthPricing({ totalPesos: VISIT_PREAUTH_TOTAL_PESOS, providerPesos: VISIT_PREAUTH_PROVIDER_PESOS })
+          : computePricing({ providerPricePesos: updates.provider_amount / 100, leadTimeHours: leadHrs });
+        updates.amount = priced.totalAmountCents;
+        updates.booking_fee_amount = priced.bookingFeeAmountCents;
+        updates.processing_fee_amount = priced.processingFeeAmountCents;
+        updates.vat_amount = priced.vatAmountCents;
+        updates.pricing_total_amount = priced.totalAmountCents;
+      } catch (e) {
+        console.warn('[PATCH order] pricing recompute failed:', e?.message || e);
+      }
+    }
+
+    const sets = [];
+    const params = [];
+    for (const [k, v] of Object.entries(updates)) {
+      params.push(v);
+      sets.push(`${k} = $${params.length}`);
+    }
+    params.push(id);
+    await pool.query(`UPDATE all_bookings SET ${sets.join(', ')} WHERE id = $${params.length}`, params);
+
+    // Audit
+    const diff = {};
+    for (const k of Object.keys(updates)) {
+      if (before[k] !== updates[k]) diff[k] = { from: before[k] ?? null, to: updates[k] ?? null };
+    }
+    const auditId = newChangeId();
+    await pool.query(
+      `INSERT INTO order_changes
+        (id, order_id, change_type, requested_by,
+         original_service_datetime, original_service_address, original_status,
+         requested_service_datetime, requested_service_address,
+         status, notes, applied_note, processed_at)
+       VALUES ($1,$2,'inline_edit',$3,$4,$5,$6,$7,$8,'applied',$9,$10,NOW())`,
+      [
+        auditId, id, 'admin (inline edit)',
+        before.service_datetime, before.service_address, before.status,
+        updates.service_datetime ?? before.service_datetime,
+        updates.service_address ?? before.service_address,
+        JSON.stringify(diff),
+        `Inline edit: ${Object.keys(diff).join(', ') || '(no diff)'}`
+      ]
+    );
+
+    return res.json({ ok: true, updated: Object.keys(updates), audit_id: auditId });
+  } catch (err) {
+    console.error('[PATCH /api/admin/orders/:id]', err);
+    return res.status(500).json({ error: 'internal_error', message: err.message });
+  }
+});
+
+// ─── Admin: Provider Roster ───────────────────────────────────────────────────
+
+app.get('/api/admin/providers', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const { status, search, limit = '50', offset = '0' } = req.query;
+    const params = [];
+    const conds = [];
+    if (status) { params.push(status); conds.push(`status = $${params.length}`); }
+    if (search) {
+      params.push(`%${search}%`);
+      const i = params.length;
+      conds.push(`(name ILIKE $${i} OR phone ILIKE $${i} OR specialty ILIKE $${i} OR city ILIKE $${i} OR provider_id ILIKE $${i})`);
+    }
+    const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
+    const countParams = [...params];
+    params.push(Number(limit) || 50, Number(offset) || 0);
+    const { rows } = await pool.query(
+      `SELECT * FROM providers ${where} ORDER BY created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params
+    );
+    const { rows: countRows } = await pool.query(
+      `SELECT count(*)::int AS total FROM providers ${where}`,
+      countParams
+    );
+    return res.json({ items: rows, total: countRows[0]?.total || 0 });
+  } catch (err) {
+    console.error('[GET /api/admin/providers]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+app.post('/api/admin/partner-applications/:appId/promote', adminRateLimit, requireAdminAuth, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: appRows } = await client.query(
+      `SELECT * FROM partner_applications WHERE id = $1 FOR UPDATE`,
+      [req.params.appId]
+    );
+    const app = appRows[0];
+    if (!app) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'application_not_found' }); }
+    if (app.linked_provider_id) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'already_promoted', provider_id: app.linked_provider_id });
+    }
+    const { rows: seqRows } = await client.query(
+      `SELECT 'prov-' || lpad(nextval('provider_id_seq')::text, 6, '0') AS pid`
+    );
+    const providerId = seqRows[0].pid;
+    await client.query(
+      `INSERT INTO providers (provider_id, status, name, phone, email, specialty, city)
+       VALUES ($1, 'verified', $2, $3, $4, $5, $6)`,
+      [providerId, app.name, app.phone, app.email, app.specialty, app.city]
+    );
+    const noteSuffix = `\n[${new Date().toISOString()}] Promoted to ${providerId}`;
+    const newNotes = (app.admin_notes || '') + noteSuffix;
+    await client.query(
+      `UPDATE partner_applications SET status='verified', admin_notes=$1, linked_provider_id=$2 WHERE id=$3`,
+      [newNotes, providerId, app.id]
+    );
+    await client.query('COMMIT');
+    return res.json({ ok: true, provider_id: providerId });
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    console.error('[POST /api/admin/partner-applications/:appId/promote]', err);
+    return res.status(500).json({ error: 'internal_error', message: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+app.patch('/api/admin/providers/:providerId', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const allowed = ['status','name','phone','email','specialty','city'];
+    const body = req.body || {};
+    const updates = {};
+    for (const k of allowed) if (Object.prototype.hasOwnProperty.call(body, k)) updates[k] = body[k];
+    if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'no_fields_to_update' });
+    if ('status' in updates && !['verified','removed'].includes(updates.status)) {
+      return res.status(400).json({ error: 'invalid_status' });
+    }
+    const sets = ['updated_at = NOW()'];
+    const params = [];
+    for (const [k, v] of Object.entries(updates)) {
+      params.push(v);
+      sets.push(`${k} = $${params.length}`);
+    }
+    params.push(req.params.providerId);
+    const { rowCount } = await pool.query(
+      `UPDATE providers SET ${sets.join(', ')} WHERE provider_id = $${params.length}`,
+      params
+    );
+    if (!rowCount) return res.status(404).json({ error: 'not_found' });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('[PATCH /api/admin/providers/:providerId]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
 // 🚀 Start server
 const PORT = process.env.PORT || 4242;
 

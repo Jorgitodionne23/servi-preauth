@@ -165,28 +165,28 @@ window.browseCategoryData = {
         key: 'moving',
         label: { es: 'Mudanzas', en: 'Moving' },
         services: {
-          es: ['Mudanza de departamento dentro de la ciudad', 'Ayuda para empacar cajas', 'Carga y descarga de camioneta', 'Mover muebles dentro del mismo edificio', 'Apoyo para instalarse en nuevo hogar'],
-          en: ['In-city apartment move', 'Packing help for moving boxes', 'Truck loading and unloading', 'Room-to-room furniture moving', 'Move-in setup assistance'],
+          es: ['Mudanza de departamento dentro de la ciudad', 'Ayuda para empacar cajas', 'Carga y descarga de camioneta', 'Apoyo para instalarse en nuevo hogar'],
+          en: ['In-city apartment move', 'Packing help for moving boxes', 'Truck loading and unloading', 'Move-in setup assistance'],
         },
-        serviceKeywords: ['moving,boxes', 'packing,box', 'moving,truck', 'furniture,moving', 'newhome,unpacking'],
+        serviceKeywords: ['moving,boxes', 'packing,box', 'moving,truck', 'newhome,unpacking'],
       },
       {
         key: 'large-items',
         label: { es: 'Objetos grandes', en: 'Large items' },
         services: {
-          es: ['Transporte de sofá o sala', 'Movimiento de colchón y base', 'Traslado de refrigerador o lavadora', 'Entrega de comedor o mesa grande', 'Reubicación de bicicleta fija o caminadora'],
-          en: ['Sofa transport', 'Mattress and bed base moving', 'Refrigerator or washer relocation', 'Large dining table delivery', 'Exercise equipment relocation'],
+          es: ['Transporte de sofá o sala', 'Movimiento de colchón y base', 'Traslado de refrigerador o lavadora', 'Entrega de comedor o mesa grande'],
+          en: ['Sofa transport', 'Mattress and bed base moving', 'Refrigerator or washer relocation', 'Large dining table delivery'],
         },
-        serviceKeywords: ['sofa,couch', 'mattress,bed', 'refrigerator,kitchen', 'dining,table', 'treadmill,gym'],
+        serviceKeywords: ['sofa,couch', 'mattress,bed', 'refrigerator,kitchen', 'dining,table'],
       },
       {
         key: 'errands',
         label: { es: 'Mandados', en: 'Errands' },
         services: {
-          es: ['Compra de súper urgente', 'Recoger medicinas en farmacia', 'Entrega de documentos o llaves', 'Devoluciones y cambios en tiendas', 'Compra rápida en ferretería'],
-          en: ['Urgent grocery run', 'Pharmacy pickup', 'Document or key drop-off', 'Store returns and exchanges', 'Quick hardware store run'],
+          es: ['Compra de súper urgente', 'Recoger medicinas en farmacia', 'Entrega de documentos o llaves', 'Devoluciones y cambios en tiendas'],
+          en: ['Urgent grocery run', 'Pharmacy pickup', 'Document or key drop-off', 'Store returns and exchanges'],
         },
-        serviceKeywords: ['grocery,bag', 'pharmacy,medicine', 'envelope,documents', 'shopping,bag', 'hardware,tools'],
+        serviceKeywords: ['grocery,bag', 'pharmacy,medicine', 'envelope,documents', 'shopping,bag'],
       },
       {
         key: 'deliveries',
@@ -281,10 +281,10 @@ window.browseCategoryData = {
         key: 'pharmacy',
         label: { es: 'Farmacia', en: 'Pharmacy' },
         services: {
-          es: ['Recoger receta el mismo día', 'Compra de medicamento sin receta', 'Reposición de botiquín básico', 'Pedido de artículos para bebé', 'Surtido mensual de medicamentos'],
-          en: ['Same-day prescription pickup', 'Over-the-counter medication order', 'First-aid kit refill', 'Baby care essentials order', 'Monthly medication refill'],
+          es: ['Recoger receta el mismo día', 'Compra de medicamento sin receta', 'Reposición de botiquín básico', 'Pedido de artículos para bebé'],
+          en: ['Same-day prescription pickup', 'Over-the-counter medication order', 'First-aid kit refill', 'Baby care essentials order'],
         },
-        serviceKeywords: ['prescription,pills', 'medicine,bottle', 'firstaid,kit', 'baby,care', 'pills,bottle'],
+        serviceKeywords: ['prescription,pills', 'medicine,bottle', 'firstaid,kit', 'baby,care'],
       },
       {
         key: 'catering',

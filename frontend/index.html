@@ -18,6 +18,7 @@
 <script src="/config.js"></script>
 <script src="/shared/i18n.js"></script>
 <script src="/shared/shared-auth.js"></script>
+<script src="/shared/browse-data.js"></script>
 <div id="navbar"></div>
 <script src="/shared/morphing-nav.js"></script>
 
@@ -69,6 +70,25 @@
       <h2 class="dash-hero__browse-title" id="dash-browse-title">O explora</h2>
       <div class="dash-cats-grid" id="dash-cats-grid"></div>
     </div>
+
+    <section class="dash-popular" aria-labelledby="dash-popular-title">
+      <h3 class="dash-popular__title" id="dash-popular-title">Lo más pedido</h3>
+      <div class="dash-discovery__carousel-wrap">
+        <button class="dash-discovery__arrow dash-discovery__arrow--left" type="button"
+                aria-label="Desplazar a la izquierda"
+                onclick="window._dashScrollPopularCarousel(-1)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+        </button>
+        <div class="dash-popular__carousel" id="dash-popular-carousel" tabindex="0"
+             onscroll="window._dashUpdatePopularArrowState()"
+             onkeydown="window._dashHandlePopularCarouselKey(event)"></div>
+        <button class="dash-discovery__arrow dash-discovery__arrow--right" type="button"
+                aria-label="Desplazar a la derecha"
+                onclick="window._dashScrollPopularCarousel(1)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+        </button>
+      </div>
+    </section>
 
   </div>
 </section>
@@ -228,6 +248,70 @@
     return key.split('.').reduce((o, k) => o?.[k], t());
   }
 
+  function escapeAttr(str) {
+    return String(str || '').replace(/[&<>"']/g, ch => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;',
+    }[ch]));
+  }
+
+  function getLocale() {
+    return (lang() || 'es').toLowerCase().startsWith('es') ? 'es' : 'en';
+  }
+
+  function getLocalizedText(value) {
+    if (!value) return '';
+    if (typeof value === 'string') return value;
+    const locale = getLocale();
+    return value[locale] || value.es || value.en || '';
+  }
+
+  function slugifyServiceLabel(label) {
+    return String(label || '')
+      .toLowerCase()
+      .replace(/&/g, 'and')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+  }
+
+  const popularServices = [
+    { category: 'cleaning', subcategory: 'home-cleaning', serviceIndex: 0 },
+    { category: 'cleaning', subcategory: 'deep-cleaning', serviceIndex: 0 },
+    { category: 'repair', subcategory: 'plumbing', serviceIndex: 0 },
+    { category: 'repair', subcategory: 'electrical', serviceIndex: 0 },
+    { category: 'repair', subcategory: 'handyman', serviceIndex: 0 },
+    { category: 'moving', subcategory: 'moving', serviceIndex: 0 },
+  ];
+
+  function getSubcategoryConfig(catKey, subKey) {
+    return window.browseCategoryData?.[catKey]?.subcategories?.find(sub => sub.key === subKey) || null;
+  }
+
+  function getPopularImage(catKey, subKey, imageServiceName) {
+    const officialImageFolders = {
+      cleaning: 'cleaning/Website_AI_Images_Cleaning',
+      repair: 'repair/Website_AI_Images_Repair',
+      moving: 'moving/Website_AI_Images_Moving',
+      wellness: 'wellness/Website_AI_Images_Wellness',
+      suppliers: 'suppliers/Website_AI_Images_Suppliers',
+    };
+    const folder = officialImageFolders[catKey];
+    const slug = slugifyServiceLabel(imageServiceName);
+    if (folder && slug) return `/assets/discovery/official/${folder}/${slug}.png`;
+    return window.discoverySubcategoryImages?.[catKey]?.[subKey]
+      || window.discoveryFallbackByCategory?.[catKey]
+      || '/assets/partnerimage.png';
+  }
+
+  function getPopularFallback(catKey, subKey) {
+    return window.discoverySubcategoryImages?.[catKey]?.[subKey]
+      || window.discoveryFallbackByCategory?.[catKey]
+      || '/assets/partnerimage.png';
+  }
+
   // ─── Render AI-style suggestion chips ─────────────────────────
   function renderChips() {
     // Suggestion chips removed in dashboard hero redesign — no-op.
@@ -240,6 +324,82 @@
   }
 
   // ─── Address Change Modal ────────────────────────────────────
+  function getDashAddress() {
+    const saved = localStorage.getItem('dash_hero_address');
+    if (saved && saved.trim()) return saved.trim();
+    const label = document.getElementById('dash-location-label');
+    return (label?.textContent || '').trim();
+  }
+
+  function setDashAddress(newAddr) {
+    const label = document.getElementById('dash-location-label');
+    if (label) label.textContent = newAddr;
+
+    const input = document.getElementById('address-input');
+    if (input) input.value = newAddr;
+
+    if (window.bookingState) window.bookingState.address = newAddr;
+
+    const bookingAddressInput = document.getElementById('booking-address');
+    if (bookingAddressInput) bookingAddressInput.value = newAddr;
+
+    const convoAddressInput = document.getElementById('bk-convo-addr');
+    if (convoAddressInput) convoAddressInput.value = newAddr;
+
+    localStorage.setItem('dash_hero_address', newAddr);
+  }
+
+  function setAddressModalStatus(message, tone) {
+    const status = document.getElementById('address-location-status');
+    if (!status) return;
+    status.textContent = message || '';
+    status.dataset.tone = tone || 'neutral';
+  }
+
+  function setAddressLocationBusy(isBusy) {
+    const button = document.getElementById('address-location-btn');
+    if (!button) return;
+    button.disabled = !!isBusy;
+    button.dataset.busy = isBusy ? 'true' : 'false';
+  }
+
+  function getCurrentPosition() {
+    return new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: true,
+        maximumAge: 300000,
+        timeout: 12000,
+      });
+    });
+  }
+
+  async function reverseGeocodePosition(latitude, longitude) {
+    const langCode = lang() === 'es' ? 'es' : 'en';
+    const url = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}&localityLanguage=${langCode}`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+    try {
+      const res = await fetch(url, { signal: controller.signal });
+      if (!res.ok) return '';
+      const data = await res.json();
+      const rawParts = [
+        data.locality,
+        data.city,
+        data.principalSubdivision,
+        data.countryName,
+      ].filter(Boolean);
+      const parts = rawParts.filter((part, index) => (
+        rawParts.findIndex(candidate => candidate.toLowerCase() === part.toLowerCase()) === index
+      ));
+      return parts.join(', ');
+    } catch (err) {
+      return '';
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
   window._dashShowAddressModal = function() {
     const tr = t();
     const am = tr.addressModal || {};
@@ -255,9 +415,21 @@
         <button class="address-modal__close" type="button" onclick="window._dashCloseAddressModal()">×</button>
       </div>
       <p class="address-modal__desc">${am.desc || 'Enter a new location to see services available in that area.'}</p>
+      <button class="address-modal__location-btn" id="address-location-btn" type="button" onclick="window._dashUseCurrentLocation()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 2v3"></path>
+          <path d="M12 19v3"></path>
+          <path d="M2 12h3"></path>
+          <path d="M19 12h3"></path>
+          <circle cx="12" cy="12" r="7"></circle>
+          <circle cx="12" cy="12" r="2"></circle>
+        </svg>
+        <span>${am.locationBtn || 'Use current location'}</span>
+      </button>
+      <p class="address-modal__status" id="address-location-status" aria-live="polite"></p>
       <div class="address-modal__input-group">
         <label class="address-modal__label">${am.label || 'Enter address'}</label>
-        <input type="text" class="address-modal__input" id="address-input" placeholder="${am.placeholder || 'City, neighborhood, or address'}" value="${currentAddr}">
+        <input type="text" class="address-modal__input" id="address-input" placeholder="${am.placeholder || 'City, neighborhood, or address'}" value="${escapeAttr(currentAddr)}">
       </div>
       <div class="address-modal__actions">
         <button class="address-modal__btn address-modal__btn--primary" type="button" onclick="window._dashSaveAddress()">
@@ -282,6 +454,40 @@
     }, 100);
   };
 
+  window._dashUseCurrentLocation = async function() {
+    const am = t().addressModal || {};
+
+    if (!navigator.geolocation) {
+      setAddressModalStatus(am.unsupported || 'Location access is not available in this browser.', 'error');
+      return;
+    }
+
+    setAddressLocationBusy(true);
+    setAddressModalStatus(am.locating || 'Allow access to your location to update your address automatically.', 'neutral');
+
+    try {
+      const position = await getCurrentPosition();
+      const { latitude, longitude } = position.coords;
+      setAddressModalStatus(am.resolving || 'Finding your address...', 'neutral');
+
+      const address = await reverseGeocodePosition(latitude, longitude);
+      const fallback = `${am.currentLocation || 'Current location'} (${latitude.toFixed(5)}, ${longitude.toFixed(5)})`;
+      setDashAddress(address || fallback);
+      setAddressModalStatus(am.updated || 'Location updated.', 'success');
+      setTimeout(() => window._dashCloseAddressModal(), 650);
+    } catch (err) {
+      const denied = err && err.code === 1;
+      setAddressModalStatus(
+        denied
+          ? (am.permissionDenied || 'Location access was denied. You can still enter your address manually.')
+          : (am.locationError || 'Could not get your location. You can still enter your address manually.'),
+        'error'
+      );
+    } finally {
+      setAddressLocationBusy(false);
+    }
+  };
+
   window._dashCloseAddressModal = function() {
     const overlay = document.getElementById('address-modal-overlay');
     if (overlay) overlay.setAttribute('hidden', '');
@@ -293,18 +499,13 @@
     const newAddr = input?.value.trim();
     if (!newAddr) return;
 
-    const label = document.getElementById('dash-location-label');
-    if (label) label.textContent = newAddr;
-
-    // Store in localStorage for persistence
-    localStorage.setItem('dash_hero_address', newAddr);
-
+    setDashAddress(newAddr);
     window._dashCloseAddressModal();
   };
 
   // Load saved address from localStorage on init
   function loadSavedAddress() {
-    const saved = localStorage.getItem('dash_hero_address');
+    const saved = getDashAddress();
     if (saved) {
       const label = document.getElementById('dash-location-label');
       if (label) label.textContent = saved;
@@ -331,9 +532,6 @@
            onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window._dashGoToBrowse('${key}')}">
         <span class="dash-cat-card__emoji" aria-hidden="true">${catEmoji[key]}</span>
         <span class="dash-cat-card__name">${resolve(catI18n[key].name)}</span>
-        <span class="dash-cat-card__details">
-          ${dh.details || 'Detalles'}
-        </span>
       </div>
     `).join('');
 
@@ -363,7 +561,102 @@
     if (browseTitle) browseTitle.textContent = dh.browseTitle || 'O explora';
     const ta = document.getElementById('dash-textarea');
     if (ta) ta.placeholder = dh.placeholder || 'Describe lo que necesitas...';
+
+    renderPopularServices();
   }
+
+  function renderPopularServices() {
+    const section = document.querySelector('.dash-popular');
+    const title = document.getElementById('dash-popular-title');
+    const carousel = document.getElementById('dash-popular-carousel');
+    if (!section || !title || !carousel || !window.browseCategoryData) return;
+
+    title.textContent = getLocale() === 'es' ? 'Lo más pedido' : 'Most Popular';
+
+    const cards = popularServices.map(item => {
+      const sub = getSubcategoryConfig(item.category, item.subcategory);
+      const services = sub?.services?.[getLocale()] || sub?.services?.es || sub?.services?.en || [];
+      const englishServices = sub?.services?.en || services;
+      const serviceName = services[item.serviceIndex];
+      const imageServiceName = englishServices[item.serviceIndex] || serviceName;
+      if (!serviceName) return '';
+      const categoryName = resolve(catI18n[item.category].name) || item.category;
+      const subName = getLocalizedText(sub?.label) || categoryName;
+      const params = new URLSearchParams();
+      params.set('category', item.category);
+      params.set('sub', item.subcategory);
+      params.set('service', serviceName);
+      const imageSrc = getPopularImage(item.category, item.subcategory, imageServiceName);
+      const fallbackSrc = getPopularFallback(item.category, item.subcategory);
+      const safeLabel = escapeAttr(serviceName);
+      const safeSub = escapeAttr(subName);
+      return `
+        <a class="dash-discovery__card dash-popular__card" href="/service.html?${params.toString()}" aria-label="${safeLabel}">
+          <span class="dash-discovery__media">
+            <img class="dash-discovery__img"
+                 src="${imageSrc}"
+                 alt="${safeLabel || safeSub}"
+                 loading="lazy"
+                 onerror="this.onerror=null;this.src='${fallbackSrc}'">
+          </span>
+          <span class="dash-discovery__label">${safeLabel}</span>
+        </a>
+      `;
+    }).join('');
+
+    const browseLabel = getLocale() === 'es' ? 'Ver todos los servicios' : 'See all services';
+    const browseHint = getLocale() === 'es' ? 'Explora el catálogo completo' : 'Browse the full catalog';
+    const browseAria = getLocale() === 'es' ? 'Ver el resto de los servicios' : 'See the rest of the services';
+    const browseCard = `
+      <a class="dash-discovery__card dash-popular__card dash-popular__browse-card" href="/browse.html" aria-label="${browseAria}">
+        <span class="dash-popular__browse-media" aria-hidden="true">
+          <span class="dash-popular__browse-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>
+          </span>
+        </span>
+        <span class="dash-popular__browse-copy">
+          <span class="dash-popular__browse-title">${browseLabel}</span>
+          <span class="dash-popular__browse-hint">${browseHint}</span>
+        </span>
+      </a>
+    `;
+
+    carousel.innerHTML = cards + browseCard;
+    window._dashUpdatePopularArrowState();
+  }
+
+  window._dashScrollPopularCarousel = function(dir) {
+    const track = document.getElementById('dash-popular-carousel');
+    if (!track) return;
+    const card = track.querySelector('.dash-popular__card');
+    const styles = window.getComputedStyle(track);
+    const gap = parseFloat(styles.columnGap || styles.gap || '0') || 0;
+    const step = card ? Math.round((card.offsetWidth + gap) * 2) : Math.round(track.clientWidth * 0.9);
+    track.scrollBy({ left: step * (dir < 0 ? -1 : 1), behavior: 'smooth' });
+    window.setTimeout(window._dashUpdatePopularArrowState, 260);
+  };
+
+  window._dashUpdatePopularArrowState = function() {
+    const track = document.getElementById('dash-popular-carousel');
+    if (!track) return;
+    const wrap = track.closest('.dash-discovery__carousel-wrap');
+    if (!wrap) return;
+    const left = wrap.querySelector('.dash-discovery__arrow--left');
+    const right = wrap.querySelector('.dash-discovery__arrow--right');
+    const maxScroll = Math.max(0, track.scrollWidth - track.clientWidth);
+    if (left) left.disabled = track.scrollLeft <= 3;
+    if (right) right.disabled = track.scrollLeft >= maxScroll - 3;
+  };
+
+  window._dashHandlePopularCarouselKey = function(evt) {
+    if (evt.key === 'ArrowRight') {
+      evt.preventDefault();
+      window._dashScrollPopularCarousel(1);
+    } else if (evt.key === 'ArrowLeft') {
+      evt.preventDefault();
+      window._dashScrollPopularCarousel(-1);
+    }
+  };
 
   // ─── Browse Drawer ────────────────────────────────────────────
   window._openBrowseDrawer = function(catKey, opts) {
@@ -419,7 +712,7 @@
         whenType: 'asap',
         date: '',
         time: '',
-        address: '',
+        address: getDashAddress(),
         clientName: window.__user?.name || '',
         clientPhone: window.__user?.phone || '',
         clientEmail: window.__user?.email || '',
@@ -531,7 +824,7 @@
         if (!window.bookingState) {
           window.bookingState = {
             step: 1, category: null, description: '', whenType: 'asap', date: '', time: '',
-            address: '', clientName: window.__user?.name || '', clientPhone: window.__user?.phone || '',
+            address: getDashAddress(), clientName: window.__user?.name || '', clientPhone: window.__user?.phone || '',
             clientEmail: window.__user?.email || '', attachments: [], catsExpanded: true,
           };
         }
@@ -560,7 +853,7 @@
         if (!window.bookingState) {
           window.bookingState = {
             step: 1, category: null, description: '', whenType: 'asap', date: '', time: '',
-            address: '', clientName: window.__user?.name || '', clientPhone: window.__user?.phone || '',
+            address: getDashAddress(), clientName: window.__user?.name || '', clientPhone: window.__user?.phone || '',
             clientEmail: window.__user?.email || '', attachments: [], catsExpanded: true,
           };
         }
@@ -615,7 +908,7 @@
     window._closeMediaExplain();
     window.bookingState = {
       step: 1, category: null, description: '', whenType: 'asap', date: '', time: '',
-      address: '', clientName: window.__user?.name || '', clientPhone: window.__user?.phone || '',
+      address: getDashAddress(), clientName: window.__user?.name || '', clientPhone: window.__user?.phone || '',
       clientEmail: window.__user?.email || '', attachments: [], catsExpanded: false,
     };
 
@@ -650,7 +943,7 @@
     window._closeMediaExplain();
     window.bookingState = {
       step: 1, category: null, description: '', whenType: 'asap', date: '', time: '',
-      address: '', clientName: window.__user?.name || '', clientPhone: window.__user?.phone || '',
+      address: getDashAddress(), clientName: window.__user?.name || '', clientPhone: window.__user?.phone || '',
       clientEmail: window.__user?.email || '', attachments: [], catsExpanded: false,
     };
 
@@ -730,7 +1023,7 @@
     window._closeMediaExplain();
     window.bookingState = {
       step: 1, category: null, description: '', whenType: 'asap', date: '', time: '',
-      address: '', clientName: window.__user?.name || '', clientPhone: window.__user?.phone || '',
+      address: getDashAddress(), clientName: window.__user?.name || '', clientPhone: window.__user?.phone || '',
       clientEmail: window.__user?.email || '', attachments: [], catsExpanded: false,
     };
 
@@ -800,7 +1093,7 @@
       whenType: 'asap',
       date: '',
       time: '',
-      address: '',
+      address: getDashAddress(),
       clientName: window.__user?.name || '',
       clientPhone: window.__user?.phone || '',
       clientEmail: window.__user?.email || '',
@@ -872,7 +1165,7 @@
   // ─── Booking Panel ──────────────────────────────────────────
   window.bookingState = {
     step: 1, category: null, description: '', whenType: 'asap', date: '', time: '',
-    address: '', clientName: '', clientPhone: '', clientEmail: '',
+    address: getDashAddress(), clientName: '', clientPhone: '', clientEmail: '',
     attachments: [],
     catsExpanded: false,
   };
@@ -1049,10 +1342,111 @@
     }
     window.bookingState = {
       step: 1, category: preselectedCategory || null, description: '', whenType: 'asap', date: '', time: '',
-      address: '', clientName: window.__user?.name || '', clientPhone: window.__user?.phone || '',
+      address: getDashAddress(), clientName: window.__user?.name || '', clientPhone: window.__user?.phone || '',
       clientEmail: window.__user?.email || '', attachments: [], catsExpanded: !!preselectedCategory,
     };
     renderBooking();
+  };
+
+  function bookingLocalIsoDate(date) {
+    return [
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, '0'),
+      String(date.getDate()).padStart(2, '0'),
+    ].join('-');
+  }
+
+  function bookingAddDays(days, fromDate) {
+    const d = new Date(fromDate || Date.now());
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() + days);
+    return d;
+  }
+
+  function bookingParsePromptTime(normalizedText) {
+    const meridian = normalizedText.match(/\b(?:at|a las|para las)?\s*(1[0-2]|0?[1-9])(?:\s*[:.]\s*([0-5]\d))?\s*(am|pm)\b/);
+    if (meridian) {
+      let hours = Number(meridian[1]);
+      const mins = meridian[2] || '00';
+      if (meridian[3] === 'pm' && hours < 12) hours += 12;
+      if (meridian[3] === 'am' && hours === 12) hours = 0;
+      return `${String(hours).padStart(2, '0')}:${mins}`;
+    }
+    const twentyFour = normalizedText.match(/\b(?:at|a las|para las)?\s*([01]?\d|2[0-3]):([0-5]\d)\b/);
+    if (twentyFour) return `${String(Number(twentyFour[1])).padStart(2, '0')}:${twentyFour[2]}`;
+    return '';
+  }
+
+  window.__bookingInferSchedule = function bookingInferSchedule(text, now) {
+    const raw = String(text || '').trim();
+    if (!raw) return null;
+    const normalized = raw
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+
+    const explicitIso = normalized.match(/\b(20\d{2})[-/](0?[1-9]|1[0-2])[-/](0?[1-9]|[12]\d|3[01])\b/);
+    let date = null;
+    let label = '';
+
+    if (explicitIso) {
+      date = new Date(Number(explicitIso[1]), Number(explicitIso[2]) - 1, Number(explicitIso[3]));
+      label = bookingLocalIsoDate(date);
+    } else if (/\b(day after tomorrow|pasado manana)\b/.test(normalized)) {
+      date = bookingAddDays(2, now);
+      label = lang() === 'es' ? 'pasado mañana' : 'the day after tomorrow';
+    } else if (/\b(tomorrow|tommorow|manana)\b/.test(normalized)) {
+      date = bookingAddDays(1, now);
+      label = lang() === 'es' ? 'mañana' : 'tomorrow';
+    } else if (/\b(today|hoy)\b/.test(normalized)) {
+      date = bookingAddDays(0, now);
+      label = lang() === 'es' ? 'hoy' : 'today';
+    }
+
+    if (!date || Number.isNaN(date.getTime())) return null;
+    return {
+      date: bookingLocalIsoDate(date),
+      time: bookingParsePromptTime(normalized),
+      label,
+    };
+  };
+
+  window.__bookingApplyScheduleInference = function bookingApplyScheduleInference(text) {
+    const s = window.bookingState;
+    if (!s) return null;
+    const inferred = window.__bookingInferSchedule(text);
+    if (!inferred) {
+      if (s.scheduleInferred) {
+        s.whenType = 'asap';
+        s.date = '';
+        s.time = '';
+        s.scheduleInferred = false;
+      }
+      return null;
+    }
+    s.whenType = 'schedule';
+    s.date = inferred.date;
+    s.time = inferred.time;
+    s.scheduleInferred = true;
+    return inferred;
+  };
+
+  window.bookingHandleDescriptionInput = function bookingHandleDescriptionInput(value) {
+    const s = window.bookingState;
+    if (!s) return;
+    s.description = value;
+    const inferred = window.__bookingApplyScheduleInference(value);
+    const hint = document.getElementById('booking-inference-hint');
+    if (!hint) return;
+    if (inferred) {
+      hint.textContent = lang() === 'es'
+        ? `Detectamos cuándo lo necesitas: ${inferred.label || inferred.date}.`
+        : `Detected when you need it: ${inferred.label || inferred.date}.`;
+      hint.style.display = 'block';
+    } else {
+      hint.textContent = '';
+      hint.style.display = 'none';
+    }
   };
 
   window.closeBooking = function () {
@@ -1064,6 +1458,7 @@
   window.renderBooking = function() {
     const tr = t().booking;
     const s = window.bookingState;
+    if (s && !s.address) s.address = getDashAddress();
     let content = '';
 
     const stepLabel = ['', '1/3', '2/3', '3/3', ''][s.step] || '';
@@ -1094,7 +1489,7 @@
 
       const catsHtml = catKeys.map(key => `
         <div class="booking-cat ${s.category === key ? 'booking-cat--active' : ''}" onclick="bookingSelectCat('${key}')">
-          <div style="color:var(--color-accent)">${icons[key]}</div>
+          <span class="booking-cat__emoji" aria-hidden="true">${catEmoji[key]}</span>
           <div>
             <div style="font-weight:600;font-size:15px">${resolve(catI18n[key].name)}</div>
             <div class="text-xs">${resolve(catI18n[key].desc)}</div>
@@ -1104,15 +1499,13 @@
       content = `<div style="padding:24px;display:flex;flex-direction:column;gap:20px">
         <div>
           <label class="text-body text-bold" style="display:block;margin-bottom:8px">${lang()==='es'?'¿Qué necesitas? Descríbelo aquí':'What do you need? Describe it here'}</label>
-          <textarea class="input-field" id="booking-desc" rows="4" placeholder="${lang()==='es'?'Ej: Tengo una fuga de agua en el baño, necesito un plomero lo antes posible...':'E.g. I have a water leak in my bathroom, need a plumber ASAP...'}" oninput="window.bookingState.description=this.value" style="resize:none">${s.description}</textarea>
+          <textarea class="input-field" id="booking-desc" rows="4" placeholder="${lang()==='es'?'Ej: Tengo una fuga de agua en el baño mañana...':'E.g. I need someone to fix my broken door tomorrow...'}" oninput="bookingHandleDescriptionInput(this.value)" style="resize:none">${s.description}</textarea>
+          <div id="booking-inference-hint" class="text-xs" style="display:${s.scheduleInferred && s.date ? 'block' : 'none'};margin-top:8px;color:var(--color-text-secondary)">${s.scheduleInferred && s.date ? (lang()==='es' ? `Detectamos cuándo lo necesitas: ${s.date}.` : `Detected when you need it: ${s.date}.`) : ''}</div>
           ${mediaRow}
         </div>
         <div>
-          <button onclick="window.bookingState.catsExpanded=!window.bookingState.catsExpanded;renderBooking()" style="display:flex;align-items:center;justify-content:space-between;width:100%;background:var(--color-surface);border:1px solid var(--color-border);border-radius:10px;padding:12px 16px;cursor:pointer;font-family:var(--font-body);font-size:14px;font-weight:600">
-            <span>${lang()==='es'?'¿Sabes qué categoría es? (opcional)':'Know the category? (optional)'}</span>
-            <span style="font-size:18px;transition:transform 0.2s;display:inline-block;transform:rotate(${s.catsExpanded?'180':'0'}deg)">⌄</span>
-          </button>
-          ${s.catsExpanded ? `<div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">${catsHtml}</div>` : ''}
+          <div class="text-xs" style="margin-bottom:10px;color:var(--color-text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em">${lang()==='es'?'Categoría opcional':'Optional category'}</div>
+          <div style="display:flex;flex-direction:column;gap:10px">${catsHtml}</div>
         </div>
         <button class="btn-primary" onclick="bookingStep1Continue()" style="width:100%;justify-content:center">
           ${lang()==='es'?'Continuar':'Continue'} ${icons.arrow}
@@ -1153,7 +1546,7 @@
       content = `<div style="padding:24px;display:flex;flex-direction:column;gap:24px">
         <div>
           <label class="text-body text-bold" style="display:block;margin-bottom:8px">${tr.where}</label>
-          <input class="input-field" id="booking-address" placeholder="${tr.addressPlaceholder}" value="${s.address}" oninput="window.bookingState.address=this.value">
+          <input class="input-field" id="booking-address" placeholder="${tr.addressPlaceholder}" value="${escapeAttr(s.address)}" oninput="window.bookingState.address=this.value">
         </div>
         <div>
           <label class="text-body text-bold" style="display:block;margin-bottom:12px">${tr.contactTitle}</label>
@@ -1188,22 +1581,23 @@
   window.bookingStep1Continue = function() {
     const s = window.bookingState;
     s.description = document.getElementById('booking-desc')?.value || s.description;
+    window.__bookingApplyScheduleInference(s.description);
     if (!s.description.trim() && !s.category && !s.attachments.length) {
       alert(lang() === 'es' ? 'Por favor describe lo que necesitas o selecciona una categoría.' : 'Please describe your need or select a category.');
       return;
     }
-    s.step = 2;
+    s.step = s.scheduleInferred && s.date ? 3 : 2;
     renderBooking();
   };
 
   window.bookingSelectCat = function (key) {
     window.bookingState.category = key;
-    window.bookingState.catsExpanded = true;
     renderBooking();
   };
 
   window.bookingSetWhen = function (type) {
     window.bookingState.whenType = type;
+    window.bookingState.scheduleInferred = false;
     renderBooking();
   };
 
@@ -1365,14 +1759,22 @@
 
   function removeNode(node) { if (node && node.parentNode) node.parentNode.removeChild(node); }
 
+  function formatInferredWhen(inferred) {
+    if (!inferred) return '';
+    return [inferred.label || inferred.date, inferred.time].filter(Boolean).join(' · ');
+  }
+
   // ─── Step: describe ────────────────────────────────────────────────────
   function askDescription(seed) {
     addBot(tr().askDescription || 'Tell me more about what you need.');
     const row = el(`
       <div class="bk-convo__input-row">
-        <input type="text" class="bk-convo__input" id="bk-convo-desc" placeholder="${tr().descPlaceholder || ''}" value="${seed || ''}">
+        <input type="text" class="bk-convo__input" id="bk-convo-desc" placeholder="${tr().descPlaceholder || ''}" value="${escapeHtml(seed || '')}">
         <button class="bk-convo__icon-btn" type="button" id="bk-convo-photo" title="${tr().addPhoto || ''}" aria-label="${tr().addPhoto || ''}">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
+        </button>
+        <button class="bk-convo__icon-btn" type="button" id="bk-convo-video" title="${tr().addVideo || 'Video'}" aria-label="${tr().addVideo || 'Video'}">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
         </button>
         <button class="bk-convo__icon-btn" type="button" id="bk-audio-btn" title="${tr().recordAudio || ''}" aria-label="${tr().recordAudio || ''}">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
@@ -1390,6 +1792,7 @@
     input.focus();
 
     row.querySelector('#bk-convo-photo').addEventListener('click', () => window.triggerCapture && window.triggerCapture('photo'));
+    row.querySelector('#bk-convo-video').addEventListener('click', () => window.triggerCapture && window.triggerCapture('video'));
     // Audio button starts recording; updateAudioBtn (legacy) will toggle its look.
     row.querySelector('#bk-audio-btn').addEventListener('click', () => window.startAudioRecording && window.startAudioRecording());
 
@@ -1397,10 +1800,18 @@
       const val = input.value.trim();
       if (!val) { input.focus(); return; }
       window.bookingState.description = val;
+      const inferred = window.__bookingApplyScheduleInference ? window.__bookingApplyScheduleInference(val) : null;
       removeNode(row);
       removeNode(previews);
       addUser(val);
       reflowPreviews(/* finalized */ true);
+      if (inferred) {
+        const detectedText = tr().detectedWhen || (lang() === 'es' ? 'Detecté la fecha: {when}.' : 'I picked up the date: {when}.');
+        addBot(detectedText.replace('{when}', formatInferredWhen(inferred)));
+        step = 2;
+        askWhere();
+        return;
+      }
       step = 1;
       askWhen();
     };
@@ -1512,10 +1923,11 @@
 
   // ─── Step: where ───────────────────────────────────────────────────────
   function askWhere() {
+    if (!window.bookingState.address) window.bookingState.address = getDashAddress();
     addBot(tr().askWhere || 'What address?');
     const row = el(`
       <div class="bk-convo__input-row">
-        <input type="text" class="bk-convo__input" id="bk-convo-addr" placeholder="${tr().addressPlaceholder || ''}">
+        <input type="text" class="bk-convo__input" id="bk-convo-addr" placeholder="${tr().addressPlaceholder || ''}" value="${escapeAttr(window.bookingState.address)}">
         <button class="bk-convo__send" type="button" id="bk-convo-addr-send" aria-label="${tr().send || 'Send'}">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
         </button>
@@ -1573,7 +1985,7 @@
     const s = window.bookingState;
     const whenStr = s.whenType === 'asap'
       ? (tr().userSaysAsap || 'ASAP')
-      : `${s.date || ''} · ${s.time || ''}`;
+      : ([s.date, s.time].filter(Boolean).join(' · ') || (tr().replySchedule || 'Scheduled'));
     const serviceStr = s.description || '—';
     const addrStr = s.address || '—';
     const contactStr = [s.clientName, s.clientPhone].filter(Boolean).join(' · ');
@@ -1640,7 +2052,7 @@
   }
 
   // ─── Public entry point ────────────────────────────────────────────────
-  window.openConversation = async function openConversation(seedText) {
+  window.openConversation = async function openConversation(seedText, options) {
     if (window.__legacyBooking) {
       // Explicit opt-out → old modal.
       window.openBooking && window.openBooking();
@@ -1673,7 +2085,7 @@
     // Reset state.
     window.bookingState = {
       step: 1, category: null, description: '', whenType: 'asap', date: '', time: '',
-      address: '',
+      address: getDashAddress(),
       clientName: (window.__user && window.__user.name) || '',
       clientPhone: (window.__user && window.__user.phone) || '',
       clientEmail: (window.__user && window.__user.email) || '',
@@ -1690,6 +2102,28 @@
     step = 0;
 
     addBot(tr().greeting || 'Hi. Tell me what you need.');
+    const handoff = options || {};
+    const seed = String(seedText || '').trim();
+    if (handoff.skipDescription && seed) {
+      window.bookingState.description = seed;
+      addUser(seed);
+
+      if (handoff.whenType === 'schedule' && handoff.date) {
+        window.bookingState.whenType = 'schedule';
+        window.bookingState.date = handoff.date;
+        window.bookingState.time = handoff.time || '';
+        addUser([handoff.date, handoff.time].filter(Boolean).join(' · '));
+      } else {
+        window.bookingState.whenType = 'asap';
+        window.bookingState.date = '';
+        window.bookingState.time = '';
+        addUser(tr().userSaysAsap || 'ASAP');
+      }
+
+      step = 2;
+      askWhere();
+      return;
+    }
     askDescription(seedText || '');
   };
 
@@ -1719,15 +2153,28 @@
     const seededService = params.get('discover_service');
     if (!seededService) return;
     const seededCategory = params.get('discover_category');
+    const seededSource = params.get('discover_source');
+    const seededWhen = params.get('discover_when');
+    const seededDate = params.get('discover_date');
 
     setTimeout(() => {
-      if (window.openConversation) window.openConversation(seededService);
+      if (window.openConversation) {
+        window.openConversation(seededService, {
+          source: seededSource || '',
+          skipDescription: seededSource === 'header_pill',
+          whenType: seededWhen === 'schedule' && seededDate ? 'schedule' : 'asap',
+          date: seededDate || '',
+        });
+      }
       if (window.bookingState && seededCategory) window.bookingState.category = seededCategory;
     }, 80);
 
     const url = new URL(window.location.href);
     url.searchParams.delete('discover_service');
     url.searchParams.delete('discover_category');
+    url.searchParams.delete('discover_source');
+    url.searchParams.delete('discover_when');
+    url.searchParams.delete('discover_date');
     const next = url.pathname + (url.search ? url.search : '') + url.hash;
     window.history.replaceState({}, '', next);
   }

@@ -260,12 +260,21 @@
     const t = window.__t;
     const lang = window.__lang;
     const onHome = (window.location.pathname === '/' || window.location.pathname === '/index.html');
+    const onPartners = window.location.pathname.startsWith('/partners');
+    const onHelpcenter = window.location.pathname.startsWith('/helpcenter');
 
     function scrollLink(anchor, label) {
       if (onHome) {
         return `<button type="button" class="site-drawer__link" data-scroll="${anchor}">${label}</button>`;
       }
       return `<a class="site-drawer__link" href="/index.html#${anchor}">${label}</a>`;
+    }
+
+    function partnersScrollLink(anchor, label) {
+      if (onPartners) {
+        return `<button type="button" class="site-drawer__link" data-scroll="${anchor}">${label}</button>`;
+      }
+      return `<a class="site-drawer__link" href="/partners.html#${anchor}">${label}</a>`;
     }
 
     const authRow = window.__user
@@ -307,6 +316,18 @@
           <a class="site-drawer__link" href="/browse.html">${t.header.linkBrowse || t.header.pillBrowse || 'Browse services'}</a>
           ${scrollLink('how', t.nav.howItWorks)}
           ${scrollLink('testimonials', t.nav.testimonials)}
+        ` : onPartners ? `
+          <div class="site-drawer__divider"></div>
+          <a class="site-drawer__link" href="/partners/registro.html">${lang === 'es' ? 'Regístrate' : 'Sign up'}</a>
+          ${partnersScrollLink('what', lang === 'es' ? '¿Qué es?' : 'What is it?')}
+          ${partnersScrollLink('how', lang === 'es' ? '¿Cómo?' : 'How?')}
+          <a class="site-drawer__link" href="/handbook.html">${lang === 'es' ? 'Handbook' : 'Handbook'}</a>
+        ` : onHelpcenter ? `
+          <div class="site-drawer__divider"></div>
+          <a class="site-drawer__link" href="/helpcenter/suggestion.html">${lang === 'es' ? 'Sugerencia' : 'Suggestion'}</a>
+          <a class="site-drawer__link" href="/helpcenter/report.html">${lang === 'es' ? 'Reportar' : 'Report'}</a>
+          <a class="site-drawer__link" href="/helpcenter/quienes-somos.html">${lang === 'es' ? 'Quiénes Somos' : 'About Us'}</a>
+          <a class="site-drawer__link" href="/helpcenter/contactanos.html">${lang === 'es' ? 'Contáctanos' : 'Contact Us'}</a>
         ` : ''}
       </nav>
       <div class="site-drawer__divider"></div>
@@ -616,21 +637,91 @@
   }
 
   // ─── Booking routing (preserve existing contracts) ────────────────────
+  function buildBookingHandoffUrl(seedText) {
+    const url = new URL('/index.html', window.location.origin);
+    if (seedText) url.searchParams.set('discover_service', seedText);
+    url.searchParams.set('discover_source', 'header_pill');
+    if (state.whenChoice === 'date' && state.whenDate) {
+      url.searchParams.set('discover_when', 'schedule');
+      url.searchParams.set('discover_date', state.whenDate);
+    } else {
+      url.searchParams.set('discover_when', 'asap');
+    }
+    return url.pathname + url.search + url.hash;
+  }
+
+  function getBookingHandoffOptions() {
+    return {
+      source: 'header_pill',
+      skipDescription: true,
+      whenType: state.whenChoice === 'date' && state.whenDate ? 'schedule' : 'asap',
+      date: state.whenChoice === 'date' ? state.whenDate : '',
+    };
+  }
+
   function routeToBookingIntake(seedText) {
+    const text = seedText || '';
     if (window.openConversation && !window.__legacyBooking) {
-      window.openConversation(seedText || '');
+      window.openConversation(text, getBookingHandoffOptions());
       return;
     }
     if (window.openBooking) {
       window.openBooking();
-      if (seedText) {
+      if (text) {
         setTimeout(() => {
-          window.bookingState && (window.bookingState.description = seedText);
+          window.bookingState && (window.bookingState.description = text);
           const desc = document.getElementById('booking-desc');
-          if (desc) desc.value = seedText;
+          if (desc) desc.value = text;
         }, 100);
       }
+      return;
     }
+    window.location.href = buildBookingHandoffUrl(text);
+  }
+
+  function getSearchPillDescription() {
+    const input = document.getElementById('spp-describe-input');
+    const text = input ? input.value.trim() : state._describeText.trim();
+    state._describeText = text;
+    return text;
+  }
+
+  function focusSearchPillDescribe() {
+    openSegment('describe');
+    requestAnimationFrame(() => {
+      const input = document.getElementById('spp-describe-input');
+      if (input) input.focus();
+    });
+  }
+
+  function confirmSearchPillWhen() {
+    const text = getSearchPillDescription();
+    if (!text) {
+      focusSearchPillDescribe();
+      return;
+    }
+    if (state.whenChoice === 'date' && !state.whenDate) {
+      openSegment('when');
+      requestAnimationFrame(() => {
+        const dateInput = document.getElementById('spp-date-input');
+        if (dateInput) {
+          dateInput.hidden = false;
+          dateInput.focus();
+        }
+      });
+      return;
+    }
+    closeSegment();
+    routeToBookingIntake(text);
+  }
+
+  function advanceSearchPillDescribe() {
+    const text = getSearchPillDescription();
+    if (!text) {
+      focusSearchPillDescribe();
+      return;
+    }
+    openSegment('when');
   }
 
   window._heroSearchSubmit = function () {
@@ -740,20 +831,17 @@
       if (suggestion) {
         // Fill the describe input with the suggestion text
         const inp = document.getElementById('spp-describe-input');
+        state._describeText = suggestion.trim();
         if (inp) { inp.value = suggestion; inp.focus(); }
         return;
       }
       if (action === 'spp-submit') {
         // Advance from describe → when panel
-        const inp = document.getElementById('spp-describe-input');
-        if (inp) state._describeText = inp.value.trim();
-        openSegment('when');
+        advanceSearchPillDescribe();
         return;
       }
       if (action === 'spp-when-confirm') {
-        const text = state._describeText || '';
-        closeSegment();
-        routeToBookingIntake(text);
+        confirmSearchPillWhen();
         return;
       }
       if (action === 'spp-camera') {
@@ -816,7 +904,10 @@
       else if (state.drawerOpen) closeDrawer();
     }
     if (e.key === 'Enter') {
-      if (e.target && (e.target.id === 'header-panel-input' || e.target.id === 'spp-describe-input')) {
+      if (e.target && e.target.id === 'spp-describe-input') {
+        e.preventDefault();
+        advanceSearchPillDescribe();
+      } else if (e.target && e.target.id === 'header-panel-input') {
         e.preventDefault();
         const val = e.target.value.trim();
         closeSegment();

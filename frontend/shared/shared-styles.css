@@ -112,7 +112,7 @@ button { font-family: var(--font-body); }
   color: #000000;
   display: inline-block;
   width: 0.34em;
-  height: 0.19em;
+  height: 0.23em;
   border-radius: 0.34em 0.34em 0 0;
   background: currentColor;
   margin-left: 2px;
@@ -510,6 +510,13 @@ textarea.input-field { resize: vertical; min-height: 100px; }
 }
 .booking-cat:hover { border-color: var(--color-text); background: var(--color-bg); }
 .booking-cat--active { border-color: var(--color-text); background: var(--color-surface); }
+.booking-cat__emoji {
+  flex: 0 0 auto;
+  width: 42px;
+  font-size: 34px;
+  line-height: 1;
+  text-align: center;
+}
 
 /* ─── Radio Options ──────────────────────────────────────────────────────── */
 .radio-option {

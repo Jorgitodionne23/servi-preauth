@@ -260,6 +260,29 @@ export async function initDb() {
     CREATE INDEX IF NOT EXISTS idx_providers_connect_account
       ON providers(connect_account_id);
 
+    -- Sequence for minting prov-XXXXXX provider ids
+    CREATE SEQUENCE IF NOT EXISTS provider_id_seq START 1;
+
+    -- Order-level change requests (reschedule / cancel / address update / inline edit)
+    CREATE TABLE IF NOT EXISTS order_changes (
+      id TEXT PRIMARY KEY,
+      order_id TEXT NOT NULL REFERENCES all_bookings(id) ON DELETE CASCADE,
+      change_type TEXT NOT NULL,
+      requested_by TEXT,
+      original_service_datetime TEXT,
+      original_service_address TEXT,
+      original_status TEXT,
+      requested_service_datetime TEXT,
+      requested_service_address TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      notes TEXT,
+      applied_note TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      processed_at TIMESTAMPTZ
+    );
+    CREATE INDEX IF NOT EXISTS idx_order_changes_order ON order_changes(order_id);
+    CREATE INDEX IF NOT EXISTS idx_order_changes_status ON order_changes(status);
+
     CREATE INDEX IF NOT EXISTS idx_saved_servi_users_latest_pm
       ON saved_servi_users (latest_payment_method_id);
 
@@ -339,6 +362,7 @@ export async function initDb() {
 
     ALTER TABLE partner_applications ADD COLUMN IF NOT EXISTS services TEXT;
     ALTER TABLE partner_applications ADD COLUMN IF NOT EXISTS coverage_areas TEXT;
+    ALTER TABLE partner_applications ADD COLUMN IF NOT EXISTS linked_provider_id TEXT;
 
     -- Auth Users (Client login identities)
     CREATE TABLE IF NOT EXISTS auth_users (
