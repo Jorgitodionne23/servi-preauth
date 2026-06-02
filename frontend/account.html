@@ -101,6 +101,53 @@
       margin-bottom: 6px;
     }
     .section-sub { font-size: 14px; color: var(--color-text-muted); margin-bottom: 28px; line-height: 1.6; }
+    .profile-view { display: flex; flex-direction: column; gap: 12px; }
+    .profile-row {
+      display: grid;
+      grid-template-columns: minmax(120px, 0.34fr) 1fr;
+      gap: 16px;
+      align-items: center;
+      padding: 15px 0;
+      border-bottom: 1px solid rgba(17, 17, 17, 0.07);
+    }
+    .profile-row:first-child { padding-top: 0; }
+    .profile-row:last-child { border-bottom: none; }
+    .profile-label { font-size: 12px; font-weight: 700; color: var(--color-text-secondary); text-transform: uppercase; letter-spacing: 0.08em; }
+    .profile-value-wrap { min-width: 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .profile-value { min-width: 0; color: var(--color-text); font-size: 15px; font-weight: 700; overflow-wrap: anywhere; }
+    .profile-value.muted { color: var(--color-text-muted); font-weight: 600; }
+    .verified-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(52, 168, 83, 0.12);
+      color: #1f7a3a;
+      font-size: 11px;
+      font-weight: 800;
+      line-height: 1;
+      white-space: nowrap;
+    }
+    .verified-badge.pending { background: rgba(255, 251, 235, 0.95); color: #a16207; }
+    .verified-badge svg {
+      width: 13px;
+      height: 13px;
+      flex: 0 0 auto;
+      display: block;
+      stroke: currentColor;
+    }
+    .profile-actions,
+    .profile-edit-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 22px;
+    }
+    .profile-edit { display: none; }
+    .account-card.is-editing .profile-view { display: none; }
+    .account-card.is-editing .profile-edit { display: block; }
     .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
     .form-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
     .form-label { font-size: 12px; font-weight: 700; color: var(--color-text-secondary); text-transform: uppercase; letter-spacing: 0.08em; }
@@ -189,6 +236,65 @@
       gap: 10px;
       margin-bottom: 20px;
     }
+    .security-stack { display: flex; flex-direction: column; gap: 16px; }
+    .security-panel {
+      border: 1.5px solid var(--color-border);
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.66);
+      overflow: hidden;
+    }
+    .security-panel-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 18px 20px 14px;
+      border-bottom: 1px solid rgba(17, 17, 17, 0.07);
+    }
+    .security-panel-title { font-size: 15px; font-weight: 800; color: var(--color-text); margin-bottom: 4px; }
+    .security-panel-sub { font-size: 13px; line-height: 1.45; color: var(--color-text-muted); }
+    .security-status {
+      display: inline-flex;
+      align-items: center;
+      align-self: flex-start;
+      gap: 6px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 800;
+      white-space: nowrap;
+      background: var(--color-surface);
+      color: var(--color-text-secondary);
+    }
+    .security-status.ok { background: var(--account-accent-soft); color: #327883; }
+    .security-status.warn { background: rgba(255, 251, 235, 0.95); color: #a16207; }
+    .security-rows { display: flex; flex-direction: column; }
+    .security-row {
+      display: grid;
+      grid-template-columns: 32px 1fr auto;
+      gap: 14px;
+      align-items: center;
+      padding: 16px 20px;
+    }
+    .security-row + .security-row { border-top: 1px solid rgba(17, 17, 17, 0.07); }
+    .security-row-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--color-surface);
+      color: var(--color-text);
+      font-size: 14px;
+      font-weight: 900;
+    }
+    .security-row-title { font-size: 14px; font-weight: 800; color: var(--color-text); margin-bottom: 3px; }
+    .security-row-sub { font-size: 13px; line-height: 1.4; color: var(--color-text-muted); }
+    .security-row-action { justify-self: end; }
+    .security-inline-error { display: none; padding: 0 20px 16px 66px; font-size: 13px; color: var(--account-danger); }
+    .security-inline-note { display: none; padding: 0 20px 16px 66px; font-size: 13px; color: #327883; }
+    .security-inline-error.visible,
+    .security-inline-note.visible { display: block; }
     .verify-warning {
       display: none;
       align-items: flex-start;
@@ -345,6 +451,12 @@
       .account-layout { grid-template-columns: 1fr; }
       .account-sidebar { display: none; }
       .mobile-tabs { display: flex; }
+      .profile-row { grid-template-columns: 1fr; gap: 7px; align-items: start; }
+      .profile-actions,
+      .profile-edit-actions { width: 100%; }
+      .profile-actions .btn-outline,
+      .profile-edit-actions .btn-save,
+      .profile-edit-actions .btn-outline { width: 100%; }
       .form-row { grid-template-columns: 1fr; }
       .favorite-list { grid-template-columns: 1fr; }
       .favorite-card { grid-template-columns: 96px 1fr; }
@@ -352,6 +464,13 @@
       .danger-zone { padding: 24px; border-radius: 20px; }
       .verify-warning { flex-direction: column; }
       .verify-warning-action { width: 100%; }
+      .security-panel-head { flex-direction: column; gap: 10px; }
+      .security-row { grid-template-columns: 32px 1fr; }
+      .security-row-action { grid-column: 1 / -1; justify-self: stretch; }
+      .security-row-action .btn-outline,
+      .security-row-action .btn-save { width: 100%; }
+      .security-inline-error,
+      .security-inline-note { padding-left: 20px; }
       /* Prevent iOS Safari auto-zoom on input focus */
       .form-input { font-size: 16px; }
     }
@@ -389,26 +508,55 @@
 
         <!-- Personal Info -->
         <section class="account-section" id="section-info">
-          <div class="account-card">
+          <div class="account-card" id="profile-card">
             <div class="section-title" id="title-info">Información personal</div>
             <div class="section-sub" id="sub-info">Actualiza tu nombre, correo y teléfono.</div>
-            <div class="form-row">
-              <div class="form-group">
-                <label class="form-label" id="lbl-name">Nombre completo</label>
-                <input class="form-input" id="info-name" type="text" placeholder="Tu nombre">
+            <div class="profile-view" id="profile-view">
+              <div class="profile-row">
+                <div class="profile-label" id="profile-lbl-name">Nombre completo</div>
+                <div class="profile-value-wrap">
+                  <span class="profile-value" id="profile-name">-</span>
+                </div>
               </div>
-              <div class="form-group">
-                <label class="form-label" id="lbl-phone">Teléfono</label>
-                <input class="form-input" id="info-phone" type="tel" placeholder="+52 55 1234 5678">
+              <div class="profile-row">
+                <div class="profile-label" id="profile-lbl-phone">Teléfono</div>
+                <div class="profile-value-wrap">
+                  <span class="profile-value" id="profile-phone">-</span>
+                </div>
+              </div>
+              <div class="profile-row">
+                <div class="profile-label" id="profile-lbl-email">Correo electrónico</div>
+                <div class="profile-value-wrap">
+                  <span class="profile-value" id="profile-email">-</span>
+                  <span class="verified-badge pending" id="profile-email-status">Pendiente</span>
+                </div>
+              </div>
+              <div class="profile-actions">
+                <button class="btn-outline" id="profile-edit-btn" type="button" onclick="enterProfileEditMode()">Modificar</button>
               </div>
             </div>
-            <div class="form-group">
-              <label class="form-label" id="lbl-email">Correo electrónico</label>
-              <input class="form-input" id="info-email" type="email" placeholder="tu@correo.com">
+            <div class="profile-edit" id="profile-edit">
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label" id="lbl-name">Nombre completo</label>
+                  <input class="form-input" id="info-name" type="text" placeholder="Tu nombre">
+                </div>
+                <div class="form-group">
+                  <label class="form-label" id="lbl-phone">Teléfono</label>
+                  <input class="form-input" id="info-phone" type="tel" placeholder="+52 55 1234 5678">
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="form-label" id="lbl-email">Correo electrónico</label>
+                <input class="form-input" id="info-email" type="email" placeholder="tu@correo.com">
+              </div>
+              <div class="profile-edit-actions">
+                <button class="btn-save" id="info-save-btn" onclick="saveProfile()">
+                  <span id="info-save-label">Guardar cambios</span>
+                </button>
+                <button class="btn-outline" id="profile-cancel-btn" type="button" onclick="cancelProfileEdit()">Cancelar</button>
+              </div>
             </div>
-            <button class="btn-save" id="info-save-btn" onclick="saveProfile()">
-              <span id="info-save-label">Guardar cambios</span>
-            </button>
             <div class="success-msg" id="info-success">✓ <span id="info-success-text">Cambios guardados.</span></div>
             <div class="error-msg" id="info-error"></div>
           </div>
@@ -419,10 +567,57 @@
           <div class="account-card">
             <div class="section-title" id="title-security">Seguridad</div>
             <div class="section-sub" id="sub-security">Información de acceso a tu cuenta.</div>
-            <div class="info-box" id="security-info">
-              🔐 <span id="security-info-text">Tu cuenta usa inicio de sesión con teléfono o Google. No se requiere contraseña.</span>
+            <div class="security-stack">
+              <div class="info-box" id="security-info">
+                🔐 <span id="security-info-text">Tu cuenta usa inicio de sesión con teléfono o Google. No se requiere contraseña.</span>
+              </div>
+
+              <div class="security-panel" id="security-verification-panel">
+                <div class="security-panel-head">
+                  <div>
+                    <div class="security-panel-title" id="security-2step-title">Verificación en dos pasos</div>
+                    <div class="security-panel-sub" id="security-2step-sub">Confirma teléfono y correo para proteger solicitudes y cambios importantes.</div>
+                  </div>
+                  <span class="security-status" id="security-2step-status">Pendiente</span>
+                </div>
+                <div class="security-rows">
+                  <div class="security-row">
+                    <span class="security-row-icon">1</span>
+                    <div>
+                      <div class="security-row-title" id="security-phone-title">Teléfono verificado</div>
+                      <div class="security-row-sub" id="security-phone-sub">Tu número se confirma con código SMS.</div>
+                    </div>
+                    <span class="security-status" id="security-phone-status">Pendiente</span>
+                  </div>
+                  <div class="security-row">
+                    <span class="security-row-icon">2</span>
+                    <div>
+                      <div class="security-row-title" id="security-email-title">Correo verificado</div>
+                      <div class="security-row-sub" id="security-email-sub">Usaremos este correo para confirmar solicitudes.</div>
+                    </div>
+                    <div class="security-row-action" id="security-email-action-wrap">
+                      <button class="btn-outline" id="security-email-action" onclick="handleSecurityEmailAction()">Verificar correo</button>
+                    </div>
+                  </div>
+                  <div class="security-inline-note" id="security-email-note"></div>
+                  <div class="security-inline-error" id="security-email-error"></div>
+                </div>
+              </div>
+
+              <div class="security-panel" id="security-social-panel">
+                <div class="security-panel-head">
+                  <div>
+                    <div class="security-panel-title" id="security-social-title">Apps sociales conectadas</div>
+                    <div class="security-panel-sub" id="security-social-sub">Administra accesos externos que pueden iniciar sesión en tu cuenta.</div>
+                  </div>
+                </div>
+                <div class="security-rows" id="security-social-list"></div>
+                <div class="security-inline-note" id="security-social-note"></div>
+                <div class="security-inline-error" id="security-social-error"></div>
+              </div>
+
+              <div style="font-size:14px;color:var(--color-text-secondary);line-height:1.6" id="security-provider-info"></div>
             </div>
-            <div style="margin-top:16px;font-size:14px;color:var(--color-text-secondary);line-height:1.6" id="security-provider-info"></div>
           </div>
         </section>
 
@@ -543,6 +738,28 @@ const TX = {
     lblName: 'Nombre completo', lblEmail: 'Correo electrónico', lblPhone: 'Teléfono',
     securityInfo: 'Tu cuenta usa inicio de sesión con teléfono o Google. No se requiere contraseña.',
     securityProvider: 'Método de acceso:',
+    security2StepTitle: 'Verificación en dos pasos',
+    security2StepSub: 'Confirma teléfono y correo para proteger solicitudes y cambios importantes.',
+    securityComplete: 'Completo',
+    securityPending: 'Pendiente',
+    securityVerified: 'Verificado',
+    securityNotVerified: 'Sin verificar',
+    securityPhoneTitle: 'Teléfono verificado',
+    securityPhoneSub: 'Tu número se confirma con código SMS.',
+    securityEmailTitle: 'Correo verificado',
+    securityEmailSubVerified: 'Tu correo está listo para confirmar solicitudes.',
+    securityEmailSubUnverified: 'Usaremos este correo para confirmar solicitudes.',
+    securityEmailSubMissing: 'Agrega un correo para completar la verificación.',
+    securitySocialTitle: 'Apps sociales conectadas',
+    securitySocialSub: 'Administra accesos externos que pueden iniciar sesión en tu cuenta.',
+    securityGoogleTitle: 'Google',
+    securityGoogleConnected: 'Conectado a tu cuenta SERVI.',
+    securityGoogleDisconnected: 'Conecta Google para iniciar sesión más rápido.',
+    securityConnectGoogle: 'Conectar Google',
+    securityConnectingGoogle: 'Conectando...',
+    securityGoogleConnectedNote: 'Google conectado correctamente.',
+    securityGoogleConflict: 'Ese Google ya está asociado a otra cuenta.',
+    securityGoogleFailed: 'No pudimos conectar Google. Intenta de nuevo.',
     emailWarnTitle: 'Verifica tu correo',
     emailWarnText: 'Verifica tu correo para proteger tu cuenta y confirmar solicitudes. Si no ves el enlace, revisa spam o correo no deseado.',
     emailWarnNoEmail: 'Agrega un correo para proteger tu cuenta y confirmar solicitudes. Si no ves el enlace, revisa spam o correo no deseado.',
@@ -551,6 +768,8 @@ const TX = {
     emailWarnSending: 'Enviando...',
     emailWarnSent: 'Enlace enviado. Revisa tu correo y también spam o correo no deseado.',
     emailWarnFailed: 'No pudimos enviar el enlace. Intenta de nuevo.',
+    profileEdit: 'Modificar',
+    profileMissing: 'Sin agregar',
     lblAddrLabel: 'Etiqueta (opcional)', lblAddrStreet: 'Calle y número *', lblAddrCity: 'Ciudad', lblAddrState: 'Estado', lblAddrPostal: 'Código postal', lblAddrDefault: 'Predeterminada',
     saveBtn: 'Guardar cambios', saving: 'Guardando...', saved: 'Cambios guardados.',
     addAddr: '+ Agregar', saveAddr: 'Guardar dirección', cancel: 'Cancelar',
@@ -582,6 +801,28 @@ const TX = {
     lblName: 'Full name', lblEmail: 'Email', lblPhone: 'Phone',
     securityInfo: 'Your account uses phone or Google sign-in. No password required.',
     securityProvider: 'Sign-in method:',
+    security2StepTitle: 'Two-step verification',
+    security2StepSub: 'Confirm phone and email to protect requests and important changes.',
+    securityComplete: 'Complete',
+    securityPending: 'Pending',
+    securityVerified: 'Verified',
+    securityNotVerified: 'Not verified',
+    securityPhoneTitle: 'Verified phone',
+    securityPhoneSub: 'Your number is confirmed with an SMS code.',
+    securityEmailTitle: 'Verified email',
+    securityEmailSubVerified: 'Your email is ready to confirm requests.',
+    securityEmailSubUnverified: 'We use this email to confirm requests.',
+    securityEmailSubMissing: 'Add an email to complete verification.',
+    securitySocialTitle: 'Connected social apps',
+    securitySocialSub: 'Manage external access that can sign in to your account.',
+    securityGoogleTitle: 'Google',
+    securityGoogleConnected: 'Connected to your SERVI account.',
+    securityGoogleDisconnected: 'Connect Google to sign in faster.',
+    securityConnectGoogle: 'Connect Google',
+    securityConnectingGoogle: 'Connecting...',
+    securityGoogleConnectedNote: 'Google connected successfully.',
+    securityGoogleConflict: 'That Google account is already linked to another account.',
+    securityGoogleFailed: 'We could not connect Google. Try again.',
     emailWarnTitle: 'Verify your email',
     emailWarnText: 'Verify your email to protect your account and confirm requests. If you do not see the link, check your spam or junk folder.',
     emailWarnNoEmail: 'Add an email to protect your account and confirm requests. If you do not see the link, check your spam or junk folder.',
@@ -590,6 +831,8 @@ const TX = {
     emailWarnSending: 'Sending...',
     emailWarnSent: 'Link sent. Check your email and your spam or junk folder.',
     emailWarnFailed: 'We could not send the link. Try again.',
+    profileEdit: 'Modify',
+    profileMissing: 'Not added',
     lblAddrLabel: 'Label (optional)', lblAddrStreet: 'Street and number *', lblAddrCity: 'City', lblAddrState: 'State', lblAddrPostal: 'Postal code', lblAddrDefault: 'Set as default',
     saveBtn: 'Save changes', saving: 'Saving...', saved: 'Changes saved.',
     addAddr: '+ Add', saveAddr: 'Save address', cancel: 'Cancel',
@@ -672,6 +915,70 @@ function switchSection(id) {
 let _originalPhone = null;
 let _originalEmail = null;
 let _originalName  = null;
+let _profileEditMode = false;
+let _accountUserBackendConfirmed = false;
+
+function setProfileEditMode(editing) {
+  _profileEditMode = !!editing;
+  const card = document.getElementById('profile-card');
+  if (card) card.classList.toggle('is-editing', _profileEditMode);
+}
+
+function emailVerifiedBadge(label, verified) {
+  if (verified) {
+    return '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><path d="M5 12.5l4.2 4.2L19 7" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>' + escapeHtml(label);
+  }
+  return escapeHtml(label);
+}
+
+function renderProfileView() {
+  const t = tr();
+  const u = window.__user || {};
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+  const setValue = (id, val) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const hasValue = !!String(val || '').trim();
+    el.textContent = hasValue ? val : t.profileMissing;
+    el.classList.toggle('muted', !hasValue);
+  };
+  set('profile-lbl-name', t.lblName);
+  set('profile-lbl-phone', t.lblPhone);
+  set('profile-lbl-email', t.lblEmail);
+  set('profile-edit-btn', t.profileEdit);
+  set('profile-cancel-btn', t.cancel);
+  setValue('profile-name', u.name);
+  setValue('profile-phone', u.phone);
+  setValue('profile-email', u.email);
+
+  const status = document.getElementById('profile-email-status');
+  if (status) {
+    const verified = u.email_verified === true && _accountUserBackendConfirmed;
+    status.className = 'verified-badge' + (verified ? '' : ' pending');
+    status.innerHTML = emailVerifiedBadge(verified ? t.securityVerified : t.securityNotVerified, verified);
+  }
+}
+
+function enterProfileEditMode() {
+  const errEl = document.getElementById('info-error');
+  const sucEl = document.getElementById('info-success');
+  if (errEl) errEl.style.display = 'none';
+  if (sucEl) sucEl.style.display = 'none';
+  fillProfileForm();
+  setProfileEditMode(true);
+  const input = document.getElementById('info-name');
+  if (input) input.focus();
+}
+
+function cancelProfileEdit() {
+  const errEl = document.getElementById('info-error');
+  const sucEl = document.getElementById('info-success');
+  if (errEl) errEl.style.display = 'none';
+  if (sucEl) sucEl.style.display = 'none';
+  fillProfileForm();
+  setProfileEditMode(false);
+}
+
 function fillProfileForm() {
   const u = window.__user;
   if (!u) return;
@@ -681,6 +988,7 @@ function fillProfileForm() {
   document.getElementById('info-name').value  = u.name  || '';
   document.getElementById('info-email').value = u.email || '';
   document.getElementById('info-phone').value = u.phone || '';
+  renderProfileView();
 }
 
 function renderEmailWarning(statusText) {
@@ -692,7 +1000,7 @@ function renderEmailWarning(statusText) {
   const action = document.getElementById('email-warning-action');
   if (!banner || !title || !text || !action) return;
 
-  const needsEmail = !!u && u.email_verified === false;
+  const needsEmail = !!u && !(u.email_verified === true && _accountUserBackendConfirmed);
   banner.classList.toggle('visible', needsEmail);
   if (!needsEmail) return;
 
@@ -740,6 +1048,7 @@ async function refreshAccountUser() {
     if (!res.ok) return null;
     const d = await res.json();
     if (d.user) {
+      _accountUserBackendConfirmed = true;
       window.__user = Object.assign(window.__user || {}, d.user);
       try {
         const raw = localStorage.getItem('servi_user_session');
@@ -751,6 +1060,8 @@ async function refreshAccountUser() {
       } catch {}
       fillProfileForm();
       renderEmailWarning();
+      renderSecurityVerification();
+      renderConnectedSocialApps();
     }
     return d.user || null;
   } catch (_) {
@@ -779,6 +1090,8 @@ async function saveProfile() {
     const phoneChanged = phone !== (_originalPhone || '');
     if (!nameChanged && !emailChangedReq && !phoneChanged) {
       btn.disabled = false; lbl.textContent = t.saveBtn;
+      fillProfileForm();
+      setProfileEditMode(false);
       return;
     }
     const addingFirstEmail = !_originalEmail && emailChangedReq && !!email;
@@ -811,6 +1124,7 @@ async function saveProfile() {
           }
         } catch {}
         _originalName = nameData.user?.name || name;
+        renderProfileView();
       }
 
       localStorage.setItem('servi_email_verification_mode', '1');
@@ -828,6 +1142,8 @@ async function saveProfile() {
       document.getElementById('info-success-text').textContent = t.emailWarnSent;
       sucEl.style.display = 'flex';
       renderEmailWarning(t.emailWarnSent);
+      fillProfileForm();
+      setProfileEditMode(false);
       setTimeout(() => { sucEl.style.display = 'none'; }, 5000);
       return;
     }
@@ -862,7 +1178,9 @@ async function saveProfile() {
       errEl.style.display = 'block';
       return;
     }
+    const savedEmailChanged = email && email !== (_originalEmail || '');
     // Update in-memory session
+    _accountUserBackendConfirmed = true;
     if (window.__user) {
       window.__user.name  = d.user.name  || window.__user.name;
       window.__user.email = d.user.email || window.__user.email;
@@ -885,11 +1203,16 @@ async function saveProfile() {
       }
     } catch {}
     if (window.buildNavbar) window.buildNavbar();
+    _originalName = window.__user?.name || '';
+    _originalEmail = window.__user?.email || '';
+    _originalPhone = window.__user?.phone || '';
+    renderProfileView();
     renderEmailWarning();
+    renderSecurityVerification();
+    renderConnectedSocialApps();
 
     // If email was changed and is now unverified, prompt user to verify
-    const emailChanged = email && email !== (_originalEmail || '');
-    if (emailChanged && !d.user.email_verified) {
+    if (savedEmailChanged && !d.user.email_verified) {
       document.getElementById('info-success-text').textContent =
         isEs()
           ? 'Cambios guardados. Verifica tu nuevo correo. Si no ves el enlace, revisa spam o correo no deseado.'
@@ -920,6 +1243,7 @@ async function saveProfile() {
       sucEl.style.display = 'flex';
       setTimeout(() => { sucEl.style.display = 'none'; }, 3000);
     }
+    setProfileEditMode(false);
   } catch {
     errEl.textContent = t.errGeneric;
     errEl.style.display = 'block';
@@ -928,17 +1252,207 @@ async function saveProfile() {
   }
 }
 
-// ─── Security section: show sign-in method info ─────────────────────────────
+// ─── Security section ────────────────────────────────────────────────────────
+function securityStatus(label, ok) {
+  return `<span class="security-status ${ok ? 'ok' : 'warn'}">${escapeHtml(label)}</span>`;
+}
+
+function setSecurityMessage(kind, target, message) {
+  const note = document.getElementById(`security-${target}-note`);
+  const error = document.getElementById(`security-${target}-error`);
+  if (note) { note.textContent = ''; note.classList.remove('visible'); }
+  if (error) { error.textContent = ''; error.classList.remove('visible'); }
+  const el = kind === 'error' ? error : note;
+  if (el && message) {
+    el.textContent = message;
+    el.classList.add('visible');
+  }
+}
+
+function getFirebaseProviderIds() {
+  try {
+    const current = window.firebase?.auth?.().currentUser;
+    return (current?.providerData || []).map(p => p.providerId).filter(Boolean);
+  } catch (_) {
+    return [];
+  }
+}
+
+function renderSecurityVerification() {
+  const t = tr();
+  const u = window.__user || {};
+  const phoneVerified = u.phone_verified === true;
+  const emailVerified = u.email_verified === true;
+  const hasEmail = !!(u.email || '').trim();
+  const complete = phoneVerified && emailVerified;
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+
+  set('security-2step-title', t.security2StepTitle);
+  set('security-2step-sub', t.security2StepSub);
+  set('security-phone-title', t.securityPhoneTitle);
+  set('security-phone-sub', t.securityPhoneSub);
+  set('security-email-title', t.securityEmailTitle);
+  set('security-email-sub', emailVerified ? t.securityEmailSubVerified : (hasEmail ? t.securityEmailSubUnverified : t.securityEmailSubMissing));
+
+  const overall = document.getElementById('security-2step-status');
+  if (overall) {
+    overall.className = `security-status ${complete ? 'ok' : 'warn'}`;
+    overall.textContent = complete ? t.securityComplete : t.securityPending;
+  }
+
+  const phoneStatus = document.getElementById('security-phone-status');
+  if (phoneStatus) {
+    phoneStatus.className = `security-status ${phoneVerified ? 'ok' : 'warn'}`;
+    phoneStatus.textContent = phoneVerified ? t.securityVerified : t.securityNotVerified;
+  }
+
+  const actionWrap = document.getElementById('security-email-action-wrap');
+  if (actionWrap) {
+    if (emailVerified) {
+      actionWrap.innerHTML = securityStatus(t.securityVerified, true);
+    } else {
+      actionWrap.innerHTML = `<button class="btn-outline" id="security-email-action" onclick="handleSecurityEmailAction()">${hasEmail ? t.emailWarnAction : t.emailWarnAddAction}</button>`;
+    }
+  }
+}
+
+function renderConnectedSocialApps() {
+  const t = tr();
+  const list = document.getElementById('security-social-list');
+  if (!list) return;
+  const u = window.__user || {};
+  const providerIds = getFirebaseProviderIds();
+  const authProvider = String(u.auth_provider || '').toLowerCase();
+  const googleConnected = providerIds.includes('google.com') || authProvider === 'google.com' || authProvider === 'google';
+
+  list.innerHTML = `
+    <div class="security-row">
+      <span class="security-row-icon">G</span>
+      <div>
+        <div class="security-row-title">${t.securityGoogleTitle}</div>
+        <div class="security-row-sub">${googleConnected ? t.securityGoogleConnected : t.securityGoogleDisconnected}</div>
+      </div>
+      <div class="security-row-action">
+        ${googleConnected
+          ? securityStatus(t.securityVerified, true)
+          : `<button class="btn-outline" id="connect-google-btn" onclick="connectGoogleAccount()">${t.securityConnectGoogle}</button>`}
+      </div>
+    </div>`;
+}
+
+async function handleSecurityEmailAction() {
+  const t = tr();
+  const u = window.__user;
+  const action = document.getElementById('security-email-action');
+  setSecurityMessage('note', 'email', '');
+  if (!u) return;
+  if (!u.email) {
+    switchSection('info');
+    const input = document.getElementById('info-email');
+    if (input) input.focus();
+    return;
+  }
+  if (!window.__sendEmailVerification) {
+    setSecurityMessage('error', 'email', t.emailWarnFailed);
+    return;
+  }
+  try {
+    if (action) { action.disabled = true; action.textContent = t.emailWarnSending; }
+    localStorage.setItem('servi_email_verification_mode', '1');
+    localStorage.setItem('servi_email_link_target', u.email);
+    const sent = await window.__sendEmailVerification(u.email);
+    if (sent) {
+      setSecurityMessage('note', 'email', t.emailWarnSent);
+      renderEmailWarning(t.emailWarnSent);
+    } else {
+      localStorage.removeItem('servi_email_verification_mode');
+      localStorage.removeItem('servi_email_link_target');
+      setSecurityMessage('error', 'email', t.emailWarnFailed);
+    }
+  } catch (_) {
+    localStorage.removeItem('servi_email_verification_mode');
+    localStorage.removeItem('servi_email_link_target');
+    setSecurityMessage('error', 'email', t.emailWarnFailed);
+  } finally {
+    renderSecurityVerification();
+  }
+}
+
+async function connectGoogleAccount() {
+  const t = tr();
+  const btn = document.getElementById('connect-google-btn');
+  setSecurityMessage('note', 'social', '');
+  try {
+    const firebase = window.firebase;
+    const auth = firebase ? firebase.auth() : null;
+    if (!auth || !auth.currentUser) throw new Error('no_firebase_user');
+    if (btn) { btn.disabled = true; btn.textContent = t.securityConnectingGoogle; }
+
+    const provider = new firebase.auth.GoogleAuthProvider();
+    provider.addScope('email');
+    provider.addScope('profile');
+
+    try {
+      await auth.currentUser.linkWithPopup(provider);
+    } catch (err) {
+      if (err && err.code === 'auth/provider-already-linked') {
+        // Already linked in Firebase; continue syncing SERVI state.
+      } else if (err && err.code === 'auth/credential-already-in-use') {
+        setSecurityMessage('error', 'social', t.securityGoogleConflict);
+        return;
+      } else {
+        throw err;
+      }
+    }
+
+    await auth.currentUser.reload();
+    const current = auth.currentUser;
+    const googleEmail = current.email ? current.email.toLowerCase().trim() : '';
+    if (googleEmail) {
+      const idToken = await current.getIdToken(true);
+      const addRes = await fetch(API + '/api/auth/add-email', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ email: googleEmail, firebase_id_token: idToken })
+      });
+      const addData = await addRes.json().catch(() => ({}));
+      if (!addRes.ok) {
+        try { await current.unlink('google.com'); } catch (_) {}
+        if (addRes.status === 409) setSecurityMessage('error', 'social', t.securityGoogleConflict);
+        else setSecurityMessage('error', 'social', addData.message || t.securityGoogleFailed);
+        return;
+      }
+    }
+
+    await refreshAccountUser();
+    setSecurityMessage('note', 'social', t.securityGoogleConnectedNote);
+  } catch (err) {
+    console.error('[account] Google connect failed:', err);
+    setSecurityMessage('error', 'social', t.securityGoogleFailed);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = t.securityConnectGoogle; }
+    renderConnectedSocialApps();
+    renderSecurityVerification();
+  }
+}
+
 async function initSecuritySection() {
   const t = tr();
   const infoText = document.getElementById('security-info-text');
   const providerInfo = document.getElementById('security-provider-info');
   if (infoText) infoText.textContent = t.securityInfo;
+  renderSecurityVerification();
+  renderConnectedSocialApps();
 
   try {
     const res = await fetch(API + '/api/auth/me', { headers: authHeaders() });
     if (!res.ok) return;
     const d = await res.json();
+    if (d.user) {
+      window.__user = Object.assign(window.__user || {}, d.user);
+      renderSecurityVerification();
+      renderConnectedSocialApps();
+    }
     const provider = d.user?.auth_provider;
     if (providerInfo && provider) {
       const providerLabel = provider === 'google.com' ? 'Google'
@@ -1428,6 +1942,10 @@ function applyTranslations() {
   const ph = (id, val) => { const el = document.getElementById(id); if (el) el.placeholder = val; };
   set('title-info', t.titleInfo);       set('sub-info', t.subInfo);
   set('title-security', t.titleSecurity); set('sub-security', t.subSecurity);
+  set('security-2step-title', t.security2StepTitle); set('security-2step-sub', t.security2StepSub);
+  set('security-phone-title', t.securityPhoneTitle); set('security-phone-sub', t.securityPhoneSub);
+  set('security-email-title', t.securityEmailTitle);
+  set('security-social-title', t.securitySocialTitle); set('security-social-sub', t.securitySocialSub);
   set('title-addresses', t.titleAddresses); set('sub-addresses', t.subAddresses);
   set('title-favorites', t.titleFavorites); set('sub-favorites', t.subFavorites);
   set('browse-favorites-btn', t.browseFavorites);
@@ -1435,6 +1953,8 @@ function applyTranslations() {
   set('add-pm-btn', '+ ' + (isEs() ? 'Agregar' : 'Add'));
   set('title-delete', t.titleDelete);   set('text-delete', t.textDelete);
   set('lbl-name', t.lblName);           set('lbl-email', t.lblEmail);   set('lbl-phone', t.lblPhone);
+  set('profile-lbl-name', t.lblName);   set('profile-lbl-email', t.lblEmail); set('profile-lbl-phone', t.lblPhone);
+  set('profile-edit-btn', t.profileEdit); set('profile-cancel-btn', t.cancel);
   set('security-info-text', t.securityInfo);
   set('email-warning-title', t.emailWarnTitle);
   set('email-warning-text', t.emailWarnText);
@@ -1447,6 +1967,7 @@ function applyTranslations() {
   set('add-addr-btn', document.getElementById('add-addr-form')?.classList.contains('open') ? t.cancel : t.addAddr);
   set('delete-btn', t.deleteBtn);
   set('info-success-text', t.saved);
+  renderProfileView();
   ph('info-name', t.phName);
   ph('addr-label', t.phAddrLabel);      ph('addr-street', t.phAddrStreet);
   ph('addr-city', t.phAddrCity);        ph('addr-state', t.phAddrState);
@@ -1497,6 +2018,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Refresh window.__user with authoritative backend data
         const d = await res.json();
         if (d.user) {
+          _accountUserBackendConfirmed = true;
           window.__user = Object.assign(window.__user, d.user);
         }
       }
@@ -1522,7 +2044,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // Re-apply translations if language changes
   window.addEventListener('langchange', () => {
     applyTranslations();
+    renderProfileView();
     renderEmailWarning();
+    renderSecurityVerification();
+    renderConnectedSocialApps();
     buildNav();
     renderAddresses();
     renderFavoriteServices();

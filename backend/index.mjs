@@ -4794,11 +4794,18 @@ app.post('/api/auth/social', publicFormLimit, (req, res) => {
   return res.status(410).json({ error: 'deprecated', message: 'Use Firebase auth instead.' });
 });
 
-// POST /api/auth/check-identifier — USL flow: check if phone or email already has an account
+// POST /api/auth/check-identifier — USL flow: check if phone or email already has an account.
+// Data-minimised against enumeration: no name, no full phone. Only last4 + verified flag so
+// the client can render a masked greeting and decide whether to prompt email verification.
+// Full phone is collected on the "Confirm phone" step where the user re-types it before OTP.
 app.post('/api/auth/check-identifier', publicFormLimit, async (req, res) => {
   try {
     const { identifier } = req.body || {};
     if (!identifier) return res.status(400).json({ error: 'missing_identifier' });
+
+    const ip = (req.headers['x-forwarded-for'] || req.ip || '').toString().split(',')[0].trim() || null;
+    const allowed = await checkAndRecordIdentifierAttempt(identifier, 'enum_check', ip, 10, 60 * 60 * 1000);
+    if (!allowed) return res.status(429).json({ error: 'rate_limited' });
 
     const isEmail = identifier.includes('@');
     let exists = false;
@@ -4808,7 +4815,7 @@ app.post('/api/auth/check-identifier', publicFormLimit, async (req, res) => {
     if (isEmail) {
       const emailNorm = identifier.toLowerCase().trim();
       const { rows } = await pool.query(
-        'SELECT id, name, phone, email_verified, auth_provider FROM auth_users WHERE email = $1',
+        'SELECT id, phone, email_verified, auth_provider FROM auth_users WHERE email = $1',
         [emailNorm]
       );
       if (rows.length > 0) { exists = true; accountRow = rows[0]; provider = rows[0].auth_provider || 'email'; }
@@ -4816,7 +4823,7 @@ app.post('/api/auth/check-identifier', publicFormLimit, async (req, res) => {
       const phoneNorm = normalizePhoneToE164(identifier);
       if (phoneNorm) {
         const { rows } = await pool.query(
-          'SELECT id, name, phone, email_verified, auth_provider FROM auth_users WHERE phone = $1',
+          'SELECT id, phone, email_verified, auth_provider FROM auth_users WHERE phone = $1',
           [phoneNorm]
         );
         if (rows.length > 0) { exists = true; accountRow = rows[0]; provider = 'phone'; }
@@ -4832,19 +4839,14 @@ app.post('/api/auth/check-identifier', publicFormLimit, async (req, res) => {
       }
     }
 
-    // Normalise provider to the three values the frontend needs
     provider = normalizeFirebaseProvider(provider);
 
     const response = { exists, provider };
-    if (accountRow) {
-      response.first_name = String(accountRow.name || '').trim().split(/\s+/)[0] || '';
-    }
 
-    // For email-identifier logins on existing accounts, return the account's phone
-    // so the frontend can default to phone OTP (Uber-style). UI shows only masked phone + first name.
+    // Email-identifier login on an existing account: surface masked-phone hint + email-verified flag
+    // so the client can route to the Confirm-Phone screen. Full phone is NOT returned.
     if (isEmail && accountRow && accountRow.phone) {
       const phoneDigits = String(accountRow.phone).replace(/\D/g, '');
-      response.phone_e164 = accountRow.phone;
       response.phone_last4 = phoneDigits.slice(-4);
       response.email_verified = !!accountRow.email_verified;
     }
@@ -4897,6 +4899,28 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
     const signupComplete = req.body.signup_complete === true;
     const termsAccepted = req.body.terms_accepted === true;
     const emailSkipped = req.body.email_skipped === true && firstIdentifierType === 'phone' && !emailNormFromToken;
+
+    // Confirm-Phone login flow: the user typed their email, then re-typed their full phone
+    // to receive an OTP. The Firebase token carries the verified phone; the client passes the
+    // typed email as a hint via req.body.email. Without this guard, an attacker who completes
+    // OTP on any phone they control could supply someone else's email and have their Firebase
+    // UID grafted onto that account by the email-merge path below (effective takeover).
+    const emailHintFromClient = !decoded.email && req.body.email && decodedPhoneNorm;
+    if (emailHintFromClient) {
+      const emailHintNorm = normalizeEmail(req.body.email);
+      if (emailHintNorm) {
+        const { rows: hintRows } = await pool.query(
+          'SELECT phone FROM auth_users WHERE email = $1',
+          [emailHintNorm]
+        );
+        if (hintRows.length > 0) {
+          const hintAccountPhone = hintRows[0].phone ? normalizePhoneToE164(hintRows[0].phone) : null;
+          if (!hintAccountPhone || hintAccountPhone !== decodedPhoneNorm) {
+            return res.status(403).json({ error: 'email_phone_mismatch', message: 'Phone does not match the account for this email.' });
+          }
+        }
+      }
+    }
 
     // Look up existing user by firebase_uid, then email, then phone (for phone-only OTP users)
     let { rows } = await pool.query('SELECT * FROM auth_users WHERE firebase_uid = $1', [firebaseUid]);
@@ -5143,6 +5167,9 @@ app.post('/api/auth/check-phone-available', publicFormLimit, async (req, res) =>
     if (!phone) return res.status(400).json({ error: 'missing_phone' });
     const phoneNorm = normalizePhoneToE164(phone);
     if (!phoneNorm) return res.status(400).json({ error: 'invalid_phone' });
+    const ip = (req.headers['x-forwarded-for'] || req.ip || '').toString().split(',')[0].trim() || null;
+    const allowed = await checkAndRecordIdentifierAttempt(phoneNorm, 'enum_check', ip, 10, 60 * 60 * 1000);
+    if (!allowed) return res.status(429).json({ error: 'rate_limited' });
     const { rows } = await pool.query(
       'SELECT 1 FROM auth_users WHERE phone = $1 LIMIT 1',
       [phoneNorm]

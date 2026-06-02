@@ -234,10 +234,13 @@
   async function syncWithBackend(firebaseUser, options) {
     try {
       var idToken = await firebaseUser.getIdToken(true);
+      // Confirm-Phone login: token carries phone but no email; surface uslTypedEmail so
+      // the backend can verify the resolved phone account's email matches what the user typed.
+      var emailHint = (uslLoginViaEmail && !firebaseUser.email) ? (uslTypedEmail || null) : null;
       var body = {
         name:  (uslNewUserData && uslNewUserData.name) || firebaseUser.displayName || null,
         phone: firebaseUser.phoneNumber || (uslNewUserData && uslNewUserData.phone) || null,
-        email: firebaseUser.email       || (uslNewUserData && uslNewUserData.email) || null,
+        email: firebaseUser.email       || (uslNewUserData && uslNewUserData.email) || emailHint || null,
         phone_verified: uslNewUserData && uslNewUserData.phone_verified != null ? uslNewUserData.phone_verified : (!!firebaseUser.phoneNumber || null),
         email_verified: uslNewUserData && uslNewUserData.email_verified != null ? uslNewUserData.email_verified : (!!firebaseUser.email     || null),
         first_identifier_type: uslFirstIdentifierType || null,
@@ -275,6 +278,11 @@
           localStorage.removeItem('servi_user_session');
           window.__user = null;
           window.__syncError = { code: 'signup_incomplete', message: errData.message };
+        } else if (res.status === 403 && errData.error === 'email_phone_mismatch') {
+          localStorage.removeItem('servi_user_session');
+          window.__user = null;
+          try { await auth.signOut(); } catch (_) {}
+          window.__syncError = { code: 'email_phone_mismatch', message: errData.message };
         } else {
           window.__syncError = { code: 'backend_sync_failed', status: res.status, message: errData.message };
         }
@@ -298,8 +306,17 @@
         ? (window.__syncError.message || (es ? 'Este número ya está registrado con otra cuenta.' : 'This phone is already registered with another account.'))
         : window.__syncError.code === 'signup_incomplete'
           ? (window.__syncError.message || (es ? 'Completa los pasos requeridos para crear tu cuenta.' : 'Complete the required steps to create your account.'))
+        : window.__syncError.code === 'email_phone_mismatch'
+          ? (es ? 'Ese teléfono no coincide con la cuenta de este correo. Intenta de nuevo.' : 'That phone doesn\'t match the account for this email. Try again.')
         : (es ? 'Error al conectar con el servidor. Intenta de nuevo.' : 'Error connecting to server. Please try again.');
       if (auth) { try { await auth.signOut(); } catch (_) {} }
+      // For mismatch, return the user to the Confirm-Phone step so they can re-enter their phone.
+      if (window.__syncError.code === 'email_phone_mismatch' && uslLoginViaEmail) {
+        window.__syncError = null;
+        renderConfirmPhoneScreen();
+        setError(errMsg);
+        return false;
+      }
       setError(errMsg);
       return false;
     }
@@ -871,25 +888,20 @@
       if (!uslIsNew) {
         // Existing user
         var provider = data.provider || uslIdentifierType;
-        uslAccountFirstName = data.first_name || '';
         if (provider === 'google') {
           if (btn) { btn.disabled = false; btn.textContent = isEs() ? 'Continuar' : 'Continue'; }
           setError(isEs() ? 'Esta cuenta usa Google. Usa el botón "Continuar con Google".' : 'This account uses Google. Use the "Continue with Google" button.');
           return;
         }
 
-        // Email-identifier login → default to phone OTP (Uber-style).
-        // All accounts have a phone, so backend returns phone_e164 + masked details.
-        if (isEmail && data.phone_e164) {
+        // Email-identifier login → ask the user to confirm their full phone, then send OTP.
+        // Backend returns only the last 4 digits (no full phone, no name) to prevent enumeration.
+        if (isEmail && data.phone_last4) {
           uslLoginViaEmail = true;
           uslTypedEmail = identifier;
-          uslAccountFirstName = data.first_name || '';
           uslAccountPhoneLast4 = data.phone_last4 || '';
           uslAccountEmailVerified = !!data.email_verified;
-          // Switch identifier to the account's phone so Firebase sends SMS there.
-          uslIdentifier = data.phone_e164;
-          uslIdentifierType = 'phone';
-          renderOTPScreen('phone', /* isLogin= */ true);
+          renderConfirmPhoneScreen();
           return;
         }
 
@@ -902,6 +914,54 @@
       if (btn) { btn.disabled = false; btn.textContent = isEs() ? 'Continuar' : 'Continue'; }
       setError(isEs() ? 'Error de conexión. Intenta de nuevo.' : 'Connection error. Try again.');
     }
+  };
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  // Confirm-Phone screen — shown when login starts from an email that matches an
+  // account with a phone. The backend returns only the last 4 digits (no full phone)
+  // to prevent enumeration, so the user re-types their full phone before we trigger
+  // the SMS OTP. Matches the Uber-style "confirm your number" pattern.
+  // ══════════════════════════════════════════════════════════════════════════════
+  function renderConfirmPhoneScreen() {
+    var es = isEs();
+    var title = es ? 'Confirma tu teléfono' : 'Confirm your phone';
+    document.getElementById('auth-modal-global').innerHTML = modalShell(title, true, 'window.__uslBack');
+    var maskedTail = uslAccountPhoneLast4 ? '••••••' + uslAccountPhoneLast4 : '';
+    var hint = es
+      ? 'Encontramos tu cuenta. Termina en <strong>' + maskedTail + '</strong>. Escribe tu teléfono completo para recibir un código.'
+      : 'We found your account ending in <strong>' + maskedTail + '</strong>. Enter your full phone to receive a code.';
+    setScreen(
+      progressDots(2) +
+      '<p style="font-size:15px;font-weight:700;margin-bottom:6px">' +
+        (es ? 'Bienvenido de vuelta' : 'Welcome back') +
+      '</p>' +
+      '<p style="font-size:14px;color:#666;margin-bottom:16px;line-height:1.5">' + hint + '</p>' +
+      errorBox() +
+      '<div style="display:flex;margin-bottom:12px;border:1.5px solid #e8e8e8;border-radius:10px;overflow:hidden">' +
+        countrySelect() +
+        '<input id="confirm-phone-input" type="tel" inputmode="numeric" placeholder="55 1234 5678" ' +
+          'style="flex:1;border:none;padding:12px;font-size:15px;font-family:\'DM Sans\',sans-serif;outline:none" ' +
+          'onkeydown="if(event.key===\'Enter\') window.__uslConfirmPhoneNext()">' +
+      '</div>' +
+      '<button class="btn-primary" onclick="window.__uslConfirmPhoneNext()" id="confirm-phone-btn" style="width:100%;justify-content:center">' +
+        (es ? 'Continuar' : 'Continue') +
+      '</button>'
+    );
+    var el = document.getElementById('confirm-phone-input');
+    if (el) el.focus();
+  }
+
+  window.__uslConfirmPhoneNext = function () {
+    var es = isEs();
+    var digits = ((document.getElementById('confirm-phone-input') || {}).value || '').replace(/\D/g, '');
+    if (!digits) { setError(es ? 'Ingresa tu teléfono.' : 'Enter your phone.'); return; }
+    var candidatePhone = selectedDial + digits;
+    // The Confirm-Phone screen is reached only via uslLoginViaEmail. Keep uslTypedEmail
+    // intact — it's sent to the backend as the cross-check after OTP succeeds.
+    uslIdentifier = candidatePhone;
+    uslIdentifierType = 'phone';
+    setError('');
+    renderOTPScreen('phone', /* isLogin= */ true);
   };
 
   // ══════════════════════════════════════════════════════════════════════════════
@@ -924,15 +984,14 @@
     document.getElementById('auth-modal-global').innerHTML = modalShell(title, true, backFn, isSecondaryPhoneOTP);
 
     if (isPhone) {
-      // When login was initiated via email, mask the phone and greet by first name.
-      var phoneDisplay = uslLoginViaEmail && uslAccountPhoneLast4
-        ? '••••••' + uslAccountPhoneLast4
-        : uslIdentifier;
+      // Login-via-email path passes through Confirm-Phone, so uslIdentifier is the
+      // user-typed full phone — safe to display directly. Backend never returns the
+      // account's full phone, so there's no longer a masked alternative to switch in.
+      var phoneDisplay = uslIdentifier;
       var isReturningUser = !!isLogin;
       var greeting = isReturningUser
         ? '<p style="font-size:15px;font-weight:700;margin-bottom:6px">' +
             (es ? 'Bienvenido de vuelta' : 'Welcome back') +
-            (uslAccountFirstName ? ', ' + escapeHtml(uslAccountFirstName) : '') +
           '</p>'
         : '';
       var bodyCopy = isReturningUser
@@ -980,7 +1039,6 @@
       var emailGreeting = isLogin
         ? '<p style="font-size:15px;font-weight:700;margin-bottom:6px">' +
             (es ? 'Bienvenido de vuelta' : 'Welcome back') +
-            (uslAccountFirstName ? ', ' + escapeHtml(uslAccountFirstName) : '') +
           '</p>'
         : '';
       var emailCopy = isLogin
