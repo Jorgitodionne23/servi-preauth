@@ -781,6 +781,57 @@ async function saveProfile() {
       btn.disabled = false; lbl.textContent = t.saveBtn;
       return;
     }
+    const addingFirstEmail = !_originalEmail && emailChangedReq && !!email;
+    if (addingFirstEmail && !phoneChanged) {
+      if (!email.includes('@')) {
+        errEl.textContent = t.errGeneric;
+        errEl.style.display = 'block';
+        return;
+      }
+
+      if (nameChanged) {
+        const nameRes = await fetch(API + '/api/auth/me', {
+          method: 'PATCH',
+          headers: authHeaders(),
+          body: JSON.stringify({ name })
+        });
+        const nameData = await nameRes.json().catch(() => ({}));
+        if (!nameRes.ok) {
+          errEl.textContent = nameData.message || t.errGeneric;
+          errEl.style.display = 'block';
+          return;
+        }
+        if (window.__user) window.__user.name = nameData.user?.name || name;
+        try {
+          const raw = localStorage.getItem('servi_user_session');
+          if (raw) {
+            const sess = JSON.parse(raw);
+            if (sess.user) sess.user.name = nameData.user?.name || name;
+            localStorage.setItem('servi_user_session', JSON.stringify(sess));
+          }
+        } catch {}
+        _originalName = nameData.user?.name || name;
+      }
+
+      localStorage.setItem('servi_email_verification_mode', '1');
+      localStorage.setItem('servi_email_link_target', email);
+      const sent = window.__sendEmailVerification
+        ? await window.__sendEmailVerification(email)
+        : false;
+      if (!sent) {
+        localStorage.removeItem('servi_email_verification_mode');
+        localStorage.removeItem('servi_email_link_target');
+        errEl.textContent = t.emailWarnFailed;
+        errEl.style.display = 'block';
+        return;
+      }
+      document.getElementById('info-success-text').textContent = t.emailWarnSent;
+      sucEl.style.display = 'flex';
+      renderEmailWarning(t.emailWarnSent);
+      setTimeout(() => { sucEl.style.display = 'none'; }, 5000);
+      return;
+    }
+
     let reauthToken = null;
     if (emailChangedReq || phoneChanged) {
       try {
