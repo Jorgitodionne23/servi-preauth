@@ -20,6 +20,8 @@ import firebaseAdmin from 'firebase-admin';
 import multer from 'multer';
 import nodemailer from 'nodemailer';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { NodeHttpHandler } from '@smithy/node-http-handler';
+import https from 'https';
 
 // --- R2 / S3 Client ---
 const r2 = new S3Client({
@@ -29,6 +31,10 @@ const r2 = new S3Client({
     accessKeyId: process.env.R2_ACCESS_KEY_ID || '',
     secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || '',
   },
+  // Explicit TLS 1.2 agent prevents SSL handshake failures on Render/OpenSSL vs Cloudflare
+  requestHandler: new NodeHttpHandler({
+    httpsAgent: new https.Agent({ minVersion: 'TLSv1.2' }),
+  }),
 });
 const R2_BUCKET = process.env.R2_BUCKET_NAME || 'uploads';
 const R2_PUBLIC_URL = (process.env.R2_PUBLIC_URL || '').replace(/\/$/, '');
@@ -4643,6 +4649,10 @@ async function successGate(req, res) {
 // --- Public: Upload media attachment to R2 ---
 app.post('/api/uploads', publicFormLimit, upload.single('file'), async (req, res) => {
   try {
+    if (!process.env.R2_ACCOUNT_ID || !process.env.R2_ACCESS_KEY_ID || !process.env.R2_SECRET_ACCESS_KEY) {
+      console.error('[POST /api/uploads] R2 environment variables not configured (R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY)');
+      return res.status(503).json({ error: 'storage_not_configured', message: 'File uploads are not available on this server.' });
+    }
     if (!req.file) return res.status(400).json({ error: 'no_file', message: 'No file received' });
     const { mimetype, size, originalname, buffer } = req.file;
     const isVideo = mimetype.startsWith('video/');

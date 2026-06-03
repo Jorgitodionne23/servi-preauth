@@ -199,6 +199,47 @@
     }
     .svc-sidebar__input:focus { border-color: #111; background: #fff; }
     .svc-sidebar__input.error { border-color: #dc2626; }
+    .svc-address-input-wrap {
+      position: relative;
+    }
+    .svc-address-input-wrap .svc-sidebar__input {
+      padding-right: 44px;
+    }
+    .svc-address-location-btn {
+      position: absolute;
+      top: 50%;
+      right: 6px;
+      width: 32px;
+      height: 32px;
+      transform: translateY(-50%);
+      border: none;
+      border-radius: 8px;
+      background: transparent;
+      color: #555;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      transition: background 0.15s, color 0.15s, opacity 0.15s;
+    }
+    .svc-address-location-btn:hover {
+      background: #eee;
+      color: #111;
+    }
+    .svc-address-location-btn:disabled {
+      cursor: default;
+      opacity: 0.5;
+    }
+    .svc-address-location-btn svg {
+      width: 17px;
+      height: 17px;
+      stroke: currentColor;
+    }
+    .svc-address-location-btn[data-busy="true"] svg {
+      animation: svcSpin 1s linear infinite;
+    }
+    @keyframes svcSpin { to { transform: rotate(360deg); } }
     .svc-error-msg {
       font-size: 12px;
       color: #dc2626;
@@ -210,14 +251,42 @@
     .svc-attach-zone {
       border: 1.5px dashed #d0d0d0;
       border-radius: 10px;
-      padding: 14px;
-      text-align: center;
-      cursor: pointer;
+      padding: 10px;
       transition: border-color 0.15s;
       font-size: 13px;
       color: #666;
     }
     .svc-attach-zone:hover { border-color: #111; }
+    .svc-attach-actions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .svc-attach-action {
+      min-height: 44px;
+      border: 1px solid #e2e2e2;
+      border-radius: 9px;
+      background: #fff;
+      color: #222;
+      cursor: pointer;
+      font-family: var(--font-body, 'DM Sans', sans-serif);
+      font-size: 13px;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      padding: 9px 10px;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .svc-attach-action:hover {
+      border-color: #111;
+      background: #fafafa;
+    }
+    .svc-attach-action span[aria-hidden="true"] {
+      font-size: 16px;
+      line-height: 1;
+    }
     .svc-previews {
       display: flex;
       gap: 8px;
@@ -336,6 +405,61 @@
     .svc-not-found p { color: #666; font-size: 15px; }
     .svc-not-found a { color: #111; font-weight: 600; }
 
+    .svc-camera-modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      background: rgba(0, 0, 0, 0.68);
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .svc-camera-modal.visible { display: flex; }
+    .svc-camera-panel {
+      width: min(100%, 420px);
+      background: #fff;
+      border-radius: 18px;
+      padding: 16px;
+      box-shadow: 0 18px 60px rgba(0,0,0,0.24);
+    }
+    .svc-camera-title {
+      font-size: 16px;
+      font-weight: 800;
+      margin-bottom: 12px;
+      font-family: var(--font-heading, 'Syne', sans-serif);
+    }
+    .svc-camera-video {
+      width: 100%;
+      aspect-ratio: 4 / 3;
+      background: #111;
+      border-radius: 12px;
+      object-fit: cover;
+      display: block;
+    }
+    .svc-camera-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 14px;
+    }
+    .svc-camera-actions button {
+      min-height: 44px;
+      border-radius: 11px;
+      border: 1px solid #ddd;
+      background: #fff;
+      color: #111;
+      cursor: pointer;
+      font-family: var(--font-body, 'DM Sans', sans-serif);
+      font-size: 14px;
+      font-weight: 700;
+    }
+    .svc-camera-actions .svc-camera-capture {
+      border-color: #111;
+      background: #111;
+      color: #fff;
+    }
+
     .svc-mobile-bar {
       display: none;
       position: fixed;
@@ -386,6 +510,7 @@
       .svc-page { padding: 112px 16px 100px; }
       .svc-hero-img { height: 240px; }
       .svc-title { font-size: 22px; }
+      .svc-attach-actions { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -552,8 +677,97 @@
     return s.whatsIncludedSuppliers || '';
   }
 
+  function getAddressModalText() {
+    return t().addressModal || {};
+  }
+
+  function setServiceAddress(value) {
+    const address = String(value || '').trim();
+    ['desk', 'mob'].forEach(prefix => {
+      const input = document.getElementById(`svc-addr-${prefix}`);
+      const err = document.getElementById(`svc-addr-err-${prefix}`);
+      if (input) {
+        input.value = address;
+        input.classList.remove('error');
+      }
+      if (err) err.classList.remove('visible');
+    });
+    if (address) localStorage.setItem('dash_hero_address', address);
+  }
+
+  function setServiceAddressLocationBusy(isBusy) {
+    document.querySelectorAll('.svc-address-location-btn').forEach(button => {
+      button.disabled = !!isBusy;
+      button.dataset.busy = isBusy ? 'true' : 'false';
+    });
+  }
+
+  function getCurrentPosition() {
+    return new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: true,
+        maximumAge: 300000,
+        timeout: 12000,
+      });
+    });
+  }
+
+  async function reverseGeocodePosition(latitude, longitude) {
+    const langCode = lang() === 'es' ? 'es' : 'en';
+    const url = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}&localityLanguage=${langCode}`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+    try {
+      const res = await fetch(url, { signal: controller.signal });
+      if (!res.ok) return '';
+      const data = await res.json();
+      const rawParts = [
+        data.locality,
+        data.city,
+        data.principalSubdivision,
+        data.countryName,
+      ].filter(Boolean);
+      const parts = rawParts.filter((part, index) => (
+        rawParts.findIndex(candidate => candidate.toLowerCase() === part.toLowerCase()) === index
+      ));
+      return parts.join(', ');
+    } catch (_) {
+      return '';
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  async function useCurrentLocationForServiceAddress() {
+    const am = getAddressModalText();
+
+    if (!navigator.geolocation) {
+      alert(am.unsupported || (lang() === 'es' ? 'El acceso a ubicación no está disponible en este navegador.' : 'Location access is not available in this browser.'));
+      return;
+    }
+
+    setServiceAddressLocationBusy(true);
+
+    try {
+      const position = await getCurrentPosition();
+      const { latitude, longitude } = position.coords;
+      const address = await reverseGeocodePosition(latitude, longitude);
+      const fallback = `${am.currentLocation || (lang() === 'es' ? 'Ubicación actual' : 'Current location')} (${latitude.toFixed(5)}, ${longitude.toFixed(5)})`;
+      setServiceAddress(address || fallback);
+    } catch (err) {
+      const denied = err && err.code === 1;
+      alert(denied
+        ? (am.permissionDenied || (lang() === 'es' ? 'No se permitió el acceso a tu ubicación.' : 'Location access was denied.'))
+        : (am.locationError || (lang() === 'es' ? 'No pudimos obtener tu ubicación.' : 'Could not get your location.')));
+    } finally {
+      setServiceAddressLocationBusy(false);
+    }
+  }
+
   const attachments = [];
   const MAX_ATTACHMENTS = 3;
+  let activeCameraStream = null;
 
   function renderPreviews() {
     const html = !attachments.length ? '' : attachments.map((a, i) => {
@@ -604,6 +818,105 @@
     } catch (err) {
       setAttachStatus('❌ ' + err.message);
     }
+  }
+
+  function openPhotoInput(prefix, source) {
+    if (attachments.length >= MAX_ATTACHMENTS) {
+      setAttachStatus(lang() === 'es' ? 'Máximo 3 fotos.' : 'Maximum 3 photos.');
+      return;
+    }
+    const id = source === 'camera' ? `svc-camera-input-${prefix}` : `svc-file-input-${prefix}`;
+    const input = document.getElementById(id);
+    if (input) input.click();
+  }
+
+  function stopCameraStream() {
+    if (!activeCameraStream) return;
+    activeCameraStream.getTracks().forEach(track => track.stop());
+    activeCameraStream = null;
+  }
+
+  function closeCameraModal() {
+    stopCameraStream();
+    const modal = document.getElementById('svc-camera-modal');
+    const video = document.getElementById('svc-camera-video');
+    if (video) video.srcObject = null;
+    if (modal) modal.classList.remove('visible');
+  }
+
+  function ensureCameraModal() {
+    let modal = document.getElementById('svc-camera-modal');
+    const s = sp();
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'svc-camera-modal';
+      modal.className = 'svc-camera-modal';
+      modal.setAttribute('role', 'dialog');
+      modal.setAttribute('aria-modal', 'true');
+      document.body.appendChild(modal);
+    }
+    modal.innerHTML = `
+      <div class="svc-camera-panel">
+        <div class="svc-camera-title">${esc(s.cameraTitle || (lang() === 'es' ? 'Tomar foto' : 'Take photo'))}</div>
+        <video class="svc-camera-video" id="svc-camera-video" autoplay playsinline muted></video>
+        <div class="svc-camera-actions">
+          <button type="button" onclick="window._svcCloseCamera()">${esc(s.cameraCancel || (lang() === 'es' ? 'Cancelar' : 'Cancel'))}</button>
+          <button type="button" class="svc-camera-capture" onclick="window._svcCapturePhoto()">${esc(s.cameraCapture || (lang() === 'es' ? 'Usar foto' : 'Use photo'))}</button>
+        </div>
+      </div>
+    `;
+    modal.onclick = event => {
+      if (event.target === modal) closeCameraModal();
+    };
+    return modal;
+  }
+
+  async function openServiceCamera(prefix) {
+    if (attachments.length >= MAX_ATTACHMENTS) {
+      setAttachStatus(lang() === 'es' ? 'Máximo 3 fotos.' : 'Maximum 3 photos.');
+      return;
+    }
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      openPhotoInput(prefix, 'camera');
+      return;
+    }
+
+    const modal = ensureCameraModal();
+    const video = modal.querySelector('#svc-camera-video');
+    modal.classList.add('visible');
+
+    try {
+      activeCameraStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' } },
+        audio: false,
+      });
+      video.srcObject = activeCameraStream;
+      await video.play();
+    } catch (_) {
+      closeCameraModal();
+      setAttachStatus(sp().cameraUnavailable || (lang() === 'es'
+        ? 'No pudimos abrir la cámara. También puedes agregar fotos.'
+        : 'Could not open the camera. You can still add photos.'));
+    }
+  }
+
+  function captureServicePhoto() {
+    const video = document.getElementById('svc-camera-video');
+    if (!video || !video.videoWidth || !video.videoHeight) return;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    canvas.toBlob(blob => {
+      if (!blob) return;
+      const file = new File([blob], `service-photo-${Date.now()}.jpg`, { type: 'image/jpeg' });
+      closeCameraModal();
+      uploadFile(file);
+    }, 'image/jpeg', 0.9);
   }
 
   let whenType = 'asap';
@@ -773,9 +1086,24 @@
 
         <hr class="svc-sidebar__divider">
         <span class="svc-sidebar__label">${esc(s.addressLabel || 'Dirección del servicio')}</span>
-        <input type="text" class="svc-sidebar__input" id="svc-addr-${prefix}"
-               placeholder="${esc(s.addressPlaceholder || 'Calle, número, colonia')}"
-               value="${esc(savedAddr)}">
+        <div class="svc-address-input-wrap">
+          <input type="text" class="svc-sidebar__input" id="svc-addr-${prefix}"
+                 placeholder="${esc(s.addressPlaceholder || 'Calle, número, colonia')}"
+                 value="${esc(savedAddr)}">
+          <button class="svc-address-location-btn" type="button"
+                  onclick="window._svcUseCurrentLocation('${prefix}')"
+                  aria-label="${esc((getAddressModalText().locationBtn) || (lang() === 'es' ? 'Permitir acceso a mi ubicación' : 'Allow access to my location'))}"
+                  title="${esc((getAddressModalText().locationBtn) || (lang() === 'es' ? 'Permitir acceso a mi ubicación' : 'Allow access to my location'))}">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 2v3"></path>
+              <path d="M12 19v3"></path>
+              <path d="M2 12h3"></path>
+              <path d="M19 12h3"></path>
+              <circle cx="12" cy="12" r="7"></circle>
+              <circle cx="12" cy="12" r="2"></circle>
+            </svg>
+          </button>
+        </div>
         <div class="svc-error-msg" id="svc-addr-err-${prefix}">${esc(s.addressError || 'Por favor ingresa tu dirección')}</div>
 
         <hr class="svc-sidebar__divider">
@@ -785,12 +1113,22 @@
 
         <hr class="svc-sidebar__divider">
         <span class="svc-sidebar__label">${esc(s.attachLabel || 'Adjuntar fotos (opcional)')}</span>
-        <div class="svc-attach-zone" id="svc-attach-zone-${prefix}"
-             onclick="document.getElementById('svc-file-input-${prefix}').click()">
-          📷 ${lang() === 'es' ? 'Toca para agregar fotos' : 'Tap to add photos'}
+        <div class="svc-attach-zone" id="svc-attach-zone-${prefix}">
+          <div class="svc-attach-actions">
+            <button class="svc-attach-action" type="button" onclick="window._svcOpenPhotoPicker('${prefix}', 'library')">
+              <span aria-hidden="true">🖼️</span>
+              <span>${esc(s.attachAddPhotos || (lang() === 'es' ? 'Agregar fotos' : 'Add photos'))}</span>
+            </button>
+            <button class="svc-attach-action" type="button" onclick="window._svcOpenCamera('${prefix}')">
+              <span aria-hidden="true">📷</span>
+              <span>${esc(s.attachTakePhoto || (lang() === 'es' ? 'Tomar foto' : 'Take photo'))}</span>
+            </button>
+          </div>
         </div>
         <input type="file" id="svc-file-input-${prefix}" accept="image/*" multiple
-               style="display:none" onchange="window._svcHandleFiles(this.files)">
+               style="display:none" onchange="window._svcHandleFileInput(this)">
+        <input type="file" id="svc-camera-input-${prefix}" accept="image/*" capture="environment"
+               style="display:none" onchange="window._svcHandleFileInput(this)">
         <div class="svc-previews" id="svc-previews-${prefix}"></div>
         <div class="svc-attach-status" id="svc-attach-status-${prefix}"></div>
 
@@ -809,6 +1147,31 @@
 
   window._svcSubmit = function(prefix) {
     handleSubmit(prefix);
+  };
+
+  window._svcUseCurrentLocation = function() {
+    useCurrentLocationForServiceAddress();
+  };
+
+  window._svcOpenPhotoPicker = function(prefix, source) {
+    openPhotoInput(prefix, source);
+  };
+
+  window._svcOpenCamera = function(prefix) {
+    openServiceCamera(prefix);
+  };
+
+  window._svcCloseCamera = function() {
+    closeCameraModal();
+  };
+
+  window._svcCapturePhoto = function() {
+    captureServicePhoto();
+  };
+
+  window._svcHandleFileInput = function(input) {
+    window._svcHandleFiles(input.files);
+    input.value = '';
   };
 
   window._svcHandleFiles = function(files) {

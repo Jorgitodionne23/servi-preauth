@@ -166,6 +166,7 @@
       border-color: var(--color-accent);
       box-shadow: 0 0 0 4px var(--account-accent-ring);
     }
+    .form-select { appearance: auto; }
     .form-input:disabled { background: var(--color-surface); color: var(--color-text-muted); cursor: not-allowed; }
     .form-input::placeholder { color: #b2b2b2; }
     .btn-save {
@@ -385,6 +386,31 @@
     .addr-btn.delete-btn:hover { border-color: var(--account-danger); color: var(--account-danger); background: var(--account-danger-soft); }
     .add-address-form { background: rgba(255, 255, 255, 0.58); border: 1.5px dashed rgba(149, 204, 213, 0.58); border-radius: 16px; padding: 20px; display: none; }
     .add-address-form.open { display: block; }
+    .address-location-btn {
+      width: 100%;
+      margin: 0 0 16px;
+      padding: 12px 14px;
+      justify-content: center;
+    }
+    .address-location-btn svg {
+      width: 17px;
+      height: 17px;
+      stroke: currentColor;
+      flex: 0 0 auto;
+    }
+    .address-location-btn:disabled { opacity: 0.55; cursor: default; }
+    .address-location-btn[data-busy="true"] svg { animation: accountSpin 1s linear infinite; }
+    .address-location-status {
+      min-height: 18px;
+      margin: -8px 0 14px;
+      font-size: 12px;
+      color: var(--color-text-secondary);
+      line-height: 1.4;
+    }
+    .address-location-status:empty { display: none; }
+    .address-location-status[data-tone="success"] { color: var(--color-accent); }
+    .address-location-status[data-tone="error"] { color: var(--account-danger); }
+    @keyframes accountSpin { to { transform: rotate(360deg); } }
     /* Danger zone */
     .danger-zone { border: 1.5px solid rgba(197, 93, 73, 0.28); border-radius: 24px; padding: 28px; background: rgba(255, 255, 255, 0.84); box-shadow: 0 24px 48px -34px rgba(17, 17, 17, 0.24); }
     .danger-title { font-family: var(--font-heading); font-size: 20px; font-weight: 800; color: var(--account-danger); margin-bottom: 8px; letter-spacing: -0.02em; }
@@ -641,14 +667,26 @@
                   <input class="form-input" id="addr-street" type="text" placeholder="Calle, número ext/int">
                 </div>
               </div>
+              <button class="btn-outline address-location-btn" id="addr-location-btn" type="button" onclick="useAddressCurrentLocation()">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M12 2v3"></path>
+                  <path d="M12 19v3"></path>
+                  <path d="M2 12h3"></path>
+                  <path d="M19 12h3"></path>
+                  <circle cx="12" cy="12" r="7"></circle>
+                  <circle cx="12" cy="12" r="2"></circle>
+                </svg>
+                <span id="addr-location-label">Permitir acceso a mi ubicación</span>
+              </button>
+              <div class="address-location-status" id="addr-location-status" aria-live="polite"></div>
               <div class="form-row">
                 <div class="form-group">
                   <label class="form-label" id="lbl-addr-city">Ciudad</label>
-                  <input class="form-input" id="addr-city" type="text" placeholder="Ciudad de México">
+                  <select class="form-input form-select" id="addr-city"></select>
                 </div>
                 <div class="form-group">
                   <label class="form-label" id="lbl-addr-state">Estado</label>
-                  <input class="form-input" id="addr-state" type="text" placeholder="CDMX">
+                  <select class="form-input form-select" id="addr-state" onchange="populateAddressCityOptions('', true)"></select>
                 </div>
               </div>
               <div class="form-row">
@@ -778,6 +816,16 @@ const TX = {
     confirmDeleteTitle: 'Eliminar cuenta', confirmDeleteBody: 'Escribe ELIMINAR para confirmar. Esta acción no se puede deshacer.',
     confirmDeletePlaceholder: 'ELIMINAR', confirmDeleteBtn: 'Confirmar eliminación', cancelBtn: 'Cancelar',
     errNoStreet: 'La calle es obligatoria.',
+    addrLocationBtn: 'Permitir acceso a mi ubicación',
+    addrLocating: 'Permite el acceso a tu ubicación para completar tu dirección automáticamente.',
+    addrResolving: 'Buscando tu dirección...',
+    addrUpdated: 'Dirección actualizada.',
+    addrUnsupported: 'El acceso a ubicación no está disponible en este navegador.',
+    addrPermissionDenied: 'No se permitió el acceso a tu ubicación. También puedes escribir tu dirección manualmente.',
+    addrLocationError: 'No pudimos obtener tu ubicación. También puedes escribir tu dirección manualmente.',
+    addrCurrentLocation: 'Ubicación actual',
+    phAddrStateSelect: 'Selecciona un estado',
+    phAddrCitySelect: 'Selecciona una ciudad',
     errConflict: 'Ese correo o teléfono ya está en uso.',
     errPhoneExists: 'Este número de teléfono ya está registrado con otra cuenta.',
     errGeneric: 'Ocurrió un error. Inténtalo de nuevo.',
@@ -841,6 +889,16 @@ const TX = {
     confirmDeleteTitle: 'Delete account', confirmDeleteBody: 'Type DELETE to confirm. This action cannot be undone.',
     confirmDeletePlaceholder: 'DELETE', confirmDeleteBtn: 'Confirm deletion', cancelBtn: 'Cancel',
     errNoStreet: 'Street is required.',
+    addrLocationBtn: 'Allow access to my location',
+    addrLocating: 'Allow access to your location to complete your address automatically.',
+    addrResolving: 'Finding your address...',
+    addrUpdated: 'Address updated.',
+    addrUnsupported: 'Location access is not available in this browser.',
+    addrPermissionDenied: 'Location access was denied. You can still enter your address manually.',
+    addrLocationError: 'Could not get your location. You can still enter your address manually.',
+    addrCurrentLocation: 'Current location',
+    phAddrStateSelect: 'Select a state',
+    phAddrCitySelect: 'Select a city',
     errConflict: 'That email or phone is already in use.',
     errPhoneExists: 'This phone number is already registered to another account.',
     errGeneric: 'An error occurred. Please try again.',
@@ -858,6 +916,108 @@ function escapeHtml(str) {
     '"': '&quot;',
     "'": '&#39;',
   }[ch]));
+}
+
+const MEXICO_ADDRESS_OPTIONS = [
+  { state: 'Aguascalientes', cities: ['Aguascalientes', 'Calvillo', 'Jesus Maria'] },
+  { state: 'Baja California', cities: ['Tijuana', 'Mexicali', 'Ensenada', 'Rosarito', 'Tecate'] },
+  { state: 'Baja California Sur', cities: ['La Paz', 'Los Cabos', 'Cabo San Lucas', 'San Jose del Cabo'] },
+  { state: 'Campeche', cities: ['Campeche', 'Ciudad del Carmen', 'Champoton'] },
+  { state: 'Chiapas', cities: ['Tuxtla Gutierrez', 'San Cristobal de las Casas', 'Tapachula', 'Comitan'] },
+  { state: 'Chihuahua', cities: ['Chihuahua', 'Ciudad Juarez', 'Delicias', 'Cuauhtemoc', 'Parral'] },
+  { state: 'Ciudad de México', cities: ['Ciudad de México', 'Alvaro Obregon', 'Azcapotzalco', 'Benito Juarez', 'Coyoacan', 'Cuajimalpa de Morelos', 'Cuauhtemoc', 'Gustavo A. Madero', 'Iztacalco', 'Iztapalapa', 'La Magdalena Contreras', 'Miguel Hidalgo', 'Milpa Alta', 'Tlahuac', 'Tlalpan', 'Venustiano Carranza', 'Xochimilco'] },
+  { state: 'Coahuila', cities: ['Saltillo', 'Torreon', 'Monclova', 'Piedras Negras', 'Acuña'] },
+  { state: 'Colima', cities: ['Colima', 'Manzanillo', 'Villa de Alvarez', 'Tecoman'] },
+  { state: 'Durango', cities: ['Durango', 'Gomez Palacio', 'Lerdo'] },
+  { state: 'Estado de México', cities: ['Toluca', 'Naucalpan', 'Tlalnepantla', 'Ecatepec', 'Metepec', 'Huixquilucan', 'Atizapan de Zaragoza', 'Nezahualcoyotl', 'Cuautitlan Izcalli'] },
+  { state: 'Guanajuato', cities: ['Leon', 'Guanajuato', 'Irapuato', 'Celaya', 'San Miguel de Allende', 'Salamanca'] },
+  { state: 'Guerrero', cities: ['Acapulco', 'Chilpancingo', 'Iguala', 'Zihuatanejo'] },
+  { state: 'Hidalgo', cities: ['Pachuca', 'Tulancingo', 'Tula de Allende', 'Mineral de la Reforma'] },
+  { state: 'Jalisco', cities: ['Guadalajara', 'Zapopan', 'Tlaquepaque', 'Tonalá', 'Tlajomulco de Zuñiga', 'Puerto Vallarta'] },
+  { state: 'Michoacán', cities: ['Morelia', 'Uruapan', 'Zamora', 'Lazaro Cardenas'] },
+  { state: 'Morelos', cities: ['Cuernavaca', 'Jiutepec', 'Cuautla', 'Temixco'] },
+  { state: 'Nayarit', cities: ['Tepic', 'Bahia de Banderas', 'Compostela'] },
+  { state: 'Nuevo León', cities: ['Monterrey', 'San Pedro Garza Garcia', 'San Nicolas de los Garza', 'Guadalupe', 'Apodaca', 'Santa Catarina', 'Escobedo'] },
+  { state: 'Oaxaca', cities: ['Oaxaca de Juarez', 'Salina Cruz', 'Juchitan de Zaragoza', 'Puerto Escondido'] },
+  { state: 'Puebla', cities: ['Puebla', 'Cholula', 'San Andres Cholula', 'Tehuacan', 'Atlixco'] },
+  { state: 'Querétaro', cities: ['Queretaro', 'San Juan del Rio', 'Corregidora', 'El Marques'] },
+  { state: 'Quintana Roo', cities: ['Cancun', 'Playa del Carmen', 'Tulum', 'Chetumal', 'Cozumel'] },
+  { state: 'San Luis Potosí', cities: ['San Luis Potosi', 'Soledad de Graciano Sanchez', 'Ciudad Valles', 'Matehuala'] },
+  { state: 'Sinaloa', cities: ['Culiacan', 'Mazatlan', 'Los Mochis', 'Guasave'] },
+  { state: 'Sonora', cities: ['Hermosillo', 'Ciudad Obregon', 'Nogales', 'San Luis Rio Colorado', 'Guaymas'] },
+  { state: 'Tabasco', cities: ['Villahermosa', 'Cardenas', 'Comalcalco', 'Paraiso'] },
+  { state: 'Tamaulipas', cities: ['Tampico', 'Reynosa', 'Matamoros', 'Ciudad Victoria', 'Nuevo Laredo'] },
+  { state: 'Tlaxcala', cities: ['Tlaxcala', 'Apizaco', 'Huamantla', 'Chiautempan'] },
+  { state: 'Veracruz', cities: ['Veracruz', 'Xalapa', 'Boca del Rio', 'Coatzacoalcos', 'Cordoba', 'Orizaba'] },
+  { state: 'Yucatán', cities: ['Merida', 'Valladolid', 'Progreso', 'Tizimin'] },
+  { state: 'Zacatecas', cities: ['Zacatecas', 'Guadalupe', 'Fresnillo', 'Jerez'] },
+];
+
+function normalizeAddressValue(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function normalizeDetectedState(value) {
+  const normalized = normalizeAddressValue(value);
+  if (!normalized) return '';
+  const aliases = {
+    cdmx: 'Ciudad de México',
+    'ciudad de mexico': 'Ciudad de México',
+    'mexico city': 'Ciudad de México',
+    'distrito federal': 'Ciudad de México',
+    mexico: 'Estado de México',
+    'estado de mexico': 'Estado de México',
+    michoacan: 'Michoacán',
+    queretaro: 'Querétaro',
+    'san luis potosi': 'San Luis Potosí',
+    yucatan: 'Yucatán',
+  };
+  if (aliases[normalized]) return aliases[normalized];
+  const match = MEXICO_ADDRESS_OPTIONS.find(item => normalizeAddressValue(item.state) === normalized);
+  return match ? match.state : value;
+}
+
+function setSelectOptions(select, options, placeholder, selectedValue) {
+  if (!select) return;
+  const selected = selectedValue || select.value || '';
+  const hasSelected = options.some(option => normalizeAddressValue(option) === normalizeAddressValue(selected));
+  select.innerHTML = `<option value="">${escapeHtml(placeholder)}</option>` + options.map(option => (
+    `<option value="${escapeHtml(option)}"${normalizeAddressValue(option) === normalizeAddressValue(selected) ? ' selected' : ''}>${escapeHtml(option)}</option>`
+  )).join('');
+  if (selected && !hasSelected) {
+    select.insertAdjacentHTML('beforeend', `<option value="${escapeHtml(selected)}" selected>${escapeHtml(selected)}</option>`);
+  }
+}
+
+function populateAddressStateOptions(selectedState) {
+  const stateSelect = document.getElementById('addr-state');
+  const state = normalizeDetectedState(selectedState || stateSelect?.value || '');
+  setSelectOptions(stateSelect, MEXICO_ADDRESS_OPTIONS.map(item => item.state), tr().phAddrStateSelect, state);
+}
+
+function populateAddressCityOptions(selectedCity, resetExisting = false) {
+  const citySelect = document.getElementById('addr-city');
+  const state = normalizeDetectedState(document.getElementById('addr-state')?.value || '');
+  const stateConfig = MEXICO_ADDRESS_OPTIONS.find(item => item.state === state);
+  const selected = resetExisting ? '' : (selectedCity !== undefined ? selectedCity : (citySelect?.value || ''));
+  setSelectOptions(citySelect, stateConfig ? stateConfig.cities : [], tr().phAddrCitySelect, selected);
+}
+
+function setAddressDropdownValues({ city, state } = {}) {
+  populateAddressStateOptions(state);
+  populateAddressCityOptions(city);
+}
+
+function initializeAddressDropdowns() {
+  setAddressDropdownValues({
+    city: document.getElementById('addr-city')?.value || '',
+    state: document.getElementById('addr-state')?.value || '',
+  });
 }
 
 // ─── Auth guard ───────────────────────────────────────────────────────────────
@@ -1500,6 +1660,89 @@ function renderAddresses() {
   `).join('');
 }
 
+function setAddressLocationStatus(message, tone) {
+  const status = document.getElementById('addr-location-status');
+  if (!status) return;
+  status.textContent = message || '';
+  status.dataset.tone = tone || 'neutral';
+}
+
+function setAddressLocationBusy(isBusy) {
+  const button = document.getElementById('addr-location-btn');
+  if (!button) return;
+  button.disabled = !!isBusy;
+  button.dataset.busy = isBusy ? 'true' : 'false';
+}
+
+function getCurrentPosition() {
+  return new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(resolve, reject, {
+      enableHighAccuracy: true,
+      maximumAge: 300000,
+      timeout: 12000,
+    });
+  });
+}
+
+async function reverseGeocodeAddress(latitude, longitude) {
+  const langCode = isEs() ? 'es' : 'en';
+  const url = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}&localityLanguage=${langCode}`;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) return {};
+    const data = await res.json();
+    const state = normalizeDetectedState(data.principalSubdivision || data.region || '');
+    const city = data.city || data.locality || data.principalSubdivision || '';
+    const street = data.locality || data.city || '';
+    return {
+      street,
+      city: normalizeAddressValue(city) === 'mexico city' ? 'Ciudad de México' : city,
+      state,
+      postalCode: data.postcode || data.postalCode || '',
+    };
+  } catch {
+    return {};
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+async function useAddressCurrentLocation() {
+  const t = tr();
+
+  if (!navigator.geolocation) {
+    setAddressLocationStatus(t.addrUnsupported, 'error');
+    return;
+  }
+
+  setAddressLocationBusy(true);
+  setAddressLocationStatus(t.addrLocating, 'neutral');
+
+  try {
+    const position = await getCurrentPosition();
+    const { latitude, longitude } = position.coords;
+    setAddressLocationStatus(t.addrResolving, 'neutral');
+
+    const address = await reverseGeocodeAddress(latitude, longitude);
+    const fallback = `${t.addrCurrentLocation} (${latitude.toFixed(5)}, ${longitude.toFixed(5)})`;
+    const streetInput = document.getElementById('addr-street');
+    const postalInput = document.getElementById('addr-postal');
+
+    if (streetInput && !streetInput.value.trim()) streetInput.value = address.street || fallback;
+    if (postalInput && address.postalCode) postalInput.value = address.postalCode;
+    setAddressDropdownValues({ city: address.city || '', state: address.state || '' });
+    setAddressLocationStatus(t.addrUpdated, 'success');
+  } catch (err) {
+    const denied = err && err.code === 1;
+    setAddressLocationStatus(denied ? t.addrPermissionDenied : t.addrLocationError, 'error');
+  } finally {
+    setAddressLocationBusy(false);
+  }
+}
+
 function toggleAddForm() {
   const form = document.getElementById('add-addr-form');
   const isOpen = form.classList.toggle('open');
@@ -1510,6 +1753,8 @@ function toggleAddForm() {
     });
     document.getElementById('addr-default').checked = false;
     document.getElementById('addr-error').style.display = 'none';
+    setAddressLocationStatus('', 'neutral');
+    setAddressDropdownValues({ city: '', state: '' });
   }
 }
 
@@ -1962,6 +2207,7 @@ function applyTranslations() {
   set('lbl-addr-label', t.lblAddrLabel); set('lbl-addr-street', t.lblAddrStreet);
   set('lbl-addr-city', t.lblAddrCity);  set('lbl-addr-state', t.lblAddrState);
   set('lbl-addr-postal', t.lblAddrPostal); set('lbl-addr-default', t.lblAddrDefault);
+  set('addr-location-label', t.addrLocationBtn);
   set('info-save-label', t.saveBtn);
   set('addr-save-label', t.saveAddr);   set('addr-cancel-btn', t.cancel);
   set('add-addr-btn', document.getElementById('add-addr-form')?.classList.contains('open') ? t.cancel : t.addAddr);
@@ -1971,6 +2217,7 @@ function applyTranslations() {
   ph('info-name', t.phName);
   ph('addr-label', t.phAddrLabel);      ph('addr-street', t.phAddrStreet);
   ph('addr-city', t.phAddrCity);        ph('addr-state', t.phAddrState);
+  initializeAddressDropdowns();
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
