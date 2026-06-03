@@ -4693,11 +4693,11 @@ app.post('/api/service-requests', publicFormLimit, async (req, res) => {
     const userPayload = token ? verifySessionToken(token) : null;
     if (userPayload?.user_id) {
       const { rows: vRows } = await pool.query(
-        'SELECT phone_verified, email_verified FROM auth_users WHERE id = $1',
+        'SELECT phone_verified, email_verified, email_skipped_at FROM auth_users WHERE id = $1',
         [userPayload.user_id]
       );
       const v = vRows[0];
-      if (v && !v.email_verified) {
+      if (v && !v.email_verified && !v.email_skipped_at) {
         return res.status(409).json({ error: 'email_required', message: 'Verifica tu correo electrónico para confirmar tu solicitud.' });
       }
       if (v && !v.phone_verified) {

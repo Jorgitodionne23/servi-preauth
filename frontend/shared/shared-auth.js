@@ -152,6 +152,32 @@
     document.body.appendChild(div);
   }
 
+  function ensureAuthLoadingStyles() {
+    if (document.getElementById('servi-auth-loading-styles')) return;
+    var style = document.createElement('style');
+    style.id = 'servi-auth-loading-styles';
+    style.textContent =
+      '#auth-modal-global .auth-loading-dots{' +
+        'display:inline-flex;align-items:center;justify-content:center;gap:5px;min-width:38px;height:1em;vertical-align:middle' +
+      '}' +
+      '#auth-modal-global .auth-loading-dot{' +
+        'width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.42;' +
+        'transform:translateY(3px) scale(.78);animation:authDotGesture .9s cubic-bezier(.2,.8,.25,1) infinite' +
+      '}' +
+      '#auth-modal-global .auth-loading-dot:nth-child(2){animation-delay:.12s}' +
+      '#auth-modal-global .auth-loading-dot:nth-child(3){animation-delay:.24s}' +
+      '@keyframes authDotGesture{' +
+        '0%,80%,100%{opacity:.38;transform:translateY(3px) scale(.78)}' +
+        '35%{opacity:1;transform:translateY(-5px) scale(1.12)}' +
+        '55%{opacity:.72;transform:translateY(0) scale(.96)}' +
+      '}' +
+      '@media (prefers-reduced-motion: reduce){' +
+        '#auth-modal-global .auth-loading-dot{animation:authDotFade 1.1s ease-in-out infinite;transform:none}' +
+        '@keyframes authDotFade{0%,80%,100%{opacity:.35}35%{opacity:1}}' +
+      '}';
+    document.head.appendChild(style);
+  }
+
   // ── Firebase SDK (dynamic load) ──────────────────────────────────────────────
   function loadScript(src) {
     return new Promise(function (resolve, reject) {
@@ -430,6 +456,7 @@
 
   // ── Modal shell ──────────────────────────────────────────────────────────────
   function modalShell(title, showBack, backFn, forceShowBack) {
+    ensureAuthLoadingStyles();
     var locked = isSignupFlowLocked();
     var renderBack = !!showBack && (!locked || !!forceShowBack);
     return (
@@ -464,6 +491,24 @@
 
   function errorBox() {
     return '<div id="auth-error" style="display:none;font-size:13px;color:#dc2626;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 12px;margin-bottom:12px"></div>';
+  }
+
+  function loadingDotsMarkup(label) {
+    return '<span class="auth-loading-dots" role="status" aria-label="' + label + '">' +
+      '<span class="auth-loading-dot"></span>' +
+      '<span class="auth-loading-dot"></span>' +
+      '<span class="auth-loading-dot"></span>' +
+    '</span>';
+  }
+
+  function setVerifyOTPButtonLoading(btn, isLoading, es) {
+    if (!btn) return;
+    btn.disabled = !!isLoading;
+    if (isLoading) {
+      btn.innerHTML = loadingDotsMarkup(es ? 'Verificando' : 'Verifying');
+    } else {
+      btn.textContent = es ? 'Verificar' : 'Verify';
+    }
   }
 
   window.__authOverlayClick = function (event) {
@@ -1148,7 +1193,7 @@
     }
 
     var btn = document.getElementById('verify-otp-btn');
-    if (btn) { btn.disabled = true; btn.textContent = '...'; }
+    setVerifyOTPButtonLoading(btn, true, es);
     setError('');
 
     try {
@@ -1168,7 +1213,7 @@
         }
         if (await resumeIncompleteSignupIfNeeded(verifiedUser, 'phone')) return;
         var syncOk = await awaitSyncAndCheck();
-        if (!syncOk) { if (btn) { btn.disabled = false; btn.textContent = es ? 'Verificar' : 'Verify'; } return; }
+        if (!syncOk) { setVerifyOTPButtonLoading(btn, false, es); return; }
         if (requiresProfileCompletion(window.__user)) {
           startExistingProfileCompletion(window.__user);
           return;
@@ -1176,7 +1221,7 @@
         onAuthSuccess();
       }
     } catch (err) {
-      if (btn) { btn.disabled = false; btn.textContent = es ? 'Verificar' : 'Verify'; }
+      setVerifyOTPButtonLoading(btn, false, es);
       setError(firebaseErrorMessage(err.code));
     }
   };
@@ -1547,7 +1592,7 @@
           return;
         }
         var btn = document.getElementById('verify-otp-btn');
-        if (btn) { btn.disabled = true; btn.textContent = '...'; }
+        setVerifyOTPButtonLoading(btn, true, es);
         setError('');
         try {
           // For secondary phone on an email-first account, link the phone credential
@@ -1564,7 +1609,7 @@
           if (uslIsNew) {
             var created = await completeSignupSync();
             if (!created) {
-              if (btn) { btn.disabled = false; btn.textContent = es ? 'Verificar' : 'Verify'; }
+              setVerifyOTPButtonLoading(btn, false, es);
               return;
             }
           } else {
@@ -1596,7 +1641,7 @@
           }
           onAuthSuccess();
         } catch (err) {
-          if (btn) { btn.disabled = false; btn.textContent = es ? 'Verificar' : 'Verify'; }
+          setVerifyOTPButtonLoading(btn, false, es);
           setError(firebaseErrorMessage(err.code));
         }
         return;
