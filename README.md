@@ -1,14 +1,21 @@
 # SERVI Preauth
 
-Stripe payment pre-authorization system for SERVI — a Spanish-language home services marketplace in Mexico.
+Backend, payments, and admin tooling for **SERVI** — an on-demand home services platform for Santa Fe, Cuajimalpa de Morelos (CDMX). Customers request services on the website; SERVI Admin matches a verified specialist; payment is **pre-authorized** on a Stripe card hold and captured after the service is complete.
+
+> Full project context — design system, service categories, bilingual conventions, page-by-page architecture — lives in [`CLAUDE.md`](./CLAUDE.md). Read that first if you're new to the project.
+
+---
 
 ## How It Works
 
-1. Admin creates an order via Google Sheets (Apps Script button) → backend creates a Stripe PaymentIntent
-2. Customer receives a payment link → fills card details on `pay.html` → card is pre-authorized (not yet charged)
-3. After the service is completed, admin captures the payment from the Sheet
-4. Clients who save their card can book future orders via `book.html` (1-click, no card entry needed)
-5. Saved-card orders are pre-authorized automatically when the service appointment enters the 24-hour window
+1. Customer submits a service request via the website (`index.html` → booking flow) **or** contacts SERVI on WhatsApp.
+2. SERVI Admin reviews the request in **`admin.html`** (the primary admin dashboard) — or in the legacy Google Sheets / Apps Script tool — matches a provider, and creates an order in the backend.
+3. The backend creates a Stripe **PaymentIntent** in manual-capture mode (pre-auth).
+4. The customer receives a payment link via WhatsApp.
+   - First-time card: customer pays on **`pay.html`** (Stripe Elements).
+   - Returning customer with saved card: 1-click confirm on **`book.html`**.
+5. The card is **held, not charged**. After the service is delivered, admin captures the payment.
+6. Saved-card customers are auto-pre-authorized 24 h before their appointment by an hourly trigger (`/tasks/preauth-due`).
 
 ---
 
@@ -16,11 +23,14 @@ Stripe payment pre-authorization system for SERVI — a Spanish-language home se
 
 | Layer | Technology |
 |-------|-----------|
-| Backend | Node.js / Express (ES modules) on Render |
-| Database | PostgreSQL on Neon |
-| Payments | Stripe (pre-auth / manual capture) |
-| Admin dashboard | Google Apps Script + Google Sheets |
-| Frontend | Static HTML on Cloudflare Pages |
+| Backend | Node.js / Express 5 (ES modules) on **Render** (Docker) |
+| Database | **Neon** (serverless PostgreSQL) via `pg` Pool |
+| Payments | **Stripe** — pre-auth (manual capture), saved cards, off-session, 3DS fallback |
+| Auth | **Firebase Auth** (frontend identity) + custom HS256 session JWT (backend) |
+| File storage | **Cloudflare R2** (S3-compatible) — voice/photo/video attachments on service requests |
+| Frontend | Static HTML + vanilla JS on **Cloudflare Pages** (no build step) |
+| Admin (primary) | `frontend/admin.html` — token-protected dashboard backed by `/api/admin/*` routes |
+| Admin (legacy) | Google Apps Script + Sheets — still active for order creation and the auto-preauth cron until fully migrated |
 
 ---
 
@@ -28,42 +38,68 @@ Stripe payment pre-authorization system for SERVI — a Spanish-language home se
 
 ```
 backend/
-  index.mjs          — all server routes and business logic
-  db.pg.mjs          — PostgreSQL schema and connection pool
-  pricing.mjs        — fee calculation logic
+  index.mjs          — all server routes and business logic (~6.5k lines)
+  db.pg.mjs          — PostgreSQL schema (CREATE TABLE IF NOT EXISTS) + connection pool
+  pricing.mjs        — alpha-curve booking fee + Stripe processing fee with VAT
 
 frontend/
-  pay.html           — customer payment form (first-time card entry)
-  book.html          — 1-click checkout for clients with a saved card
-  success.html       — post-payment confirmation page
-  save.html          — customer account / card management
+  index.html         — landing page (hero, categories, how-it-works, testimonials)
+  browse.html        — service category browser
+  service.html       — individual service request flow (describe + schedule)
+  account.html       — auth-guarded profile, addresses, payment methods, delete account
+  partners.html      — partner signup hub  +  partners/registro.html (application form)
+  handbook.html      — provider guide index  +  handbook/ subpages
+  helpcenter.html    — support index  +  helpcenter/ subpages
+  legal.html         — términos, privacidad, cancelación, aviso legal
+  admin.html         — primary admin dashboard (inbox + orders, token-protected)
+  pay.html           — Stripe Elements payment form (first-time card)
+  book.html          — saved-card 1-click checkout
+  success.html       — post-payment confirmation
+  save.html          — standalone card / account management
   link-expired.html  — shown when a payment link has expired
   config.js          — runtime config (API_BASE, Stripe publishable key, Firebase config, WhatsApp number)
+  shared/            — shared-styles.css, landing-theme.css, shared-auth.js,
+                       shared-nav.js, shared-footer.js, morphing-nav.js,
+                       i18n.js (ES/EN), browse-data.js
 
-apps-script/         — synced to live Apps Script via clasp (see Apps Script section below)
-  Code.js            — main Sheet integration (order creation, capture, cancel, etc.)
-  webhook.js         — receives status updates from backend and writes to Sheet
+functions/
+  _middleware.js     — Cloudflare Pages middleware (injects Firebase API key into config.js at edge)
+
+apps-script/         — local mirror of the live Google Apps Script (synced via clasp)
+  Code.js            — order creation, payment links, capture/cancel, auto-preauth trigger
+  webhook.js         — receives backend status updates and writes to the Sheet
 
 apps-script-provider-recruitment/
                      — separate Apps Script utility for generating provider IDs
+
+docs/                — AUTH_STATE_MACHINE.md, AUTH_AUDIT.md, session-handoff.md, etc.
+tests/               — Playwright e2e suites (admin, auth) + preflight script
 ```
 
 ---
 
 ## Environment Variables
 
-Copy `.env.example` to `.env` and fill in the values before running locally.
+There is no committed `.env.example` — copy the table below into your local `.env`. **Local dev uses Stripe test keys.** Production keys live on Render and Cloudflare Pages and are not stored in the repo.
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `STRIPE_SECRET_KEY` | Yes | Stripe secret key (`sk_live_...` or `sk_test_...`) |
-| `STRIPE_WEBHOOK_SECRET` | Yes | Stripe webhook signing secret (`whsec_...`) |
-| `DATABASE_URL` | Yes | PostgreSQL connection string |
-| `ADMIN_API_TOKEN` | Yes | Shared secret for admin API routes |
-| `FRONTEND_BASE_URL` | Yes | URL of the Cloudflare Pages deployment |
-| `SHEETS_WEBHOOK_URL` | Yes | Google Apps Script exec URL for Sheet sync |
-| `CORS_ALLOWLIST` | No | Extra comma-separated allowed origins |
-| `NODE_ENV` | Yes | Set to `production` on Render |
+| `STRIPE_SECRET_KEY` | Yes | Stripe secret key (`sk_live_...` in prod, `sk_test_...` locally) |
+| `STRIPE_WEBHOOK_SECRET` | Yes | Stripe webhook signing secret (`whsec_...`) — for local dev, get it from `stripe listen --forward-to localhost:3000/webhook` |
+| `DATABASE_URL` | Yes | Neon PostgreSQL connection string |
+| `ADMIN_API_TOKEN` | Yes | Shared secret for `/api/admin/*` Bearer auth |
+| `FRONTEND_BASE_URL` | Yes | Cloudflare Pages URL — used to build payment links |
+| `FIREBASE_SERVICE_ACCOUNT_JSON` | Yes (prod) | Firebase Admin SDK service account JSON — required to verify Firebase ID tokens and check revocation |
+| `JWT_SECRET` | Yes (prod) | Secret used to sign the custom session JWT. Must be set on Render; backend throws at startup in production if missing |
+| `SHEETS_WEBHOOK_URL` | Optional | Google Apps Script exec URL for legacy Sheet sync |
+| `R2_ACCOUNT_ID` | Optional | Cloudflare R2 — for service request file uploads |
+| `R2_ACCESS_KEY_ID` | Optional | Cloudflare R2 access key |
+| `R2_SECRET_ACCESS_KEY` | Optional | Cloudflare R2 secret |
+| `R2_BUCKET_NAME` | Optional | Cloudflare R2 bucket |
+| `R2_PUBLIC_URL` | Optional | Public base URL for R2-hosted files |
+| `CORS_ALLOWLIST` | Optional | Extra comma-separated allowed origins |
+| `NODE_ENV` | Yes | `production` on Render; anything else locally |
+| `ALLOW_INSECURE_DB_TLS` | Dev only | Setting `true` while `NODE_ENV=production` throws at startup |
 
 ---
 
@@ -71,71 +107,85 @@ Copy `.env.example` to `.env` and fill in the values before running locally.
 
 ```bash
 npm install
-cp .env.example .env
-# Fill in .env values
+# Create .env with values from the table above
 npm start
 ```
 
-The server starts on port `3000` by default.
+The server starts on port `3000`. Express also serves the static `frontend/` folder on the same port, so the frontend points at `window.location.origin` in dev.
 
----
+### Useful scripts
 
-## Deployment
-
-The backend is deployed to **Render** as a Docker container. Every push to `main` triggers a new deploy automatically.
-
-The frontend is deployed to **Cloudflare Pages** from the `frontend/` folder.
-
-For frontend runtime values, inject them before `config.js` loads (for example in HTML `<head>`):
-
-```html
-<script>
-  window.CONFIG_FIREBASE_API_KEY = 'REPLACE_AT_DEPLOY_TIME';
-</script>
-<script src="/config.js"></script>
+```bash
+npm start                    # run the backend (also serves frontend)
+npm run emulators:auth       # start the Firebase Auth emulator (port 9099)
+npm run start:auth-emulator  # run backend against the local Auth emulator
+npm run test:e2e             # Playwright end-to-end suite (auth + admin)
+npm run test:e2e:install     # install the Chromium browser Playwright needs
 ```
 
 ---
 
-## Apps Script
+## Branches & Deployment
 
-The `apps-script/` folder contains **local mirrors** of the live Google Apps Script project. They are not deployed automatically — changes must be manually pasted into the live Apps Script editor and redeployed as a new version.
+- **`main`** — production. Pushing here triggers an automatic Render deploy (backend) and a Cloudflare Pages deploy (frontend). Kept intentionally behind `dev` until a release is planned.
+- **`dev`** — active development / staging. All day-to-day work happens here. Auto-deploys to the Render staging service.
 
-### Syncing changes with clasp (recommended)
+Workflow: develop on `dev`, then open a PR from `dev` into `main` when ready to ship. Each environment has its own Stripe / Firebase / database keys set permanently in its dashboard — no manual key swapping.
 
-`clasp` is Google's command-line tool for managing Apps Script projects.
+> If you see references to a `feature/servi-platform` branch anywhere, they're stale. That branch was deleted.
 
-**First-time setup:**
+---
+
+## Authentication (Dual-Auth Model)
+
+Identity is handled by **Firebase Auth** on the frontend; sessions are issued by the SERVI backend.
+
+1. User signs in with Firebase (phone OTP, email magic link, or Google).
+2. Frontend posts the resulting **Firebase ID token** to `POST /api/auth/firebase`.
+3. Backend verifies the token via the Firebase Admin SDK (`verifyIdToken(token, checkRevoked=true)`), then issues a **custom HS256 JWT** (24-hour TTL) signed with `JWT_SECRET`.
+4. The custom JWT is stored in `localStorage` as `servi_user_session` and sent on every protected request as `Authorization: Bearer …`.
+5. `POST /api/auth/refresh` rotates a near-expired JWT (new `jti`). Logout, account deletion, and identifier changes insert into `revoked_sessions` so old tokens fail server-side.
+
+A `401 { error: 'token_revoked' | 'user_disabled' | 'invalid_token' }` from the backend tells the frontend to clear `localStorage`, call `auth.signOut()`, and rebuild the navbar — this is the normal recovery path, not a bug.
+
+The booking gate requires both `email_verified=true` **and** `phone_verified=true` on the `auth_users` row.
+
+Full design lives in [`docs/AUTH_STATE_MACHINE.md`](./docs/AUTH_STATE_MACHINE.md). Past hardening work is recorded in [`docs/AUTH_AUDIT.md`](./docs/AUTH_AUDIT.md) and [`docs/session-handoff.md`](./docs/session-handoff.md) (historical snapshots — not living docs).
+
+---
+
+## Apps Script (Legacy, Migration In Progress)
+
+`apps-script/` is a **local mirror** of the live Google Apps Script project. It is **not** auto-deployed — changes must be pushed via `clasp` and the active deployment manually advanced.
+
 ```bash
+# First-time
 npm install -g @google/clasp
 clasp login
+
+# Pull the live version into the local mirror
+cd apps-script && clasp pull
+
+# Push local changes to the live project
+cd apps-script && clasp push
 ```
 
-**To pull the latest live version into the local mirror:**
-```bash
-cd apps-script
-clasp pull
-```
+After pushing, open the Apps Script editor → Deploy → Manage deployments → New version, and update the active deployment.
 
-**To push local changes to the live project:**
-```bash
-cd apps-script
-clasp push
-```
-
-After pushing, open the Apps Script editor, create a new version (Deploy → Manage deployments → New version), and update the active deployment to that version.
-
-> The Script ID can be found in the Apps Script editor under Project Settings.
+`admin.html` is now the primary admin tool. Apps Script remains in use for order creation and the hourly auto-preauth trigger until the migration to `admin.html` + `/api/admin/*` is complete.
 
 ---
 
 ## Key Concepts
 
-**Pre-authorization:** A hold placed on a customer's card without actually charging it. The hold expires after ~7 days. The admin captures (charges) it after the service is complete.
+**Pre-authorization.** A hold placed on the customer's card without actually charging it. The hold expires after ~7 days; the admin captures (charges) it after the service is complete.
 
-**Off-session charges:** Customers who consent to saving their card can be charged automatically for future bookings without being present. The `autoPreauthScheduled_` trigger in Apps Script handles this by calling `/confirm-with-saved` when an appointment enters the 24-hour window.
+**Off-session charges.** Customers who consent to saving their card can be charged automatically for future bookings. The hourly `autoPreauthScheduled_` trigger (Apps Script) and the `/tasks/preauth-due` endpoint scan saved-card orders that have entered the 24-hour window and call `/confirm-with-saved`.
 
 **Order kinds:**
 - `primary` — standard order with a payment form
 - `book` — saved-card order (no card entry, pre-auth created automatically)
+- `setup` / `setup_required` — needs the card to be saved (and consent) before pre-auth can run
 - `adjustment` — fee correction linked to a parent order
+
+**Pricing.** `computePricing()` in `pricing.mjs`: provider price → alpha-curve booking fee → Stripe processing fee → VAT → total. Visit pre-auth uses fixed pricing ($140 MXN total, $90 provider).
