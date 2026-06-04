@@ -464,7 +464,7 @@
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
             <div><label class="form-label">WhatsApp (E.164) *</label><input class="auth-input" id="n-phone" placeholder="+5255..." oninput="onPhoneInput()"></div>
             <div><label class="form-label">Nombre del cliente *</label><input class="auth-input" id="n-name" placeholder="Nombre completo"></div>
-            <div><label class="form-label">Email *</label><input class="auth-input" id="n-email" type="email" placeholder="correo@email.com"></div>
+            <div><label class="form-label">Email</label><input class="auth-input" id="n-email" type="email" placeholder="correo@email.com"></div>
             <div>
               <label class="form-label">Tipo de servicio</label>
               <select class="auth-input" id="n-category" style="background:#222">
@@ -1400,7 +1400,7 @@ function openSubmissionLinkModal(subId) {
         <input class="adm-input" id="sub-provider" placeholder="Nombre del proveedor" style="margin-bottom:0">
       </div>
       <div style="margin-bottom:10px">
-        <label class="form-label">Email del cliente *</label>
+        <label class="form-label">Email del cliente</label>
         <input class="adm-input" id="sub-email" type="email" value="${escapeHtml(sub.client_email || '')}" placeholder="correo@email.com" style="margin-bottom:0">
       </div>
       <div style="margin-bottom:16px">
@@ -1444,8 +1444,7 @@ async function submitSubmissionLink(subId) {
   const isVisita = bookingTypeKey === 'visita';
   const amount = isVisita && (!amountRaw || amountRaw <= 0) ? 140 : amountRaw;
   if (!isVisita && (!amount || amount <= 0)) { errEl.textContent = 'Monto requerido.'; errEl.style.display = 'block'; return; }
-  if (!email) { errEl.textContent = 'Email requerido.'; errEl.style.display = 'block'; return; }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { errEl.textContent = 'Email inválido.'; errEl.style.display = 'block'; return; }
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { errEl.textContent = 'Email inválido.'; errEl.style.display = 'block'; return; }
 
   let serviceDate = '', serviceDateTime = '', hasTimeComponent = false;
   if (dtVal) {
@@ -1869,7 +1868,7 @@ async function submitNuevaOrden() {
 
   if (!phone) { errEl.textContent = 'WhatsApp requerido.'; errEl.style.display='block'; return; }
   if (!name) { errEl.textContent = 'Nombre requerido.'; errEl.style.display='block'; return; }
-  if (!email) { errEl.textContent = 'Email requerido.'; errEl.style.display='block'; return; }
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { errEl.textContent = 'Email inválido.'; errEl.style.display='block'; return; }
   if (!desc) { errEl.textContent = 'Descripción requerida.'; errEl.style.display='block'; return; }
   const bookingType = normalizeBookingTypeFE(bookingTypeKey);
   const isVisita = bookingTypeKey === 'visita';

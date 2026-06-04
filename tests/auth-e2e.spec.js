@@ -190,7 +190,7 @@ async function serviceRequest(page) {
         description: 'Auth E2E test request',
         serviceAddress: 'Calle Test 123',
         clientName: 'Test User',
-        clientPhone: '+525500000000',
+        clientPhone: window.__user?.phone || '+525500000000',
         clientEmail: 'auth-e2e@example.test',
         lang: 'en',
       }),
@@ -215,19 +215,15 @@ async function submitLegacyBookingFromUi(page) {
   const responsePromise = page.waitForResponse((res) =>
     res.url().includes('/api/service-requests') && res.request().method() === 'POST'
   );
-  const dialogPromise = page.waitForEvent('dialog').then(async (dialog) => {
-    const message = dialog.message();
-    await dialog.accept();
-    return message;
-  });
 
   await page.click('#booking-submit-btn');
-  const [response, dialogMessage] = await Promise.all([responsePromise, dialogPromise]);
+  const response = await responsePromise;
+  await expect(page.locator('.booking-email-gate')).toBeVisible();
   return {
     status: response.status(),
     body: await response.json(),
     requestHeaders: response.request().headers(),
-    dialogMessage,
+    gateVisible: true,
   };
 }
 
@@ -402,15 +398,21 @@ test('phone-first signup, skipped email, ordering gate returns email_required', 
   expect(me.body.user.phone_verified).toBe(true);
   expect(me.body.user.email_verified).toBe(false);
   expect(me.body.user.email_skipped_at).toBeTruthy();
+  const firstRequest = await serviceRequest(page);
+  expect(firstRequest.status).toBe(201);
+  expect(firstRequest.body.id).toBeTruthy();
+
   const request = await serviceRequest(page);
   expect(request.status).toBe(409);
   expect(request.body.error).toBe('email_required');
+  expect(request.body.requiresEmailVerification).toBe(true);
 
   const uiRequest = await submitLegacyBookingFromUi(page);
   expect(uiRequest.status).toBe(409);
   expect(uiRequest.body.error).toBe('email_required');
+  expect(uiRequest.body.requiresEmailVerification).toBe(true);
   expect(uiRequest.requestHeaders.authorization).toMatch(/^Bearer /);
-  expect(uiRequest.dialogMessage).toMatch(/correo|email/i);
+  expect(uiRequest.gateVisible).toBe(true);
 
   await page.goto(`${BASE_URL}/account.html`);
   await expect(page.locator('#email-verify-warning')).toBeVisible();

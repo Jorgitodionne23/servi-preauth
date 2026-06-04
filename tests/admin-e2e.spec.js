@@ -317,6 +317,28 @@ test.describe('Nueva Orden panel', () => {
     await expect(page.locator('#n-email')).toBeVisible();
   });
 
+  test('blank email does not block first-time payment link submission locally', async ({ page }) => {
+    let payload = null;
+    await page.route('**/create-payment-intent', async (route) => {
+      payload = route.request().postDataJSON();
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ orderId: 'ord_admin_blank_email', payUrl: `${BASE}/pay.html?order=ord_admin_blank_email` }),
+      });
+    });
+
+    await page.fill('#n-phone', '+525511223344');
+    await page.fill('#n-name', 'Cliente Sin Email');
+    await page.fill('#n-desc', 'Servicio de prueba sin email');
+    await page.fill('#n-amount', '500');
+    await page.click('#nueva-btn');
+
+    await expect(page.locator('#nueva-result')).toBeVisible();
+    expect(payload).toBeTruthy();
+    expect(payload.clientEmail).toBe('');
+  });
+
   test('service category selector is present', async ({ page }) => {
     await expect(page.locator('#n-category')).toBeVisible();
   });

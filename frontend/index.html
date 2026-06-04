@@ -1912,6 +1912,127 @@
     return fallback || (es ? 'Error al enviar. Inténtalo de nuevo.' : 'Submission error. Please try again.');
   };
 
+  function bookingGateEscapeHtml(str) {
+    return String(str || '').replace(/[&<>"']/g, ch => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[ch]));
+  }
+
+  window.__showServiceRequestEmailGate = function (options) {
+    const opts = options || {};
+    const es = lang() === 'es';
+    const target = opts.target || document.getElementById('booking-content') || document.getElementById('bk-convo-stream');
+    if (!target) return false;
+
+    document.querySelectorAll('.booking-email-gate').forEach((node) => {
+      if (node._cleanup) node._cleanup();
+      node.remove();
+    });
+
+    const currentEmail = String((window.__user && window.__user.email) || '').trim().toLowerCase();
+    const gate = document.createElement('div');
+    gate.className = 'booking-email-gate';
+    gate.style.cssText = 'border:1px solid #ead8b7;background:#fff8ec;border-radius:10px;padding:14px;margin:12px 0;display:flex;flex-direction:column;gap:10px;color:#4a3421';
+    gate.innerHTML = `
+      <div style="font-weight:800;font-size:14px">${es ? 'Verifica tu correo para continuar' : 'Verify your email to continue'}</div>
+      <div style="font-size:13px;line-height:1.45">${es ? 'Ya usaste tu primera solicitud sin correo verificado. Te enviaremos un enlace de verificación y continuaremos la solicitud cuando se confirme.' : 'You already used your first request without a verified email. We will send a verification link and continue the request after it is confirmed.'}</div>
+      ${currentEmail ? `<div style="font-size:13px;font-weight:700">${bookingGateEscapeHtml(currentEmail)}</div>` : `<input class="input-field" id="booking-email-gate-input" type="email" placeholder="${es ? 'correo@email.com' : 'email@example.com'}" style="background:#fff">`}
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button type="button" class="btn-accent" id="booking-email-gate-send">${es ? 'Enviar verificación' : 'Send verification'}</button>
+        <span id="booking-email-gate-status" style="font-size:12px;color:#6f5742"></span>
+      </div>
+    `;
+
+    const appendTarget = opts.target || target;
+    appendTarget.appendChild(gate);
+    try { gate.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (_) {}
+
+    const statusEl = gate.querySelector('#booking-email-gate-status');
+    const sendBtn = gate.querySelector('#booking-email-gate-send');
+    const input = gate.querySelector('#booking-email-gate-input');
+    let cleaned = false;
+
+    async function refreshAuthUser() {
+      const API = (window.CONFIG && window.CONFIG.API_BASE) || '';
+      let session = null;
+      try { session = JSON.parse(localStorage.getItem('servi_user_session') || 'null'); } catch (_) {}
+      const token = session && session.token;
+      if (!token) return null;
+      const res = await fetch(API + '/api/auth/me', { headers: { Authorization: 'Bearer ' + token } });
+      if (!res.ok) return null;
+      const data = await res.json().catch(() => ({}));
+      if (!data.user) return null;
+      window.__user = data.user;
+      try {
+        session.user = data.user;
+        localStorage.setItem('servi_user_session', JSON.stringify(session));
+      } catch (_) {}
+      return data.user;
+    }
+
+    async function retryIfVerified() {
+      const user = await refreshAuthUser();
+      if (!user || user.email_verified !== true) return;
+      cleanup();
+      gate.remove();
+      if (typeof opts.retry === 'function') setTimeout(opts.retry, 50);
+    }
+
+    function onStorage(e) {
+      if (e.key === 'servi_email_verified_at') retryIfVerified();
+    }
+
+    function onVerified() {
+      retryIfVerified();
+    }
+
+    function cleanup() {
+      if (cleaned) return;
+      cleaned = true;
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('servi-email-verified', onVerified);
+    }
+
+    gate._cleanup = cleanup;
+    window.addEventListener('storage', onStorage);
+    window.addEventListener('servi-email-verified', onVerified);
+
+    sendBtn.addEventListener('click', async () => {
+      const email = currentEmail || String((input && input.value) || '').trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        if (statusEl) statusEl.textContent = es ? 'Ingresa un correo válido.' : 'Enter a valid email.';
+        if (input) input.focus();
+        return;
+      }
+      if (!window.__sendEmailVerification) {
+        if (statusEl) statusEl.textContent = es ? 'No se pudo iniciar la verificación.' : 'Could not start verification.';
+        return;
+      }
+      try {
+        sendBtn.disabled = true;
+        if (statusEl) statusEl.textContent = es ? 'Enviando...' : 'Sending...';
+        localStorage.setItem('servi_email_verification_mode', '1');
+        localStorage.setItem('servi_email_link_target', email);
+        const sent = await window.__sendEmailVerification(email);
+        if (!sent) {
+          localStorage.removeItem('servi_email_verification_mode');
+          localStorage.removeItem('servi_email_link_target');
+          sendBtn.disabled = false;
+          if (statusEl) statusEl.textContent = es ? 'No se pudo enviar. Intenta de nuevo.' : 'Could not send. Try again.';
+          return;
+        }
+        if (statusEl) statusEl.textContent = es ? 'Revisa tu correo. Continuaremos cuando se verifique.' : 'Check your email. We will continue after verification.';
+      } catch (_) {
+        localStorage.removeItem('servi_email_verification_mode');
+        localStorage.removeItem('servi_email_link_target');
+        sendBtn.disabled = false;
+        if (statusEl) statusEl.textContent = es ? 'No se pudo enviar. Intenta de nuevo.' : 'Could not send. Try again.';
+      }
+    });
+
+    return true;
+  };
+
   window.submitBooking = function () {
     if (!window.__user) {
       const s = window.bookingState;
@@ -1973,6 +2094,19 @@
     .catch(err => {
       console.error('Booking submit error:', err);
       if (btn) { btn.disabled = false; btn.textContent = t().booking.confirm; }
+      if (
+        err &&
+        err.body &&
+        err.body.error === 'email_required' &&
+        err.body.requiresEmailVerification &&
+        window.__showServiceRequestEmailGate
+      ) {
+        window.__showServiceRequestEmailGate({
+          target: document.getElementById('booking-content'),
+          retry: () => window.submitBooking()
+        });
+        return;
+      }
       alert(window.__serviceRequestErrorMessage(err && err.body && err.body.error));
     });
   };
@@ -2376,6 +2510,19 @@
     } catch (err) {
       console.error('[convo] submit error:', err);
       if (btn) { btn.disabled = false; btn.textContent = tr().confirm || 'Confirm'; }
+      if (
+        err &&
+        err.body &&
+        err.body.error === 'email_required' &&
+        err.body.requiresEmailVerification &&
+        window.__showServiceRequestEmailGate
+      ) {
+        window.__showServiceRequestEmailGate({
+          target: stream(),
+          retry: () => confirmSubmit(summaryNode)
+        });
+        return;
+      }
       const fallback = tr().error || 'Error. Please try again.';
       addBot(window.__serviceRequestErrorMessage ? window.__serviceRequestErrorMessage(err && err.body && err.body.error, fallback) : fallback);
     }

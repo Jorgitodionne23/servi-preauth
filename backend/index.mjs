@@ -450,6 +450,51 @@ async function isFirstTimeClient({ phoneDigits, emailNormalized }) {
   return rows.length === 0;
 }
 
+async function hasPriorServiceActivity({ userId, phoneDigits }) {
+  const phone = phoneDigits || null;
+  const localPhone = phone && phone.length >= 10 ? phone.slice(-10) : null;
+  const checks = [];
+
+  if (userId) {
+    checks.push(
+      pool.query(
+        `SELECT 1 FROM service_requests WHERE customer_id = $1 LIMIT 1`,
+        [userId]
+      )
+    );
+  }
+
+  if (phone) {
+    const phoneClause = localPhone
+      ? `(regexp_replace(COALESCE(client_phone, ''), '[^0-9]', '', 'g') = $1
+          OR RIGHT(regexp_replace(COALESCE(client_phone, ''), '[^0-9]', '', 'g'), 10) = $2)`
+      : `regexp_replace(COALESCE(client_phone, ''), '[^0-9]', '', 'g') = $1`;
+    const phoneParams = localPhone ? [phone, localPhone] : [phone];
+    checks.push(
+      pool.query(
+        `SELECT 1 FROM service_requests
+          WHERE ${phoneClause}
+          LIMIT 1`,
+        phoneParams
+      )
+    );
+    checks.push(
+      pool.query(
+        `SELECT 1 FROM all_bookings
+          WHERE ${phoneClause}
+            AND COALESCE(parent_id_of_adjustment, '') = ''
+            AND COALESCE(kind, '') <> 'adjustment'
+          LIMIT 1`,
+        phoneParams
+      )
+    );
+  }
+
+  if (!checks.length) return false;
+  const results = await Promise.all(checks);
+  return results.some((result) => result.rows.length > 0);
+}
+
 async function lookupContactByPhoneDigits(digits) {
   if (!digits) return null;
   const found = await findLatestEmailByPhoneDigits(digits);
@@ -1436,18 +1481,20 @@ app.use(express.static(FRONTEND_DIR));
   } else if (!Number.isFinite(providerPricePesos) || providerPricePesos <= 0) {
     return res.status(400).send({ error: 'invalid_provider_amount', message: 'amount must be a positive number (MXN pesos)' });
   }
-  const clientEmailNormalized = normalizeEmail(clientEmail);
-  if (!clientEmailNormalized) {
-    return res.status(400).send({
-      error: 'email_required',
-      message: 'Ingresa un email válido antes de generar el enlace.'
-    });
-  }
   const phoneDigits = normalizePhoneDigits(clientPhone);
   if (!phoneDigits) {
     return res.status(400).send({
       error: 'phone_required_for_email',
       message: 'Agrega el WhatsApp del cliente antes de generar el enlace.'
+    });
+  }
+  const rawClientEmail = String(clientEmail || '').trim();
+  const clientEmailNormalized = normalizeEmail(rawClientEmail);
+  const hasPriorActivity = await hasPriorServiceActivity({ phoneDigits });
+  if ((rawClientEmail && !clientEmailNormalized) || (!clientEmailNormalized && hasPriorActivity)) {
+    return res.status(400).send({
+      error: 'email_required',
+      message: 'Ingresa un email válido antes de generar el enlace.'
     });
   }
   const isFirstTimer = await isFirstTimeClient({
@@ -4696,17 +4743,30 @@ app.post('/api/service-requests', publicFormLimit, async (req, res) => {
     const authHeader = req.headers.authorization || '';
     const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
     const userPayload = token ? verifySessionToken(token) : null;
+    let effectiveCustomerId = customerId || null;
     if (userPayload?.user_id) {
+      effectiveCustomerId = userPayload.user_id;
       const { rows: vRows } = await pool.query(
-        'SELECT phone_verified, email_verified, email_skipped_at FROM auth_users WHERE id = $1',
+        'SELECT phone, phone_verified, email_verified, email_skipped_at FROM auth_users WHERE id = $1',
         [userPayload.user_id]
       );
       const v = vRows[0];
-      if (v && !v.email_verified && !v.email_skipped_at) {
-        return res.status(409).json({ error: 'email_required', message: 'Verifica tu correo electrónico para confirmar tu solicitud.' });
-      }
       if (v && !v.phone_verified) {
         return res.status(409).json({ error: 'phone_required', message: 'Verifica tu número de teléfono para confirmar tu solicitud.' });
+      }
+      if (v && !v.email_verified) {
+        const phoneDigits = normalizePhoneDigits(v.phone || clientPhone);
+        const hasPriorActivity = await hasPriorServiceActivity({
+          userId: userPayload.user_id,
+          phoneDigits
+        });
+        if (hasPriorActivity) {
+          return res.status(409).json({
+            error: 'email_required',
+            message: 'Verifica tu correo electrónico para confirmar tu solicitud.',
+            requiresEmailVerification: true
+          });
+        }
       }
     }
     const attachmentsStr = Array.isArray(attachments) ? attachments.join(',') : (attachments || null);
@@ -4714,7 +4774,7 @@ app.post('/api/service-requests', publicFormLimit, async (req, res) => {
     await pool.query(
       `INSERT INTO service_requests (id, category, description, preferred_date, preferred_time, is_asap, service_address, client_name, client_phone, client_email, customer_id, lang, attachments)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-      [id, category, description || null, preferredDate || null, preferredTime || null, !!isAsap, serviceAddress || null, clientName, clientPhone, clientEmail || null, customerId || null, lang || 'es', attachmentsStr]
+      [id, category, description || null, preferredDate || null, preferredTime || null, !!isAsap, serviceAddress || null, clientName, clientPhone, clientEmail || null, effectiveCustomerId, lang || 'es', attachmentsStr]
     );
     // Notify Google Sheets
     postToGoogleWebhook({ type: 'service_request.created', requestId: id, category, clientName, clientPhone, clientEmail: clientEmail || '', serviceAddress: serviceAddress || '', isAsap: !!isAsap, preferredDate: preferredDate || '', preferredTime: preferredTime || '' });
@@ -5770,6 +5830,54 @@ function customerOrderBucket(status) {
   return CUSTOMER_PAST_ORDER_STATUSES.has(String(status || '').trim()) ? 'past' : 'active';
 }
 
+// Resolves the WHERE fragment + params that match a user's own orders/requests,
+// scoped to identifiers read fresh from auth_users (Stripe customer id, email, phone).
+// Both all_bookings and service_requests share customer_id / client_email / client_phone.
+async function resolveUserOrderMatch(userId) {
+  const { rows } = await pool.query(
+    'SELECT stripe_customer_id, email, phone FROM auth_users WHERE id = $1',
+    [userId]
+  );
+  const u = rows[0];
+  const ids = [];
+  const conds = [];
+  if (!u) return { conds, ids };
+  if (u.stripe_customer_id) {
+    ids.push(u.stripe_customer_id);
+    conds.push(`customer_id = $${ids.length}`);
+  }
+  if (u.email) {
+    ids.push(String(u.email).toLowerCase());
+    conds.push(`LOWER(client_email) = $${ids.length}`);
+  }
+  const phoneDigits = String(u.phone || '').replace(/[^0-9]/g, '').slice(-10);
+  if (phoneDigits.length === 10) {
+    ids.push(phoneDigits);
+    conds.push(`RIGHT(regexp_replace(COALESCE(client_phone,''), '[^0-9]', '', 'g'), 10) = $${ids.length}`);
+  }
+  return { conds, ids };
+}
+
+// Statuses where the customer can still pay/authorize online. Case-insensitive,
+// because the admin create path stores 'pending' while Apps Script stores 'Pending'.
+const PAYABLE_ONLINE_STATUSES = new Set(['pending', 'pending (3ds)', 'setup required', 'setup created']);
+
+function isOrderPayableOnline(row) {
+  if (!row) return false;
+  if (row.cash_selected) return false;
+  const status = String(row.status || '').trim().toLowerCase();
+  if (!PAYABLE_ONLINE_STATUSES.has(status)) return false;
+  const kind = String(row.kind || '').toLowerCase();
+  const hasPrice = row.pricing_total_amount != null || row.amount != null;
+  return hasPrice || kind === 'setup' || kind === 'setup_required';
+}
+
+// Which checkout page a payable order should open (mirrors useBookFlow in admin regenerate-link).
+function orderPayFlow(row) {
+  const kind = String(row?.kind || '').toLowerCase();
+  return (row?.customer_id || kind === 'book' || kind === 'adjustment') ? 'book' : 'pay';
+}
+
 // GET /api/auth/orders — the authenticated user's own orders + pending requests.
 // Scoped strictly to identifiers resolved fresh from auth_users (never trusts the JWT body),
 // matching on Stripe customer id, email, and normalized phone so guest orders placed before
@@ -5778,29 +5886,7 @@ app.get('/api/auth/orders', async (req, res) => {
   const payload = await requireUserAuth(req, res);
   if (!payload) return;
   try {
-    const { rows: uRows } = await pool.query(
-      'SELECT stripe_customer_id, email, phone FROM auth_users WHERE id = $1',
-      [payload.user_id]
-    );
-    const u = uRows[0];
-    if (!u) return res.json({ orders: [] });
-
-    // Build the identifier match clause shared by both tables.
-    const ids = [];
-    const conds = [];
-    if (u.stripe_customer_id) {
-      ids.push(u.stripe_customer_id);
-      conds.push(`customer_id = $${ids.length}`);
-    }
-    if (u.email) {
-      ids.push(String(u.email).toLowerCase());
-      conds.push(`LOWER(client_email) = $${ids.length}`);
-    }
-    const phoneDigits = String(u.phone || '').replace(/[^0-9]/g, '').slice(-10);
-    if (phoneDigits.length === 10) {
-      ids.push(phoneDigits);
-      conds.push(`RIGHT(regexp_replace(COALESCE(client_phone,''), '[^0-9]', '', 'g'), 10) = $${ids.length}`);
-    }
+    const { conds, ids } = await resolveUserOrderMatch(payload.user_id);
     if (!conds.length) return res.json({ orders: [] });
     const matchClause = `(${conds.join(' OR ')})`;
 
@@ -5810,7 +5896,7 @@ app.get('/api/auth/orders', async (req, res) => {
               service_date, service_datetime, service_address, provider_name,
               amount, provider_amount, booking_fee_amount, processing_fee_amount,
               vat_amount, pricing_total_amount, final_captured_amount,
-              cash_selected, created_at
+              cash_selected, customer_id, created_at
          FROM all_bookings
         WHERE ${matchClause}
           AND COALESCE(parent_id_of_adjustment, '') = ''
@@ -5848,6 +5934,8 @@ app.get('/api/auth/orders', async (req, res) => {
       address: r.service_address || null,
       providerName: r.provider_name || null,
       cashSelected: !!r.cash_selected,
+      payable: isOrderPayableOnline(r),
+      payFlow: orderPayFlow(r),
       createdAt: r.created_at,
       pricing: {
         total: r.final_captured_amount ?? r.pricing_total_amount ?? r.amount ?? null,
@@ -5877,6 +5965,8 @@ app.get('/api/auth/orders', async (req, res) => {
       address: r.service_address || null,
       providerName: null,
       cashSelected: false,
+      payable: false,
+      payFlow: null,
       createdAt: r.created_at,
       pricing: null,
     }));
@@ -5888,6 +5978,44 @@ app.get('/api/auth/orders', async (req, res) => {
     return res.json({ orders: all });
   } catch (err) {
     console.error('[GET /api/auth/orders]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// POST /api/auth/orders/:id/payment-link — mint a FRESH payment link for one of the
+// user's own payable orders. Mirrors admin regenerate-link (rotates retry_token so the
+// 2h window restarts), but scoped to the authenticated owner. The customer never hits
+// link-expired from their account. Purely additive — admin/WhatsApp links are untouched.
+app.post('/api/auth/orders/:id/payment-link', publicFormLimit, async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const { conds, ids } = await resolveUserOrderMatch(payload.user_id);
+    if (!conds.length) return res.status(404).json({ error: 'not_found' });
+
+    const { rows } = await pool.query(
+      `SELECT id, status, kind, customer_id, cash_selected, amount, pricing_total_amount
+         FROM all_bookings
+        WHERE id = $${ids.length + 1}
+          AND (${conds.join(' OR ')})
+          AND COALESCE(parent_id_of_adjustment, '') = ''
+        LIMIT 1`,
+      [...ids, req.params.id]
+    );
+    const row = rows[0];
+    if (!row) return res.status(404).json({ error: 'not_found' });
+    if (!isOrderPayableOnline(row)) return res.status(409).json({ error: 'not_payable' });
+
+    const token = randomBytes(12).toString('base64url');
+    await pool.query(
+      `UPDATE all_bookings SET retry_token = $1, retry_token_created_at = NOW() WHERE id = $2`,
+      [token, row.id]
+    );
+
+    res.set('Cache-Control', 'no-store');
+    return res.json({ ok: true, flow: orderPayFlow(row), rt: token, orderId: row.id });
+  } catch (err) {
+    console.error('[POST /api/auth/orders/:id/payment-link]', err);
     return res.status(500).json({ error: 'internal_error' });
   }
 });

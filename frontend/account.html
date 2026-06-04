@@ -956,6 +956,9 @@ const TX = {
     priceEstimate: 'Estimado', priceCash: 'Pago en efectivo al especialista', priceTbd: 'Por confirmar',
     actReorder: 'Pedir de nuevo', actPay: 'Completar pago', actHelp: '¿Necesitas ayuda?', actClose: 'Cerrar',
     createdOn: 'Solicitado el',
+    payGenerating: 'Generando enlace…',
+    payNotAvailable: 'Este pedido ya no está disponible para pago en línea. Contáctanos por WhatsApp si necesitas ayuda.',
+    payError: 'No pudimos abrir el pago. Intenta de nuevo.',
     titleInfo: 'Información personal', subInfo: 'Actualiza tu nombre, correo y teléfono.',
     titleSecurity: 'Seguridad', subSecurity: 'Información de acceso a tu cuenta.',
     titleAddresses: 'Mis direcciones', subAddresses: 'Guarda tus domicilios para agilizar tus solicitudes.',
@@ -1052,6 +1055,9 @@ const TX = {
     priceEstimate: 'Estimate', priceCash: 'Cash payment to specialist', priceTbd: 'To be confirmed',
     actReorder: 'Order again', actPay: 'Complete payment', actHelp: 'Need help?', actClose: 'Close',
     createdOn: 'Requested on',
+    payGenerating: 'Generating link…',
+    payNotAvailable: 'This order is no longer available for online payment. Contact us on WhatsApp if you need help.',
+    payError: 'We could not open the payment. Please try again.',
     titleInfo: 'Personal information', subInfo: 'Update your name, email, and phone.',
     titleSecurity: 'Security', subSecurity: 'Your account access information.',
     titleAddresses: 'My addresses', subAddresses: 'Save your addresses to speed up your requests.',
@@ -2171,7 +2177,11 @@ function orderStatusMeta(item) {
 }
 function orderTitle(item) { return categoryLabel(item.category); }
 function orderIsPayable(item) {
-  return item.source === 'order' && PAYABLE_ORDER_STATUSES.has(String(item.status || '').trim());
+  if (item.source !== 'order') return false;
+  // Server is the source of truth (price confirmed + payable status). Fall back to the
+  // status set only if an older response omits the flag.
+  if (typeof item.payable === 'boolean') return item.payable;
+  return PAYABLE_ORDER_STATUSES.has(String(item.status || '').trim());
 }
 function orderWhenLabel(item) {
   const t = tr();
@@ -2194,11 +2204,49 @@ function orderTotalLabel(item) {
   return total != null ? formatMoney(total) : null;
 }
 
-function goPayOrder(id, kind) {
-  const page = kind === 'book' ? '/book.html' : '/pay.html';
+function buildPayUrl(id, flow, rt) {
   const q = encodeURIComponent(id);
+  const page = flow === 'book' ? '/book.html' : '/pay.html';
   // pay.html reads ?order=, book.html reads ?orderId= — send both for compatibility.
-  window.location.href = page + '?order=' + q + '&orderId=' + q;
+  return page + '?order=' + q + '&orderId=' + q + '&rt=' + encodeURIComponent(rt);
+}
+
+// Mints a fresh payment link server-side (rotates the retry_token so the 2h window
+// restarts) and opens it in a new tab. The blank tab is opened synchronously inside the
+// click so popup blockers treat it as user-initiated; we set its URL once the link is ready.
+let _payInFlight = false;
+async function startOrderPayment(id, flow, btn) {
+  if (_payInFlight) return;
+  _payInFlight = true;
+  const t = tr();
+  const tab = window.open('', '_blank');
+  if (tab) { try { tab.document.write('<!doctype html><meta charset="utf-8"><title>SERVI</title><body style="font-family:system-ui,sans-serif;color:#555;padding:40px">' + escapeHtml(t.payGenerating) + '</body>'); } catch (_) {} }
+  let prevLabel = null;
+  if (btn) { prevLabel = btn.textContent; btn.disabled = true; btn.textContent = t.payGenerating; }
+  const restore = () => { if (btn) { btn.disabled = false; if (prevLabel != null) btn.textContent = prevLabel; } _payInFlight = false; };
+  try {
+    const res = await fetch(API + '/api/auth/orders/' + encodeURIComponent(id) + '/payment-link', {
+      method: 'POST', headers: authHeaders(),
+    });
+    if (res.status === 409) {
+      if (tab) tab.close();
+      alert(t.payNotAvailable);
+      restore();
+      _ordersLoaded = false;
+      loadOrders();
+      return;
+    }
+    if (!res.ok) throw new Error('link_failed');
+    const d = await res.json();
+    const url = buildPayUrl(d.orderId || id, d.flow || flow, d.rt);
+    if (tab) { tab.location.href = url; }
+    else { window.location.href = url; } // popup blocked → same-tab fallback
+    restore();
+  } catch (_) {
+    if (tab) tab.close();
+    alert(t.payError);
+    restore();
+  }
 }
 function reorder(category) {
   const cat = String(category || '').toLowerCase();
@@ -2253,7 +2301,7 @@ function orderCardHtml(item, idx) {
   else if (item.providerName) metaItems.push(`<span class="order-meta-item">${ORDER_ICONS.user}<span>${escapeHtml(item.providerName)}</span></span>`);
 
   const actions = [];
-  if (orderIsPayable(item)) actions.push(`<button class="order-cta" onclick="event.stopPropagation();goPayOrder('${escapeHtml(item.id)}','${escapeHtml(item.kind)}')">${escapeHtml(t.actPay)}</button>`);
+  if (orderIsPayable(item)) actions.push(`<button class="order-cta" onclick="event.stopPropagation();startOrderPayment('${escapeHtml(item.id)}','${escapeHtml(item.payFlow || item.kind)}',this)">${escapeHtml(t.actPay)}</button>`);
   if (item.category) actions.push(`<button class="addr-btn default-btn" onclick="event.stopPropagation();reorder('${escapeHtml(item.category)}')">${escapeHtml(t.actReorder)}</button>`);
 
   return `
@@ -2375,7 +2423,7 @@ function orderSummaryHtml(item) {
 function orderDrawerActionsHtml(item) {
   const t = tr();
   const a = [];
-  if (orderIsPayable(item)) a.push(`<button class="btn-save" onclick="goPayOrder('${escapeHtml(item.id)}','${escapeHtml(item.kind)}')">${escapeHtml(t.actPay)}</button>`);
+  if (orderIsPayable(item)) a.push(`<button class="btn-save" onclick="startOrderPayment('${escapeHtml(item.id)}','${escapeHtml(item.payFlow || item.kind)}',this)">${escapeHtml(t.actPay)}</button>`);
   if (item.category) a.push(`<button class="btn-outline" onclick="reorder('${escapeHtml(item.category)}')">${escapeHtml(t.actReorder)}</button>`);
   a.push(`<a class="btn-outline" href="/helpcenter.html">${escapeHtml(t.actHelp)}</a>`);
   return `<div class="drawer-actions">${a.join('')}</div>`;
