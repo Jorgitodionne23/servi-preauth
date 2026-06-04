@@ -73,6 +73,46 @@
   const PREVIEW_ITEMS_PER_CATEGORY = 8;
   const DISCOVERY_FILTER_ALL = 'all';
   const API = window.CONFIG?.API_BASE || '';
+  const representativeServiceImageIndex = {
+    cleaning: {
+      'home-cleaning': 0,
+      'deep-cleaning': 4,
+      'dry-cleaning': 0,
+    },
+    repair: {
+      gardening: 1,
+      plumbing: 0,
+      electrical: 0,
+      carpentry: 0,
+      locksmith: 0,
+      handyman: 4,
+      'assembly-installation': 4,
+      tailoring: 3,
+    },
+    moving: {
+      moving: 0,
+      'large-items': 0,
+      errands: 0,
+      deliveries: 0,
+    },
+    wellness: {
+      massage: 0,
+      therapist: 0,
+      'personal-trainer': 0,
+      'pet-care': 1,
+      'child-care': 0,
+      'elder-assistance': 0,
+    },
+    suppliers: {
+      'artisan-bread': 0,
+      'fresh-dairy': 0,
+      pharmacy: 1,
+      catering: 3,
+      'organic-butcher': 3,
+      fish: 3,
+      'organic-vegetables': 0,
+    },
+  };
   let activeDiscoveryFilter = DISCOVERY_FILTER_ALL;
   let favoriteIdsByKey = new Map();
   let pendingFavoritePayload = null;
@@ -216,6 +256,18 @@
   function getSubcategoryImage(catKey, subKey) {
     const categoryImages = discoverySubcategoryImages[catKey] || {};
     return categoryImages[subKey] || discoveryFallbackByCategory[catKey] || '/assets/partnerimage.png';
+  }
+
+  function getRepresentativeServiceImage(catKey, subKey) {
+    const hasMappedIndex = Object.prototype.hasOwnProperty.call(representativeServiceImageIndex[catKey] || {}, subKey);
+    const serviceIndex = hasMappedIndex ? representativeServiceImageIndex[catKey][subKey] : 0;
+    const subImage = getSubcategoryImage(catKey, subKey);
+    const categoryFallback = discoveryFallbackByCategory[catKey] || '/assets/partnerimage.png';
+    const officialSrc = getOfficialServiceImage(catKey, subKey, serviceIndex);
+    return {
+      primarySrc: officialSrc || subImage,
+      onerror: buildImageFallbackHandler(officialSrc ? [subImage, categoryFallback] : [categoryFallback]),
+    };
   }
 
   function updateFavoriteButtons() {
@@ -504,18 +556,17 @@
 
     return services.map(sub => {
       const serviceLabel = escapeAttr(getLocalizedText(sub.label));
-      const imageSrc = getSubcategoryImage(catKey, sub.key);
-      const fallback = discoveryFallbackByCategory[catKey] || '/assets/partnerimage.png';
+      const visuals = getRepresentativeServiceImage(catKey, sub.key);
       return `
         <button class="dash-discovery__card" type="button"
                 onclick="window._browseOpenSubcategory('${catKey}', '${sub.key}', 'discovery-card')"
                 aria-label="${serviceLabel}">
           <span class="dash-discovery__media">
             <img class="dash-discovery__img"
-                 src="${imageSrc}"
+                 src="${visuals.primarySrc}"
                  alt="${serviceLabel || categoryName}"
                  loading="lazy"
-                 onerror="this.onerror=null;this.src='${fallback}'">
+                 onerror="${visuals.onerror}">
           </span>
           <span class="dash-discovery__label">${serviceLabel}</span>
         </button>

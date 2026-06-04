@@ -2138,6 +2138,12 @@ function formatDateShort(value) {
   if (!d) return null;
   return d.toLocaleDateString(isEs() ? 'es-MX' : 'en-US', { day: 'numeric', month: 'short', year: 'numeric' });
 }
+function formatDateTimeLong(value) {
+  const d = parseDateValue(value);
+  if (!d) return null;
+  return d.toLocaleDateString(isEs() ? 'es-MX' : 'en-US', { day: 'numeric', month: 'short', year: 'numeric' })
+    + ' · ' + d.toLocaleTimeString(isEs() ? 'es-MX' : 'en-US', { hour: '2-digit', minute: '2-digit' });
+}
 function formatDateTime(value) {
   const d = parseDateValue(value);
   if (!d) return null;
@@ -2380,7 +2386,7 @@ function orderDrawerHtml(item) {
   const cat = categoryMeta(item.category);
   const meta = orderStatusMeta(item);
   const code = item.publicCode ? '#' + item.publicCode : '';
-  const created = formatDateShort(item.createdAt);
+  const created = formatDateTimeLong(item.createdAt);
   const summary = orderSummaryHtml(item);
   return `
     <div class="drawer-hero" style="--order-tint:${cat.tint}">
