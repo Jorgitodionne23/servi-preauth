@@ -76,7 +76,8 @@ After confirmation: "¡Solicitud enviada! Te contactaremos pronto por WhatsApp."
 - Auth methods: Phone OTP (Firebase), Email magic link (Firebase), Google Sign-In (popup)
 - Unified identifier input — single field, auto-detects phone vs email
 - Signup collects: phone or email (primary) → name → secondary identifier (optional)
-- Backend syncs Firebase ID token → issues custom JWT (30-day HS256)
+- **Dual-auth model:** Firebase handles user identity on the frontend (phone OTP, email magic link, Google OAuth). The frontend posts the Firebase ID token to `POST /api/auth/firebase`; the backend verifies it via the Firebase Admin SDK and issues its own **custom HS256 session JWT (24-hour TTL)**. Clients send that JWT as `Authorization: Bearer …` for all `/api/auth/*` and other user-scoped routes.
+- Session refresh + revocation: `POST /api/auth/refresh` rotates a near-expired JWT (new `jti`); logout, account deletion, and password/phone changes write to the `revoked_sessions` table so old tokens fail server-side immediately.
 - Booking gate enforces both `email_verified=true` + `phone_verified=true`
 - Cross-identifier recovery merges orphaned phone-only accounts when email is added
 
