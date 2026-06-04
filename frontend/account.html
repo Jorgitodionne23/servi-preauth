@@ -472,6 +472,142 @@
     .confirm-ok { padding: 10px 18px; border-radius: 12px; border: none; background: #c55d49; color: #fff; font-size: 13px; font-weight: 700; font-family: var(--font-body); cursor: pointer; }
     .confirm-ok:hover { background: #b04e3c; }
     .confirm-ok:disabled { opacity: 0.6; cursor: not-allowed; }
+    /* ─── Orders / history ─────────────────────────────────────────────── */
+    .orders-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+    .orders-new-btn { flex: 0 0 auto; white-space: nowrap; }
+    .orders-segment {
+      display: inline-flex;
+      gap: 4px;
+      padding: 4px;
+      background: rgba(255, 255, 255, 0.7);
+      border: 1px solid var(--color-border);
+      border-radius: 14px;
+      margin-bottom: 22px;
+    }
+    .orders-seg-btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 9px 18px; border: none; background: none; cursor: pointer;
+      font-family: var(--font-body); font-size: 13.5px; font-weight: 700;
+      color: var(--color-text-secondary); border-radius: 10px;
+      transition: background var(--duration-fast), color var(--duration-fast);
+    }
+    .orders-seg-btn:hover { color: var(--color-text); }
+    .orders-seg-btn.active { background: var(--color-text); color: #fff; }
+    .orders-seg-count {
+      font-size: 11px; font-weight: 800; padding: 1px 7px; border-radius: 999px;
+      background: var(--color-surface); color: var(--color-text-secondary); line-height: 1.5;
+    }
+    .orders-seg-btn.active .orders-seg-count { background: rgba(255, 255, 255, 0.22); color: #fff; }
+    .orders-list { display: flex; flex-direction: column; gap: 14px; }
+    .order-card {
+      position: relative;
+      border: 1px solid var(--color-border);
+      border-radius: 20px;
+      background: rgba(255, 255, 255, 0.82);
+      backdrop-filter: blur(14px);
+      padding: 18px 20px;
+      cursor: pointer;
+      transition: transform var(--duration-fast), box-shadow var(--duration-fast), border-color var(--duration-fast);
+      animation: orderCardIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+    }
+    .order-card:hover { transform: translateY(-2px); border-color: var(--account-accent-ring); box-shadow: 0 22px 44px -28px rgba(17, 17, 17, 0.32); }
+    .order-card:focus-visible { outline: none; border-color: var(--color-accent); box-shadow: 0 0 0 4px var(--account-accent-ring); }
+    @keyframes orderCardIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+    .order-card-top { display: grid; grid-template-columns: 52px 1fr auto; gap: 16px; align-items: start; }
+    .order-icon {
+      width: 52px; height: 52px; border-radius: 15px;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 24px; line-height: 1;
+      background: var(--order-tint, var(--color-surface));
+    }
+    .order-main { min-width: 0; }
+    .order-title { font-size: 16px; font-weight: 800; color: var(--color-text); letter-spacing: -0.01em; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .order-desc { font-size: 13.5px; color: var(--color-text-secondary); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .order-meta { display: flex; flex-wrap: wrap; gap: 5px 14px; margin-top: 11px; }
+    .order-meta-item { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--color-text-muted); min-width: 0; max-width: 100%; }
+    .order-meta-item svg { width: 14px; height: 14px; stroke: currentColor; fill: none; flex: 0 0 auto; opacity: 0.85; }
+    .order-meta-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .order-right { display: flex; flex-direction: column; align-items: flex-end; gap: 9px; text-align: right; flex: 0 0 auto; }
+    .order-price { font-size: 16px; font-weight: 800; color: var(--color-text); white-space: nowrap; }
+    .order-price small { font-size: 11px; font-weight: 700; color: var(--color-text-muted); margin-left: 2px; }
+    .order-status { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 999px; font-size: 11px; font-weight: 800; white-space: nowrap; }
+    .order-status::before { content: ""; width: 6px; height: 6px; border-radius: 999px; background: currentColor; }
+    .order-status.is-pending { background: rgba(161, 98, 7, 0.12); color: #a16207; }
+    .order-status.is-progress { background: rgba(49, 120, 131, 0.13); color: #2b6d77; }
+    .order-status.is-authorized { background: var(--account-accent-soft); color: #2b6d77; }
+    .order-status.is-done { background: rgba(31, 122, 58, 0.13); color: #1f7a3a; }
+    .order-status.is-canceled { background: rgba(17, 17, 17, 0.06); color: #7c7c7c; }
+    .order-status.is-declined { background: var(--account-danger-soft); color: var(--account-danger); }
+    .order-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; padding-top: 14px; border-top: 1px solid rgba(17, 17, 17, 0.06); }
+    .order-actions .addr-btn { padding: 8px 14px; font-size: 12px; }
+    .order-cta {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 15px; border-radius: 10px; border: none;
+      background: var(--color-text); color: #fff;
+      font-size: 12px; font-weight: 700; font-family: var(--font-body); cursor: pointer;
+      transition: background var(--duration-fast), transform var(--duration-fast);
+    }
+    .order-cta:hover { background: var(--color-accent); transform: translateY(-1px); }
+    /* Skeletons */
+    .order-skeleton { border: 1px solid var(--color-border); border-radius: 20px; background: rgba(255, 255, 255, 0.7); padding: 18px 20px; display: grid; grid-template-columns: 52px 1fr 76px; gap: 16px; align-items: center; }
+    .sk { background: linear-gradient(100deg, rgba(17, 17, 17, 0.05) 28%, rgba(17, 17, 17, 0.09) 50%, rgba(17, 17, 17, 0.05) 72%); background-size: 220% 100%; animation: skShimmer 1.3s ease-in-out infinite; border-radius: 8px; }
+    @keyframes skShimmer { from { background-position: 220% 0; } to { background-position: -220% 0; } }
+    .sk-icon { width: 52px; height: 52px; border-radius: 15px; }
+    .sk-line { height: 12px; }
+    .order-empty { border: 1.5px dashed rgba(149, 204, 213, 0.55); border-radius: 18px; padding: 40px 28px; text-align: center; background: rgba(255, 255, 255, 0.58); }
+    .order-empty-emoji { font-size: 34px; line-height: 1; margin-bottom: 14px; }
+    .order-empty-title { font-size: 16px; font-weight: 800; color: var(--color-text); margin-bottom: 6px; }
+    .order-empty-text { font-size: 13px; color: var(--color-text-secondary); line-height: 1.5; margin-bottom: 18px; max-width: 360px; margin-left: auto; margin-right: auto; }
+    /* Detail drawer */
+    .order-drawer-overlay { position: fixed; inset: 0; background: rgba(17, 17, 17, 0.42); backdrop-filter: blur(4px); z-index: 10000; opacity: 0; pointer-events: none; transition: opacity 0.32s ease; }
+    .order-drawer-overlay.open { opacity: 1; pointer-events: auto; }
+    .order-drawer {
+      position: fixed; top: 0; right: 0; height: 100%; width: min(488px, 100%);
+      background: #fbfaf8;
+      box-shadow: -30px 0 80px -42px rgba(0, 0, 0, 0.5);
+      transform: translateX(100%);
+      transition: transform 0.42s cubic-bezier(0.16, 1, 0.3, 1);
+      overflow-y: auto; -webkit-overflow-scrolling: touch;
+    }
+    .order-drawer-overlay.open .order-drawer { transform: none; }
+    .drawer-hero { position: relative; padding: 26px 24px 22px; background: linear-gradient(160deg, var(--order-tint, var(--account-accent-soft)), rgba(255, 255, 255, 0) 78%); border-bottom: 1px solid rgba(17, 17, 17, 0.06); }
+    .drawer-close { position: absolute; top: 18px; right: 18px; width: 34px; height: 34px; border-radius: 999px; border: 1px solid var(--color-border); background: rgba(255, 255, 255, 0.85); color: var(--color-text); font-size: 17px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: background var(--duration-fast); }
+    .drawer-close:hover { background: #fff; }
+    .drawer-hero-icon { width: 56px; height: 56px; border-radius: 16px; background: rgba(255, 255, 255, 0.7); display: inline-flex; align-items: center; justify-content: center; font-size: 27px; margin-bottom: 14px; box-shadow: 0 10px 24px -16px rgba(17, 17, 17, 0.5); }
+    .drawer-hero-title { font-family: var(--font-heading); font-size: 21px; font-weight: 800; letter-spacing: -0.02em; color: var(--color-text); line-height: 1.2; }
+    .drawer-hero-code { font-size: 12px; font-weight: 700; color: var(--color-text-muted); margin-top: 6px; letter-spacing: 0.02em; }
+    .drawer-hero-status { margin-top: 14px; }
+    .drawer-section { padding: 22px 24px; border-bottom: 1px solid rgba(17, 17, 17, 0.06); }
+    .drawer-section:last-child { border-bottom: none; }
+    .drawer-section-title { font-size: 11.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; color: var(--color-text-secondary); margin-bottom: 14px; }
+    .order-timeline { display: flex; flex-direction: column; }
+    .otl-step { display: grid; grid-template-columns: 24px 1fr; gap: 14px; padding-bottom: 20px; position: relative; }
+    .otl-step:last-child { padding-bottom: 0; }
+    .otl-step::before { content: ""; position: absolute; left: 11px; top: 24px; bottom: -2px; width: 2px; background: var(--color-border); }
+    .otl-step:last-child::before { display: none; }
+    .otl-dot { width: 24px; height: 24px; border-radius: 999px; border: 2px solid var(--color-border); background: #fff; display: inline-flex; align-items: center; justify-content: center; z-index: 1; color: transparent; }
+    .otl-dot svg { width: 12px; height: 12px; stroke: #fff; fill: none; }
+    .otl-step.done .otl-dot { background: var(--color-accent); border-color: var(--color-accent); }
+    .otl-step.done::before { background: var(--color-accent); }
+    .otl-step.current .otl-dot { border-color: var(--color-accent); box-shadow: 0 0 0 4px var(--account-accent-ring); }
+    .otl-step.canceled .otl-dot { background: var(--account-danger); border-color: var(--account-danger); }
+    .otl-label { font-size: 13.5px; font-weight: 700; color: var(--color-text); line-height: 1.3; }
+    .otl-step:not(.done):not(.current) .otl-label { color: var(--color-text-muted); font-weight: 600; }
+    .otl-sub { font-size: 12px; color: var(--color-text-muted); margin-top: 2px; }
+    .drawer-info-row { display: grid; grid-template-columns: 18px 1fr; gap: 12px; padding: 11px 0; align-items: start; }
+    .drawer-info-row + .drawer-info-row { border-top: 1px solid rgba(17, 17, 17, 0.05); }
+    .drawer-info-row svg { width: 17px; height: 17px; stroke: var(--color-text-secondary); fill: none; margin-top: 1px; }
+    .drawer-info-label { font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-text-muted); }
+    .drawer-info-value { font-size: 14px; font-weight: 600; color: var(--color-text); margin-top: 2px; line-height: 1.4; overflow-wrap: anywhere; }
+    .order-receipt { border: 1px solid var(--color-border); border-radius: 16px; overflow: hidden; }
+    .order-receipt-row { display: flex; justify-content: space-between; gap: 16px; padding: 12px 16px; font-size: 13.5px; }
+    .order-receipt-row + .order-receipt-row { border-top: 1px solid rgba(17, 17, 17, 0.06); }
+    .order-receipt-row .lbl { color: var(--color-text-secondary); }
+    .order-receipt-row .val { font-weight: 700; color: var(--color-text); white-space: nowrap; }
+    .order-receipt-row.total { background: var(--color-surface); }
+    .order-receipt-row.total .lbl, .order-receipt-row.total .val { font-weight: 800; font-size: 15px; }
+    .drawer-actions { padding: 22px 24px calc(22px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 10px; }
+    .drawer-actions .btn-save, .drawer-actions .btn-outline { width: 100%; }
     @media (max-width: 900px) {
       .account-page { padding: 112px 0 72px; }
       .account-layout { grid-template-columns: 1fr; }
@@ -486,6 +622,14 @@
       .form-row { grid-template-columns: 1fr; }
       .favorite-list { grid-template-columns: 1fr; }
       .favorite-card { grid-template-columns: 96px 1fr; }
+      .orders-head { flex-direction: column; align-items: stretch; }
+      .orders-new-btn { width: 100%; }
+      .orders-segment { display: grid; grid-template-columns: 1fr 1fr; }
+      .orders-seg-btn { justify-content: center; }
+      .order-card { padding: 16px; }
+      .order-card-top { grid-template-columns: 46px 1fr; }
+      .order-icon { width: 46px; height: 46px; font-size: 21px; }
+      .order-right { grid-column: 1 / -1; flex-direction: row; justify-content: space-between; align-items: center; gap: 12px; margin-top: 13px; padding-top: 12px; border-top: 1px solid rgba(17,17,17,0.06); }
       .account-card,
       .danger-zone { padding: 24px; border-radius: 20px; }
       .verify-warning { flex-direction: column; }
@@ -532,6 +676,26 @@
           <button class="verify-warning-action" id="email-warning-action" onclick="handleEmailWarningAction()">Verificar correo</button>
         </div>
 
+        <!-- Orders / History -->
+        <section class="account-section" id="section-orders">
+          <div class="orders-head">
+            <div>
+              <div class="section-title" id="title-orders">Mis pedidos</div>
+              <div class="section-sub" id="sub-orders" style="margin-bottom:0">Da seguimiento a tus solicitudes y revisa tu historial.</div>
+            </div>
+            <a class="btn-outline orders-new-btn" href="/browse.html" id="orders-new-btn">+ Nueva solicitud</a>
+          </div>
+          <div class="orders-segment" id="orders-segment" role="tablist">
+            <button class="orders-seg-btn active" role="tab" data-bucket="active" onclick="switchOrdersBucket('active')">
+              <span id="orders-seg-active">Activos</span><span class="orders-seg-count" id="orders-count-active" hidden></span>
+            </button>
+            <button class="orders-seg-btn" role="tab" data-bucket="past" onclick="switchOrdersBucket('past')">
+              <span id="orders-seg-past">Historial</span><span class="orders-seg-count" id="orders-count-past" hidden></span>
+            </button>
+          </div>
+          <div class="orders-list" id="orders-list"></div>
+        </section>
+
         <!-- Personal Info -->
         <section class="account-section" id="section-info">
           <div class="account-card" id="profile-card">
@@ -564,17 +728,17 @@
             <div class="profile-edit" id="profile-edit">
               <div class="form-row">
                 <div class="form-group">
-                  <label class="form-label" id="lbl-name">Nombre completo</label>
-                  <input class="form-input" id="info-name" type="text" placeholder="Tu nombre">
+                  <label class="form-label" id="lbl-name" for="info-name">Nombre completo</label>
+                  <input class="form-input" id="info-name" type="text" autocomplete="name" placeholder="Tu nombre">
                 </div>
                 <div class="form-group">
-                  <label class="form-label" id="lbl-phone">Teléfono</label>
-                  <input class="form-input" id="info-phone" type="tel" placeholder="+52 55 1234 5678">
+                  <label class="form-label" id="lbl-phone" for="info-phone">Teléfono</label>
+                  <input class="form-input" id="info-phone" type="tel" autocomplete="tel" placeholder="+52 55 1234 5678">
                 </div>
               </div>
               <div class="form-group">
-                <label class="form-label" id="lbl-email">Correo electrónico</label>
-                <input class="form-input" id="info-email" type="email" placeholder="tu@correo.com">
+                <label class="form-label" id="lbl-email" for="info-email">Correo electrónico</label>
+                <input class="form-input" id="info-email" type="email" autocomplete="email" placeholder="tu@correo.com">
               </div>
               <div class="profile-edit-actions">
                 <button class="btn-save" id="info-save-btn" onclick="saveProfile()">
@@ -583,8 +747,8 @@
                 <button class="btn-outline" id="profile-cancel-btn" type="button" onclick="cancelProfileEdit()">Cancelar</button>
               </div>
             </div>
-            <div class="success-msg" id="info-success">✓ <span id="info-success-text">Cambios guardados.</span></div>
-            <div class="error-msg" id="info-error"></div>
+            <div class="success-msg" id="info-success" aria-live="polite">✓ <span id="info-success-text">Cambios guardados.</span></div>
+            <div class="error-msg" id="info-error" role="alert"></div>
           </div>
         </section>
 
@@ -659,12 +823,12 @@
             <div class="add-address-form" id="add-addr-form">
               <div class="form-row">
                 <div class="form-group">
-                  <label class="form-label" id="lbl-addr-label">Etiqueta (opcional)</label>
+                  <label class="form-label" id="lbl-addr-label" for="addr-label">Etiqueta (opcional)</label>
                   <input class="form-input" id="addr-label" type="text" placeholder="Casa, Trabajo...">
                 </div>
                 <div class="form-group">
-                  <label class="form-label" id="lbl-addr-street">Calle y número *</label>
-                  <input class="form-input" id="addr-street" type="text" placeholder="Calle, número ext/int">
+                  <label class="form-label" id="lbl-addr-street" for="addr-street">Calle y número *</label>
+                  <input class="form-input" id="addr-street" type="text" autocomplete="street-address" spellcheck="false" placeholder="Calle, número ext/int">
                 </div>
               </div>
               <button class="btn-outline address-location-btn" id="addr-location-btn" type="button" onclick="useAddressCurrentLocation()">
@@ -681,18 +845,18 @@
               <div class="address-location-status" id="addr-location-status" aria-live="polite"></div>
               <div class="form-row">
                 <div class="form-group">
-                  <label class="form-label" id="lbl-addr-city">Ciudad</label>
+                  <label class="form-label" id="lbl-addr-city" for="addr-city">Ciudad</label>
                   <select class="form-input form-select" id="addr-city"></select>
                 </div>
                 <div class="form-group">
-                  <label class="form-label" id="lbl-addr-state">Estado</label>
+                  <label class="form-label" id="lbl-addr-state" for="addr-state">Estado</label>
                   <select class="form-input form-select" id="addr-state" onchange="populateAddressCityOptions('', true)"></select>
                 </div>
               </div>
               <div class="form-row">
                 <div class="form-group">
-                  <label class="form-label" id="lbl-addr-postal">Código postal</label>
-                  <input class="form-input" id="addr-postal" type="text" placeholder="05348">
+                  <label class="form-label" id="lbl-addr-postal" for="addr-postal">Código postal</label>
+                  <input class="form-input" id="addr-postal" type="text" autocomplete="postal-code" inputmode="numeric" placeholder="05348">
                 </div>
                 <div class="form-group" style="justify-content:flex-end;padding-top:22px">
                   <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--color-text-secondary);cursor:pointer">
@@ -750,6 +914,13 @@
   </div>
 </main>
 
+<!-- Order detail drawer -->
+<div class="order-drawer-overlay" id="order-drawer-overlay" onclick="closeOrderDrawer(event)">
+  <aside class="order-drawer" id="order-drawer" role="dialog" aria-modal="true" aria-label="Order detail" onclick="event.stopPropagation()">
+    <div id="order-drawer-content"></div>
+  </aside>
+</div>
+
 <div id="footer"></div>
 <script src="/shared/shared-footer.js"></script>
 
@@ -761,7 +932,30 @@ const isEs = () => (localStorage.getItem('servi-lang') || 'es') === 'es';
 const TX = {
   es: {
     pageTitle: 'Mi cuenta',
+    navOrders: 'Mis pedidos',
     navInfo: 'Información personal', navSecurity: 'Seguridad', navAddresses: 'Mis direcciones', navFavorites: 'Favoritos', navPayments: 'Métodos de pago', navDelete: 'Eliminar cuenta',
+    titleOrders: 'Mis pedidos', subOrders: 'Da seguimiento a tus solicitudes y revisa tu historial.',
+    ordersNew: '+ Nueva solicitud',
+    ordersSegActive: 'Activos', ordersSegPast: 'Historial',
+    ordersLoadError: 'No pudimos cargar tus pedidos.', ordersRetry: 'Reintentar',
+    ordersEmptyActiveTitle: 'No tienes pedidos activos',
+    ordersEmptyActiveText: 'Cuando solicites un servicio podrás darle seguimiento aquí en tiempo real.',
+    ordersEmptyPastTitle: 'Aún no tienes historial',
+    ordersEmptyPastText: 'Tus servicios completados y cancelados aparecerán aquí.',
+    ordersEmptyCta: 'Solicitar un servicio',
+    stRequested: 'Solicitud recibida', stPendingPay: 'Pendiente de pago', stPay3ds: 'Verificación de pago',
+    stCash: 'Pago en efectivo', stScheduled: 'Programado', stAuthorized: 'Autorizado',
+    stCompleted: 'Completado', stCanceled: 'Cancelado', stDeclined: 'Rechazado', stRefunded: 'Reembolsado',
+    tlRequested: 'Solicitud recibida', tlMatched: 'Especialista asignado', tlAuthorized: 'Pago autorizado',
+    tlCompleted: 'Servicio completado', tlCanceledTitle: 'Pedido cancelado',
+    drawerTimeline: 'Estado del pedido', drawerService: 'Servicio', drawerSchedule: 'Fecha y hora',
+    drawerAddress: 'Dirección', drawerProvider: 'Especialista', drawerSummary: 'Resumen de pago',
+    asap: 'Lo antes posible', toBeAssigned: 'Por asignar', notProvided: 'No especificada',
+    priceProvider: 'Servicio', priceBooking: 'Tarifa de servicio', priceProcessing: 'Procesamiento',
+    priceVat: 'IVA', priceTotal: 'Total', priceTotalCharged: 'Total cobrado', priceTotalHold: 'Total autorizado',
+    priceEstimate: 'Estimado', priceCash: 'Pago en efectivo al especialista', priceTbd: 'Por confirmar',
+    actReorder: 'Pedir de nuevo', actPay: 'Completar pago', actHelp: '¿Necesitas ayuda?', actClose: 'Cerrar',
+    createdOn: 'Solicitado el',
     titleInfo: 'Información personal', subInfo: 'Actualiza tu nombre, correo y teléfono.',
     titleSecurity: 'Seguridad', subSecurity: 'Información de acceso a tu cuenta.',
     titleAddresses: 'Mis direcciones', subAddresses: 'Guarda tus domicilios para agilizar tus solicitudes.',
@@ -834,7 +1028,30 @@ const TX = {
   },
   en: {
     pageTitle: 'My account',
+    navOrders: 'My orders',
     navInfo: 'Personal info', navSecurity: 'Security', navAddresses: 'My addresses', navFavorites: 'Favorites', navPayments: 'Payment methods', navDelete: 'Delete account',
+    titleOrders: 'My orders', subOrders: 'Track your requests and browse your history.',
+    ordersNew: '+ New request',
+    ordersSegActive: 'Active', ordersSegPast: 'History',
+    ordersLoadError: 'We could not load your orders.', ordersRetry: 'Retry',
+    ordersEmptyActiveTitle: 'No active orders',
+    ordersEmptyActiveText: 'When you request a service, you can track it here in real time.',
+    ordersEmptyPastTitle: 'No history yet',
+    ordersEmptyPastText: 'Your completed and canceled services will show up here.',
+    ordersEmptyCta: 'Request a service',
+    stRequested: 'Request received', stPendingPay: 'Payment pending', stPay3ds: 'Payment verification',
+    stCash: 'Cash payment', stScheduled: 'Scheduled', stAuthorized: 'Authorized',
+    stCompleted: 'Completed', stCanceled: 'Canceled', stDeclined: 'Declined', stRefunded: 'Refunded',
+    tlRequested: 'Request received', tlMatched: 'Specialist assigned', tlAuthorized: 'Payment authorized',
+    tlCompleted: 'Service completed', tlCanceledTitle: 'Order canceled',
+    drawerTimeline: 'Order status', drawerService: 'Service', drawerSchedule: 'Date & time',
+    drawerAddress: 'Address', drawerProvider: 'Specialist', drawerSummary: 'Payment summary',
+    asap: 'As soon as possible', toBeAssigned: 'To be assigned', notProvided: 'Not provided',
+    priceProvider: 'Service', priceBooking: 'Service fee', priceProcessing: 'Processing',
+    priceVat: 'VAT', priceTotal: 'Total', priceTotalCharged: 'Total charged', priceTotalHold: 'Total authorized',
+    priceEstimate: 'Estimate', priceCash: 'Cash payment to specialist', priceTbd: 'To be confirmed',
+    actReorder: 'Order again', actPay: 'Complete payment', actHelp: 'Need help?', actClose: 'Close',
+    createdOn: 'Requested on',
     titleInfo: 'Personal information', subInfo: 'Update your name, email, and phone.',
     titleSecurity: 'Security', subSecurity: 'Your account access information.',
     titleAddresses: 'My addresses', subAddresses: 'Save your addresses to speed up your requests.',
@@ -1031,12 +1248,13 @@ function guardAuth() {
 }
 
 // ─── Section navigation ───────────────────────────────────────────────────────
-const SECTIONS = ['info', 'security', 'addresses', 'favorites', 'payments', 'delete'];
-let activeSection = 'info';
+const SECTIONS = ['orders', 'info', 'security', 'addresses', 'favorites', 'payments', 'delete'];
+let activeSection = 'orders';
 
 function buildNav() {
   const t = tr();
   const items = [
+    { id: 'orders',    label: t.navOrders,    icon: '🧾', danger: false },
     { id: 'info',      label: t.navInfo,      icon: '👤', danger: false },
     { id: 'security',  label: t.navSecurity,   icon: '🔒', danger: false },
     { id: 'addresses', label: t.navAddresses,  icon: '📍', danger: false },
@@ -1068,6 +1286,7 @@ function switchSection(id) {
     document.getElementById('section-' + s)?.classList.toggle('active', s === id);
   });
   buildNav();
+  if (id === 'orders' && !_ordersLoaded) loadOrders();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -1869,6 +2088,338 @@ async function deleteFavoriteService(id) {
   } catch {}
 }
 
+// ─── Orders / history ─────────────────────────────────────────────────────────
+let _orders = [];
+let _ordersBucket = 'active';
+let _ordersLoaded = false;
+let _ordersLoading = false;
+
+const ORDER_CATEGORY_META = {
+  cleaning:  { icon: '🧽', es: 'Limpieza',        en: 'Cleaning',  tint: 'rgba(149,204,213,0.22)' },
+  repair:    { icon: '🔧', es: 'Reparación',      en: 'Repair',    tint: 'rgba(244,182,97,0.20)' },
+  moving:    { icon: '📦', es: 'Mudanza',         en: 'Moving',    tint: 'rgba(146,166,228,0.20)' },
+  wellness:  { icon: '💆', es: 'Bienestar',       en: 'Wellness',  tint: 'rgba(231,158,189,0.20)' },
+  suppliers: { icon: '🛒', es: 'Abastecimiento',  en: 'Supply',    tint: 'rgba(143,206,156,0.20)' },
+  custom:    { icon: '✨', es: 'Personalizado',   en: 'Custom',    tint: 'rgba(196,178,228,0.20)' },
+};
+const ORDER_KNOWN_CATEGORIES = ['cleaning', 'repair', 'moving', 'wellness', 'suppliers', 'custom'];
+const PAYABLE_ORDER_STATUSES = new Set(['Pending', 'New', 'Setup required', 'Setup created', 'Pending (3DS)']);
+
+const ORDER_ICONS = {
+  calendar: '<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16" rx="2.5"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/></svg>',
+  pin: '<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-5.6 7-11a7 7 0 1 0-14 0c0 5.4 7 11 7 11Z"/><circle cx="12" cy="10" r="2.5"/></svg>',
+  user: '<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-3.4 3.1-5.5 7-5.5s7 2.1 7 5.5"/></svg>',
+  doc: '<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 16h6"/></svg>',
+  check: '<svg viewBox="0 0 24 24" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.2 4.2L19 7"/></svg>',
+  cross: '<svg viewBox="0 0 24 24" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7l10 10M17 7L7 17"/></svg>',
+};
+
+function categoryMeta(catKey) {
+  return ORDER_CATEGORY_META[String(catKey || '').toLowerCase()] || ORDER_CATEGORY_META.custom;
+}
+function categoryLabel(catKey) {
+  const m = categoryMeta(catKey);
+  return isEs() ? m.es : m.en;
+}
+
+function parseDateValue(value) {
+  if (!value) return null;
+  const str = String(value);
+  // Date-only strings (YYYY-MM-DD) are anchored to local noon to avoid TZ rollover.
+  const d = new Date(/^\d{4}-\d{2}-\d{2}$/.test(str) ? str + 'T12:00:00' : str);
+  return isNaN(d.getTime()) ? null : d;
+}
+function formatMoney(cents) {
+  if (cents == null || isNaN(cents)) return null;
+  return '$' + Math.round(cents / 100).toLocaleString(isEs() ? 'es-MX' : 'en-US') + ' MXN';
+}
+function formatDateShort(value) {
+  const d = parseDateValue(value);
+  if (!d) return null;
+  return d.toLocaleDateString(isEs() ? 'es-MX' : 'en-US', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+function formatDateTime(value) {
+  const d = parseDateValue(value);
+  if (!d) return null;
+  return d.toLocaleDateString(isEs() ? 'es-MX' : 'en-US', { day: 'numeric', month: 'short' })
+    + ' · ' + d.toLocaleTimeString(isEs() ? 'es-MX' : 'en-US', { hour: '2-digit', minute: '2-digit' });
+}
+
+// Maps a raw order/request to a customer-facing label, pill class, and how many
+// of the 4 lifecycle steps are complete.
+function orderStatusMeta(item) {
+  const t = tr();
+  if (item.source === 'request') return { label: t.stRequested, cls: 'is-progress', step: 1, canceled: false };
+  switch (String(item.status || '').trim()) {
+    case 'Captured':                 return { label: t.stCompleted,  cls: 'is-done',       step: 4, canceled: false };
+    case 'Refunded':                 return { label: t.stRefunded,   cls: 'is-canceled',   step: 4, canceled: true };
+    case 'Confirmed':                return { label: t.stAuthorized, cls: 'is-authorized', step: 3, canceled: false };
+    case 'Scheduled':                return { label: t.stScheduled,  cls: 'is-progress',   step: 2, canceled: false };
+    case 'Pending Cash':             return { label: t.stCash,       cls: 'is-progress',   step: 2, canceled: false };
+    case 'Pending (3DS)':            return { label: t.stPay3ds,     cls: 'is-pending',    step: 2, canceled: false };
+    case 'Canceled': case 'Cancelled': return { label: t.stCanceled, cls: 'is-canceled',  step: 1, canceled: true };
+    case 'Declined':                 return { label: t.stDeclined,   cls: 'is-declined',   step: 1, canceled: true };
+    case 'Expired':                  return { label: t.stCanceled,   cls: 'is-canceled',   step: 1, canceled: true };
+    default:                         return { label: t.stPendingPay, cls: 'is-pending',    step: 2, canceled: false };
+  }
+}
+function orderTitle(item) { return categoryLabel(item.category); }
+function orderIsPayable(item) {
+  return item.source === 'order' && PAYABLE_ORDER_STATUSES.has(String(item.status || '').trim());
+}
+function orderWhenLabel(item) {
+  const t = tr();
+  if (item.isAsap) return t.asap;
+  return (item.serviceDateTime && formatDateTime(item.serviceDateTime))
+    || formatDateShort(item.serviceDate)
+    || formatDateShort(item.createdAt);
+}
+function orderScheduleLabel(item) {
+  const t = tr();
+  if (item.isAsap) return t.asap;
+  if (item.serviceDateTime) { const dt = formatDateTime(item.serviceDateTime); if (dt) return dt; }
+  const d = formatDateShort(item.serviceDate);
+  if (d && item.preferredTime) return d + ' · ' + item.preferredTime;
+  return d || t.notProvided;
+}
+function orderTotalLabel(item) {
+  if (item.source === 'request' || item.cashSelected) return null;
+  const total = item.pricing && item.pricing.total;
+  return total != null ? formatMoney(total) : null;
+}
+
+function goPayOrder(id, kind) {
+  const page = kind === 'book' ? '/book.html' : '/pay.html';
+  const q = encodeURIComponent(id);
+  // pay.html reads ?order=, book.html reads ?orderId= — send both for compatibility.
+  window.location.href = page + '?order=' + q + '&orderId=' + q;
+}
+function reorder(category) {
+  const cat = String(category || '').toLowerCase();
+  window.location.href = ORDER_KNOWN_CATEGORIES.includes(cat)
+    ? '/service.html?category=' + encodeURIComponent(cat)
+    : '/browse.html';
+}
+
+function ordersSkeletonHtml() {
+  const one = `
+    <div class="order-skeleton">
+      <div class="sk sk-icon"></div>
+      <div>
+        <div class="sk sk-line" style="width:42%"></div>
+        <div class="sk sk-line" style="width:68%;margin-top:9px"></div>
+        <div class="sk sk-line" style="width:30%;margin-top:12px;height:10px"></div>
+      </div>
+      <div class="sk sk-line" style="height:22px;border-radius:999px"></div>
+    </div>`;
+  return one + one + one;
+}
+function ordersErrorHtml() {
+  const t = tr();
+  return `
+    <div class="order-empty">
+      <div class="order-empty-emoji">⚠️</div>
+      <div class="order-empty-title">${escapeHtml(t.ordersLoadError)}</div>
+      <button class="btn-save" onclick="loadOrders()">${escapeHtml(t.ordersRetry)}</button>
+    </div>`;
+}
+function ordersEmptyHtml() {
+  const t = tr();
+  const active = _ordersBucket === 'active';
+  return `
+    <div class="order-empty">
+      <div class="order-empty-emoji">${active ? '📋' : '🗂️'}</div>
+      <div class="order-empty-title">${escapeHtml(active ? t.ordersEmptyActiveTitle : t.ordersEmptyPastTitle)}</div>
+      <div class="order-empty-text">${escapeHtml(active ? t.ordersEmptyActiveText : t.ordersEmptyPastText)}</div>
+      ${active ? `<a class="btn-save" href="/browse.html">${escapeHtml(t.ordersEmptyCta)}</a>` : ''}
+    </div>`;
+}
+
+function orderCardHtml(item, idx) {
+  const t = tr();
+  const meta = orderStatusMeta(item);
+  const cat = categoryMeta(item.category);
+  const when = orderWhenLabel(item);
+  const price = orderTotalLabel(item);
+  const metaItems = [];
+  if (when) metaItems.push(`<span class="order-meta-item">${ORDER_ICONS.calendar}<span>${escapeHtml(when)}</span></span>`);
+  if (item.address) metaItems.push(`<span class="order-meta-item">${ORDER_ICONS.pin}<span>${escapeHtml(item.address)}</span></span>`);
+  else if (item.providerName) metaItems.push(`<span class="order-meta-item">${ORDER_ICONS.user}<span>${escapeHtml(item.providerName)}</span></span>`);
+
+  const actions = [];
+  if (orderIsPayable(item)) actions.push(`<button class="order-cta" onclick="event.stopPropagation();goPayOrder('${escapeHtml(item.id)}','${escapeHtml(item.kind)}')">${escapeHtml(t.actPay)}</button>`);
+  if (item.category) actions.push(`<button class="addr-btn default-btn" onclick="event.stopPropagation();reorder('${escapeHtml(item.category)}')">${escapeHtml(t.actReorder)}</button>`);
+
+  return `
+    <div class="order-card" tabindex="0" role="button" aria-label="${escapeHtml(orderTitle(item))} — ${escapeHtml(meta.label)}"
+         style="--order-tint:${cat.tint};animation-delay:${Math.min(idx * 55, 440)}ms"
+         onclick="openOrderDrawer('${escapeHtml(item.id)}')"
+         onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openOrderDrawer('${escapeHtml(item.id)}')}">
+      <div class="order-card-top">
+        <div class="order-icon">${cat.icon}</div>
+        <div class="order-main">
+          <div class="order-title">${escapeHtml(orderTitle(item))}</div>
+          ${item.description ? `<div class="order-desc">${escapeHtml(item.description)}</div>` : ''}
+          ${metaItems.length ? `<div class="order-meta">${metaItems.join('')}</div>` : ''}
+        </div>
+        <div class="order-right">
+          <span class="order-status ${meta.cls}">${escapeHtml(meta.label)}</span>
+          ${price ? `<div class="order-price">${escapeHtml(price)}</div>` : ''}
+        </div>
+      </div>
+      ${actions.length ? `<div class="order-actions">${actions.join('')}</div>` : ''}
+    </div>`;
+}
+
+function setOrdersCount(bucket, n) {
+  const el = document.getElementById('orders-count-' + bucket);
+  if (!el) return;
+  el.textContent = n;
+  el.hidden = !n;
+}
+
+async function loadOrders() {
+  if (_ordersLoading) return;
+  _ordersLoading = true;
+  const list = document.getElementById('orders-list');
+  if (list && !_ordersLoaded) list.innerHTML = ordersSkeletonHtml();
+  try {
+    const res = await fetch(API + '/api/auth/orders', { headers: authHeaders() });
+    if (!res.ok) throw new Error('load_failed');
+    const d = await res.json();
+    _orders = Array.isArray(d.orders) ? d.orders : [];
+    _ordersLoaded = true;
+    renderOrders();
+  } catch {
+    if (list) list.innerHTML = ordersErrorHtml();
+  } finally {
+    _ordersLoading = false;
+  }
+}
+
+function renderOrders() {
+  const list = document.getElementById('orders-list');
+  if (!list) return;
+  let active = 0, past = 0;
+  _orders.forEach(o => { (o.bucket === 'past') ? past++ : active++; });
+  setOrdersCount('active', active);
+  setOrdersCount('past', past);
+  const items = _orders.filter(o => (o.bucket === 'past' ? 'past' : 'active') === _ordersBucket);
+  list.innerHTML = items.length ? items.map((it, i) => orderCardHtml(it, i)).join('') : ordersEmptyHtml();
+}
+
+function switchOrdersBucket(bucket) {
+  if (bucket !== 'active' && bucket !== 'past') return;
+  _ordersBucket = bucket;
+  document.querySelectorAll('.orders-seg-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.bucket === bucket));
+  renderOrders();
+}
+
+// ── Detail drawer ──
+function orderTimelineHtml(item) {
+  const t = tr();
+  const meta = orderStatusMeta(item);
+  const labels = [t.tlRequested, t.tlMatched, t.tlAuthorized, t.tlCompleted];
+  const step = (label, cls) => `<div class="otl-step ${cls}"><span class="otl-dot">${ORDER_ICONS.check}</span><div><div class="otl-label">${escapeHtml(label)}</div></div></div>`;
+  let html = '';
+  if (meta.canceled) {
+    for (let i = 0; i < labels.length && i < meta.step; i++) html += step(labels[i], 'done');
+    html += `<div class="otl-step canceled"><span class="otl-dot">${ORDER_ICONS.cross}</span><div><div class="otl-label">${escapeHtml(meta.label)}</div></div></div>`;
+    return html;
+  }
+  for (let i = 0; i < labels.length; i++) {
+    const n = i + 1;
+    html += step(labels[i], n <= meta.step ? 'done' : (n === meta.step + 1 ? 'current' : ''));
+  }
+  return html;
+}
+
+function orderDrawerInfoHtml(item) {
+  const t = tr();
+  const row = (icon, label, value) =>
+    `<div class="drawer-info-row">${icon}<div><div class="drawer-info-label">${escapeHtml(label)}</div><div class="drawer-info-value">${escapeHtml(value)}</div></div></div>`;
+  const rows = [];
+  if (item.description) rows.push(row(ORDER_ICONS.doc, t.drawerService, item.description));
+  rows.push(row(ORDER_ICONS.calendar, t.drawerSchedule, orderScheduleLabel(item)));
+  rows.push(row(ORDER_ICONS.pin, t.drawerAddress, item.address || t.notProvided));
+  if (item.source === 'order') rows.push(row(ORDER_ICONS.user, t.drawerProvider, item.providerName || t.toBeAssigned));
+  return rows.join('');
+}
+
+function orderSummaryHtml(item) {
+  const t = tr();
+  if (item.source === 'request') return '';
+  if (item.cashSelected) {
+    return `<div class="order-receipt"><div class="order-receipt-row total"><span class="lbl">${escapeHtml(t.priceTotal)}</span><span class="val">${escapeHtml(t.priceCash)}</span></div></div>`;
+  }
+  const p = item.pricing || {};
+  const rows = [];
+  const pushRow = (lbl, cents) => { if (cents != null) rows.push(`<div class="order-receipt-row"><span class="lbl">${escapeHtml(lbl)}</span><span class="val">${escapeHtml(formatMoney(cents))}</span></div>`); };
+  pushRow(t.priceProvider, p.providerAmount);
+  pushRow(t.priceBooking, p.bookingFee);
+  pushRow(t.priceProcessing, p.processingFee);
+  pushRow(t.priceVat, p.vat);
+  if (p.total == null && !rows.length) return '';
+  const meta = orderStatusMeta(item);
+  const totalLabel = p.captured ? t.priceTotalCharged : (meta.step >= 3 ? t.priceTotalHold : t.priceTotal);
+  rows.push(`<div class="order-receipt-row total"><span class="lbl">${escapeHtml(totalLabel)}</span><span class="val">${p.total != null ? escapeHtml(formatMoney(p.total)) : escapeHtml(t.priceTbd)}</span></div>`);
+  return `<div class="order-receipt">${rows.join('')}</div>`;
+}
+
+function orderDrawerActionsHtml(item) {
+  const t = tr();
+  const a = [];
+  if (orderIsPayable(item)) a.push(`<button class="btn-save" onclick="goPayOrder('${escapeHtml(item.id)}','${escapeHtml(item.kind)}')">${escapeHtml(t.actPay)}</button>`);
+  if (item.category) a.push(`<button class="btn-outline" onclick="reorder('${escapeHtml(item.category)}')">${escapeHtml(t.actReorder)}</button>`);
+  a.push(`<a class="btn-outline" href="/helpcenter.html">${escapeHtml(t.actHelp)}</a>`);
+  return `<div class="drawer-actions">${a.join('')}</div>`;
+}
+
+function orderDrawerHtml(item) {
+  const t = tr();
+  const cat = categoryMeta(item.category);
+  const meta = orderStatusMeta(item);
+  const code = item.publicCode ? '#' + item.publicCode : '';
+  const created = formatDateShort(item.createdAt);
+  const summary = orderSummaryHtml(item);
+  return `
+    <div class="drawer-hero" style="--order-tint:${cat.tint}">
+      <button class="drawer-close" onclick="closeOrderDrawer()" aria-label="${escapeHtml(t.actClose)}">✕</button>
+      <div class="drawer-hero-icon">${cat.icon}</div>
+      <div class="drawer-hero-title">${escapeHtml(orderTitle(item))}</div>
+      <div class="drawer-hero-code">${code ? escapeHtml(code) + (created ? ' · ' : '') : ''}${created ? escapeHtml(t.createdOn + ' ' + created) : ''}</div>
+      <div class="drawer-hero-status"><span class="order-status ${meta.cls}">${escapeHtml(meta.label)}</span></div>
+    </div>
+    <div class="drawer-section">
+      <div class="drawer-section-title">${escapeHtml(t.drawerTimeline)}</div>
+      <div class="order-timeline">${orderTimelineHtml(item)}</div>
+    </div>
+    <div class="drawer-section">
+      <div class="drawer-section-title">${escapeHtml(t.drawerService)}</div>
+      ${orderDrawerInfoHtml(item)}
+    </div>
+    ${summary ? `<div class="drawer-section"><div class="drawer-section-title">${escapeHtml(t.drawerSummary)}</div>${summary}</div>` : ''}
+    ${orderDrawerActionsHtml(item)}`;
+}
+
+function openOrderDrawer(id) {
+  const item = _orders.find(o => o.id === id);
+  if (!item) return;
+  const content = document.getElementById('order-drawer-content');
+  const overlay = document.getElementById('order-drawer-overlay');
+  if (!content || !overlay) return;
+  content.innerHTML = orderDrawerHtml(item);
+  content.parentElement.scrollTop = 0;
+  overlay.classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+function closeOrderDrawer() {
+  // The panel stops click propagation, so this only fires from the overlay backdrop or the ✕ button.
+  const overlay = document.getElementById('order-drawer-overlay');
+  if (overlay) overlay.classList.remove('open');
+  document.body.style.overflow = '';
+}
+
 // ─── Payment Methods ──────────────────────────────────────────────────────────
 let _stripe = null;
 let _pmElements = null;
@@ -1984,7 +2535,13 @@ async function openAddPaymentModal() {
       clientSecret: _pmSetupSecret,
       appearance: { theme: 'stripe', variables: { fontFamily: '"Plus Jakarta Sans", sans-serif', borderRadius: '14px', colorPrimary: '#95ccd5' } }
     });
-    const paymentEl = _pmElements.create('payment');
+    const paymentEl = _pmElements.create('payment', {
+      business: { name: 'SERVI' },
+      wallets: {
+        applePay: 'auto',
+        googlePay: 'auto'
+      }
+    });
     // Enable confirm button only once element is fully mounted and ready
     paymentEl.on('ready', function () {
       if (confirmBtn) { confirmBtn.disabled = false; }
@@ -2185,6 +2742,9 @@ function applyTranslations() {
   document.title = 'SERVI — ' + t.pageTitle;
   const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
   const ph = (id, val) => { const el = document.getElementById(id); if (el) el.placeholder = val; };
+  set('title-orders', t.titleOrders);   set('sub-orders', t.subOrders);
+  set('orders-new-btn', t.ordersNew);
+  set('orders-seg-active', t.ordersSegActive); set('orders-seg-past', t.ordersSegPast);
   set('title-info', t.titleInfo);       set('sub-info', t.subInfo);
   set('title-security', t.titleSecurity); set('sub-security', t.subSecurity);
   set('security-2step-title', t.security2StepTitle); set('security-2step-sub', t.security2StepSub);
@@ -2277,6 +2837,7 @@ document.addEventListener('DOMContentLoaded', () => {
     fillProfileForm();
     renderEmailWarning();
     initSecuritySection();
+    loadOrders();
     loadAddresses();
     loadFavoriteServices();
     loadPaymentMethods();
@@ -2284,7 +2845,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Handle section from URL param (e.g., ?section=security for recovery flow)
     const urlSection = new URLSearchParams(window.location.search).get('section');
-    switchSection(SECTIONS.includes(urlSection) ? urlSection : 'info');
+    switchSection(SECTIONS.includes(urlSection) ? urlSection : 'orders');
   };
   waitForUser(20); // 20 × 100ms = 2s, enough for Firebase to resolve
 
@@ -2298,9 +2859,17 @@ document.addEventListener('DOMContentLoaded', () => {
     buildNav();
     renderAddresses();
     renderFavoriteServices();
+    if (_ordersLoaded) renderOrders();
     // Re-render payment methods list with updated language (data is already cached in DOM)
     const pmList = document.getElementById('pm-list');
     if (pmList && pmList.querySelector('.pm-card')) loadPaymentMethods();
+  });
+
+  // Close the order drawer with Escape
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && document.getElementById('order-drawer-overlay')?.classList.contains('open')) {
+      closeOrderDrawer();
+    }
   });
 
   window.addEventListener('storage', (event) => {

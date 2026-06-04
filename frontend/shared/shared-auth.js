@@ -470,7 +470,7 @@
               '<h2 class="heading-md" style="margin:0">' + title + '</h2>' +
               (locked
                 ? '<div style="width:28px"></div>'
-                : '<button onclick="window.__authCloseClick()" style="background:none;border:none;cursor:pointer;padding:4px">' + icons.x + '</button>') +
+                : '<button onclick="window.__authCloseClick()" aria-label="' + (isEs() ? 'Cerrar' : 'Close') + '" style="background:none;border:none;cursor:pointer;padding:4px">' + icons.x + '</button>') +
             '</div>' +
             '<div id="auth-screen-body"></div>' +
           '</div>' +
@@ -490,7 +490,7 @@
   }
 
   function errorBox() {
-    return '<div id="auth-error" style="display:none;font-size:13px;color:#dc2626;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 12px;margin-bottom:12px"></div>';
+    return '<div id="auth-error" role="alert" aria-live="assertive" style="display:none;font-size:13px;color:#dc2626;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 12px;margin-bottom:12px"></div>';
   }
 
   function loadingDotsMarkup(label) {
@@ -1290,8 +1290,8 @@
       '</p>' +
       errorBox() +
       '<div style="display:flex;gap:8px;margin-bottom:12px">' +
-        '<input id="signup-first-name" class="input-field" type="text" placeholder="' + (es ? 'Nombre' : 'First name') + '" style="flex:1">' +
-        '<input id="signup-last-name"  class="input-field" type="text" placeholder="' + (es ? 'Apellido' : 'Last name') + '" style="flex:1">' +
+        '<input id="signup-first-name" class="input-field" type="text" placeholder="' + (es ? 'Nombre' : 'First name') + '" onkeydown="if(event.key===\'Enter\') window.__uslNameNext()" style="flex:1">' +
+        '<input id="signup-last-name"  class="input-field" type="text" placeholder="' + (es ? 'Apellido' : 'Last name') + '" onkeydown="if(event.key===\'Enter\') window.__uslNameNext()" style="flex:1">' +
       '</div>' +
       '<label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;margin-bottom:20px">' +
         '<input type="checkbox" id="terms-check" style="margin-top:3px;accent-color:var(--color-accent, #95ccd5)">' +
@@ -1405,7 +1405,7 @@
           : 'We found an account registered with this phone. To link your email, confirm the account name (starts with <strong>' + escapeHtml(hint) + '</strong>).') +
       '</p>' +
       errorBox() +
-      '<input id="cross-id-name" class="input-field" type="text" placeholder="' + (es ? 'Nombre completo' : 'Full name') + '" style="margin-bottom:12px">' +
+      '<input id="cross-id-name" class="input-field" type="text" placeholder="' + (es ? 'Nombre completo' : 'Full name') + '" onkeydown="if(event.key===\'Enter\') window.__uslCrossIdNameNext()" style="margin-bottom:12px">' +
       '<button class="btn-primary" onclick="window.__uslCrossIdNameNext()" id="cross-id-name-btn" style="width:100%;justify-content:center">' +
         (es ? 'Confirmar' : 'Confirm') +
       '</button>'
@@ -2412,6 +2412,13 @@
     if (recaptchaVerifier) { try { recaptchaVerifier.clear(); } catch (e) {} recaptchaVerifier = null; }
     confirmationResult = null;
   };
+
+  // Close the auth modal on Escape (reuses __authCloseClick, which respects the signup lock).
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    var modal = document.getElementById('auth-modal-global');
+    if (modal && modal.innerHTML.trim() !== '') window.__authCloseClick();
+  });
 
   // ── Session expiry toast ──────────────────────────────────────────────────────
   function showSessionExpiredToast() {

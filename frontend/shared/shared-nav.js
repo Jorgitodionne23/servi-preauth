@@ -111,7 +111,7 @@
     <div id="mobile-overlay" class="mobile-overlay" style="display:none" onclick="toggleMobileMenu(false)"></div>
     <div id="mobile-menu" class="mobile-menu" style="display:none">
       <div style="display:flex;justify-content:flex-end;margin-bottom:32px">
-        <button onclick="toggleMobileMenu(false)" style="background:none;border:none;cursor:pointer;padding:4px">
+        <button onclick="toggleMobileMenu(false)" aria-label="${lang === 'es' ? 'Cerrar menú' : 'Close menu'}" style="background:none;border:none;cursor:pointer;padding:4px">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0a0a0a" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
         </button>
       </div>
@@ -236,6 +236,11 @@
     if (dd && menu && !menu.contains(e.target)) {
       dd.classList.remove('user-menu-dropdown--open');
     }
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    var dd = document.getElementById('user-menu-dropdown');
+    if (dd) dd.classList.remove('user-menu-dropdown--open');
   });
 
   window.toggleMobileMenu = function (show) {

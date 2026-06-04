@@ -4,6 +4,7 @@ import 'dotenv/config';
 import express from 'express';
 import StripePackage from 'stripe';
 import path from 'path';
+import fs from 'fs';
 import { pool, initDb } from './db.pg.mjs';
 import {
   computePricing,
@@ -1378,7 +1379,11 @@ app.get('/success.html', successGate);
 
 // Apple Pay domain verification (required for Apple Pay to appear in Payment Element)
 app.get('/.well-known/apple-developer-merchantid-domain-association', (_req, res) => {
-  res.sendFile(path.join(FRONTEND_DIR, '.well-known', 'apple-developer-merchantid-domain-association'));
+  const associationPath = path.join(FRONTEND_DIR, '.well-known', 'apple-developer-merchantid-domain-association');
+  if (!fs.existsSync(associationPath)) {
+    return res.status(404).type('text/plain').send('Apple Pay domain association file is not configured.');
+  }
+  return res.sendFile(associationPath);
 });
 
 app.use(express.static(FRONTEND_DIR));
@@ -5750,6 +5755,139 @@ app.delete('/api/auth/favorites/:id', async (req, res) => {
     return res.json({ ok: true });
   } catch (err) {
     console.error('[DELETE /api/auth/favorites/:id]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// ─── Customer order history ──────────────────────────────────────────────────
+
+// Statuses that represent a closed/finished order (everything else is "active").
+const CUSTOMER_PAST_ORDER_STATUSES = new Set([
+  'Captured', 'Canceled', 'Cancelled', 'Declined', 'Refunded', 'Expired', 'Refused',
+]);
+
+function customerOrderBucket(status) {
+  return CUSTOMER_PAST_ORDER_STATUSES.has(String(status || '').trim()) ? 'past' : 'active';
+}
+
+// GET /api/auth/orders — the authenticated user's own orders + pending requests.
+// Scoped strictly to identifiers resolved fresh from auth_users (never trusts the JWT body),
+// matching on Stripe customer id, email, and normalized phone so guest orders placed before
+// signup still surface for the same person.
+app.get('/api/auth/orders', async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const { rows: uRows } = await pool.query(
+      'SELECT stripe_customer_id, email, phone FROM auth_users WHERE id = $1',
+      [payload.user_id]
+    );
+    const u = uRows[0];
+    if (!u) return res.json({ orders: [] });
+
+    // Build the identifier match clause shared by both tables.
+    const ids = [];
+    const conds = [];
+    if (u.stripe_customer_id) {
+      ids.push(u.stripe_customer_id);
+      conds.push(`customer_id = $${ids.length}`);
+    }
+    if (u.email) {
+      ids.push(String(u.email).toLowerCase());
+      conds.push(`LOWER(client_email) = $${ids.length}`);
+    }
+    const phoneDigits = String(u.phone || '').replace(/[^0-9]/g, '').slice(-10);
+    if (phoneDigits.length === 10) {
+      ids.push(phoneDigits);
+      conds.push(`RIGHT(regexp_replace(COALESCE(client_phone,''), '[^0-9]', '', 'g'), 10) = $${ids.length}`);
+    }
+    if (!conds.length) return res.json({ orders: [] });
+    const matchClause = `(${conds.join(' OR ')})`;
+
+    // Real orders (exclude child adjustment rows — they roll up into their parent).
+    const { rows: orderRows } = await pool.query(
+      `SELECT id, public_code, kind, status, category, service_description,
+              service_date, service_datetime, service_address, provider_name,
+              amount, provider_amount, booking_fee_amount, processing_fee_amount,
+              vat_amount, pricing_total_amount, final_captured_amount,
+              cash_selected, created_at
+         FROM all_bookings
+        WHERE ${matchClause}
+          AND COALESCE(parent_id_of_adjustment, '') = ''
+          AND COALESCE(kind, '') <> 'adjustment'
+        ORDER BY created_at DESC
+        LIMIT 100`,
+      ids
+    );
+
+    // Pending intake requests that have not yet been turned into an order.
+    const { rows: reqRows } = await pool.query(
+      `SELECT id, category, description, preferred_date, preferred_time, is_asap,
+              service_address, status, created_at
+         FROM service_requests
+        WHERE ${matchClause}
+          AND COALESCE(converted_order_id, '') = ''
+        ORDER BY created_at DESC
+        LIMIT 50`,
+      ids
+    );
+
+    const orders = orderRows.map((r) => ({
+      id: r.id,
+      source: 'order',
+      publicCode: r.public_code || null,
+      kind: r.kind || 'primary',
+      status: r.status || null,
+      bucket: customerOrderBucket(r.status),
+      category: r.category || null,
+      description: r.service_description || null,
+      serviceDate: r.service_date || null,
+      serviceDateTime: r.service_datetime || null,
+      preferredTime: null,
+      isAsap: false,
+      address: r.service_address || null,
+      providerName: r.provider_name || null,
+      cashSelected: !!r.cash_selected,
+      createdAt: r.created_at,
+      pricing: {
+        total: r.final_captured_amount ?? r.pricing_total_amount ?? r.amount ?? null,
+        amount: r.amount ?? null,
+        providerAmount: r.provider_amount ?? null,
+        bookingFee: r.booking_fee_amount ?? null,
+        processingFee: r.processing_fee_amount ?? null,
+        vat: r.vat_amount ?? null,
+        finalCaptured: r.final_captured_amount ?? null,
+        captured: r.final_captured_amount != null,
+      },
+    }));
+
+    const requests = reqRows.map((r) => ({
+      id: r.id,
+      source: 'request',
+      publicCode: null,
+      kind: 'request',
+      status: r.status || 'pending',
+      bucket: 'active',
+      category: r.category || null,
+      description: r.description || null,
+      serviceDate: r.preferred_date || null,
+      serviceDateTime: null,
+      preferredTime: r.preferred_time || null,
+      isAsap: !!r.is_asap,
+      address: r.service_address || null,
+      providerName: null,
+      cashSelected: false,
+      createdAt: r.created_at,
+      pricing: null,
+    }));
+
+    const all = [...orders, ...requests].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+    res.set('Cache-Control', 'no-store');
+    return res.json({ orders: all });
+  } catch (err) {
+    console.error('[GET /api/auth/orders]', err);
     return res.status(500).json({ error: 'internal_error' });
   }
 });

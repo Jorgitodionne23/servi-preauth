@@ -371,8 +371,11 @@
       padding: 16px 0;
     }
     .svc-success__icon {
-      font-size: 40px;
-      margin-bottom: 12px;
+      width: 48px;
+      height: 48px;
+      object-fit: contain;
+      display: block;
+      margin: 0 auto 12px;
     }
     .svc-success__title {
       font-size: 20px;
@@ -1044,7 +1047,7 @@
     const waUrl = `https://wa.me/${waNumber}`;
     sidebar.innerHTML = `
       <div class="svc-success">
-        <div class="svc-success__icon">✅</div>
+        <img src="checkmark-green.png" alt="Éxito" class="svc-success__icon" />
         <div class="svc-success__title">${esc(sp().successTitle || '¡Solicitud enviada!')}</div>
         <div class="svc-success__body">${esc(sp().successBody || 'Te contactaremos pronto por WhatsApp.')}</div>
         <a class="svc-success__wa" href="${esc(waUrl)}" target="_blank" rel="noopener">
@@ -1108,7 +1111,7 @@
 
         <hr class="svc-sidebar__divider">
         <span class="svc-sidebar__label">${esc(s.detailsLabel || 'Detalles adicionales (opcional)')}</span>
-        <textarea class="svc-sidebar__input" id="svc-details-${prefix}" rows="3"
+        <textarea class="svc-sidebar__input" id="svc-details-${prefix}" rows="3" spellcheck="false"
                   placeholder="${esc(getDetailsPlaceholder())}"></textarea>
 
         <hr class="svc-sidebar__divider">
