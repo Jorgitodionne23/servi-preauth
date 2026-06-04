@@ -3355,3 +3355,264 @@
   }
   .dash-hero__media-btn { width: 68px; height: 68px; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   APP — "Coming Soon" section + iPhone Browse Dashboard mockup
+   On-brand (Syne / DM Sans, light theme, teal accent). The phone screen is
+   static, self-contained markup — it is NOT wired to the live dash-cats-grid
+   JS, so it can never interfere with the real booking flow.
+   ═══════════════════════════════════════════════════════════════════════ */
+.app-section { position: relative; overflow: hidden; }
+/* soft atmospheric wash behind the phone */
+.app-section::before {
+  content: "";
+  position: absolute;
+  top: 50%; right: -8%;
+  width: 640px; height: 640px;
+  transform: translateY(-50%);
+  background: radial-gradient(circle, rgba(149,204,213,0.30) 0%, rgba(149,204,213,0) 68%);
+  pointer-events: none;
+  z-index: 0;
+}
+.app-layout {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 1.05fr 0.95fr;
+  align-items: center;
+  gap: 64px;
+}
+.app-copy { max-width: 460px; }
+.app-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px 8px 13px;
+  border-radius: var(--radius-pill);
+  background: rgba(149,204,213,0.16);
+  color: #1c6b77;
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  margin-bottom: 22px;
+}
+.app-eyebrow__dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  animation: appPulse 2.2s var(--ease-spring) infinite;
+}
+@keyframes appPulse {
+  0%   { box-shadow: 0 0 0 0 rgba(149,204,213,0.55); }
+  70%  { box-shadow: 0 0 0 9px rgba(149,204,213,0); }
+  100% { box-shadow: 0 0 0 0 rgba(149,204,213,0); }
+}
+.app-copy__title { margin: 0 0 18px; }
+.app-copy__sub {
+  color: var(--color-text-secondary);
+  margin: 0 0 32px;
+  font-size: 17px;
+  line-height: 1.6;
+}
+/* store badges — static, non-interactive (no store links yet) */
+.app-stores { display: flex; flex-wrap: wrap; gap: 14px; }
+.store-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 11px;
+  padding: 11px 18px;
+  border-radius: 14px;
+  background: var(--color-bg-dark);
+  color: #fff;
+  cursor: default;
+  user-select: none;
+  transition: transform var(--duration-fast) var(--ease-spring),
+              box-shadow var(--duration-fast) var(--ease-spring);
+}
+.store-badge:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 24px rgba(0,0,0,0.16);
+}
+.store-badge__glyph {
+  flex: 0 0 23px;
+  width: 23px;
+  height: 23px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.store-badge__glyph svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.store-badge__glyph--apple svg {
+  width: 22px;
+  height: 22px;
+  transform: translateY(-1px);
+}
+.store-badge__text { display: flex; flex-direction: column; line-height: 1.15; }
+.store-badge__small {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  opacity: 0.72;
+}
+.store-badge__name {
+  font-family: var(--font-heading);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+/* ── iPhone device frame ── */
+.phone-stage { display: flex; justify-content: center; }
+.phone-mock {
+  position: relative;
+  width: 300px;
+  height: 620px;
+  border-radius: 52px;
+  background: linear-gradient(155deg, #2b2b30 0%, #0a0a0a 60%);
+  padding: 13px;
+  box-shadow:
+    0 2px 2px rgba(255,255,255,0.18) inset,
+    0 40px 80px -20px rgba(0,0,0,0.45),
+    0 16px 36px -18px rgba(28,107,119,0.35);
+  animation: phoneFloat 6s ease-in-out infinite;
+}
+@keyframes phoneFloat {
+  0%,100% { transform: translateY(0) rotate(0deg); }
+  50%     { transform: translateY(-12px) rotate(-0.4deg); }
+}
+.phone-mock__screen {
+  position: relative;
+  width: 100%; height: 100%;
+  border-radius: 40px;
+  background: var(--color-bg);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.phone-mock__island {
+  position: absolute;
+  top: 11px; left: 50%;
+  transform: translateX(-50%);
+  width: 94px; height: 27px;
+  background: #0a0a0a;
+  border-radius: 16px;
+  z-index: 6;
+}
+.phone-mock__glare {
+  position: absolute;
+  inset: 13px;
+  border-radius: 40px;
+  background: linear-gradient(135deg, rgba(255,255,255,0.13) 0%, rgba(255,255,255,0) 42%);
+  pointer-events: none;
+  z-index: 7;
+}
+/* status bar */
+.phone-status {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px 26px 4px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+.phone-status__icons { display: flex; align-items: center; gap: 6px; }
+/* app content */
+.phone-app { flex: 1; overflow: hidden; padding: 8px 16px 0; }
+.phone-app__head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 13px;
+}
+.phone-app__logo {
+  height: 18px;
+  width: auto;
+  display: block;
+  filter: invert(1); /* official logo is white-on-black → invert to black-on-white for the light app screen */
+  mix-blend-mode: multiply; /* drops the inverted white backdrop so only the black wordmark shows */
+}
+.phone-app__loc {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; color: var(--color-text-muted);
+  max-width: 124px;
+}
+.phone-app__loc span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.phone-search {
+  display: flex; align-items: center; gap: 9px;
+  padding: 12px 15px;
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  color: var(--color-text-muted);
+  font-size: 13.5px;
+  margin-bottom: 17px;
+  box-shadow: 0 6px 16px rgba(0,0,0,0.04);
+}
+.phone-section-label {
+  font-family: var(--font-heading);
+  font-size: 14px; font-weight: 700;
+  color: var(--color-text);
+  margin-bottom: 11px;
+}
+.phone-cats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.phone-cat {
+  position: relative;
+  aspect-ratio: 1 / 0.9;
+  border-radius: 14px;
+  overflow: hidden;
+  background-size: cover;
+  background-position: center;
+}
+.phone-cat--wide { grid-column: 1 / -1; aspect-ratio: auto; height: 62px; }
+.phone-cat::after {
+  content: "";
+  position: absolute; inset: 0;
+  background: linear-gradient(to top, rgba(0,0,0,0.64) 0%, rgba(0,0,0,0.05) 58%);
+}
+.phone-cat__label {
+  position: absolute;
+  left: 11px; right: 11px; bottom: 9px;
+  z-index: 2;
+  color: #fff;
+  font-family: var(--font-body);
+  font-size: 11.5px; font-weight: 600;
+  line-height: 1.2;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.phone-cat--wide .phone-cat__label { bottom: 50%; transform: translateY(50%); font-size: 13px; }
+/* bottom tab bar */
+.phone-tabbar {
+  display: flex; justify-content: space-around; align-items: center;
+  padding: 11px 0 22px;
+  border-top: 1px solid var(--color-border);
+  background: #fff;
+  color: #bdbdbd;
+}
+.phone-tabbar .phone-tab--active { color: var(--color-text); }
+
+@media (max-width: 900px) {
+  .app-layout {
+    grid-template-columns: 1fr;
+    gap: 44px;
+    justify-items: center;
+    text-align: center;
+  }
+  .app-copy { max-width: 540px; }
+  .app-eyebrow { margin-left: auto; margin-right: auto; }
+  .app-stores { justify-content: center; }
+  .app-section::before { right: 50%; transform: translate(50%, -50%); width: 460px; height: 460px; }
+  .phone-mock { width: 272px; height: 562px; }
+}
+@media (max-width: 420px) {
+  .phone-mock { width: 246px; height: 510px; border-radius: 44px; }
+  .phone-mock__screen { border-radius: 34px; }
+}

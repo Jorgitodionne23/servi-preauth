@@ -216,6 +216,10 @@ const T = {
       title: "La app de SERVI",
       badge: "Muy pronto",
       sub: "Solicita servicios, da seguimiento y paga — todo desde tu celular.",
+      soonOn: "Muy pronto en",
+      comingSoon: "Próximamente",
+      phoneSearch: "Solicita un servicio",
+      browse: "Explora",
     },
     testimonials: {
       title: "Nuestros clientes",
@@ -852,6 +856,10 @@ const T = {
       title: "The SERVI app",
       badge: "Coming soon",
       sub: "Request services, track progress, and pay — all from your phone.",
+      soonOn: "Soon on",
+      comingSoon: "Coming soon",
+      phoneSearch: "Request a service",
+      browse: "Browse",
     },
     testimonials: {
       title: "Our clients",

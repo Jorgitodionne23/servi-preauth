@@ -22,8 +22,8 @@
       {
         title: f.servi || 'SERVI',
         links: [
-          { label: links.solicita, href: '/index.html#services' },
-          { label: links.whatWeOffer, href: '/index.html#services' },
+          { label: links.solicita, href: '/index.html#landing-hero' },
+          { label: links.whatWeOffer, href: '/index.html#landing-hero' },
           { label: links.how, href: '/index.html#how' },
           { label: links.app, href: '/index.html#app' },
           { label: links.testimonials, href: '/index.html#testimonials' },

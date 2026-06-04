@@ -12,7 +12,7 @@
     if (type === 'helpcenter') {
       return [
         { label: t.nav.helpCenter, href: '/helpcenter.html' },
-        { label: t.hero.cta, href: '/index.html#services' },
+        { label: t.hero.cta, href: '/index.html#landing-hero' },
         { label: t.nav.partners, href: '/partners.html' },
       ];
     }
@@ -25,7 +25,7 @@
     }
     // main
     return [
-      { label: t.nav.services, anchor: 'services' },
+      { label: t.nav.services, anchor: 'landing-hero' },
       { label: t.nav.howItWorks, anchor: 'how' },
       { label: t.nav.testimonials, anchor: 'testimonials' },
       { label: t.nav.helpCenter, href: '/helpcenter.html' },

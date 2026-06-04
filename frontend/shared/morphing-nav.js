@@ -210,7 +210,7 @@
         <a href="/index.html" class="site-header__logo logo" style="text-decoration:none;color:#000">SERVI<span class="logo-dot" style="color:#000">.</span></a>
 
         <nav class="site-header__links" aria-label="Primary">
-          <a class="site-header__link" href="${onHome ? '#services' : '/index.html#services'}" ${onHome ? 'data-scroll="services"' : ''}
+          <a class="site-header__link" href="${onHome ? '#landing-hero' : '/index.html#landing-hero'}" ${onHome ? 'data-scroll="landing-hero"' : ''}
             data-active="${isServicesPage ? 'true' : 'false'}"
             >${t.header.linkServices}</a>
           <a class="site-header__link" href="/helpcenter.html"
@@ -308,7 +308,7 @@
         <button type="button" class="site-drawer__close" data-action="close-drawer" aria-label="${t.header.close}">${ICON.close}</button>
       </div>
       <nav class="site-drawer__nav" aria-label="${t.header.menu}">
-        ${scrollLink('services', t.header.linkServices)}
+        ${scrollLink('landing-hero', t.header.linkServices)}
         <a class="site-drawer__link" href="/helpcenter.html">${t.header.linkHelp}</a>
         <a class="site-drawer__link" href="/partners.html">${t.header.linkPartners}</a>
         ${onHome ? `
