@@ -363,6 +363,19 @@
     window._browseSetFilter(catKey);
   };
 
+  function scrollToSubcategoryCarousel(catKey, subKey) {
+    const rowId = `${catKey}-${subKey}`;
+    const track = document.getElementById(`dash-carousel-${rowId}`);
+    const row = track && track.closest('.dash-discovery__row');
+    if (!track || !row) return;
+
+    row.scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'nearest' });
+    window.setTimeout(() => {
+      track.focus({ preventScroll: true });
+      updateDiscoveryArrowState(track);
+    }, 320);
+  }
+
   window._browseScrollCarousel = function(catKey, dir) {
     const track = document.getElementById(`dash-carousel-${catKey}`);
     if (!track) return;
@@ -457,6 +470,11 @@
   };
 
   window._browseOpenSubcategory = function(catKey, subKey, source) {
+    if (source === 'discovery-card') {
+      window._browseSetFilter(catKey);
+      window.requestAnimationFrame(() => scrollToSubcategoryCarousel(catKey, subKey));
+      return;
+    }
     window._openBrowseDrawer(catKey, subKey, { source: source || 'subcategory-card' });
   };
 

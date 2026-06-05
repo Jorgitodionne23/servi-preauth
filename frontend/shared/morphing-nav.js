@@ -15,6 +15,11 @@
 //   window._heroSearchSubmit, window._heroChipClick
 
 (function () {
+  const BROWSE_HEADER_MORPH_Y = 180;
+
+  function getBrowseHeaderMorphY() {
+    return BROWSE_HEADER_MORPH_Y;
+  }
 
   // ─── Session restore (unchanged from previous implementation) ──────────
   function restoreSession() {
@@ -200,7 +205,7 @@
     const isServicesPage = onHome || window.location.pathname === '/browse.html' || window.location.pathname === '/service.html';
     // Pre-compute correct initial state for browse so the bar renders at the
     // right size immediately — avoids the height/grid-row transition on load.
-    const foldY = isBrowsePage ? Math.max(160, window.innerHeight - 220) : 0;
+    const foldY = isBrowsePage ? getBrowseHeaderMorphY() : 0;
     const initialState = isBrowsePage
       ? (window.scrollY < foldY ? 'browse-expanded' : 'scrolled')
       : 'hero';
@@ -932,7 +937,7 @@
     if (window.location.pathname === '/browse.html') {
       let ticking = false;
       const updateBrowseScroll = () => {
-        const foldY = Math.max(160, window.innerHeight - 220);
+        const foldY = getBrowseHeaderMorphY();
         const nextScroll = window.scrollY < foldY ? 'hero' : 'scrolled';
         if (nextScroll !== state.scroll) {
           state.scroll = nextScroll;
@@ -1045,7 +1050,7 @@
     // Pre-seed scroll state to match the data-state stamped into the HTML so
     // initScrollObserver → applyHeaderState sees no change and fires no transition.
     if (window.location.pathname === '/browse.html') {
-      const foldY = Math.max(160, window.innerHeight - 220);
+      const foldY = getBrowseHeaderMorphY();
       state.scroll = window.scrollY < foldY ? 'hero' : 'scrolled';
     } else {
       state.scroll = 'hero';

@@ -104,4 +104,16 @@
   }
 
   window.addEventListener('langchange', window.buildServiFooter);
+
+  // Universal loader for the global active-order dock. shared-footer.js is present on
+  // every customer-facing page (and absent from standalone payment pages), so this is the
+  // single place that guarantees the widget loads everywhere it should. The widget itself
+  // no-ops when the user is logged out or has no active order.
+  if (!window.__serviActiveOrderLoaderAdded) {
+    window.__serviActiveOrderLoaderAdded = true;
+    var aoScript = document.createElement('script');
+    aoScript.src = '/shared/shared-active-order.js';
+    aoScript.defer = true;
+    document.head.appendChild(aoScript);
+  }
 })();
