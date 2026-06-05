@@ -3730,14 +3730,32 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
   switch (event.type) {
     case 'payment_intent.succeeded': {
-      console.log('💰 Captured (payment_intent.succeeded):', paymentIntentId);
+      const pi = event.data.object;
+      // A late-cancellation fee is collected by partial-capturing the hold, which also fires
+      // 'succeeded'. The metadata flag (set before capture) tells us this is a cancellation, not
+      // a completed service, so we relabel instead of marking Captured.
+      const isPenaltyCapture = pi?.metadata?.servi_penalty_cancel === '1';
+      const nextStatus = isPenaltyCapture ? 'Canceled (late fee)' : 'Captured';
+      console.log(`${isPenaltyCapture ? '🚫 Canceled (late fee)' : '💰 Captured'} (payment_intent.succeeded):`, paymentIntentId);
 
       const r = await pool.query('SELECT id, customer_id FROM all_bookings WHERE payment_intent_id = $1 LIMIT 1', [paymentIntentId]);
       const row = r.rows[0] || {};
 
-      await pool.query('UPDATE all_bookings SET status = $1 WHERE payment_intent_id = $2', ['Captured', paymentIntentId]);
+      // Forward-only, mirroring the sibling handlers: never overwrite a refund, and never let a
+      // normal capture clobber a cancellation status. A penalty capture sets its own cancel label.
+      if (isPenaltyCapture) {
+        await pool.query(
+          `UPDATE all_bookings SET status = $1 WHERE payment_intent_id = $2 AND status NOT IN ('Captured', 'Refunded')`,
+          [nextStatus, paymentIntentId]
+        );
+      } else {
+        await pool.query(
+          `UPDATE all_bookings SET status = $1 WHERE payment_intent_id = $2 AND status <> 'Refunded' AND status NOT LIKE 'Cancel%'`,
+          [nextStatus, paymentIntentId]
+        );
+      }
 
-      postToGoogleWebhook({ type: 'order.status', paymentIntentId, status: 'Captured', orderId: row.id || '', customerId: row.customer_id || '' });
+      postToGoogleWebhook({ type: 'order.status', paymentIntentId, status: nextStatus, orderId: row.id || '', customerId: row.customer_id || '' });
       break;
     }
 
@@ -5896,9 +5914,61 @@ app.delete('/api/auth/favorites/:id', async (req, res) => {
 const CUSTOMER_PAST_ORDER_STATUSES = new Set([
   'Captured', 'Canceled', 'Cancelled', 'Declined', 'Refunded', 'Expired', 'Refused',
 ]);
+// Compound labels the webhooks actually emit (e.g. 'Canceled (expired)',
+// 'Canceled (requested_by_customer)', 'Canceled (late fee)', 'Captured (partial refund)')
+// must also bucket as past — exact-set matching alone would mis-file them as active.
+const CUSTOMER_PAST_STATUS_RE = /^(cancel|refund|captured|declined|expired)/i;
 
 function customerOrderBucket(status) {
-  return CUSTOMER_PAST_ORDER_STATUSES.has(String(status || '').trim()) ? 'past' : 'active';
+  const s = String(status || '').trim();
+  return (CUSTOMER_PAST_ORDER_STATUSES.has(s) || CUSTOMER_PAST_STATUS_RE.test(s)) ? 'past' : 'active';
+}
+
+// The SERVI-fee portion of an order (booking fee + processing fee + VAT), i.e. everything
+// except the provider's payout. This is what a late cancellation captures from the hold.
+function lateCancelFeeCents(row) {
+  const fees = Number(row?.booking_fee_amount || 0)
+    + Number(row?.processing_fee_amount || 0)
+    + Number(row?.vat_amount || 0);
+  if (fees > 0) return fees;
+  // Fallback if the per-component columns are missing: total minus provider portion.
+  const total = Number(row?.pricing_total_amount || row?.amount || 0);
+  const provider = Number(row?.provider_amount || 0);
+  return Math.max(0, total - provider);
+}
+
+// Per-order self-service action policy for the customer's My Orders UI. Server is the source
+// of truth — the front end only renders what this allows. Mirrors the pre-auth model: nothing
+// is owed until money is actually held ('Confirmed') or captured. ORDER_EDITABLE_STATUSES is
+// defined further down but only read at call time (request handling), so the reference is safe.
+function computeOrderActionPolicy(row) {
+  const status = String(row?.status || '').trim();
+  const isCaptured = /^captured/i.test(status);            // Captured / Captured (partial refund)
+  const isPast = customerOrderBucket(status) === 'past';
+  const editable = ORDER_EDITABLE_STATUSES.has(status);    // Pending..Confirmed, never terminal
+
+  // Cancel: any editable order can be cancelled. Captured/terminal cannot (→ support).
+  let canCancel = editable;
+  let cancelTier = canCancel ? 'free' : 'none';            // 'free' | 'late' | 'none'
+  let cancelFeeCents = 0;
+  if (canCancel && status === 'Confirmed') {
+    // Card is pre-authorized. Free while still ≥24h out; late fee inside the window.
+    const h = hoursUntilService(row);
+    if (h < PREAUTH_WINDOW_HOURS) {
+      cancelTier = 'late';
+      cancelFeeCents = lateCancelFeeCents(row);
+    }
+  }
+
+  return {
+    canCancel,
+    cancelTier,
+    cancelFeeCents,
+    canEditAddress: editable,        // applies instantly
+    canRequestReschedule: editable,  // creates an admin-reviewed request
+    canReorder: isPast && !!row?.category,
+    isCaptured,
+  };
 }
 
 // Resolves the WHERE fragment + params that match a user's own orders/requests,
@@ -6011,6 +6081,7 @@ app.get('/api/auth/orders', async (req, res) => {
       cashSelected: !!r.cash_selected,
       payable: isOrderPayableOnline(r),
       payFlow: orderPayFlow(r),
+      policy: computeOrderActionPolicy(r),
       createdAt: r.created_at,
       pricing: {
         total: r.final_captured_amount ?? r.pricing_total_amount ?? r.amount ?? null,
@@ -6042,6 +6113,8 @@ app.get('/api/auth/orders', async (req, res) => {
       cashSelected: false,
       payable: false,
       payFlow: null,
+      // Pending intake requests can only be withdrawn (no order/PI yet exists).
+      policy: { canCancel: true, cancelTier: 'free', cancelFeeCents: 0, canEditAddress: false, canRequestReschedule: false, canReorder: false, isCaptured: false },
       createdAt: r.created_at,
       pricing: null,
     }));
@@ -6096,6 +6169,215 @@ app.post('/api/auth/orders/:id/payment-link', publicFormLimit, async (req, res) 
   } catch (err) {
     console.error('[POST /api/auth/orders/:id/payment-link]', err);
     return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// ─── Customer self-service: cancel / modify their own orders ──────────────────
+// All three routes are scoped strictly to the authenticated owner via
+// resolveUserOrderMatch (Stripe customer id / email / phone) and never trust the JWT body.
+
+// Fetch one order owned by the user (excludes child adjustment rows).
+async function fetchOwnedOrder(userId, orderId) {
+  const { conds, ids } = await resolveUserOrderMatch(userId);
+  if (!conds.length) return null;
+  const { rows } = await pool.query(
+    `SELECT id, public_code, status, kind, category, customer_id, cash_selected,
+            payment_intent_id, service_date, service_datetime, service_address,
+            booking_fee_amount, processing_fee_amount, vat_amount, provider_amount,
+            pricing_total_amount, amount, parent_id_of_adjustment
+       FROM all_bookings
+      WHERE id = $${ids.length + 1}
+        AND (${conds.join(' OR ')})
+        AND COALESCE(parent_id_of_adjustment, '') = ''
+        AND COALESCE(kind, '') <> 'adjustment'
+      LIMIT 1`,
+    [...ids, orderId]
+  );
+  return rows[0] || null;
+}
+
+// POST /api/auth/orders/:id/cancel — customer-initiated cancellation.
+// Free when no money is held or ≥24h before service; late fee (SERVI fee captured from the
+// hold, provider amount released) for a pre-authorized order inside the 24h window. Captured
+// orders cannot be self-cancelled (→ support). Also withdraws a not-yet-converted intake request.
+app.post('/api/auth/orders/:id/cancel', publicFormLimit, async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const reason = String(req.body?.reason || '').trim().slice(0, 200) || null;
+    const order = await fetchOwnedOrder(payload.user_id, req.params.id);
+
+    // Not an order → maybe a pending intake request the user wants to withdraw.
+    if (!order) {
+      const { conds, ids } = await resolveUserOrderMatch(payload.user_id);
+      if (!conds.length) return res.status(404).json({ error: 'not_found' });
+      const { rows: reqRows } = await pool.query(
+        `SELECT id, status FROM service_requests
+          WHERE id = $${ids.length + 1} AND (${conds.join(' OR ')})
+            AND COALESCE(converted_order_id, '') = '' LIMIT 1`,
+        [...ids, req.params.id]
+      );
+      const reqRow = reqRows[0];
+      if (!reqRow) return res.status(404).json({ error: 'not_found' });
+      if (String(reqRow.status || '').toLowerCase() === 'canceled') {
+        return res.json({ ok: true, status: 'canceled', feeCents: 0, kind: 'request' });
+      }
+      await pool.query(`UPDATE service_requests SET status = 'canceled' WHERE id = $1`, [reqRow.id]);
+      return res.json({ ok: true, status: 'canceled', feeCents: 0, kind: 'request' });
+    }
+
+    // Heal status from Stripe (missed webhook) before deciding what's allowed.
+    await reconcileOrderStatusFromStripe(order);
+    const policy = computeOrderActionPolicy(order);
+    if (policy.isCaptured) {
+      return res.status(409).json({ error: 'already_captured', message: 'Esta orden ya fue cobrada. Contáctanos para solicitar un reembolso.' });
+    }
+    if (!policy.canCancel) {
+      return res.status(409).json({ error: 'not_cancelable', message: `El estado "${order.status}" no permite cancelación.` });
+    }
+
+    const prevStatus = order.status;
+    let newStatus = 'Canceled';
+    let feeCents = 0;
+
+    // Late tier: pre-authorized order inside the 24h window → capture the SERVI fee from the hold.
+    if (policy.cancelTier === 'late' && policy.cancelFeeCents > 0 && order.payment_intent_id) {
+      let pi = null;
+      try { pi = await stripe.paymentIntents.retrieve(order.payment_intent_id); }
+      catch (e) { console.warn('[auth cancel] PI retrieve failed:', e?.message || e); }
+
+      if (pi && pi.status === 'succeeded') {
+        // Raced with capture — it's effectively captured now.
+        return res.status(409).json({ error: 'already_captured', message: 'Esta orden ya fue cobrada. Contáctanos para solicitar un reembolso.' });
+      }
+      if (pi && pi.status === 'requires_capture') {
+        feeCents = Math.min(policy.cancelFeeCents, Number.isInteger(pi.amount) ? pi.amount : policy.cancelFeeCents);
+        if (feeCents > 0) {
+          // Tag first so the succeeded webhook relabels (regardless of arrival timing),
+          // then partial-capture — Stripe auto-releases the provider remainder.
+          await stripe.paymentIntents.update(pi.id, {
+            metadata: { ...(pi.metadata || {}), servi_penalty_cancel: '1', servi_cancel_reason: reason || '' }
+          });
+          await stripe.paymentIntents.capture(pi.id, { amount_to_capture: feeCents });
+          newStatus = 'Canceled (late fee)';
+        }
+      } else if (pi && /^cancel/i.test(pi.status)) {
+        newStatus = 'Canceled';
+      }
+    }
+
+    // Free tier (or late tier with no live hold): release any cancelable hold.
+    if (newStatus === 'Canceled' && order.payment_intent_id) {
+      try {
+        const pi = await stripe.paymentIntents.retrieve(order.payment_intent_id);
+        const cancelable = new Set(['requires_payment_method', 'requires_confirmation', 'requires_action', 'processing', 'requires_capture']);
+        if (cancelable.has(pi.status)) {
+          await stripe.paymentIntents.cancel(pi.id, { cancellation_reason: 'requested_by_customer' });
+        }
+      } catch (e) {
+        console.warn('[auth cancel] PI cancel failed:', e?.message || e);
+      }
+    }
+
+    if (feeCents > 0) {
+      await pool.query(
+        `UPDATE all_bookings
+            SET status = $1, cancellation_fee_amount = $2, final_captured_amount = $2,
+                canceled_at = NOW(), canceled_by = 'cliente'
+          WHERE id = $3`,
+        [newStatus, feeCents, order.id]
+      );
+    } else {
+      await pool.query(
+        `UPDATE all_bookings SET status = $1, canceled_at = NOW(), canceled_by = 'cliente' WHERE id = $2`,
+        [newStatus, order.id]
+      );
+    }
+
+    const appliedNote = feeCents > 0
+      ? `Cancelado por cliente con tarifa de $${(feeCents / 100).toFixed(2)} MXN. Estado previo: ${prevStatus}.`
+      : `Cancelado por cliente (sin cargo). Estado previo: ${prevStatus}.`;
+    await pool.query(
+      `INSERT INTO order_changes
+         (id, order_id, change_type, requested_by, original_status, status, notes, applied_note, processed_at)
+       VALUES ($1,$2,'cancel','cliente',$3,'applied',$4,$5,NOW())`,
+      [newChangeId(), order.id, prevStatus, reason, appliedNote]
+    );
+
+    postToGoogleWebhook({
+      type: 'order.status', orderId: order.id, status: newStatus,
+      paymentIntentId: order.payment_intent_id || '', customerId: order.customer_id || ''
+    });
+
+    return res.json({ ok: true, status: newStatus, feeCents });
+  } catch (err) {
+    console.error('[POST /api/auth/orders/:id/cancel]', err);
+    return res.status(500).json({ error: 'internal_error', message: err.message });
+  }
+});
+
+// PATCH /api/auth/orders/:id/address — instant address change (pre-capture only).
+app.patch('/api/auth/orders/:id/address', publicFormLimit, async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const newAddress = String(req.body?.address || '').trim();
+    if (!newAddress) return res.status(400).json({ error: 'address_required' });
+    if (newAddress.length > 500) return res.status(400).json({ error: 'address_too_long' });
+
+    const order = await fetchOwnedOrder(payload.user_id, req.params.id);
+    if (!order) return res.status(404).json({ error: 'not_found' });
+    await reconcileOrderStatusFromStripe(order);
+    if (!computeOrderActionPolicy(order).canEditAddress) {
+      return res.status(409).json({ error: 'not_editable', message: `El estado "${order.status}" no permite editar la dirección.` });
+    }
+
+    const prevAddress = order.service_address;
+    await pool.query(`UPDATE all_bookings SET service_address = $1 WHERE id = $2`, [newAddress, order.id]);
+    await pool.query(
+      `INSERT INTO order_changes
+         (id, order_id, change_type, requested_by, original_service_address, requested_service_address, original_status, status, applied_note, processed_at)
+       VALUES ($1,$2,'address_update','cliente',$3,$4,$5,'applied',$6,NOW())`,
+      [newChangeId(), order.id, prevAddress, newAddress, order.status, `Dirección (cliente): ${prevAddress || '—'} → ${newAddress}`]
+    );
+    return res.json({ ok: true, address: newAddress });
+  } catch (err) {
+    console.error('[PATCH /api/auth/orders/:id/address]', err);
+    return res.status(500).json({ error: 'internal_error', message: err.message });
+  }
+});
+
+// POST /api/auth/orders/:id/reschedule-request — create a PENDING reschedule request for an
+// admin to approve (provider re-coordination). Surfaces in admin.html's order-changes list.
+app.post('/api/auth/orders/:id/reschedule-request', publicFormLimit, async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const requestedDt = String(req.body?.service_datetime || '').trim();
+    if (!requestedDt) return res.status(400).json({ error: 'datetime_required' });
+    const t = new Date(requestedDt);
+    if (isNaN(t.getTime())) return res.status(400).json({ error: 'invalid_datetime' });
+    if (t.getTime() < Date.now()) return res.status(400).json({ error: 'datetime_in_past' });
+    const notes = String(req.body?.notes || '').trim().slice(0, 1000) || null;
+
+    const order = await fetchOwnedOrder(payload.user_id, req.params.id);
+    if (!order) return res.status(404).json({ error: 'not_found' });
+    await reconcileOrderStatusFromStripe(order);
+    if (!computeOrderActionPolicy(order).canRequestReschedule) {
+      return res.status(409).json({ error: 'not_editable', message: `El estado "${order.status}" no permite reagendar.` });
+    }
+
+    const changeId = newChangeId();
+    await pool.query(
+      `INSERT INTO order_changes
+         (id, order_id, change_type, requested_by, original_service_datetime, original_service_address, original_status, requested_service_datetime, notes)
+       VALUES ($1,$2,'reschedule','cliente',$3,$4,$5,$6,$7)`,
+      [changeId, order.id, order.service_datetime, order.service_address, order.status, requestedDt, notes]
+    );
+    return res.json({ ok: true, id: changeId, pending: true });
+  } catch (err) {
+    console.error('[POST /api/auth/orders/:id/reschedule-request]', err);
+    return res.status(500).json({ error: 'internal_error', message: err.message });
   }
 });
 

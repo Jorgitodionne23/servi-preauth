@@ -945,7 +945,7 @@ const TX = {
     ordersEmptyCta: 'Solicitar un servicio',
     stRequested: 'Solicitud recibida', stPendingPay: 'Pendiente de pago', stPay3ds: 'Verificación de pago',
     stCash: 'Pago en efectivo', stScheduled: 'Programado', stAuthorized: 'Autorizado',
-    stCompleted: 'Completado', stCanceled: 'Cancelado', stDeclined: 'Rechazado', stRefunded: 'Reembolsado',
+    stCompleted: 'Completado', stCanceled: 'Cancelado', stCanceledFee: 'Cancelado (con tarifa)', stDeclined: 'Rechazado', stRefunded: 'Reembolsado',
     tlRequested: 'Solicitud recibida', tlMatched: 'Especialista asignado', tlAuthorized: 'Pago autorizado',
     tlCompleted: 'Servicio completado', tlCanceledTitle: 'Pedido cancelado',
     drawerTimeline: 'Estado del pedido', drawerService: 'Servicio', drawerSchedule: 'Fecha y hora',
@@ -955,6 +955,23 @@ const TX = {
     priceVat: 'IVA', priceTotal: 'Total', priceTotalCharged: 'Total cobrado', priceTotalHold: 'Total autorizado',
     priceEstimate: 'Estimado', priceCash: 'Pago en efectivo al especialista', priceTbd: 'Por confirmar',
     actReorder: 'Pedir de nuevo', actPay: 'Completar pago', actHelp: '¿Necesitas ayuda?', actClose: 'Cerrar',
+    actEditAddress: 'Editar dirección', actReschedule: 'Reagendar', actCancel: 'Cancelar pedido',
+    actWithdraw: 'Retirar solicitud', actSave: 'Guardar',
+    cancelTitle: '¿Cancelar este pedido?', cancelReqTitle: '¿Retirar esta solicitud?',
+    cancelReqBody: 'Tu solicitud se retirará. Podrás solicitar el servicio de nuevo cuando quieras.',
+    cancelFreeBody: 'No se aplicará ningún cargo. Si tu pago estaba autorizado, se liberará la retención.',
+    cancelFeeBody1: 'Como faltan menos de 24 horas para el servicio, se aplicará una tarifa de',
+    cancelFeeBody2: ' (tarifa de servicio, no reembolsable). Se liberará el resto de la retención.',
+    cancelKeep: 'No, conservar', cancelConfirm: 'Sí, cancelar', cancelPayConfirm: 'Cancelar y pagar tarifa',
+    cancelCaptured: 'Esta orden ya fue cobrada. Contáctanos para solicitar un reembolso.',
+    cancelError: 'No pudimos cancelar el pedido. Intenta de nuevo.',
+    cancelDone: 'Pedido cancelado.', cancelDoneFee: 'Pedido cancelado. Se aplicó la tarifa de cancelación.',
+    addrRequired: 'Ingresa una dirección.', addrSaved: 'Dirección actualizada.',
+    actionError: 'Algo salió mal. Intenta de nuevo.',
+    reschedHint: 'Tu solicitud de cambio será revisada por nuestro equipo antes de confirmarse.',
+    reschedSubmit: 'Enviar solicitud', reschedRequired: 'Elige una nueva fecha y hora.',
+    reschedPast: 'La fecha debe ser en el futuro.',
+    reschedSubmitted: 'Solicitud de cambio enviada. Te confirmaremos pronto.',
     createdOn: 'Solicitado el',
     payGenerating: 'Generando enlace…',
     payNotAvailable: 'Este pedido ya no está disponible para pago en línea. Contáctanos por WhatsApp si necesitas ayuda.',
@@ -1044,7 +1061,7 @@ const TX = {
     ordersEmptyCta: 'Request a service',
     stRequested: 'Request received', stPendingPay: 'Payment pending', stPay3ds: 'Payment verification',
     stCash: 'Cash payment', stScheduled: 'Scheduled', stAuthorized: 'Authorized',
-    stCompleted: 'Completed', stCanceled: 'Canceled', stDeclined: 'Declined', stRefunded: 'Refunded',
+    stCompleted: 'Completed', stCanceled: 'Canceled', stCanceledFee: 'Canceled (fee applied)', stDeclined: 'Declined', stRefunded: 'Refunded',
     tlRequested: 'Request received', tlMatched: 'Specialist assigned', tlAuthorized: 'Payment authorized',
     tlCompleted: 'Service completed', tlCanceledTitle: 'Order canceled',
     drawerTimeline: 'Order status', drawerService: 'Service', drawerSchedule: 'Date & time',
@@ -1054,6 +1071,23 @@ const TX = {
     priceVat: 'VAT', priceTotal: 'Total', priceTotalCharged: 'Total charged', priceTotalHold: 'Total authorized',
     priceEstimate: 'Estimate', priceCash: 'Cash payment to specialist', priceTbd: 'To be confirmed',
     actReorder: 'Order again', actPay: 'Complete payment', actHelp: 'Need help?', actClose: 'Close',
+    actEditAddress: 'Edit address', actReschedule: 'Reschedule', actCancel: 'Cancel order',
+    actWithdraw: 'Withdraw request', actSave: 'Save',
+    cancelTitle: 'Cancel this order?', cancelReqTitle: 'Withdraw this request?',
+    cancelReqBody: 'Your request will be withdrawn. You can request the service again anytime.',
+    cancelFreeBody: 'No charge will apply. If your payment was authorized, the hold will be released.',
+    cancelFeeBody1: 'Since the service is less than 24 hours away, a fee of',
+    cancelFeeBody2: ' (service fee, non-refundable) will apply. The rest of the hold is released.',
+    cancelKeep: 'No, keep it', cancelConfirm: 'Yes, cancel', cancelPayConfirm: 'Cancel & pay fee',
+    cancelCaptured: 'This order was already charged. Contact us to request a refund.',
+    cancelError: 'We could not cancel the order. Please try again.',
+    cancelDone: 'Order canceled.', cancelDoneFee: 'Order canceled. The cancellation fee was applied.',
+    addrRequired: 'Enter an address.', addrSaved: 'Address updated.',
+    actionError: 'Something went wrong. Please try again.',
+    reschedHint: 'Your change request will be reviewed by our team before it is confirmed.',
+    reschedSubmit: 'Send request', reschedRequired: 'Choose a new date and time.',
+    reschedPast: 'The date must be in the future.',
+    reschedSubmitted: 'Change request sent. We will confirm shortly.',
     createdOn: 'Requested on',
     payGenerating: 'Generating link…',
     payNotAvailable: 'This order is no longer available for online payment. Contact us on WhatsApp if you need help.',
@@ -2165,14 +2199,20 @@ function formatDateTime(value) {
 function orderStatusMeta(item) {
   const t = tr();
   if (item.source === 'request') return { label: t.stRequested, cls: 'is-progress', step: 1, canceled: false };
-  switch (String(item.status || '').trim()) {
-    case 'Captured':                 return { label: t.stCompleted,  cls: 'is-done',       step: 4, canceled: false };
-    case 'Refunded':                 return { label: t.stRefunded,   cls: 'is-canceled',   step: 4, canceled: true };
+  const raw = String(item.status || '').trim();
+  // Compound labels the backend emits (e.g. 'Canceled (late fee)', 'Canceled (expired)',
+  // 'Captured (partial refund)') are matched by prefix so they never fall through to "pending".
+  if (/^captured/i.test(raw))  return { label: t.stCompleted, cls: 'is-done',     step: 4, canceled: false };
+  if (/^refund/i.test(raw))    return { label: t.stRefunded,  cls: 'is-canceled', step: 4, canceled: true };
+  if (/^cancel/i.test(raw)) {
+    const fee = /late fee/i.test(raw);
+    return { label: fee ? t.stCanceledFee : t.stCanceled, cls: 'is-canceled', step: 1, canceled: true };
+  }
+  switch (raw) {
     case 'Confirmed':                return { label: t.stAuthorized, cls: 'is-authorized', step: 3, canceled: false };
     case 'Scheduled':                return { label: t.stScheduled,  cls: 'is-progress',   step: 2, canceled: false };
     case 'Pending Cash':             return { label: t.stCash,       cls: 'is-progress',   step: 2, canceled: false };
     case 'Pending (3DS)':            return { label: t.stPay3ds,     cls: 'is-pending',    step: 2, canceled: false };
-    case 'Canceled': case 'Cancelled': return { label: t.stCanceled, cls: 'is-canceled',  step: 1, canceled: true };
     case 'Declined':                 return { label: t.stDeclined,   cls: 'is-declined',   step: 1, canceled: true };
     case 'Expired':                  return { label: t.stCanceled,   cls: 'is-canceled',   step: 1, canceled: true };
     default:                         return { label: t.stPendingPay, cls: 'is-pending',    step: 2, canceled: false };
@@ -2186,6 +2226,14 @@ function orderIsPayable(item) {
   if (typeof item.payable === 'boolean') return item.payable;
   return PAYABLE_ORDER_STATUSES.has(String(item.status || '').trim());
 }
+// Server-computed action policy (cancel/modify/reorder). Falls back to a conservative
+// status-derived guess only if an older response omits it.
+function orderPolicy(item) {
+  if (item.policy && typeof item.policy === 'object') return item.policy;
+  const past = (item.bucket === 'past');
+  return { canCancel: false, cancelTier: 'none', cancelFeeCents: 0, canEditAddress: false, canRequestReschedule: false, canReorder: past && !!item.category, isCaptured: false };
+}
+function orderCanReorder(item) { return !!orderPolicy(item).canReorder && !!item.category; }
 function orderWhenLabel(item) {
   const t = tr();
   if (item.isAsap) return t.asap;
@@ -2305,7 +2353,8 @@ function orderCardHtml(item, idx) {
 
   const actions = [];
   if (orderIsPayable(item)) actions.push(`<button class="order-cta" onclick="event.stopPropagation();startOrderPayment('${escapeHtml(item.id)}','${escapeHtml(item.payFlow || item.kind)}',this)">${escapeHtml(t.actPay)}</button>`);
-  if (item.category) actions.push(`<button class="addr-btn default-btn" onclick="event.stopPropagation();reorder('${escapeHtml(item.category)}')">${escapeHtml(t.actReorder)}</button>`);
+  // "Order again" only on closed/past orders (server-authoritative). Cancel/modify live in the drawer.
+  if (orderCanReorder(item)) actions.push(`<button class="addr-btn default-btn" onclick="event.stopPropagation();reorder('${escapeHtml(item.category)}')">${escapeHtml(t.actReorder)}</button>`);
 
   return `
     <div class="order-card" tabindex="0" role="button" aria-label="${escapeHtml(orderTitle(item))} — ${escapeHtml(meta.label)}"
@@ -2425,11 +2474,168 @@ function orderSummaryHtml(item) {
 
 function orderDrawerActionsHtml(item) {
   const t = tr();
+  const pol = orderPolicy(item);
+  const id = escapeHtml(item.id);
   const a = [];
-  if (orderIsPayable(item)) a.push(`<button class="btn-save" onclick="startOrderPayment('${escapeHtml(item.id)}','${escapeHtml(item.payFlow || item.kind)}',this)">${escapeHtml(t.actPay)}</button>`);
-  if (item.category) a.push(`<button class="btn-outline" onclick="reorder('${escapeHtml(item.category)}')">${escapeHtml(t.actReorder)}</button>`);
+  if (orderIsPayable(item)) a.push(`<button class="btn-save" onclick="startOrderPayment('${id}','${escapeHtml(item.payFlow || item.kind)}',this)">${escapeHtml(t.actPay)}</button>`);
+  if (pol.canEditAddress) a.push(`<button class="btn-outline" onclick="openAddressForm('${id}')">${escapeHtml(t.actEditAddress)}</button>`);
+  if (pol.canRequestReschedule) a.push(`<button class="btn-outline" onclick="openRescheduleForm('${id}')">${escapeHtml(t.actReschedule)}</button>`);
+  if (pol.canCancel) a.push(`<button class="btn-outline btn-danger" onclick="confirmCancelOrder('${id}')">${escapeHtml(item.source === 'request' ? t.actWithdraw : t.actCancel)}</button>`);
+  if (orderCanReorder(item)) a.push(`<button class="btn-outline" onclick="reorder('${escapeHtml(item.category)}')">${escapeHtml(t.actReorder)}</button>`);
   a.push(`<a class="btn-outline" href="/helpcenter.html">${escapeHtml(t.actHelp)}</a>`);
   return `<div class="drawer-actions">${a.join('')}</div>`;
+}
+
+// ── Self-service action modals (cancel / edit address / reschedule) ──
+// Lightweight transient toast for action confirmations.
+function showOrderToast(msg) {
+  let el = document.getElementById('order-toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'order-toast';
+    el.style.cssText = 'position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(12px);background:#111;color:#fff;padding:12px 18px;border-radius:12px;font-size:14px;font-weight:600;z-index:10002;box-shadow:0 8px 28px rgba(0,0,0,0.28);opacity:0;transition:opacity .25s ease,transform .25s ease;max-width:88vw;text-align:center';
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  requestAnimationFrame(() => { el.style.opacity = '1'; el.style.transform = 'translateX(-50%) translateY(0)'; });
+  clearTimeout(el._t);
+  el._t = setTimeout(() => { el.style.opacity = '0'; el.style.transform = 'translateX(-50%) translateY(12px)'; }, 3200);
+}
+
+// Builds a body-level modal that stacks above the order drawer (z-index 10000).
+function buildActionModal(innerHtml) {
+  const overlay = document.createElement('div');
+  overlay.className = 'confirm-overlay';
+  overlay.style.zIndex = '10001';
+  overlay.innerHTML = `<div class="confirm-box">${innerHtml}</div>`;
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+  return overlay;
+}
+
+function confirmCancelOrder(id) {
+  const t = tr();
+  const item = _orders.find(o => o.id === id);
+  if (!item) return;
+  const pol = orderPolicy(item);
+  const fee = pol.cancelFeeCents || 0;
+  const isReq = item.source === 'request';
+  let body;
+  if (isReq) body = `<p>${escapeHtml(t.cancelReqBody)}</p>`;
+  else if (fee > 0) body = `<p>${escapeHtml(t.cancelFeeBody1)} <strong>${escapeHtml(formatMoney(fee))}</strong>${escapeHtml(t.cancelFeeBody2)}</p>`;
+  else body = `<p>${escapeHtml(t.cancelFreeBody)}</p>`;
+  const confirmLabel = fee > 0 ? t.cancelPayConfirm : (isReq ? t.actWithdraw : t.cancelConfirm);
+  const overlay = buildActionModal(`
+    <h3>${escapeHtml(isReq ? t.cancelReqTitle : t.cancelTitle)}</h3>
+    ${body}
+    <div id="action-modal-error" style="font-size:13px;color:#c55d49;margin:6px 0 12px;min-height:16px"></div>
+    <div class="confirm-row">
+      <button class="confirm-cancel" onclick="this.closest('.confirm-overlay').remove()">${escapeHtml(t.cancelKeep)}</button>
+      <button class="confirm-ok" onclick="executeCancelOrder('${escapeHtml(id)}',this)">${escapeHtml(confirmLabel)}</button>
+    </div>`);
+  return overlay;
+}
+
+async function executeCancelOrder(id, btn) {
+  const t = tr();
+  const errEl = document.getElementById('action-modal-error');
+  const prev = btn.textContent; btn.disabled = true; btn.textContent = '…';
+  try {
+    const res = await fetch(API + '/api/auth/orders/' + encodeURIComponent(id) + '/cancel', {
+      method: 'POST', headers: authHeaders(), body: JSON.stringify({})
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      if (errEl) errEl.textContent = (res.status === 409 && d.error === 'already_captured') ? t.cancelCaptured : (d.message || t.cancelError);
+      btn.disabled = false; btn.textContent = prev; return;
+    }
+    btn.closest('.confirm-overlay')?.remove();
+    closeOrderDrawer();
+    _ordersLoaded = false; await loadOrders();
+    showOrderToast((d.feeCents > 0) ? t.cancelDoneFee : t.cancelDone);
+  } catch {
+    if (errEl) errEl.textContent = t.cancelError;
+    btn.disabled = false; btn.textContent = prev;
+  }
+}
+
+function openAddressForm(id) {
+  const t = tr();
+  const item = _orders.find(o => o.id === id);
+  if (!item) return;
+  buildActionModal(`
+    <h3>${escapeHtml(t.actEditAddress)}</h3>
+    <input class="form-input" id="action-addr-input" value="${escapeHtml(item.address || '')}" placeholder="${escapeHtml(t.drawerAddress)}" style="margin-bottom:12px;width:100%">
+    <div id="action-modal-error" style="font-size:13px;color:#c55d49;margin:0 0 12px;min-height:16px"></div>
+    <div class="confirm-row">
+      <button class="confirm-cancel" onclick="this.closest('.confirm-overlay').remove()">${escapeHtml(t.cancelBtn)}</button>
+      <button class="confirm-ok" onclick="submitAddress('${escapeHtml(id)}',this)">${escapeHtml(t.actSave)}</button>
+    </div>`);
+  setTimeout(() => document.getElementById('action-addr-input')?.focus(), 30);
+}
+
+async function submitAddress(id, btn) {
+  const t = tr();
+  const errEl = document.getElementById('action-modal-error');
+  const val = String(document.getElementById('action-addr-input')?.value || '').trim();
+  if (!val) { if (errEl) errEl.textContent = t.addrRequired; return; }
+  const prev = btn.textContent; btn.disabled = true; btn.textContent = '…';
+  try {
+    const res = await fetch(API + '/api/auth/orders/' + encodeURIComponent(id) + '/address', {
+      method: 'PATCH', headers: authHeaders(), body: JSON.stringify({ address: val })
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) { if (errEl) errEl.textContent = d.message || t.actionError; btn.disabled = false; btn.textContent = prev; return; }
+    btn.closest('.confirm-overlay')?.remove();
+    closeOrderDrawer();
+    _ordersLoaded = false; await loadOrders();
+    openOrderDrawer(id);
+    showOrderToast(t.addrSaved);
+  } catch {
+    if (errEl) errEl.textContent = t.actionError;
+    btn.disabled = false; btn.textContent = prev;
+  }
+}
+
+function openRescheduleForm(id) {
+  const t = tr();
+  const item = _orders.find(o => o.id === id);
+  if (!item) return;
+  // datetime-local needs a 'YYYY-MM-DDTHH:mm' min of now (local).
+  const now = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  const cur = item.serviceDateTime ? new Date(item.serviceDateTime) : null;
+  const curVal = (cur && !isNaN(cur.getTime())) ? new Date(cur.getTime() - cur.getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '';
+  buildActionModal(`
+    <h3>${escapeHtml(t.actReschedule)}</h3>
+    <p style="font-size:13px;color:#666;margin:0 0 12px">${escapeHtml(t.reschedHint)}</p>
+    <input class="form-input" type="datetime-local" id="action-resched-input" min="${now}" value="${escapeHtml(curVal)}" style="margin-bottom:12px;width:100%">
+    <div id="action-modal-error" style="font-size:13px;color:#c55d49;margin:0 0 12px;min-height:16px"></div>
+    <div class="confirm-row">
+      <button class="confirm-cancel" onclick="this.closest('.confirm-overlay').remove()">${escapeHtml(t.cancelBtn)}</button>
+      <button class="confirm-ok" onclick="submitReschedule('${escapeHtml(id)}',this)">${escapeHtml(t.reschedSubmit)}</button>
+    </div>`);
+}
+
+async function submitReschedule(id, btn) {
+  const t = tr();
+  const errEl = document.getElementById('action-modal-error');
+  const val = String(document.getElementById('action-resched-input')?.value || '').trim();
+  if (!val) { if (errEl) errEl.textContent = t.reschedRequired; return; }
+  const dt = new Date(val);
+  if (isNaN(dt.getTime()) || dt.getTime() < Date.now()) { if (errEl) errEl.textContent = t.reschedPast; return; }
+  const prev = btn.textContent; btn.disabled = true; btn.textContent = '…';
+  try {
+    const res = await fetch(API + '/api/auth/orders/' + encodeURIComponent(id) + '/reschedule-request', {
+      method: 'POST', headers: authHeaders(), body: JSON.stringify({ service_datetime: dt.toISOString() })
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) { if (errEl) errEl.textContent = d.message || t.actionError; btn.disabled = false; btn.textContent = prev; return; }
+    btn.closest('.confirm-overlay')?.remove();
+    showOrderToast(t.reschedSubmitted);
+  } catch {
+    if (errEl) errEl.textContent = t.actionError;
+    btn.disabled = false; btn.textContent = prev;
+  }
 }
 
 function orderDrawerHtml(item) {
