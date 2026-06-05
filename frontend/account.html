@@ -669,6 +669,7 @@
 <body class="landing-page">
 <script src="/config.js"></script>
 <script src="/shared/i18n.js"></script>
+<script src="/shared/address-form.js"></script>
 <script src="/shared/shared-auth.js"></script>
 <div id="navbar"></div>
 <script src="/shared/morphing-nav.js"></script>
@@ -844,51 +845,8 @@
             <div class="section-sub" id="sub-addresses">Guarda tus domicilios para agilizar tus solicitudes.</div>
             <div class="address-list" id="address-list"></div>
             <div class="add-address-form" id="add-addr-form">
-              <div class="form-row">
-                <div class="form-group">
-                  <label class="form-label" id="lbl-addr-label" for="addr-label">Etiqueta (opcional)</label>
-                  <input class="form-input" id="addr-label" type="text" placeholder="Casa, Trabajo...">
-                </div>
-                <div class="form-group">
-                  <label class="form-label" id="lbl-addr-street" for="addr-street">Calle y número *</label>
-                  <input class="form-input" id="addr-street" type="text" autocomplete="street-address" spellcheck="false" placeholder="Calle, número ext/int">
-                </div>
-              </div>
-              <button class="btn-outline address-location-btn" id="addr-location-btn" type="button" onclick="useAddressCurrentLocation()">
-                <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <path d="M12 2v3"></path>
-                  <path d="M12 19v3"></path>
-                  <path d="M2 12h3"></path>
-                  <path d="M19 12h3"></path>
-                  <circle cx="12" cy="12" r="7"></circle>
-                  <circle cx="12" cy="12" r="2"></circle>
-                </svg>
-                <span id="addr-location-label">Permitir acceso a mi ubicación</span>
-              </button>
-              <div class="address-location-status" id="addr-location-status" aria-live="polite"></div>
-              <div class="form-row">
-                <div class="form-group">
-                  <label class="form-label" id="lbl-addr-city" for="addr-city">Ciudad</label>
-                  <select class="form-input form-select" id="addr-city"></select>
-                </div>
-                <div class="form-group">
-                  <label class="form-label" id="lbl-addr-state" for="addr-state">Estado</label>
-                  <select class="form-input form-select" id="addr-state" onchange="populateAddressCityOptions('', true)"></select>
-                </div>
-              </div>
-              <div class="form-row">
-                <div class="form-group">
-                  <label class="form-label" id="lbl-addr-postal" for="addr-postal">Código postal</label>
-                  <input class="form-input" id="addr-postal" type="text" autocomplete="postal-code" inputmode="numeric" placeholder="05348">
-                </div>
-                <div class="form-group" style="justify-content:flex-end;padding-top:22px">
-                  <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--color-text-secondary);cursor:pointer">
-                    <input type="checkbox" id="addr-default" style="width:15px;height:15px;accent-color:var(--color-accent)">
-                    <span id="lbl-addr-default">Predeterminada</span>
-                  </label>
-                </div>
-              </div>
-              <div style="display:flex;gap:10px;margin-top:4px">
+              <div id="acc-addr-fields"></div>
+              <div style="display:flex;gap:10px;margin-top:14px">
                 <button class="btn-save" id="addr-save-btn" onclick="saveNewAddress()"><span id="addr-save-label">Guardar dirección</span></button>
                 <button class="btn-outline" onclick="toggleAddForm()" id="addr-cancel-btn">Cancelar</button>
               </div>
@@ -1198,107 +1156,9 @@ function escapeHtml(str) {
   }[ch]));
 }
 
-const MEXICO_ADDRESS_OPTIONS = [
-  { state: 'Aguascalientes', cities: ['Aguascalientes', 'Calvillo', 'Jesus Maria'] },
-  { state: 'Baja California', cities: ['Tijuana', 'Mexicali', 'Ensenada', 'Rosarito', 'Tecate'] },
-  { state: 'Baja California Sur', cities: ['La Paz', 'Los Cabos', 'Cabo San Lucas', 'San Jose del Cabo'] },
-  { state: 'Campeche', cities: ['Campeche', 'Ciudad del Carmen', 'Champoton'] },
-  { state: 'Chiapas', cities: ['Tuxtla Gutierrez', 'San Cristobal de las Casas', 'Tapachula', 'Comitan'] },
-  { state: 'Chihuahua', cities: ['Chihuahua', 'Ciudad Juarez', 'Delicias', 'Cuauhtemoc', 'Parral'] },
-  { state: 'Ciudad de México', cities: ['Ciudad de México', 'Alvaro Obregon', 'Azcapotzalco', 'Benito Juarez', 'Coyoacan', 'Cuajimalpa de Morelos', 'Cuauhtemoc', 'Gustavo A. Madero', 'Iztacalco', 'Iztapalapa', 'La Magdalena Contreras', 'Miguel Hidalgo', 'Milpa Alta', 'Tlahuac', 'Tlalpan', 'Venustiano Carranza', 'Xochimilco'] },
-  { state: 'Coahuila', cities: ['Saltillo', 'Torreon', 'Monclova', 'Piedras Negras', 'Acuña'] },
-  { state: 'Colima', cities: ['Colima', 'Manzanillo', 'Villa de Alvarez', 'Tecoman'] },
-  { state: 'Durango', cities: ['Durango', 'Gomez Palacio', 'Lerdo'] },
-  { state: 'Estado de México', cities: ['Toluca', 'Naucalpan', 'Tlalnepantla', 'Ecatepec', 'Metepec', 'Huixquilucan', 'Atizapan de Zaragoza', 'Nezahualcoyotl', 'Cuautitlan Izcalli'] },
-  { state: 'Guanajuato', cities: ['Leon', 'Guanajuato', 'Irapuato', 'Celaya', 'San Miguel de Allende', 'Salamanca'] },
-  { state: 'Guerrero', cities: ['Acapulco', 'Chilpancingo', 'Iguala', 'Zihuatanejo'] },
-  { state: 'Hidalgo', cities: ['Pachuca', 'Tulancingo', 'Tula de Allende', 'Mineral de la Reforma'] },
-  { state: 'Jalisco', cities: ['Guadalajara', 'Zapopan', 'Tlaquepaque', 'Tonalá', 'Tlajomulco de Zuñiga', 'Puerto Vallarta'] },
-  { state: 'Michoacán', cities: ['Morelia', 'Uruapan', 'Zamora', 'Lazaro Cardenas'] },
-  { state: 'Morelos', cities: ['Cuernavaca', 'Jiutepec', 'Cuautla', 'Temixco'] },
-  { state: 'Nayarit', cities: ['Tepic', 'Bahia de Banderas', 'Compostela'] },
-  { state: 'Nuevo León', cities: ['Monterrey', 'San Pedro Garza Garcia', 'San Nicolas de los Garza', 'Guadalupe', 'Apodaca', 'Santa Catarina', 'Escobedo'] },
-  { state: 'Oaxaca', cities: ['Oaxaca de Juarez', 'Salina Cruz', 'Juchitan de Zaragoza', 'Puerto Escondido'] },
-  { state: 'Puebla', cities: ['Puebla', 'Cholula', 'San Andres Cholula', 'Tehuacan', 'Atlixco'] },
-  { state: 'Querétaro', cities: ['Queretaro', 'San Juan del Rio', 'Corregidora', 'El Marques'] },
-  { state: 'Quintana Roo', cities: ['Cancun', 'Playa del Carmen', 'Tulum', 'Chetumal', 'Cozumel'] },
-  { state: 'San Luis Potosí', cities: ['San Luis Potosi', 'Soledad de Graciano Sanchez', 'Ciudad Valles', 'Matehuala'] },
-  { state: 'Sinaloa', cities: ['Culiacan', 'Mazatlan', 'Los Mochis', 'Guasave'] },
-  { state: 'Sonora', cities: ['Hermosillo', 'Ciudad Obregon', 'Nogales', 'San Luis Rio Colorado', 'Guaymas'] },
-  { state: 'Tabasco', cities: ['Villahermosa', 'Cardenas', 'Comalcalco', 'Paraiso'] },
-  { state: 'Tamaulipas', cities: ['Tampico', 'Reynosa', 'Matamoros', 'Ciudad Victoria', 'Nuevo Laredo'] },
-  { state: 'Tlaxcala', cities: ['Tlaxcala', 'Apizaco', 'Huamantla', 'Chiautempan'] },
-  { state: 'Veracruz', cities: ['Veracruz', 'Xalapa', 'Boca del Rio', 'Coatzacoalcos', 'Cordoba', 'Orizaba'] },
-  { state: 'Yucatán', cities: ['Merida', 'Valladolid', 'Progreso', 'Tizimin'] },
-  { state: 'Zacatecas', cities: ['Zacatecas', 'Guadalupe', 'Fresnillo', 'Jerez'] },
-];
-
-function normalizeAddressValue(value) {
-  return String(value || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
-}
-
-function normalizeDetectedState(value) {
-  const normalized = normalizeAddressValue(value);
-  if (!normalized) return '';
-  const aliases = {
-    cdmx: 'Ciudad de México',
-    'ciudad de mexico': 'Ciudad de México',
-    'mexico city': 'Ciudad de México',
-    'distrito federal': 'Ciudad de México',
-    mexico: 'Estado de México',
-    'estado de mexico': 'Estado de México',
-    michoacan: 'Michoacán',
-    queretaro: 'Querétaro',
-    'san luis potosi': 'San Luis Potosí',
-    yucatan: 'Yucatán',
-  };
-  if (aliases[normalized]) return aliases[normalized];
-  const match = MEXICO_ADDRESS_OPTIONS.find(item => normalizeAddressValue(item.state) === normalized);
-  return match ? match.state : value;
-}
-
-function setSelectOptions(select, options, placeholder, selectedValue) {
-  if (!select) return;
-  const selected = selectedValue || select.value || '';
-  const hasSelected = options.some(option => normalizeAddressValue(option) === normalizeAddressValue(selected));
-  select.innerHTML = `<option value="">${escapeHtml(placeholder)}</option>` + options.map(option => (
-    `<option value="${escapeHtml(option)}"${normalizeAddressValue(option) === normalizeAddressValue(selected) ? ' selected' : ''}>${escapeHtml(option)}</option>`
-  )).join('');
-  if (selected && !hasSelected) {
-    select.insertAdjacentHTML('beforeend', `<option value="${escapeHtml(selected)}" selected>${escapeHtml(selected)}</option>`);
-  }
-}
-
-function populateAddressStateOptions(selectedState) {
-  const stateSelect = document.getElementById('addr-state');
-  const state = normalizeDetectedState(selectedState || stateSelect?.value || '');
-  setSelectOptions(stateSelect, MEXICO_ADDRESS_OPTIONS.map(item => item.state), tr().phAddrStateSelect, state);
-}
-
-function populateAddressCityOptions(selectedCity, resetExisting = false) {
-  const citySelect = document.getElementById('addr-city');
-  const state = normalizeDetectedState(document.getElementById('addr-state')?.value || '');
-  const stateConfig = MEXICO_ADDRESS_OPTIONS.find(item => item.state === state);
-  const selected = resetExisting ? '' : (selectedCity !== undefined ? selectedCity : (citySelect?.value || ''));
-  setSelectOptions(citySelect, stateConfig ? stateConfig.cities : [], tr().phAddrCitySelect, selected);
-}
-
-function setAddressDropdownValues({ city, state } = {}) {
-  populateAddressStateOptions(state);
-  populateAddressCityOptions(city);
-}
-
-function initializeAddressDropdowns() {
-  setAddressDropdownValues({
-    city: document.getElementById('addr-city')?.value || '',
-    state: document.getElementById('addr-state')?.value || '',
-  });
-}
+// Mexico state/city options, geolocation, and the structured address field set
+// now live in the shared module (window.ServiAddress, /shared/address-form.js),
+// reused by the service.html booking panel.
 
 // ─── Auth guard ───────────────────────────────────────────────────────────────
 function authHeaders() {
@@ -1918,6 +1778,9 @@ async function loadAddresses() {
   } catch {}
 }
 
+const ACC_ADDR_PREFIX = 'accaddr';
+let _editingAddressId = null;
+
 function renderAddresses() {
   const t = tr();
   const list = document.getElementById('address-list');
@@ -1925,119 +1788,68 @@ function renderAddresses() {
     list.innerHTML = `<p style="font-size:14px;color:#aaa;text-align:center;padding:20px 0">${isEs() ? 'No tienes direcciones guardadas.' : 'No saved addresses yet.'}</p>`;
     return;
   }
-  list.innerHTML = _addresses.map(a => `
+  list.innerHTML = _addresses.map(a => {
+    const detail = (window.ServiAddress && window.ServiAddress.format)
+      ? window.ServiAddress.format(a)
+      : `${a.street}${a.city ? ', ' + a.city : ''}${a.state ? ', ' + a.state : ''}${a.postal_code ? ' ' + a.postal_code : ''}`;
+    return `
     <div class="address-card ${a.is_default ? 'default' : ''}">
       <div style="flex:1">
         <div class="address-label">
-          ${a.label ? `<span>${a.label}</span>` : ''}
+          ${a.label ? `<span>${escapeHtml(a.label)}</span>` : ''}
           ${a.is_default ? `<span class="badge-default">${t.defaultBadge}</span>` : ''}
         </div>
-        <div class="address-detail">${a.street}${a.city ? ', ' + a.city : ''}${a.state ? ', ' + a.state : ''}${a.postal_code ? ' ' + a.postal_code : ''}</div>
+        <div class="address-detail">${escapeHtml(detail)}</div>
       </div>
       <div class="address-actions">
+        <button class="addr-btn default-btn" onclick="editAddress('${a.id}')">${t.editBtn || (isEs() ? 'Editar' : 'Edit')}</button>
         ${!a.is_default ? `<button class="addr-btn default-btn" onclick="setDefaultAddress('${a.id}')">${t.setDefaultBtn}</button>` : ''}
         <button class="addr-btn delete-btn" onclick="deleteAddress('${a.id}')">${t.deleteAddrBtn}</button>
       </div>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
 }
 
-function setAddressLocationStatus(message, tone) {
-  const status = document.getElementById('addr-location-status');
-  if (!status) return;
-  status.textContent = message || '';
-  status.dataset.tone = tone || 'neutral';
+// Render the shared structured field set into the add/edit form container.
+function mountAddressFields(address) {
+  const wrap = document.getElementById('acc-addr-fields');
+  if (!wrap || !window.ServiAddress) return;
+  wrap.innerHTML = window.ServiAddress.fieldsHTML(ACC_ADDR_PREFIX, { showLabel: true, showDefault: true });
+  window.ServiAddress.init(ACC_ADDR_PREFIX, { address: address || null });
 }
 
-function setAddressLocationBusy(isBusy) {
-  const button = document.getElementById('addr-location-btn');
-  if (!button) return;
-  button.disabled = !!isBusy;
-  button.dataset.busy = isBusy ? 'true' : 'false';
+function openAddForm(address) {
+  const form = document.getElementById('add-addr-form');
+  _editingAddressId = address && address.id ? address.id : null;
+  mountAddressFields(address);
+  form.classList.add('open');
+  document.getElementById('add-addr-btn').textContent = tr().cancel;
+  document.getElementById('addr-error').style.display = 'none';
+  const titleEl = document.getElementById('addr-save-label');
+  if (titleEl) titleEl.textContent = tr().saveAddr;
 }
 
-function getCurrentPosition() {
-  return new Promise((resolve, reject) => {
-    navigator.geolocation.getCurrentPosition(resolve, reject, {
-      enableHighAccuracy: true,
-      maximumAge: 300000,
-      timeout: 12000,
-    });
-  });
-}
-
-async function reverseGeocodeAddress(latitude, longitude) {
-  const langCode = isEs() ? 'es' : 'en';
-  const url = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}&localityLanguage=${langCode}`;
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 8000);
-
-  try {
-    const res = await fetch(url, { signal: controller.signal });
-    if (!res.ok) return {};
-    const data = await res.json();
-    const state = normalizeDetectedState(data.principalSubdivision || data.region || '');
-    const city = data.city || data.locality || data.principalSubdivision || '';
-    const street = data.locality || data.city || '';
-    return {
-      street,
-      city: normalizeAddressValue(city) === 'mexico city' ? 'Ciudad de México' : city,
-      state,
-      postalCode: data.postcode || data.postalCode || '',
-    };
-  } catch {
-    return {};
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
-
-async function useAddressCurrentLocation() {
-  const t = tr();
-
-  if (!navigator.geolocation) {
-    setAddressLocationStatus(t.addrUnsupported, 'error');
-    return;
-  }
-
-  setAddressLocationBusy(true);
-  setAddressLocationStatus(t.addrLocating, 'neutral');
-
-  try {
-    const position = await getCurrentPosition();
-    const { latitude, longitude } = position.coords;
-    setAddressLocationStatus(t.addrResolving, 'neutral');
-
-    const address = await reverseGeocodeAddress(latitude, longitude);
-    const fallback = `${t.addrCurrentLocation} (${latitude.toFixed(5)}, ${longitude.toFixed(5)})`;
-    const streetInput = document.getElementById('addr-street');
-    const postalInput = document.getElementById('addr-postal');
-
-    if (streetInput && !streetInput.value.trim()) streetInput.value = address.street || fallback;
-    if (postalInput && address.postalCode) postalInput.value = address.postalCode;
-    setAddressDropdownValues({ city: address.city || '', state: address.state || '' });
-    setAddressLocationStatus(t.addrUpdated, 'success');
-  } catch (err) {
-    const denied = err && err.code === 1;
-    setAddressLocationStatus(denied ? t.addrPermissionDenied : t.addrLocationError, 'error');
-  } finally {
-    setAddressLocationBusy(false);
-  }
+function closeAddForm() {
+  const form = document.getElementById('add-addr-form');
+  form.classList.remove('open');
+  _editingAddressId = null;
+  document.getElementById('add-addr-btn').textContent = tr().addAddr;
+  document.getElementById('addr-error').style.display = 'none';
+  const wrap = document.getElementById('acc-addr-fields');
+  if (wrap) wrap.innerHTML = '';
 }
 
 function toggleAddForm() {
   const form = document.getElementById('add-addr-form');
-  const isOpen = form.classList.toggle('open');
-  document.getElementById('add-addr-btn').textContent = isOpen ? tr().cancel : tr().addAddr;
-  if (!isOpen) {
-    ['addr-label','addr-street','addr-city','addr-state','addr-postal'].forEach(id => {
-      const el = document.getElementById(id); if (el) el.value = '';
-    });
-    document.getElementById('addr-default').checked = false;
-    document.getElementById('addr-error').style.display = 'none';
-    setAddressLocationStatus('', 'neutral');
-    setAddressDropdownValues({ city: '', state: '' });
-  }
+  if (form.classList.contains('open')) closeAddForm();
+  else openAddForm(null);
+}
+
+function editAddress(id) {
+  const addr = _addresses.find(a => a.id === id);
+  if (!addr) return;
+  openAddForm(addr);
+  document.getElementById('section-addresses')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 async function saveNewAddress() {
@@ -2047,25 +1859,25 @@ async function saveNewAddress() {
   const errEl = document.getElementById('addr-error');
   errEl.style.display = 'none';
 
-  const street = document.getElementById('addr-street').value.trim();
-  if (!street) { errEl.textContent = t.errNoStreet; errEl.style.display = 'block'; return; }
+  if (!window.ServiAddress || !window.ServiAddress.validate(ACC_ADDR_PREFIX)) {
+    errEl.textContent = t.errNoStreet; errEl.style.display = 'block'; return;
+  }
+  const body = window.ServiAddress.collect(ACC_ADDR_PREFIX);
 
   btn.disabled = true; lbl.textContent = t.saving;
   try {
-    const res = await fetch(API + '/api/auth/addresses', {
-      method: 'POST', headers: authHeaders(),
-      body: JSON.stringify({
-        label:       document.getElementById('addr-label').value.trim() || undefined,
-        street,
-        city:        document.getElementById('addr-city').value.trim()  || undefined,
-        state:       document.getElementById('addr-state').value.trim() || undefined,
-        postal_code: document.getElementById('addr-postal').value.trim() || undefined,
-        is_default:  document.getElementById('addr-default').checked,
-      })
+    const editing = _editingAddressId;
+    const res = await fetch(API + '/api/auth/addresses' + (editing ? '/' + editing : ''), {
+      method: editing ? 'PATCH' : 'POST', headers: authHeaders(),
+      body: JSON.stringify(body)
     });
-    if (!res.ok) { const d = await res.json(); errEl.textContent = d.message || t.errGeneric; errEl.style.display = 'block'; return; }
+    if (!res.ok) { const d = await res.json().catch(() => ({})); errEl.textContent = d.message || t.errGeneric; errEl.style.display = 'block'; return; }
+    // PATCH does not touch is_default; apply it separately if it was checked.
+    if (editing && body.is_default) {
+      try { await fetch(API + '/api/auth/addresses/' + editing + '/default', { method: 'PATCH', headers: authHeaders() }); } catch {}
+    }
     await loadAddresses();
-    toggleAddForm();
+    closeAddForm();
   } catch {
     errEl.textContent = t.errGeneric; errEl.style.display = 'block';
   } finally {
@@ -3054,10 +2866,6 @@ function applyTranslations() {
   set('email-warning-title', t.emailWarnTitle);
   set('email-warning-text', t.emailWarnText);
   set('email-warning-action', window.__user && !window.__user.email ? t.emailWarnAddAction : t.emailWarnAction);
-  set('lbl-addr-label', t.lblAddrLabel); set('lbl-addr-street', t.lblAddrStreet);
-  set('lbl-addr-city', t.lblAddrCity);  set('lbl-addr-state', t.lblAddrState);
-  set('lbl-addr-postal', t.lblAddrPostal); set('lbl-addr-default', t.lblAddrDefault);
-  set('addr-location-label', t.addrLocationBtn);
   set('info-save-label', t.saveBtn);
   set('addr-save-label', t.saveAddr);   set('addr-cancel-btn', t.cancel);
   set('add-addr-btn', document.getElementById('add-addr-form')?.classList.contains('open') ? t.cancel : t.addAddr);
@@ -3065,9 +2873,14 @@ function applyTranslations() {
   set('info-success-text', t.saved);
   renderProfileView();
   ph('info-name', t.phName);
-  ph('addr-label', t.phAddrLabel);      ph('addr-street', t.phAddrStreet);
-  ph('addr-city', t.phAddrCity);        ph('addr-state', t.phAddrState);
-  initializeAddressDropdowns();
+  // The structured address field set (labels, placeholders, dropdowns) is owned
+  // by the shared module and re-rendered with the right language each time the
+  // add/edit form is opened. Re-mount it if it's currently open so a language
+  // switch updates the field labels.
+  if (document.getElementById('add-addr-form')?.classList.contains('open')) {
+    const cur = (window.ServiAddress && window.ServiAddress.collect) ? window.ServiAddress.collect(ACC_ADDR_PREFIX) : null;
+    mountAddressFields(cur);
+  }
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────

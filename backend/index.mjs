@@ -4832,7 +4832,7 @@ app.post('/api/uploads', publicFormLimit, upload.single('file'), async (req, res
 // --- Public: Submit a service request ---
 app.post('/api/service-requests', publicFormLimit, async (req, res) => {
   try {
-    const { category, description, preferredDate, preferredTime, isAsap, serviceAddress, clientName, clientPhone, clientEmail, customerId, lang, attachments, clientRequestId } = req.body || {};
+    const { category, description, preferredDate, preferredTime, isAsap, serviceAddress, serviceAddressDetails, clientName, clientPhone, clientEmail, customerId, lang, attachments, clientRequestId } = req.body || {};
     if (!category || !clientName || !clientPhone) {
       return res.status(400).json({ error: 'missing_required_fields', message: 'category, clientName, and clientPhone are required' });
     }
@@ -4904,12 +4904,15 @@ app.post('/api/service-requests', publicFormLimit, async (req, res) => {
       }
     }
     const attachmentsStr = Array.isArray(attachments) ? attachments.join(',') : (attachments || null);
+    const addressDetailsStr = serviceAddressDetails && typeof serviceAddressDetails === 'object'
+      ? JSON.stringify(serviceAddressDetails)
+      : null;
     const id = randomUUID();
     try {
       await pool.query(
-        `INSERT INTO service_requests (id, category, description, preferred_date, preferred_time, is_asap, service_address, client_name, client_phone, client_email, client_request_id, customer_id, lang, attachments)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
-        [id, category, description || null, preferredDate || null, preferredTime || null, !!isAsap, serviceAddress || null, clientName, clientPhone, clientEmail || null, clientRequestIdNorm || null, effectiveCustomerId, lang || 'es', attachmentsStr]
+        `INSERT INTO service_requests (id, category, description, preferred_date, preferred_time, is_asap, service_address, service_address_details, client_name, client_phone, client_email, client_request_id, customer_id, lang, attachments)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+        [id, category, description || null, preferredDate || null, preferredTime || null, !!isAsap, serviceAddress || null, addressDetailsStr, clientName, clientPhone, clientEmail || null, clientRequestIdNorm || null, effectiveCustomerId, lang || 'es', attachmentsStr]
       );
     } catch (insertErr) {
       if (insertErr.code === '23505' && clientRequestIdNorm) {
@@ -5806,16 +5809,24 @@ app.post('/api/auth/addresses', publicFormLimit, async (req, res) => {
   const payload = await requireUserAuth(req, res);
   if (!payload) return;
   try {
-    const { label, street, city, state, postal_code, country, is_default } = req.body || {};
+    const {
+      label, street, city, state, postal_code, country, is_default,
+      address_type, exterior_number, interior_number, neighborhood, municipality,
+      between_streets, reference_notes, access_instructions, contact_name, contact_phone,
+    } = req.body || {};
     if (!street) return res.status(400).json({ error: 'missing_street' });
     const id = randomUUID();
     if (is_default) {
       await pool.query('UPDATE user_addresses SET is_default = FALSE WHERE user_id = $1', [payload.user_id]);
     }
     await pool.query(
-      `INSERT INTO user_addresses (id, user_id, label, street, city, state, postal_code, country, is_default)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-      [id, payload.user_id, label || null, street, city || null, state || null, postal_code || null, country || 'MX', !!is_default]
+      `INSERT INTO user_addresses (id, user_id, label, street, city, state, postal_code, country, is_default,
+         address_type, exterior_number, interior_number, neighborhood, municipality,
+         between_streets, reference_notes, access_instructions, contact_name, contact_phone)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
+      [id, payload.user_id, label || null, street, city || null, state || null, postal_code || null, country || 'MX', !!is_default,
+       address_type || null, exterior_number || null, interior_number || null, neighborhood || null, municipality || null,
+       between_streets || null, reference_notes || null, access_instructions || null, contact_name || null, contact_phone || null]
     );
     const { rows } = await pool.query('SELECT * FROM user_addresses WHERE id = $1', [id]);
     return res.status(201).json({ address: rows[0] });
@@ -5830,14 +5841,28 @@ app.patch('/api/auth/addresses/:id', publicFormLimit, async (req, res) => {
   const payload = await requireUserAuth(req, res);
   if (!payload) return;
   try {
-    const { label, street, city, state, postal_code, country } = req.body || {};
+    const {
+      label, street, city, state, postal_code, country,
+      address_type, exterior_number, interior_number, neighborhood, municipality,
+      between_streets, reference_notes, access_instructions, contact_name, contact_phone,
+    } = req.body || {};
     const sets = []; const params = [];
-    if (label !== undefined)       { params.push(label);       sets.push(`label = $${params.length}`); }
-    if (street !== undefined)      { params.push(street);      sets.push(`street = $${params.length}`); }
-    if (city !== undefined)        { params.push(city);        sets.push(`city = $${params.length}`); }
-    if (state !== undefined)       { params.push(state);       sets.push(`state = $${params.length}`); }
-    if (postal_code !== undefined) { params.push(postal_code); sets.push(`postal_code = $${params.length}`); }
-    if (country !== undefined)     { params.push(country);     sets.push(`country = $${params.length}`); }
+    if (label !== undefined)               { params.push(label);               sets.push(`label = $${params.length}`); }
+    if (street !== undefined)              { params.push(street);              sets.push(`street = $${params.length}`); }
+    if (city !== undefined)                { params.push(city);                sets.push(`city = $${params.length}`); }
+    if (state !== undefined)               { params.push(state);               sets.push(`state = $${params.length}`); }
+    if (postal_code !== undefined)         { params.push(postal_code);         sets.push(`postal_code = $${params.length}`); }
+    if (country !== undefined)             { params.push(country);             sets.push(`country = $${params.length}`); }
+    if (address_type !== undefined)        { params.push(address_type);        sets.push(`address_type = $${params.length}`); }
+    if (exterior_number !== undefined)     { params.push(exterior_number);     sets.push(`exterior_number = $${params.length}`); }
+    if (interior_number !== undefined)     { params.push(interior_number);     sets.push(`interior_number = $${params.length}`); }
+    if (neighborhood !== undefined)        { params.push(neighborhood);        sets.push(`neighborhood = $${params.length}`); }
+    if (municipality !== undefined)        { params.push(municipality);        sets.push(`municipality = $${params.length}`); }
+    if (between_streets !== undefined)     { params.push(between_streets);     sets.push(`between_streets = $${params.length}`); }
+    if (reference_notes !== undefined)     { params.push(reference_notes);     sets.push(`reference_notes = $${params.length}`); }
+    if (access_instructions !== undefined) { params.push(access_instructions); sets.push(`access_instructions = $${params.length}`); }
+    if (contact_name !== undefined)        { params.push(contact_name);        sets.push(`contact_name = $${params.length}`); }
+    if (contact_phone !== undefined)       { params.push(contact_phone);       sets.push(`contact_phone = $${params.length}`); }
     if (!sets.length) return res.status(400).json({ error: 'no_fields' });
     params.push(req.params.id, payload.user_id);
     const { rowCount } = await pool.query(

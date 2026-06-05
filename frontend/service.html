@@ -248,6 +248,27 @@
     }
     .svc-error-msg.visible { display: block; }
 
+    /* Saved-address picker (booking panel) */
+    .svc-addr-picker { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+    .svc-addr-opt {
+      display: flex; align-items: flex-start; gap: 10px; padding: 11px 13px;
+      border: 1.5px solid #e2e2e2; border-radius: 12px; cursor: pointer; background: #fff;
+      transition: border-color .15s ease, box-shadow .15s ease;
+    }
+    .svc-addr-opt:hover { border-color: #bbb; }
+    .svc-addr-opt input { margin-top: 3px; width: 16px; height: 16px; accent-color: #111; flex: 0 0 auto; }
+    .svc-addr-opt:has(input:checked) { border-color: #111; box-shadow: 0 0 0 3px rgba(0,0,0,.05); }
+    .svc-addr-opt__body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .svc-addr-opt__title { font-size: 14px; font-weight: 600; color: #111; }
+    .svc-addr-opt__sub { font-size: 12.5px; color: #777; line-height: 1.4; }
+    .svc-addr-opt--new .svc-addr-opt__title { color: #111; }
+    .svc-newaddr { margin-top: 2px; }
+    .svc-addr-save {
+      display: flex; align-items: center; gap: 9px; margin-top: 12px;
+      font-size: 13.5px; color: #444; cursor: pointer;
+    }
+    .svc-addr-save input { width: 16px; height: 16px; accent-color: #111; }
+
     .svc-email-gate {
       border: 1.5px solid #ead8b7;
       background: #fff8ec;
@@ -574,6 +595,7 @@
 
 <script src="/config.js"></script>
 <script src="/shared/i18n.js"></script>
+<script src="/shared/address-form.js"></script>
 <script src="/shared/shared-auth.js"></script>
 <div id="navbar"></div>
 <script src="/shared/morphing-nav.js"></script>
@@ -821,6 +843,80 @@
     }
   }
 
+  // ─── Saved address book integration (booking picker + save) ──────────────────
+  let _svcSavedAddresses = [];
+  const _svcAddrChoice = { desk: null, mob: null }; // saved address id, or 'new'
+
+  function svcSessionToken() {
+    try { return (JSON.parse(localStorage.getItem('servi_user_session') || 'null') || {}).token || ''; }
+    catch (_) { return ''; }
+  }
+  function svcFieldsPrefix(prefix) { return 'svca_' + prefix; }
+
+  async function loadSavedAddresses() {
+    const token = svcSessionToken();
+    if (!token || !window.__user) return;
+    const API = (window.CONFIG && window.CONFIG.API_BASE) || '';
+    try {
+      const res = await fetch(API + '/api/auth/addresses', { headers: { Authorization: 'Bearer ' + token } });
+      if (!res.ok) return;
+      const d = await res.json();
+      _svcSavedAddresses = d.addresses || [];
+      ['desk', 'mob'].forEach(renderAddressSection);
+    } catch (_) {}
+  }
+
+  function renderAddressSection(prefix) {
+    const host = document.getElementById('svc-addr-section-' + prefix);
+    if (!host || !window.ServiAddress) return;
+    const es = lang() === 'es';
+    const fp = svcFieldsPrefix(prefix);
+    const hasSaved = !!(window.__user && _svcSavedAddresses.length);
+    const saveBox = window.__user
+      ? `<label class="svc-addr-save"><input type="checkbox" id="svc-addr-save-${prefix}"><span>${esc(es ? 'Guardar esta dirección en mi cuenta' : 'Save this address to my account')}</span></label>`
+      : '';
+
+    if (hasSaved) {
+      if (!_svcAddrChoice[prefix]) {
+        const def = _svcSavedAddresses.find(a => a.is_default) || _svcSavedAddresses[0];
+        _svcAddrChoice[prefix] = def ? def.id : 'new';
+      }
+      const opts = _svcSavedAddresses.map(a => {
+        const checked = _svcAddrChoice[prefix] === a.id ? ' checked' : '';
+        const formatted = window.ServiAddress.format(a) || '';
+        const title = a.label ? esc(a.label) : esc((formatted.split(' · ')[0]) || (es ? 'Dirección' : 'Address'));
+        return `<label class="svc-addr-opt"><input type="radio" name="svc-addr-pick-${prefix}" value="${esc(a.id)}"${checked} onchange="window._svcAddrPick('${prefix}', this.value)"><span class="svc-addr-opt__body"><span class="svc-addr-opt__title">${title}${a.is_default ? ` · ${es ? 'Predeterminada' : 'Default'}` : ''}</span><span class="svc-addr-opt__sub">${esc(formatted)}</span></span></label>`;
+      }).join('');
+      const newChecked = _svcAddrChoice[prefix] === 'new' ? ' checked' : '';
+      host.innerHTML =
+        `<div class="svc-addr-picker">${opts}` +
+        `<label class="svc-addr-opt svc-addr-opt--new"><input type="radio" name="svc-addr-pick-${prefix}" value="new"${newChecked} onchange="window._svcAddrPick('${prefix}', this.value)"><span class="svc-addr-opt__body"><span class="svc-addr-opt__title">➕ ${esc(es ? 'Usar otra dirección' : 'Use another address')}</span></span></label></div>` +
+        `<div class="svc-newaddr" id="svc-newaddr-${prefix}" style="${newChecked ? '' : 'display:none'}">${window.ServiAddress.fieldsHTML(fp, { showLabel: true, showDefault: false })}${saveBox}</div>`;
+      window.ServiAddress.init(fp, {});
+    } else {
+      _svcAddrChoice[prefix] = 'new';
+      host.innerHTML = `<div class="svc-newaddr">${window.ServiAddress.fieldsHTML(fp, { showLabel: true, showDefault: false })}${saveBox}</div>`;
+      window.ServiAddress.init(fp, {});
+    }
+  }
+
+  window._svcAddrPick = function(prefix, value) {
+    _svcAddrChoice[prefix] = value;
+    const box = document.getElementById('svc-newaddr-' + prefix);
+    if (box) box.style.display = value === 'new' ? '' : 'none';
+  };
+
+  function saveBookingAddress(details) {
+    const token = svcSessionToken();
+    if (!token) return;
+    const API = (window.CONFIG && window.CONFIG.API_BASE) || '';
+    fetch(API + '/api/auth/addresses', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify(details),
+    }).then(() => { loadSavedAddresses(); }).catch(() => {});
+  }
+
   const attachments = [];
   const MAX_ATTACHMENTS = 3;
   let activeCameraStream = null;
@@ -1006,15 +1102,34 @@
 
   function validateAndCollect(prefix) {
     let valid = true;
-    const addrInput = document.getElementById(`svc-addr-${prefix}`);
+    const fp = svcFieldsPrefix(prefix);
     const addrErr = document.getElementById(`svc-addr-err-${prefix}`);
-    if (addrInput && !addrInput.value.trim()) {
-      addrInput.classList.add('error');
-      if (addrErr) addrErr.classList.add('visible');
-      valid = false;
-    } else if (addrInput) {
-      addrInput.classList.remove('error');
-      if (addrErr) addrErr.classList.remove('visible');
+    const choice = _svcAddrChoice[prefix];
+
+    let addressString = '';
+    let addressDetails = null;
+    let saveToAccount = false;
+
+    if (choice && choice !== 'new') {
+      const saved = _svcSavedAddresses.find(a => a.id === choice);
+      if (saved) {
+        addressDetails = saved;
+        addressString = window.ServiAddress.format(saved);
+        if (addrErr) addrErr.classList.remove('visible');
+      }
+    }
+    if (!addressDetails) {
+      // New address path — validate the structured field set.
+      if (!window.ServiAddress || !window.ServiAddress.validate(fp)) {
+        if (addrErr) addrErr.classList.add('visible');
+        valid = false;
+      } else {
+        if (addrErr) addrErr.classList.remove('visible');
+        addressDetails = window.ServiAddress.collect(fp);
+        addressString = window.ServiAddress.format(addressDetails);
+        const saveBox = document.getElementById('svc-addr-save-' + prefix);
+        saveToAccount = !!(saveBox && saveBox.checked);
+      }
     }
 
     let preferredDate = null, preferredTime = null;
@@ -1041,7 +1156,9 @@
     const description = serviceName + (extraDetails ? ' — ' + extraDetails : '');
 
     return {
-      address: addrInput ? addrInput.value.trim() : '',
+      address: addressString,
+      addressDetails,
+      saveToAccount,
       preferredDate,
       preferredTime,
       description,
@@ -1060,6 +1177,7 @@
       preferredTime: data.preferredTime,
       isAsap: whenType === 'asap',
       serviceAddress: data.address,
+      serviceAddressDetails: data.addressDetails || undefined,
       attachments: attachments.map(a => a.url),
       lang: lang(),
     };
@@ -1067,6 +1185,7 @@
       showAuthGate(prefix, () => sendRequest(prefix, payload));
       return;
     }
+    if (data.saveToAccount && data.addressDetails) saveBookingAddress(data.addressDetails);
     sendRequest(prefix, payload);
   }
 
@@ -1297,24 +1416,7 @@
 
         <hr class="svc-sidebar__divider">
         <span class="svc-sidebar__label">${esc(s.addressLabel || 'Dirección del servicio')}</span>
-        <div class="svc-address-input-wrap">
-          <input type="text" class="svc-sidebar__input" id="svc-addr-${prefix}"
-                 placeholder="${esc(s.addressPlaceholder || 'Calle, número, colonia')}"
-                 value="${esc(savedAddr)}">
-          <button class="svc-address-location-btn" type="button"
-                  onclick="window._svcUseCurrentLocation('${prefix}')"
-                  aria-label="${esc((getAddressModalText().locationBtn) || (lang() === 'es' ? 'Permitir acceso a mi ubicación' : 'Allow access to my location'))}"
-                  title="${esc((getAddressModalText().locationBtn) || (lang() === 'es' ? 'Permitir acceso a mi ubicación' : 'Allow access to my location'))}">
-            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M12 2v3"></path>
-              <path d="M12 19v3"></path>
-              <path d="M2 12h3"></path>
-              <path d="M19 12h3"></path>
-              <circle cx="12" cy="12" r="7"></circle>
-              <circle cx="12" cy="12" r="2"></circle>
-            </svg>
-          </button>
-        </div>
+        <div id="svc-addr-section-${prefix}" class="svc-addr-section"></div>
         <div class="svc-error-msg" id="svc-addr-err-${prefix}">${esc(s.addressError || 'Por favor ingresa tu dirección')}</div>
 
         <hr class="svc-sidebar__divider">
@@ -1498,6 +1600,21 @@
         };
       }
     }
+
+    // Mount the structured address field set into both sidebars, then upgrade to
+    // the saved-address picker once the user's address book has loaded. Firebase
+    // restores the session asynchronously, so poll briefly for window.__user.
+    _svcAddrChoice.desk = null; _svcAddrChoice.mob = null;
+    renderAddressSection('desk');
+    renderAddressSection('mob');
+    svcWaitForUserThenLoad();
+  }
+
+  function svcWaitForUserThenLoad(attempts) {
+    attempts = attempts == null ? 24 : attempts; // ~6s of 250ms polls
+    if (window.__user) { loadSavedAddresses(); return; }
+    if (attempts <= 0) return;
+    setTimeout(() => svcWaitForUserThenLoad(attempts - 1), 250);
   }
 
   if (document.readyState === 'loading') {
@@ -1507,6 +1624,9 @@
   }
 
   window.addEventListener('langchange', render);
+  // When auth state resolves after initial paint, pull saved addresses so the
+  // logged-in user sees the picker + "save to account" option.
+  window.addEventListener('servi-auth-success', () => { if (!_svcSavedAddresses.length) loadSavedAddresses(); });
 })();
 </script>
 </body>

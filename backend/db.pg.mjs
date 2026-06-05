@@ -328,6 +328,7 @@ export async function initDb() {
 
     ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS attachments TEXT;
     ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS client_request_id TEXT;
+    ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS service_address_details TEXT; -- JSON of structured address
     CREATE UNIQUE INDEX IF NOT EXISTS idx_service_requests_client_request_id
       ON service_requests(client_request_id)
       WHERE client_request_id IS NOT NULL;
@@ -442,6 +443,18 @@ export async function initDb() {
       is_default BOOLEAN DEFAULT FALSE,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
+
+    -- Detailed / CDMX-aware structured address fields (additive, nullable)
+    ALTER TABLE user_addresses ADD COLUMN IF NOT EXISTS address_type TEXT;        -- house | apartment | office | other
+    ALTER TABLE user_addresses ADD COLUMN IF NOT EXISTS exterior_number TEXT;
+    ALTER TABLE user_addresses ADD COLUMN IF NOT EXISTS interior_number TEXT;     -- depto / unidad / interior
+    ALTER TABLE user_addresses ADD COLUMN IF NOT EXISTS neighborhood TEXT;        -- colonia
+    ALTER TABLE user_addresses ADD COLUMN IF NOT EXISTS municipality TEXT;        -- alcaldía / municipio
+    ALTER TABLE user_addresses ADD COLUMN IF NOT EXISTS between_streets TEXT;     -- entre calles
+    ALTER TABLE user_addresses ADD COLUMN IF NOT EXISTS reference_notes TEXT;     -- referencias para llegar
+    ALTER TABLE user_addresses ADD COLUMN IF NOT EXISTS access_instructions TEXT; -- código de portón, caseta, estacionamiento
+    ALTER TABLE user_addresses ADD COLUMN IF NOT EXISTS contact_name TEXT;        -- quién recibe
+    ALTER TABLE user_addresses ADD COLUMN IF NOT EXISTS contact_phone TEXT;
 
     CREATE TABLE IF NOT EXISTS user_favorite_services (
       id TEXT PRIMARY KEY,
