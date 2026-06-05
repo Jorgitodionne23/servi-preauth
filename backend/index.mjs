@@ -1503,7 +1503,7 @@ app.use(express.static(FRONTEND_DIR));
   });
   const allowCashFlag =
     allowCashOnce === undefined && allow_cash_once === undefined
-      ? true // default: offer to first-time users
+      ? false
       : allowCashOnce === true ||
         allow_cash_once === true ||
         String(allowCashOnce || allow_cash_once || '').toLowerCase() === 'true' ||

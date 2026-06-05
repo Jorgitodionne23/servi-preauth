@@ -2137,7 +2137,10 @@ function parseDateValue(value) {
 }
 function formatMoney(cents) {
   if (cents == null || isNaN(cents)) return null;
-  return '$' + Math.round(cents / 100).toLocaleString(isEs() ? 'es-MX' : 'en-US') + ' MXN';
+  return '$' + (Number(cents) / 100).toLocaleString(isEs() ? 'es-MX' : 'en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }) + ' MXN';
 }
 function formatDateShort(value) {
   const d = parseDateValue(value);

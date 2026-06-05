@@ -248,6 +248,59 @@
     }
     .svc-error-msg.visible { display: block; }
 
+    .svc-email-gate {
+      border: 1.5px solid #ead8b7;
+      background: #fff8ec;
+      border-radius: 12px;
+      padding: 13px;
+      margin-bottom: 14px;
+      color: #4a3421;
+    }
+    .svc-email-gate__title {
+      font-size: 14px;
+      font-weight: 800;
+      margin-bottom: 6px;
+    }
+    .svc-email-gate__body {
+      font-size: 13px;
+      line-height: 1.45;
+      color: #6f5742;
+      margin-bottom: 10px;
+    }
+    .svc-email-gate__email {
+      font-size: 13px;
+      font-weight: 700;
+      margin-bottom: 10px;
+      word-break: break-word;
+    }
+    .svc-email-gate__row {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .svc-email-gate__btn {
+      width: 100%;
+      border: none;
+      border-radius: 10px;
+      background: #111;
+      color: #fff;
+      padding: 10px 12px;
+      font-size: 13px;
+      font-weight: 800;
+      font-family: var(--font-body, 'DM Sans', sans-serif);
+      cursor: pointer;
+    }
+    .svc-email-gate__btn:disabled {
+      opacity: 0.55;
+      cursor: default;
+    }
+    .svc-email-gate__status {
+      min-height: 16px;
+      font-size: 12px;
+      line-height: 1.35;
+      color: #6f5742;
+    }
+
     .svc-attach-zone {
       border: 1.5px dashed #d0d0d0;
       border-radius: 10px;
@@ -387,12 +440,12 @@
       color: #555;
       margin-bottom: 20px;
     }
-    .svc-success__wa {
+    .svc-success__orders {
       display: inline-flex;
       align-items: center;
       gap: 8px;
       padding: 12px 20px;
-      background: #25D366;
+      background: #111;
       color: #fff;
       border-radius: 12px;
       text-decoration: none;
@@ -1019,14 +1072,21 @@
         }),
       });
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || 'HTTP ' + res.status);
+        const data = await res.json().catch(() => ({}));
+        const err = new Error(data.message || 'HTTP ' + res.status);
+        err.status = res.status;
+        err.body = data;
+        throw err;
       }
       showSuccess(prefix);
     } catch (err) {
       if (btn) { btn.disabled = false; btn.textContent = sp().cta || 'Solicitar servicio'; }
-      alert(lang() === 'es' ? 'Error al enviar. Intenta de nuevo.' : 'Submit error. Please try again.');
       console.error('[service.html] submit error:', err);
+      if (err && err.body && err.body.error === 'email_required') {
+        showEmailVerificationGate(prefix, payload);
+        return;
+      }
+      alert(err && err.message ? err.message : (lang() === 'es' ? 'Error al enviar. Intenta de nuevo.' : 'Submit error. Please try again.'));
     }
   }
 
@@ -1040,19 +1100,132 @@
     window.openAuthModal('login');
   }
 
+  function refreshServiceAuthUser() {
+    const API = (window.CONFIG && window.CONFIG.API_BASE) || '';
+    let session = null;
+    try { session = JSON.parse(localStorage.getItem('servi_user_session') || 'null'); } catch (_) {}
+    const token = session && session.token;
+    if (!token) return Promise.resolve(null);
+    return fetch(API + '/api/auth/me', { headers: { Authorization: 'Bearer ' + token } })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (!data || !data.user) return null;
+        window.__user = data.user;
+        try {
+          session.user = data.user;
+          localStorage.setItem('servi_user_session', JSON.stringify(session));
+        } catch (_) {}
+        return data.user;
+      })
+      .catch(() => null);
+  }
+
+  function showEmailVerificationGate(prefix, payload) {
+    const host = document.getElementById(`svc-email-gate-${prefix}`);
+    if (!host) {
+      alert(lang() === 'es'
+        ? 'Verifica tu correo electrónico para confirmar tu solicitud.'
+        : 'Verify your email to confirm your request.');
+      return;
+    }
+    if (host._cleanup) host._cleanup();
+
+    const es = lang() === 'es';
+    const currentEmail = String((window.__user && window.__user.email) || '').trim().toLowerCase();
+    host.innerHTML = `
+      <div class="svc-email-gate">
+        <div class="svc-email-gate__title">${esc(es ? 'Verifica tu correo para continuar' : 'Verify your email to continue')}</div>
+        <div class="svc-email-gate__body">${esc(es ? 'Ya usaste tu primera solicitud sin correo verificado. Verifica tu correo para poder enviar nuevas solicitudes.' : 'You already used your first request without a verified email. Verify your email before sending new requests.')}</div>
+        ${currentEmail
+          ? `<div class="svc-email-gate__email">${esc(currentEmail)}</div>`
+          : `<input class="svc-sidebar__input" id="svc-email-gate-input-${prefix}" type="email" placeholder="${esc(es ? 'correo@email.com' : 'email@example.com')}">`}
+        <div class="svc-email-gate__row">
+          <button type="button" class="svc-email-gate__btn" id="svc-email-gate-btn-${prefix}">${esc(es ? 'Enviar verificación' : 'Send verification')}</button>
+          <div class="svc-email-gate__status" id="svc-email-gate-status-${prefix}" aria-live="polite"></div>
+        </div>
+      </div>
+    `;
+
+    const input = document.getElementById(`svc-email-gate-input-${prefix}`);
+    const button = document.getElementById(`svc-email-gate-btn-${prefix}`);
+    const status = document.getElementById(`svc-email-gate-status-${prefix}`);
+    let cleaned = false;
+
+    function cleanup() {
+      if (cleaned) return;
+      cleaned = true;
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('servi-email-verified', onVerified);
+    }
+    host._cleanup = cleanup;
+
+    async function retryIfVerified() {
+      const user = await refreshServiceAuthUser();
+      if (!user || user.email_verified !== true) return;
+      cleanup();
+      host.innerHTML = '';
+      sendRequest(prefix, payload);
+    }
+
+    function onStorage(event) {
+      if (event.key === 'servi_email_verified_at') retryIfVerified();
+    }
+
+    function onVerified() {
+      retryIfVerified();
+    }
+
+    window.addEventListener('storage', onStorage);
+    window.addEventListener('servi-email-verified', onVerified);
+
+    if (input) input.focus();
+    try { host.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (_) {}
+
+    button.addEventListener('click', async () => {
+      const email = currentEmail || String((input && input.value) || '').trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        if (status) status.textContent = es ? 'Ingresa un correo válido.' : 'Enter a valid email.';
+        if (input) input.focus();
+        return;
+      }
+      if (!window.__sendEmailVerification) {
+        if (status) status.textContent = es ? 'No se pudo iniciar la verificación.' : 'Could not start verification.';
+        return;
+      }
+      try {
+        button.disabled = true;
+        if (status) status.textContent = es ? 'Enviando...' : 'Sending...';
+        localStorage.setItem('servi_email_verification_mode', '1');
+        localStorage.setItem('servi_email_link_target', email);
+        const sent = await window.__sendEmailVerification(email);
+        if (!sent) {
+          localStorage.removeItem('servi_email_verification_mode');
+          localStorage.removeItem('servi_email_link_target');
+          button.disabled = false;
+          if (status) status.textContent = es ? 'No se pudo enviar. Intenta de nuevo.' : 'Could not send. Try again.';
+          return;
+        }
+        if (status) status.textContent = es ? 'Revisa tu correo. Continuaremos cuando se verifique.' : 'Check your email. We will continue after verification.';
+      } catch (_) {
+        localStorage.removeItem('servi_email_verification_mode');
+        localStorage.removeItem('servi_email_link_target');
+        button.disabled = false;
+        if (status) status.textContent = es ? 'No se pudo enviar. Intenta de nuevo.' : 'Could not send. Try again.';
+      }
+    });
+  }
+
   function showSuccess(prefix) {
     const sidebar = document.getElementById(`svc-sidebar-${prefix}`);
     if (!sidebar) return;
-    const waNumber = (window.CONFIG && window.CONFIG.WHATSAPP_NUMBER) || '525525112588';
-    const waUrl = `https://wa.me/${waNumber}`;
     sidebar.innerHTML = `
       <div class="svc-success">
         <img src="checkmark-green.png" alt="Éxito" class="svc-success__icon" />
         <div class="svc-success__title">${esc(sp().successTitle || '¡Solicitud enviada!')}</div>
         <div class="svc-success__body">${esc(sp().successBody || 'Te contactaremos pronto por WhatsApp.')}</div>
-        <a class="svc-success__wa" href="${esc(waUrl)}" target="_blank" rel="noopener">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-          ${esc(sp().successWhatsapp || 'Abrir WhatsApp')}
+        <a class="svc-success__orders" href="/account.html?section=orders">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h9l5 5v15H6z"/><path d="M14 2v6h6"/><path d="M9 13h6"/><path d="M9 17h4"/></svg>
+          ${esc(sp().successManageOrders || 'Manage Orders')}
         </a>
       </div>
     `;
@@ -1136,6 +1309,7 @@
         <div class="svc-attach-status" id="svc-attach-status-${prefix}"></div>
 
         <hr class="svc-sidebar__divider">
+        <div id="svc-email-gate-${prefix}"></div>
         <button class="svc-cta-btn" type="button" id="svc-cta-btn-${prefix}"
                 onclick="window._svcSubmit('${prefix}')">
           ${esc(s.cta || 'Solicitar servicio')}

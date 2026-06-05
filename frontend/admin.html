@@ -385,13 +385,13 @@
     <!-- Sidebar -->
     <aside class="sidebar">
       <div class="nav-section-title">Operación</div>
-      <button class="nav-item active" data-panel="inbox" onclick="switchPanel('inbox')">
-        <span class="nav-item-label"><span class="nav-icon">🧾</span><span>Inbox</span></span>
-        <span class="nav-badge" id="nav-badge-inbox" style="display:none"></span>
-      </button>
-      <button class="nav-item" data-panel="orders" onclick="switchPanel('orders')">
+      <button class="nav-item active" data-panel="orders" onclick="switchPanel('orders')">
         <span class="nav-item-label"><span class="nav-icon">📦</span><span>Órdenes</span></span>
         <span class="nav-badge" id="orders-badge" style="display:none"></span>
+      </button>
+      <button class="nav-item" data-panel="inbox" onclick="switchPanel('inbox')">
+        <span class="nav-item-label"><span class="nav-icon">🧾</span><span>Inbox</span></span>
+        <span class="nav-badge" id="nav-badge-inbox" style="display:none"></span>
       </button>
       <button class="nav-item" data-panel="providers" onclick="switchPanel('providers')">
         <span class="nav-item-label"><span class="nav-icon">🧰</span><span>Proveedores</span></span>
@@ -413,7 +413,7 @@
 
 
     <!-- Inbox Panel -->
-    <div id="panel-inbox" class="panel-section panel-section--active">
+    <div id="panel-inbox" class="panel-section">
       <div class="inbox-stats" id="inbox-stats"></div>
       <div class="filter-pill-row" id="inbox-filter-row">
         <span class="filter-pill-label">Estado:</span>
@@ -431,7 +431,7 @@
     </div>
 
     <!-- Orders Panel -->
-    <div id="panel-orders" class="panel-section">
+    <div id="panel-orders" class="panel-section panel-section--active">
       <div class="filter-row">
         <input class="filter-input" id="orders-search" placeholder="Buscar por nombre, teléfono, código..." oninput="debounceOrders()">
         <select class="filter-select" id="orders-status" onchange="loadOrders()">
@@ -494,6 +494,13 @@
                 <option value="automatic">Automático</option>
               </select>
             </div>
+            <label style="grid-column:1/-1;display:flex;gap:10px;align-items:flex-start;margin-top:2px;color:var(--text-dim);font-size:13px;line-height:1.4">
+              <input type="checkbox" id="n-allow-cash" style="margin-top:2px;accent-color:#fbbf24">
+              <span>
+                Permitir botón de efectivo para primera reserva
+                <span style="display:block;color:var(--text-mute);font-size:12px;margin-top:2px">Mostrará “¿Primera vez en SERVI?” solo si el cliente no tiene actividad previa.</span>
+              </span>
+            </label>
             <div style="grid-column:1/-1"><label class="form-label">Proveedor asignado (opcional)</label><input class="auth-input" id="n-provider" placeholder="Nombre del proveedor"></div>
           </div>
           <div id="nueva-date-warn" style="display:none"></div>
@@ -867,7 +874,7 @@ async function testAuth() {
     document.getElementById('dashboard').style.display = 'flex';
     loadStats();
     wireInboxFilters();
-    loadInbox();
+    loadOrders();
   } catch {
     document.getElementById('auth-error').style.display = 'block';
     sessionStorage.removeItem('servi-admin-token');
@@ -1407,6 +1414,13 @@ function openSubmissionLinkModal(subId) {
         <label class="form-label">Fecha y hora del servicio</label>
         <input class="adm-input" id="sub-datetime" type="datetime-local" value="${escapeHtml(datetimeValue)}" style="margin-bottom:0">
       </div>
+      <label style="display:flex;gap:10px;align-items:flex-start;margin-bottom:16px;color:#ddd;font-size:13px;line-height:1.4">
+        <input type="checkbox" id="sub-allow-cash" style="margin-top:2px;accent-color:#fbbf24">
+        <span>
+          Permitir botón de efectivo para primera reserva
+          <span style="display:block;color:#888;font-size:12px;margin-top:2px">Aparece en pay.html solo si este cliente no tiene actividad previa.</span>
+        </span>
+      </label>
       <div id="sub-modal-error" style="color:#ef4444;font-size:13px;margin-bottom:10px;display:none"></div>
       <div id="sub-modal-result" style="display:none;margin-bottom:14px">
         <div style="font-size:11px;color:#888;margin-bottom:4px">ENLACE DE PAGO</div>
@@ -1440,6 +1454,7 @@ async function submitSubmissionLink(subId) {
   const provider = document.getElementById('sub-provider').value.trim();
   const email = document.getElementById('sub-email').value.trim();
   const dtVal = document.getElementById('sub-datetime').value;
+  const allowCashOnce = !!document.getElementById('sub-allow-cash')?.checked;
 
   const isVisita = bookingTypeKey === 'visita';
   const amount = isVisita && (!amountRaw || amountRaw <= 0) ? 140 : amountRaw;
@@ -1474,6 +1489,7 @@ async function submitSubmissionLink(subId) {
         bookingType,
         capture: 'manual',
         providerName: provider || undefined,
+        allowCashOnce,
         category: sub.category || undefined,
       })
     });
@@ -1865,6 +1881,7 @@ async function submitNuevaOrden() {
   const bookingTypeKey = document.getElementById('n-booking-type').value;
   const capture = document.getElementById('n-capture').value;
   const provider = document.getElementById('n-provider').value.trim();
+  const allowCashOnce = !!document.getElementById('n-allow-cash')?.checked;
 
   if (!phone) { errEl.textContent = 'WhatsApp requerido.'; errEl.style.display='block'; return; }
   if (!name) { errEl.textContent = 'Nombre requerido.'; errEl.style.display='block'; return; }
@@ -1888,7 +1905,7 @@ async function submitNuevaOrden() {
   try {
     const res = await fetch(API + '/create-payment-intent', {
       method: 'POST', headers: headers(),
-      body: JSON.stringify({ amount, clientName: name, serviceDescription: desc, serviceDate, serviceDateTime, hasTimeComponent, clientPhone: phone, clientEmail: email, serviceAddress: address, bookingType, capture, providerName: provider || undefined, category: category || undefined })
+      body: JSON.stringify({ amount, clientName: name, serviceDescription: desc, serviceDate, serviceDateTime, hasTimeComponent, clientPhone: phone, clientEmail: email, serviceAddress: address, bookingType, capture, providerName: provider || undefined, allowCashOnce, category: category || undefined })
     });
     const d = await res.json();
     if (res.status === 403 && d.error === 'account_required') {
@@ -1930,6 +1947,7 @@ function resetNuevaOrden() {
   document.getElementById('n-category').selectedIndex = 0;
   document.getElementById('n-booking-type').selectedIndex = 0;
   document.getElementById('n-capture').selectedIndex = 0;
+  const allowCash = document.getElementById('n-allow-cash'); if (allowCash) allowCash.checked = false;
   document.getElementById('nueva-result').style.display = 'none';
   document.getElementById('nueva-error').style.display = 'none';
   const warn = document.getElementById('nueva-date-warn'); if (warn) warn.style.display = 'none';
