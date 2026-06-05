@@ -839,11 +839,13 @@ function fmtMoney(cents) { if (!cents && cents !== 0) return '—'; return '$' +
 
 function badgeClass(status) {
   const s = (status || '').toLowerCase();
+  // Prefix-match first so compound labels ('canceled (late fee)', 'captured (partial refund)')
+  // keep their color.
+  if (s.startsWith('cancel')) return 'badge-canceled';
+  if (s.startsWith('captured')) return 'badge-captured';
   if (s === 'pending') return 'badge-pending';
   if (s === 'new') return 'badge-new';
   if (s === 'confirmed') return 'badge-confirmed';
-  if (s === 'captured') return 'badge-captured';
-  if (s === 'canceled' || s === 'cancelled') return 'badge-canceled';
   if (s === 'contacted') return 'badge-contacted';
   if (s === 'verified') return 'badge-verified';
   if (s === 'rejected') return 'badge-rejected';
@@ -1245,11 +1247,15 @@ async function loadOrders() {
     if (search) params.set('search', search);
     if (status) params.set('status', status);
 
-    // Fetch real orders + pending web submissions in parallel
+    // Web submissions surface alongside orders: pending ones in the default view, and
+    // withdrawn (canceled) ones when the Canceled filter is active so they don't vanish.
+    const wantCanceledSubs = /^cancel/i.test(status);
+    const subsFetch = (!status)
+      ? fetch(API + '/api/service-requests?status=pending&limit=50', { headers: headers() })
+      : (wantCanceledSubs ? fetch(API + '/api/service-requests?status=canceled&limit=50', { headers: headers() }) : Promise.resolve(null));
     const [ordersRes, subsRes] = await Promise.all([
       fetch(API + '/api/admin/orders?' + params, { headers: headers() }),
-      // Only fetch submissions when not filtering by a Stripe-specific status
-      (!status) ? fetch(API + '/api/service-requests?status=pending&limit=50', { headers: headers() }) : Promise.resolve(null)
+      subsFetch
     ]);
 
     const d = await ordersRes.json();
@@ -1345,9 +1351,19 @@ function buildSubmissionRow(s) {
   _subsCache[s.id] = s;
   const detail = (s.category || '') + (s.description ? ' — ' + s.description.slice(0, 60) : '');
   const attachmentsHtml = buildSubmissionAttachmentsInline(s.attachments);
+  const isCanceled = /^cancel/i.test(String(s.status || ''));
+  const border = isCanceled ? '#ef4444' : '#7c3aed';
+  const code = isCanceled ? '#ef4444' : '#a78bfa';
+  const badge = isCanceled
+    ? `<span class="badge badge-canceled">Cancelado · Cliente</span>`
+    : `<span class="badge badge-web">Web · Sin enlace</span>`;
+  const action = isCanceled
+    ? `<span style="color:#888;font-size:11px">Retirado por cliente</span>`
+    : `<button class="action-btn" style="background:#3b0764;color:#c4b5fd;border:1px solid #6d28d9"
+          onclick="openSubmissionLinkModal('${s.id}')">+ Crear enlace</button>`;
   return `
-    <tr style="border-left:3px solid #7c3aed">
-      <td style="font-family:monospace;font-size:12px;color:#a78bfa">WEB-${s.id.slice(0,6).toUpperCase()}</td>
+    <tr style="border-left:3px solid ${border}">
+      <td style="font-family:monospace;font-size:12px;color:${code}">WEB-${s.id.slice(0,6).toUpperCase()}</td>
       <td>${escapeHtml(s.client_name || '—')}<br><span style="color:#666;font-size:11px">${escapeHtml(s.client_phone || '')}</span></td>
       <td class="submission-detail" title="${escapeHtml(detail)}">
         <div class="submission-detail-text">${escapeHtml(detail)}</div>
@@ -1356,13 +1372,8 @@ function buildSubmissionRow(s) {
       <td><span style="color:#555;font-size:11px">Sin precio</span></td>
       <td>${fmtDate(s.created_at)}</td>
       <td class="hours-cell">—</td>
-      <td><span class="badge badge-web">Web · Sin enlace</span></td>
-      <td>
-        <button class="action-btn" style="background:#3b0764;color:#c4b5fd;border:1px solid #6d28d9"
-          onclick="openSubmissionLinkModal('${s.id}')">
-          + Crear enlace
-        </button>
-      </td>
+      <td>${badge}</td>
+      <td>${action}</td>
     </tr>
   `;
 }

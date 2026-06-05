@@ -17,7 +17,7 @@
   if (path.indexOf('account') !== -1) return; // account page already lists orders
 
   var API = (window.CONFIG && window.CONFIG.API_BASE) || '';
-  var STATE_KEY = 'servi_ao_state';   // 'pill' | 'card'  (per-session UI preference)
+  var _state = 'pill'; // Page-local UI state; fresh page loads start compact unless payment is due.
 
   // ── i18n ──
   function isEs() {
@@ -35,7 +35,7 @@
       payGone: 'Este pedido ya no está disponible para pago en línea.',
     },
     en: {
-      pay: 'Payment due', active: 'Active order', requested: 'Request received',
+      pay: 'Payment pending', active: 'Active order', requested: 'Request received',
       authorized: 'Authorized', scheduled: 'Scheduled', cash: 'Cash payment', inProcess: 'In progress',
       ctaPay: 'Complete payment', view: 'View order', viewAll: 'View all',
       moreOne: 'more order', moreMany: 'more orders',
@@ -78,6 +78,7 @@
     }
   }
   function tone(o) { return o.payable ? 'pay' : 'active'; }
+  function isPaymentPending(o) { return !!(o && o.payable); }
 
   function whenLabel(o) {
     var raw = o.serviceDateTime || o.serviceDate || null;
@@ -152,15 +153,18 @@
       + '.servi-ao__dot{width:9px;height:9px;border-radius:999px;flex:0 0 auto}'
       + '.servi-ao__pill-emoji{font-size:17px;line-height:1}'
       + '.servi-ao__pill-text{font-size:13px;font-weight:700;white-space:nowrap;letter-spacing:-.01em}'
-      + '.servi-ao__chev{font-size:10px;color:#9a9a9a;margin-left:1px}'
+      + '.servi-ao__chev{display:inline-flex;align-items:center;justify-content:center;width:14px;font-size:14px;line-height:1;color:#8c8c8c;margin-left:1px;transform:translateY(-1px)}'
       // tone
       + '.servi-ao[data-tone="pay"] .servi-ao__dot{background:#d68a1f;box-shadow:0 0 0 0 rgba(214,138,31,.5);animation:aoPulse 2s infinite}'
       + '.servi-ao[data-tone="active"] .servi-ao__dot{background:#3f9aa8}'
       // card
       + '.servi-ao__card{width:330px;max-width:calc(100vw - 28px);background:#fff;border:1px solid rgba(17,17,17,0.07);border-radius:20px;box-shadow:0 28px 64px -28px rgba(17,17,17,0.5);overflow:hidden;animation:aoCardIn .42s cubic-bezier(.16,1,.3,1) both}'
       + '.servi-ao__hero{position:relative;padding:18px 18px 16px;background:linear-gradient(155deg,var(--ao-tint,rgba(149,204,213,.18)),rgba(255,255,255,0) 80%)}'
-      + '.servi-ao__close{position:absolute;top:12px;right:12px;width:28px;height:28px;border-radius:999px;border:1px solid rgba(17,17,17,0.08);background:rgba(255,255,255,0.7);color:#444;font-size:15px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;line-height:1}'
+      + '.servi-ao__close{position:absolute;top:12px;right:12px;width:28px;height:28px;padding:0;border-radius:999px;border:1px solid rgba(17,17,17,0.08);background:rgba(255,255,255,0.7);color:#444;font-size:0;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;line-height:0}'
+      + '.servi-ao__close::before,.servi-ao__close::after{content:"";position:absolute;top:50%;left:50%;width:12px;height:1.6px;border-radius:999px;background:currentColor;transform:translate(-50%,-50%) rotate(45deg)}'
+      + '.servi-ao__close::after{transform:translate(-50%,-50%) rotate(-45deg)}'
       + '.servi-ao__close:hover{background:#fff}'
+      + '.servi-ao[data-close-locked="true"] .servi-ao__row{padding-right:0}'
       + '.servi-ao__row{display:flex;gap:12px;align-items:center;padding-right:30px}'
       + '.servi-ao__icon{width:44px;height:44px;border-radius:13px;background:rgba(255,255,255,0.7);display:inline-flex;align-items:center;justify-content:center;font-size:22px;flex:0 0 auto;box-shadow:0 8px 18px -14px rgba(17,17,17,.6)}'
       + '.servi-ao__title{font-size:15px;font-weight:800;color:#1a1a1a;letter-spacing:-.01em;line-height:1.2}'
@@ -192,12 +196,13 @@
   }
 
   var root = null;
-  function getState() {
-    try { return sessionStorage.getItem(STATE_KEY) === 'card' ? 'card' : 'pill'; } catch (e) { return 'pill'; }
+  function getState(o) {
+    return isPaymentPending(o) ? 'card' : _state;
   }
   function setState(s) {
-    try { sessionStorage.setItem(STATE_KEY, s); } catch (e) {}
-    if (root) root.setAttribute('data-state', s);
+    if (isPaymentPending(_primary) && s === 'pill') return;
+    _state = s === 'card' ? 'card' : 'pill';
+    if (root) root.setAttribute('data-state', getState(_primary));
   }
 
   function render() {
@@ -209,6 +214,7 @@
     var when = whenLabel(o);
     var extra = _orders.length - 1;
     var moreTxt = extra > 0 ? ('+' + extra + ' ' + (extra === 1 ? s.moreOne : s.moreMany)) : '';
+    var closeLocked = isPaymentPending(o);
 
     if (!root) {
       root = document.createElement('div');
@@ -216,7 +222,8 @@
       document.body.appendChild(root);
     }
     root.setAttribute('data-tone', tone(o));
-    root.setAttribute('data-state', getState());
+    root.setAttribute('data-state', getState(o));
+    root.setAttribute('data-close-locked', closeLocked ? 'true' : 'false');
     root.style.setProperty('--ao-tint', cm.tint);
 
     root.innerHTML =
@@ -228,7 +235,7 @@
       '</button>' +
       '<div class="servi-ao__card" role="dialog" aria-label="' + esc(catLabel(o.category)) + '">' +
         '<div class="servi-ao__hero">' +
-          '<button class="servi-ao__close" type="button" aria-label="' + esc(s.ariaClose) + '">✕</button>' +
+          (closeLocked ? '' : '<button class="servi-ao__close" type="button" aria-label="' + esc(s.ariaClose) + '">✕</button>') +
           '<div class="servi-ao__row">' +
             '<span class="servi-ao__icon">' + cm.icon + '</span>' +
             '<div style="min-width:0">' +
@@ -251,7 +258,8 @@
       '</div>';
 
     root.querySelector('.servi-ao__pill').addEventListener('click', function () { setState('card'); });
-    root.querySelector('.servi-ao__close').addEventListener('click', function () { setState('pill'); });
+    var close = root.querySelector('.servi-ao__close');
+    if (close) close.addEventListener('click', function () { setState('pill'); });
     var cta = root.querySelector('.servi-ao__cta');
     if (cta) cta.addEventListener('click', function () { pay(o, cta); });
   }

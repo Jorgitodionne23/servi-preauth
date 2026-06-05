@@ -212,6 +212,11 @@
     .btn-outline:hover { border-color: var(--color-accent); background: var(--account-accent-soft); color: var(--color-text); }
     .btn-danger { display: inline-flex; align-items: center; gap: 8px; padding: 12px 24px; background: var(--account-danger); color: #fff; border: none; border-radius: 14px; font-size: 14px; font-weight: 700; font-family: var(--font-body); cursor: pointer; transition: opacity 0.2s; }
     .btn-danger:hover { opacity: 0.85; }
+    /* Outlined danger button — self-contained colors so it stays visible inside the order
+       drawer, which renders OUTSIDE .account-page (where --account-danger isn't inherited). */
+    .btn-danger-line { display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 11px 18px; background: #fff; color: #c55d49; border: 1.5px solid rgba(197, 93, 73, 0.55); border-radius: 12px; font-size: 13px; font-weight: 700; font-family: var(--font-body); cursor: pointer; transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease; }
+    .btn-danger-line:hover { background: #c55d49; color: #fff; border-color: #c55d49; }
+    .btn-danger-line:disabled { opacity: 0.5; cursor: default; }
     .success-msg {
       display: none;
       align-items: center;
@@ -2198,7 +2203,11 @@ function formatDateTime(value) {
 // of the 4 lifecycle steps are complete.
 function orderStatusMeta(item) {
   const t = tr();
-  if (item.source === 'request') return { label: t.stRequested, cls: 'is-progress', step: 1, canceled: false };
+  if (item.source === 'request') {
+    // A withdrawn intake request becomes 'canceled'; otherwise it's still in the intake step.
+    if (/^cancel/i.test(String(item.status || ''))) return { label: t.stCanceled, cls: 'is-canceled', step: 1, canceled: true };
+    return { label: t.stRequested, cls: 'is-progress', step: 1, canceled: false };
+  }
   const raw = String(item.status || '').trim();
   // Compound labels the backend emits (e.g. 'Canceled (late fee)', 'Canceled (expired)',
   // 'Captured (partial refund)') are matched by prefix so they never fall through to "pending".
@@ -2480,7 +2489,7 @@ function orderDrawerActionsHtml(item) {
   if (orderIsPayable(item)) a.push(`<button class="btn-save" onclick="startOrderPayment('${id}','${escapeHtml(item.payFlow || item.kind)}',this)">${escapeHtml(t.actPay)}</button>`);
   if (pol.canEditAddress) a.push(`<button class="btn-outline" onclick="openAddressForm('${id}')">${escapeHtml(t.actEditAddress)}</button>`);
   if (pol.canRequestReschedule) a.push(`<button class="btn-outline" onclick="openRescheduleForm('${id}')">${escapeHtml(t.actReschedule)}</button>`);
-  if (pol.canCancel) a.push(`<button class="btn-outline btn-danger" onclick="confirmCancelOrder('${id}')">${escapeHtml(item.source === 'request' ? t.actWithdraw : t.actCancel)}</button>`);
+  if (pol.canCancel) a.push(`<button class="btn-danger-line" onclick="confirmCancelOrder('${id}')">${escapeHtml(item.source === 'request' ? t.actWithdraw : t.actCancel)}</button>`);
   if (orderCanReorder(item)) a.push(`<button class="btn-outline" onclick="reorder('${escapeHtml(item.category)}')">${escapeHtml(t.actReorder)}</button>`);
   a.push(`<a class="btn-outline" href="/helpcenter.html">${escapeHtml(t.actHelp)}</a>`);
   return `<div class="drawer-actions">${a.join('')}</div>`;

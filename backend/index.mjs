@@ -4823,18 +4823,54 @@ app.post('/api/uploads', publicFormLimit, upload.single('file'), async (req, res
 // --- Public: Submit a service request ---
 app.post('/api/service-requests', publicFormLimit, async (req, res) => {
   try {
-    const { category, description, preferredDate, preferredTime, isAsap, serviceAddress, clientName, clientPhone, clientEmail, customerId, lang, attachments } = req.body || {};
+    const { category, description, preferredDate, preferredTime, isAsap, serviceAddress, clientName, clientPhone, clientEmail, customerId, lang, attachments, clientRequestId } = req.body || {};
     if (!category || !clientName || !clientPhone) {
       return res.status(400).json({ error: 'missing_required_fields', message: 'category, clientName, and clientPhone are required' });
     }
+    const clientRequestIdNorm = typeof clientRequestId === 'string' ? clientRequestId.trim() : '';
+    if (clientRequestIdNorm && !/^[a-zA-Z0-9._:-]{8,120}$/.test(clientRequestIdNorm)) {
+      return res.status(400).json({ error: 'invalid_client_request_id', message: 'clientRequestId is invalid' });
+    }
 
-    // If the request comes from an authenticated user, enforce both identifiers verified
     const authHeader = req.headers.authorization || '';
     const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
     const userPayload = token ? verifySessionToken(token) : null;
     let effectiveCustomerId = customerId || null;
+    if (userPayload?.user_id) effectiveCustomerId = userPayload.user_id;
+
+    async function findExistingClientRequest() {
+      if (!clientRequestIdNorm) return null;
+      const { rows } = await pool.query(
+        `SELECT id, status, customer_id, client_phone, client_email
+           FROM service_requests
+          WHERE client_request_id = $1
+          LIMIT 1`,
+        [clientRequestIdNorm]
+      );
+      return rows[0] || null;
+    }
+    function sameRequester(row) {
+      if (!row) return false;
+      if (effectiveCustomerId && row.customer_id === effectiveCustomerId) return true;
+      const rowPhone = normalizePhoneDigits(row.client_phone);
+      const reqPhone = normalizePhoneDigits(clientPhone);
+      const rowEmail = normalizeEmail(row.client_email || '');
+      const reqEmail = normalizeEmail(clientEmail || '');
+      return !!rowPhone && !!reqPhone && rowPhone === reqPhone && (!rowEmail || !reqEmail || rowEmail === reqEmail);
+    }
+    function existingRequestResponse(row) {
+      return res.status(200).json({ id: row.id, status: row.status || 'pending', duplicate: true });
+    }
+    const existingRequest = await findExistingClientRequest();
+    if (existingRequest) {
+      if (!sameRequester(existingRequest)) {
+        return res.status(409).json({ error: 'client_request_conflict', message: 'This request token already belongs to another request.' });
+      }
+      return existingRequestResponse(existingRequest);
+    }
+
+    // If the request comes from an authenticated user, enforce both identifiers verified.
     if (userPayload?.user_id) {
-      effectiveCustomerId = userPayload.user_id;
       const { rows: vRows } = await pool.query(
         'SELECT phone, phone_verified, email_verified, email_skipped_at FROM auth_users WHERE id = $1',
         [userPayload.user_id]
@@ -4860,11 +4896,19 @@ app.post('/api/service-requests', publicFormLimit, async (req, res) => {
     }
     const attachmentsStr = Array.isArray(attachments) ? attachments.join(',') : (attachments || null);
     const id = randomUUID();
-    await pool.query(
-      `INSERT INTO service_requests (id, category, description, preferred_date, preferred_time, is_asap, service_address, client_name, client_phone, client_email, customer_id, lang, attachments)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-      [id, category, description || null, preferredDate || null, preferredTime || null, !!isAsap, serviceAddress || null, clientName, clientPhone, clientEmail || null, effectiveCustomerId, lang || 'es', attachmentsStr]
-    );
+    try {
+      await pool.query(
+        `INSERT INTO service_requests (id, category, description, preferred_date, preferred_time, is_asap, service_address, client_name, client_phone, client_email, client_request_id, customer_id, lang, attachments)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+        [id, category, description || null, preferredDate || null, preferredTime || null, !!isAsap, serviceAddress || null, clientName, clientPhone, clientEmail || null, clientRequestIdNorm || null, effectiveCustomerId, lang || 'es', attachmentsStr]
+      );
+    } catch (insertErr) {
+      if (insertErr.code === '23505' && clientRequestIdNorm) {
+        const duplicateRequest = await findExistingClientRequest();
+        if (sameRequester(duplicateRequest)) return existingRequestResponse(duplicateRequest);
+      }
+      throw insertErr;
+    }
     // Notify Google Sheets
     postToGoogleWebhook({ type: 'service_request.created', requestId: id, category, clientName, clientPhone, clientEmail: clientEmail || '', serviceAddress: serviceAddress || '', isAsap: !!isAsap, preferredDate: preferredDate || '', preferredTime: preferredTime || '' });
     return res.status(201).json({ id, status: 'pending' });
@@ -5054,7 +5098,7 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
     const provider = decoded.firebase?.sign_in_provider || 'unknown';
     const isGoogleProvider = normalizeFirebaseProvider(provider) === 'google';
     const phoneVerifiedByFirebase = !!decodedPhoneNorm;
-    const emailVerifiedByFirebase = !!emailNormFromToken && !!(isGoogleProvider || decoded.email_verified || decoded.email);
+    const emailVerifiedByFirebase = !!emailNormFromToken && !!(isGoogleProvider || decoded.email_verified === true);
     // False flags can close gates after profile edits; true flags are trusted only
     // when the Firebase token proves the matching identifier.
     const phoneVerified = req.body.phone_verified === false ? false : (phoneVerifiedByFirebase ? true : null);
@@ -5247,7 +5291,7 @@ app.post('/api/auth/add-email', publicFormLimit, async (req, res) => {
   if (!payload) return;
   try {
     const { email, firebase_id_token } = req.body || {};
-    if (!email || !firebase_id_token) return res.status(400).json({ error: 'missing_fields' });
+    if (!email) return res.status(400).json({ error: 'missing_fields' });
     const emailNorm = normalizeEmail(email);
     if (!emailNorm) return res.status(400).json({ error: 'invalid_email' });
 
@@ -5255,18 +5299,34 @@ app.post('/api/auth/add-email', publicFormLimit, async (req, res) => {
     const currentFirebaseUid = userRows[0]?.firebase_uid || null;
     if (!currentFirebaseUid) return res.status(401).json({ error: 'firebase_user_missing' });
 
-    // Verify Firebase token proves this same SERVI user owns a verified email.
-    let decoded;
-    try { decoded = await verifyFirebaseIdToken(firebase_id_token, true); }
-    catch (e) { return res.status(401).json({ error: 'invalid_token' }); }
-    if (decoded.uid !== currentFirebaseUid) {
-      return res.status(401).json({ error: 'firebase_user_mismatch' });
-    }
-    if (!decoded.email || decoded.email.toLowerCase() !== emailNorm) {
-      return res.status(400).json({ error: 'email_mismatch', message: 'Token email does not match supplied email.' });
-    }
-    if (!decoded.email_verified) {
-      return res.status(400).json({ error: 'email_not_verified', message: 'Firebase email is not verified.' });
+    if (firebase_id_token) {
+      // Verify Firebase token proves this same SERVI user owns a verified email.
+      let decoded;
+      try { decoded = await verifyFirebaseIdToken(firebase_id_token, true); }
+      catch (e) { return res.status(401).json({ error: 'invalid_token' }); }
+      if (decoded.uid !== currentFirebaseUid) {
+        return res.status(401).json({ error: 'firebase_user_mismatch' });
+      }
+      if (!decoded.email || decoded.email.toLowerCase() !== emailNorm) {
+        return res.status(400).json({ error: 'email_mismatch', message: 'Token email does not match supplied email.' });
+      }
+      if (decoded.email_verified !== true) {
+        return res.status(400).json({ error: 'email_not_verified', message: 'Firebase email is not verified.' });
+      }
+    } else {
+      // Hosted Firebase action pages can consume verifyBeforeUpdateEmail links and
+      // leave the browser without a current Firebase client user. In that case,
+      // use Admin Auth as the verifier for the SERVI user's stored Firebase UID.
+      let firebaseUser;
+      try { firebaseUser = await firebaseAdmin.auth().getUser(currentFirebaseUid); }
+      catch (e) { return res.status(401).json({ error: 'firebase_user_missing' }); }
+      const adminEmail = normalizeEmail(firebaseUser.email || '');
+      if (!adminEmail || adminEmail !== emailNorm) {
+        return res.status(400).json({ error: 'email_mismatch', message: 'Firebase user email does not match supplied email.' });
+      }
+      if (firebaseUser.emailVerified !== true) {
+        return res.status(400).json({ error: 'email_not_verified', message: 'Firebase email is not verified.' });
+      }
     }
 
     // Check not already taken by another account
@@ -5924,6 +5984,12 @@ function customerOrderBucket(status) {
   return (CUSTOMER_PAST_ORDER_STATUSES.has(s) || CUSTOMER_PAST_STATUS_RE.test(s)) ? 'past' : 'active';
 }
 
+// Intake requests (service_requests) have their own status set ('pending', 'contacted',
+// 'canceled', …). A withdrawn request is closed/past; everything else is still active.
+function customerRequestBucket(status) {
+  return /^cancel/i.test(String(status || '').trim()) ? 'past' : 'active';
+}
+
 // The SERVI-fee portion of an order (booking fee + processing fee + VAT), i.e. everything
 // except the provider's payout. This is what a late cancellation captures from the hold.
 function lateCancelFeeCents(row) {
@@ -6095,29 +6161,39 @@ app.get('/api/auth/orders', async (req, res) => {
       },
     }));
 
-    const requests = reqRows.map((r) => ({
-      id: r.id,
-      source: 'request',
-      publicCode: null,
-      kind: 'request',
-      status: r.status || 'pending',
-      bucket: 'active',
-      category: r.category || null,
-      description: r.description || null,
-      serviceDate: r.preferred_date || null,
-      serviceDateTime: null,
-      preferredTime: r.preferred_time || null,
-      isAsap: !!r.is_asap,
-      address: r.service_address || null,
-      providerName: null,
-      cashSelected: false,
-      payable: false,
-      payFlow: null,
-      // Pending intake requests can only be withdrawn (no order/PI yet exists).
-      policy: { canCancel: true, cancelTier: 'free', cancelFeeCents: 0, canEditAddress: false, canRequestReschedule: false, canReorder: false, isCaptured: false },
-      createdAt: r.created_at,
-      pricing: null,
-    }));
+    const requests = reqRows.map((r) => {
+      const reqBucket = customerRequestBucket(r.status);
+      return {
+        id: r.id,
+        source: 'request',
+        publicCode: null,
+        kind: 'request',
+        status: r.status || 'pending',
+        bucket: reqBucket,
+        category: r.category || null,
+        description: r.description || null,
+        serviceDate: r.preferred_date || null,
+        serviceDateTime: null,
+        preferredTime: r.preferred_time || null,
+        isAsap: !!r.is_asap,
+        address: r.service_address || null,
+        providerName: null,
+        cashSelected: false,
+        payable: false,
+        payFlow: null,
+        // An active intake request can only be withdrawn (no order/PI yet exists); a
+        // withdrawn one is closed and offers "order again" like any past order.
+        policy: {
+          canCancel: reqBucket === 'active',
+          cancelTier: 'free', cancelFeeCents: 0,
+          canEditAddress: false, canRequestReschedule: false,
+          canReorder: reqBucket === 'past' && !!r.category,
+          isCaptured: false,
+        },
+        createdAt: r.created_at,
+        pricing: null,
+      };
+    });
 
     const all = [...orders, ...requests].sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
@@ -6663,8 +6739,11 @@ app.get('/api/admin/orders', adminRateLimit, requireAdminAuth, async (req, res) 
     const params = [];
     const conditions = [];
     if (status) {
-      params.push(status);
-      conditions.push(`status = $${params.length}`);
+      // 'Canceled'/'Captured' filters must also catch compound labels the system emits
+      // ('Canceled (late fee)', 'Canceled (expired)', 'Captured (partial refund)', …).
+      if (/^cancel/i.test(status)) { params.push('cancel%'); conditions.push(`status ILIKE $${params.length}`); }
+      else if (/^captured/i.test(status)) { params.push('captured%'); conditions.push(`status ILIKE $${params.length}`); }
+      else { params.push(status); conditions.push(`status = $${params.length}`); }
     }
     if (search) {
       params.push(`%${search}%`);

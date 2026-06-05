@@ -976,6 +976,24 @@
   }
 
   let whenType = 'asap';
+  let serviceSubmitInFlight = false;
+  let serviceSubmitCompleted = false;
+  let serviceEmailGatePending = false;
+  let serviceEmailResumeInFlight = false;
+
+  function createClientRequestId() {
+    if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+      return window.crypto.randomUUID();
+    }
+    return 'svc-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 12);
+  }
+
+  function setServiceCtaState(disabled, text) {
+    document.querySelectorAll('.svc-cta-btn').forEach(btn => {
+      btn.disabled = !!disabled;
+      if (text) btn.textContent = text;
+    });
+  }
 
   function toggleWhen(type) {
     whenType = type;
@@ -1031,9 +1049,11 @@
   }
 
   async function handleSubmit(prefix) {
+    if (serviceSubmitCompleted || serviceSubmitInFlight || serviceEmailGatePending) return;
     const data = validateAndCollect(prefix);
     if (!data) return;
     const payload = {
+      clientRequestId: createClientRequestId(),
       category: catKey || 'custom',
       description: data.description,
       preferredDate: data.preferredDate,
@@ -1051,8 +1071,10 @@
   }
 
   async function sendRequest(prefix, payload) {
-    const btn = document.getElementById(`svc-cta-btn-${prefix}`);
-    if (btn) { btn.disabled = true; btn.textContent = sp().submitting || 'Enviando…'; }
+    if (serviceSubmitCompleted || serviceSubmitInFlight) return;
+    serviceSubmitInFlight = true;
+    if (!payload.clientRequestId) payload.clientRequestId = createClientRequestId();
+    setServiceCtaState(true, sp().submitting || 'Enviando…');
 
     const session = JSON.parse(localStorage.getItem('servi_user_session') || '{}');
     const token = session.token || '';
@@ -1078,14 +1100,19 @@
         err.body = data;
         throw err;
       }
+      serviceSubmitCompleted = true;
+      serviceEmailGatePending = false;
       showSuccess(prefix);
     } catch (err) {
-      if (btn) { btn.disabled = false; btn.textContent = sp().cta || 'Solicitar servicio'; }
+      serviceSubmitInFlight = false;
       console.error('[service.html] submit error:', err);
       if (err && err.body && err.body.error === 'email_required') {
+        serviceEmailGatePending = true;
+        setServiceCtaState(true, sp().cta || 'Solicitar servicio');
         showEmailVerificationGate(prefix, payload);
         return;
       }
+      setServiceCtaState(false, sp().cta || 'Solicitar servicio');
       alert(err && err.message ? err.message : (lang() === 'es' ? 'Error al enviar. Intenta de nuevo.' : 'Submit error. Please try again.'));
     }
   }
@@ -1135,7 +1162,7 @@
     host.innerHTML = `
       <div class="svc-email-gate">
         <div class="svc-email-gate__title">${esc(es ? 'Verifica tu correo para continuar' : 'Verify your email to continue')}</div>
-        <div class="svc-email-gate__body">${esc(es ? 'Ya usaste tu primera solicitud sin correo verificado. Verifica tu correo para poder enviar nuevas solicitudes.' : 'You already used your first request without a verified email. Verify your email before sending new requests.')}</div>
+        <div class="svc-email-gate__body">${esc(es ? 'Ya usaste tu primera solicitud sin correo verificado. Verifica tu correo para poder enviar nuevas solicitudes. Si no ves el enlace, revisa spam o correo no deseado.' : 'You already used your first request without a verified email. Verify your email before sending new requests. If you do not see the link, check your spam or junk folder.')}</div>
         ${currentEmail
           ? `<div class="svc-email-gate__email">${esc(currentEmail)}</div>`
           : `<input class="svc-sidebar__input" id="svc-email-gate-input-${prefix}" type="email" placeholder="${esc(es ? 'correo@email.com' : 'email@example.com')}">`}
@@ -1156,15 +1183,23 @@
       cleaned = true;
       window.removeEventListener('storage', onStorage);
       window.removeEventListener('servi-email-verified', onVerified);
+      if (host._cleanup === cleanup) host._cleanup = null;
     }
     host._cleanup = cleanup;
 
     async function retryIfVerified() {
+      if (serviceEmailResumeInFlight || serviceSubmitCompleted) return;
+      serviceEmailResumeInFlight = true;
       const user = await refreshServiceAuthUser();
-      if (!user || user.email_verified !== true) return;
+      if (!user || user.email_verified !== true) {
+        serviceEmailResumeInFlight = false;
+        return;
+      }
       cleanup();
       host.innerHTML = '';
-      sendRequest(prefix, payload);
+      serviceEmailGatePending = false;
+      await sendRequest(prefix, payload);
+      serviceEmailResumeInFlight = false;
     }
 
     function onStorage(event) {
@@ -1205,7 +1240,7 @@
           if (status) status.textContent = es ? 'No se pudo enviar. Intenta de nuevo.' : 'Could not send. Try again.';
           return;
         }
-        if (status) status.textContent = es ? 'Revisa tu correo. Continuaremos cuando se verifique.' : 'Check your email. We will continue after verification.';
+        if (status) status.textContent = es ? 'Revisa tu correo, incluyendo spam o correo no deseado. Continuaremos cuando se verifique.' : 'Check your email, including spam or junk. We will continue after verification.';
       } catch (_) {
         localStorage.removeItem('servi_email_verification_mode');
         localStorage.removeItem('servi_email_link_target');

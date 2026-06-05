@@ -305,6 +305,7 @@ export async function initDb() {
       client_name TEXT NOT NULL,
       client_phone TEXT NOT NULL,
       client_email TEXT,
+      client_request_id TEXT,
       customer_id TEXT,
       status TEXT DEFAULT 'pending',
       converted_order_id TEXT,
@@ -323,6 +324,10 @@ export async function initDb() {
       WHERE customer_id IS NOT NULL;
 
     ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS attachments TEXT;
+    ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS client_request_id TEXT;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_service_requests_client_request_id
+      ON service_requests(client_request_id)
+      WHERE client_request_id IS NOT NULL;
 
     -- Incident reports & suggestions (from Help Center forms)
     CREATE TABLE IF NOT EXISTS service_reports (

@@ -30,6 +30,7 @@ const phones = {
   logoutUser: `5612${PHONE_SUFFIX}`,
   deleteUser: `5622${PHONE_SUFFIX}`,
   addressUser: `5632${PHONE_SUFFIX}`,
+  servicePageGate: `5642${PHONE_SUFFIX}`,
 };
 
 function e164(localPhone) {
@@ -194,6 +195,16 @@ async function serviceRequest(page) {
         clientEmail: 'auth-e2e@example.test',
         lang: 'en',
       }),
+    });
+    return { status: res.status, body: await res.json() };
+  }, { baseUrl: BASE_URL, token: session.token });
+}
+
+async function authOrders(page) {
+  const session = await waitForSession(page);
+  return page.evaluate(async ({ baseUrl, token }) => {
+    const res = await fetch(`${baseUrl}/api/auth/orders`, {
+      headers: { Authorization: `Bearer ${token}` },
     });
     return { status: res.status, body: await res.json() };
   }, { baseUrl: BASE_URL, token: session.token });
@@ -445,6 +456,84 @@ test('phone-first signup, skipped email, ordering gate returns email_required', 
 
   const verifiedRequest = await serviceRequest(page);
   expect(verifiedRequest.status).toBe(201);
+});
+
+test('service page email gate verifies and resumes without duplicate requests', async ({ page }) => {
+  await phoneFirstSignup(page, {
+    phone: phones.servicePageGate,
+    skipEmail: true,
+    first: 'ServiceGate',
+  });
+
+  const firstRequest = await serviceRequest(page);
+  expect(firstRequest.status).toBe(201);
+
+  await page.goto(BASE_URL);
+  await page.evaluate(() => localStorage.setItem('servi_lang', 'en'));
+  const serviceName = 'Pipe leak repair';
+  const uniqueDetails = `Auth E2E service-page duplicate guard ${RUN_ID}`;
+  const serviceUrl = `${BASE_URL}/service.html?category=repair&sub=plumbing&service=${encodeURIComponent(serviceName)}`;
+
+  let servicePostCount = 0;
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && request.url().includes('/api/service-requests')) {
+      servicePostCount++;
+    }
+  });
+
+  await page.goto(serviceUrl);
+  await page.waitForFunction(() => typeof window._svcSubmit === 'function' && window.__user);
+  const svcPrefix = await page.locator('#svc-sidebar-wrap-mob').isVisible() ? 'mob' : 'desk';
+  await page.locator(`#svc-addr-${svcPrefix}`).scrollIntoViewIfNeeded();
+  await page.fill(`#svc-addr-${svcPrefix}`, 'Calle Service Gate 123');
+  await page.fill(`#svc-details-${svcPrefix}`, uniqueDetails);
+
+  const blockedResponsePromise = page.waitForResponse((res) =>
+    res.url().includes('/api/service-requests') && res.request().method() === 'POST'
+  );
+  await page.click(`#svc-cta-btn-${svcPrefix}`);
+  const blockedResponse = await blockedResponsePromise;
+  expect(blockedResponse.status()).toBe(409);
+  const blockedBody = await blockedResponse.json();
+  expect(blockedBody.error).toBe('email_required');
+
+  await expect(page.locator(`#svc-email-gate-${svcPrefix} .svc-email-gate`)).toBeVisible();
+  await expect(page.locator(`#svc-email-gate-${svcPrefix}`)).toContainText(/spam|junk/i);
+  await expect(page.locator(`#svc-cta-btn-${svcPrefix}`)).toBeDisabled();
+
+  const gateEmail = email('service-page-gate');
+  await page.fill(`#svc-email-gate-input-${svcPrefix}`, gateEmail);
+  await page.click(`#svc-email-gate-btn-${svcPrefix}`);
+  await expect(page.locator(`#svc-email-gate-status-${svcPrefix}`)).toContainText(/spam|junk/i);
+
+  const finalResponsePromise = page.waitForResponse((res) =>
+    res.url().includes('/api/service-requests') &&
+    res.request().method() === 'POST' &&
+    (res.status() === 201 || res.status() === 200)
+  );
+  await openLatestEmailLink(page, gateEmail, { newTab: true });
+  await finalResponsePromise;
+
+  await page.evaluate((prefix) => {
+    window.dispatchEvent(new Event('servi-email-verified'));
+    localStorage.setItem('servi_email_verified_at', Date.now().toString());
+    document.getElementById(`svc-cta-btn-${prefix}`)?.click();
+  }, svcPrefix);
+  await expect(page.locator('.svc-success')).toBeVisible({ timeout: 15_000 });
+  await page.waitForTimeout(500);
+  expect(servicePostCount).toBe(2);
+
+  const user = await pollUser(page, (u) => u.email === gateEmail && u.email_verified === true);
+  expect(user.email).toBe(gateEmail);
+
+  const orders = await authOrders(page);
+  expect(orders.status).toBe(200);
+  const matchingRequests = orders.body.orders.filter((order) =>
+    order.source === 'request' &&
+    order.description &&
+    order.description.includes(uniqueDetails)
+  );
+  expect(matchingRequests).toHaveLength(1);
 });
 
 test('email-first signup, full verification', async ({ page }) => {

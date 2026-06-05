@@ -144,6 +144,9 @@
   function shouldDeferBackendSync() {
     return uslSuppressAutoSync || (uslIsNew && !uslSignupComplete);
   }
+  function hasPendingEmailVerificationAction() {
+    return !!localStorage.getItem('servi_email_verification_mode');
+  }
 
   // ── Modal container ──────────────────────────────────────────────────────────
   if (!document.getElementById('auth-modal-global')) {
@@ -239,8 +242,16 @@
       }
     } else {
       if (localStorage.getItem('servi_pending_logout')) localStorage.removeItem('servi_pending_logout');
-      window.__user = null;
-      localStorage.removeItem('servi_user_session');
+      var preservingEmailAction = hasPendingEmailVerificationAction() && !!localStorage.getItem('servi_user_session');
+      if (preservingEmailAction) {
+        try {
+          var preservedSession = JSON.parse(localStorage.getItem('servi_user_session') || 'null');
+          window.__user = preservedSession && preservedSession.user ? preservedSession.user : window.__user;
+        } catch (_) {}
+      } else {
+        window.__user = null;
+        localStorage.removeItem('servi_user_session');
+      }
       window.__syncError = null;
       window.__syncPromise = null;
     }
@@ -268,7 +279,7 @@
         phone: firebaseUser.phoneNumber || (uslNewUserData && uslNewUserData.phone) || null,
         email: firebaseUser.email       || (uslNewUserData && uslNewUserData.email) || emailHint || null,
         phone_verified: uslNewUserData && uslNewUserData.phone_verified != null ? uslNewUserData.phone_verified : (!!firebaseUser.phoneNumber || null),
-        email_verified: uslNewUserData && uslNewUserData.email_verified != null ? uslNewUserData.email_verified : (!!firebaseUser.email     || null),
+        email_verified: uslNewUserData && uslNewUserData.email_verified != null ? uslNewUserData.email_verified : (firebaseUser.emailVerified === true ? true : null),
         first_identifier_type: uslFirstIdentifierType || null,
       };
       if (options && options.signupComplete) {
@@ -1752,17 +1763,26 @@
       var ok = await ensureFirebase();
       if (!ok) return false;
       var user = await waitForCurrentFirebaseUser(1500);
-      if (!user || !user.verifyBeforeUpdateEmail) return false;
+      if (!user) return false;
       var emailNorm = String(email || '').trim().toLowerCase();
       if (!emailNorm || !emailNorm.includes('@')) return false;
-      var actionSettings = {
+      var verificationSettings = {
         url: window.location.origin + '/email-verified.html',
         handleCodeInApp: true
       };
-      if (user.email) {
-        await user.verifyBeforeUpdateEmail(emailNorm, actionSettings);
+      var currentEmail = String(user.email || '').trim().toLowerCase();
+      if (!currentEmail) {
+        await auth.sendSignInLinkToEmail(emailNorm, verificationSettings);
+      } else if (currentEmail === emailNorm) {
+        if (user.emailVerified === true) {
+          await syncVerifiedEmailToBackend(emailNorm, { broadcast: true });
+          return true;
+        }
+        if (!user.sendEmailVerification) return false;
+        await user.sendEmailVerification(verificationSettings);
       } else {
-        await auth.sendSignInLinkToEmail(emailNorm, actionSettings);
+        if (!user.verifyBeforeUpdateEmail) return false;
+        await user.verifyBeforeUpdateEmail(emailNorm, verificationSettings);
       }
       return true;
     } catch (err) {
@@ -1770,6 +1790,94 @@
       return false;
     }
   };
+
+  function updateStoredSessionAfterEmailSync(data, verifiedEmail, firebaseUid) {
+    var emailNorm = String(verifiedEmail || '').trim().toLowerCase();
+    var session = null;
+    try { session = JSON.parse(localStorage.getItem('servi_user_session') || 'null') || {}; } catch (_) { session = {}; }
+    if (data && data.token) session.token = data.token;
+    if (data && data.user) {
+      session.user = data.user;
+    } else {
+      session.user = Object.assign({}, session.user || window.__user || {}, {
+        email: emailNorm || (session.user && session.user.email) || null,
+        email_verified: true,
+        email_skipped_at: null
+      });
+    }
+    if (firebaseUid) session.firebaseUid = firebaseUid;
+    if (session.token || session.user) {
+      localStorage.setItem('servi_user_session', JSON.stringify(session));
+      window.__user = Object.assign({}, window.__user || {}, session.user || {});
+    }
+    return session.user || null;
+  }
+
+  async function syncVerifiedEmailToBackend(email, options) {
+    var ok = await ensureFirebase();
+    if (!ok) return null;
+    var emailNorm = String(email || localStorage.getItem('servi_email_link_target') || '').trim().toLowerCase();
+    var user = (options && options.user) || await waitForCurrentFirebaseUser(3000);
+    if (user) {
+      try { await user.reload(); } catch (_) {}
+      user = auth.currentUser || user;
+    }
+    var sessionToken = window.getSessionToken ? window.getSessionToken() : null;
+    var lastError = null;
+
+    async function syncWithSessionToken(firebaseIdToken, firebaseUid) {
+      if (!sessionToken || !emailNorm) return null;
+      var addRes = await fetch(API() + '/api/auth/add-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + sessionToken },
+        body: JSON.stringify(Object.assign({ email: emailNorm }, firebaseIdToken ? { firebase_id_token: firebaseIdToken } : {}))
+      });
+      var addData = await addRes.json().catch(function () { return {}; });
+      if (addRes.ok) {
+        updateStoredSessionAfterEmailSync(addData, emailNorm, firebaseUid);
+        if (options && options.broadcast) window.__broadcastEmailVerified();
+        if (window.buildNavbar) window.buildNavbar();
+        return addData;
+      }
+      lastError = addData;
+      return null;
+    }
+
+    var idToken = null;
+    if (user) {
+      var firebaseEmail = String(user.email || '').trim().toLowerCase();
+      if (!emailNorm) emailNorm = firebaseEmail;
+      if (emailNorm && firebaseEmail === emailNorm && user.emailVerified === true) {
+        idToken = await user.getIdToken(true);
+        var addData = await syncWithSessionToken(idToken, user.uid);
+        if (addData) return addData;
+
+        var syncRes = await fetch(API() + '/api/auth/firebase', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + idToken },
+          body: JSON.stringify({})
+        });
+        var syncData = await syncRes.json().catch(function () { return {}; });
+        if (syncRes.ok) {
+          updateStoredSessionAfterEmailSync(syncData, emailNorm, user.uid);
+          if (options && options.broadcast) window.__broadcastEmailVerified();
+          if (window.buildNavbar) window.buildNavbar();
+          return syncData;
+        }
+        lastError = syncData;
+      }
+    }
+
+    // If Firebase's hosted action page consumed the code before this custom page
+    // loaded, the client may no longer have a current Firebase user. The backend
+    // can still verify the stored Firebase UID with Admin Auth.
+    var adminVerifiedData = await syncWithSessionToken(null, user && user.uid);
+    if (adminVerifiedData) return adminVerifiedData;
+
+    console.warn('[syncVerifiedEmailToBackend] failed:', lastError || 'missing_verified_firebase_user');
+    return null;
+  }
+  window.__syncVerifiedEmailToBackend = syncVerifiedEmailToBackend;
 
   function waitForCurrentFirebaseUser(timeoutMs) {
     if (auth && auth.currentUser) return Promise.resolve(auth.currentUser);
@@ -1829,6 +1937,9 @@
     } catch (_) {
       // localStorage not available (private browsing)
     }
+    try {
+      window.dispatchEvent(new Event('servi-email-verified'));
+    } catch (_) {}
     if (window.opener) {
       try {
         window.opener.dispatchEvent(new Event('servi-email-verified'));
@@ -1994,7 +2105,12 @@
       initialOobCode &&
       (initialMode === 'verifyAndChange' || initialMode === 'verifyAndChangeEmail' || initialMode === 'verifyEmail')
     );
-    if (!auth.isSignInWithEmailLink(window.location.href) && !isAccountActionCode) return;
+    var isAccountActionFallback = !!(
+      pendingAccountEmailVerification &&
+      !initialOobCode &&
+      /\/email-verified\.html$/.test(window.location.pathname)
+    );
+    if (!auth.isSignInWithEmailLink(window.location.href) && !isAccountActionCode && !isAccountActionFallback) return;
 
     // Retrieve the email address from localStorage (saved before the link was sent)
     var email = localStorage.getItem('servi_email_link_target');
@@ -2021,54 +2137,33 @@
     localStorage.removeItem('servi_recovery_mode');
 
     var isEmailVerification = localStorage.getItem('servi_email_verification_mode');
-    localStorage.removeItem('servi_email_verification_mode');
 
     try {
       var linkUrl = new URL(window.location.href);
       var mode = linkUrl.searchParams.get('mode');
       var oobCode = linkUrl.searchParams.get('oobCode');
+      if (isEmailVerification && !oobCode && isAccountActionFallback) {
+        var fallbackSyncData = await syncVerifiedEmailToBackend(email);
+        if (!fallbackSyncData) return;
+        localStorage.removeItem('servi_email_verification_mode');
+        localStorage.removeItem('servi_email_link_target');
+        window.__broadcastEmailVerified();
+        window.__emailLinkProcessingStatus = 'account-email-verified';
+        return;
+      }
       if (isEmailVerification && oobCode && (mode === 'verifyAndChange' || mode === 'verifyAndChangeEmail' || mode === 'verifyEmail')) {
         await auth.applyActionCode(oobCode);
-        var accountActionUser = await waitForCurrentFirebaseUser(1500);
-        if (!accountActionUser) throw new Error('missing_current_user');
-        await accountActionUser.reload();
-        accountActionUser = auth.currentUser || accountActionUser;
-        var verifiedEmail = String((accountActionUser && accountActionUser.email) || email || '').trim().toLowerCase();
-        var accountActionToken = await accountActionUser.getIdToken(true);
-        var accountSessionToken = getSessionToken();
-        if (!accountSessionToken) throw new Error('missing_session_token');
-        var accountActionRes = await fetch(API() + '/api/auth/add-email', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + accountSessionToken },
-          body: JSON.stringify({ email: verifiedEmail, firebase_id_token: accountActionToken })
-        });
-        var accountActionData = await accountActionRes.json().catch(function () { return {}; });
-        if (!accountActionRes.ok) {
-          throw new Error(accountActionData.error || 'account_email_sync_failed');
-        }
+        var accountActionData = await syncVerifiedEmailToBackend(email);
+        if (!accountActionData) throw new Error('account_email_sync_failed');
         localStorage.removeItem('servi_email_link_target');
+        localStorage.removeItem('servi_email_verification_mode');
         window.history.replaceState({}, document.title, window.location.pathname);
-        if (window.__user) {
-          window.__user.email = accountActionData.email || verifiedEmail;
-          window.__user.email_verified = true;
-          window.__user.email_skipped_at = null;
-        }
-        var accountActionRaw = localStorage.getItem('servi_user_session');
-        if (accountActionRaw) {
-          try {
-            var accountActionSess = JSON.parse(accountActionRaw);
-            if (accountActionSess.user) {
-              accountActionSess.user.email = accountActionData.email || verifiedEmail;
-              accountActionSess.user.email_verified = true;
-              accountActionSess.user.email_skipped_at = null;
-            }
-            localStorage.setItem('servi_user_session', JSON.stringify(accountActionSess));
-          } catch (_) {}
-        }
         window.__broadcastEmailVerified();
         if (window.buildNavbar) window.buildNavbar();
         window.__emailLinkProcessingStatus = 'account-email-verified';
-        window.location.href = '/account.html?section=info';
+        // Do NOT redirect this tab. The original account.html tab refreshes itself
+        // via the broadcast (storage / servi-email-verified listeners), so we leave
+        // this verification tab on its success screen for the user to close.
         return;
       }
 
@@ -2098,6 +2193,8 @@
         if (!accountVerifyRes.ok) {
           throw new Error(accountVerifyData.error || 'account_email_sync_failed');
         }
+        localStorage.removeItem('servi_email_verification_mode');
+        updateStoredSessionAfterEmailSync(accountVerifyData, email, (auth.currentUser || accountLinkUser || {}).uid);
 
         if (window.__user) {
           window.__user.email = accountVerifyData.email || email;
@@ -2119,7 +2216,8 @@
         window.__broadcastEmailVerified();
         if (window.buildNavbar) window.buildNavbar();
         window.__emailLinkProcessingStatus = 'account-email-verified';
-        window.location.href = '/account.html?section=info';
+        // Do NOT redirect this tab — the original account.html tab refreshes via the
+        // broadcast. Fall through to the success screen so the user can close this tab.
         return;
       }
 
@@ -2156,9 +2254,11 @@
       window.history.replaceState({}, document.title, window.location.pathname);
 
       if (isRecovery) {
-        // Wait for sync then redirect to account security section
+        // Wait for sync, then broadcast so the original tab continues on its own.
+        // Do NOT redirect this verification tab — let it stay on its success screen
+        // so the user can close it and return to where they started.
         if (window.__syncPromise) { try { await window.__syncPromise; } catch (_) {} }
-        window.location.href = '/account.html?section=security';
+        window.__broadcastEmailVerified();
         return;
       }
 
@@ -2333,6 +2433,7 @@
       localStorage.removeItem('servi_user_session');
       localStorage.removeItem('servi_email_verified_at');
       localStorage.removeItem('servi_email_link_target');
+      localStorage.removeItem('servi_email_verification_mode');
       localStorage.removeItem('servi_usl_state');
       localStorage.removeItem('servi_recovery_mode');
       localStorage.removeItem('servi_phone_skipped');

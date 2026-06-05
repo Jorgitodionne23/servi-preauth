@@ -271,8 +271,6 @@
 
 <script>
   (async function() {
-    const COUNTDOWN_DURATION = 3;
-
     // Determine language
     var es = localStorage.getItem('servi_lang') === 'es' || !localStorage.getItem('servi_lang');
     if (window.__renderEmailVerifiedScreen) {
@@ -294,21 +292,8 @@
             window.__broadcastEmailVerified();
           }
           window.__renderEmailVerifiedScreen({ loading: false, es: es, canClose: !!window.opener });
-          // Auto-close countdown
-          var countdownNum = COUNTDOWN_DURATION;
-          if (window.opener) {
-            var countdown = document.getElementById('countdown');
-            countdown.classList.remove('hidden');
-            countdown.textContent = es ? 'Cerrando en ' + countdownNum + ' segundos' : 'Closing in ' + countdownNum + ' seconds';
-            var interval = setInterval(function() {
-              countdownNum--;
-              countdown.textContent = es ? 'Cerrando en ' + countdownNum + ' segundos' : 'Closing in ' + countdownNum + ' seconds';
-              if (countdownNum <= 0) {
-                clearInterval(interval);
-                window.close();
-              }
-            }, 1000);
-          }
+          // No auto-close: the tab stays on the success screen until the user clicks
+          // the close button, so they can return to the tab they started from.
           return;
         } else {
           throw new Error('Verification failed: ' + (data.error || 'unknown'));
@@ -339,8 +324,14 @@
       try { await window.__syncPromise; } catch (_) {}
     }
 
-    if (isAccountEmailAction) {
-      if (window.__emailLinkProcessingStatus === 'account-email-verified') return;
+    var pendingAccountEmailAction = localStorage.getItem('servi_email_verification_mode');
+    if (isAccountEmailAction || pendingAccountEmailAction) {
+      if (window.__emailLinkProcessingStatus === 'account-email-verified') {
+        // Verified successfully. Show the success screen (don't redirect) so the user
+        // can close this tab and return to the account tab, which refreshes itself.
+        window.__renderEmailVerifiedScreen({ loading: false, es: es, canClose: !!window.opener });
+        return;
+      }
       window.__renderEmailVerifiedScreen({ loading: false, es: es, canClose: !!window.opener });
       var accountMsgEl = document.getElementById('verification-message');
       if (accountMsgEl) {
@@ -366,26 +357,8 @@
 
     var canClose = !!window.opener;
     window.__renderEmailVerifiedScreen({ loading: false, es: es, canClose: canClose });
-
-    // Auto-close countdown (only if window was opened by parent)
-    var countdownNum = COUNTDOWN_DURATION;
-    if (window.opener) {
-      var countdown = document.getElementById('countdown');
-      countdown.classList.remove('hidden');
-      countdown.textContent = es
-        ? 'Cerrando en ' + countdownNum + ' segundos'
-        : 'Closing in ' + countdownNum + ' seconds';
-      var interval = setInterval(function() {
-        countdownNum--;
-        countdown.textContent = es
-          ? 'Cerrando en ' + countdownNum + ' segundos'
-          : 'Closing in ' + countdownNum + ' seconds';
-        if (countdownNum <= 0) {
-          clearInterval(interval);
-          window.close();
-        }
-      }, 1000);
-    }
+    // No auto-close: the tab stays on the success screen until the user clicks the
+    // close button, so they can return to the tab where they started the flow.
   })();
 </script>
 
