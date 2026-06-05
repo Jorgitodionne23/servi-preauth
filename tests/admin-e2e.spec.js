@@ -512,6 +512,14 @@ test.describe('Live polling', () => {
   test('providers badge element exists in DOM', async ({ page }) => {
     await expect(page.locator('#nav-badge-providers')).toBeAttached();
   });
+
+  test('new order badge element exists in DOM', async ({ page }) => {
+    await expect(page.locator('#nav-badge-nueva')).toBeAttached();
+  });
+
+  test('adjustment badge element exists in DOM', async ({ page }) => {
+    await expect(page.locator('#nav-badge-ajustes')).toBeAttached();
+  });
 });
 
 // ─── Layout integrity ─────────────────────────────────────────────────────────

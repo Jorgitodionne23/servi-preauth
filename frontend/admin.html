@@ -400,9 +400,11 @@
       <div class="nav-section-title">Crear</div>
       <button class="nav-item" data-panel="nueva" onclick="switchPanel('nueva')">
         <span class="nav-item-label"><span class="nav-icon">＋</span><span>Nueva Orden</span></span>
+        <span class="nav-badge" id="nav-badge-nueva" style="display:none"></span>
       </button>
       <button class="nav-item" data-panel="ajustes" onclick="switchPanel('ajustes')">
         <span class="nav-item-label"><span class="nav-icon">💸</span><span>Ajuste / Cobro</span></span>
+        <span class="nav-badge" id="nav-badge-ajustes" style="display:none"></span>
       </button>
     </aside>
 
@@ -441,6 +443,7 @@
           <option value="Scheduled">Scheduled</option>
           <option value="Captured">Captured</option>
           <option value="Canceled">Canceled</option>
+          <option value="Withdrawn">Retiradas (web)</option>
           <option value="Declined">Declined</option>
         </select>
       </div>
@@ -884,10 +887,31 @@ async function testAuth() {
 }
 
 // Stats
+function setNavBadge(id, count, prefix = '') {
+  const badge = document.getElementById(id);
+  if (!badge) return;
+  const n = Number(count) || 0;
+  if (n > 0) {
+    badge.textContent = prefix + n;
+    badge.style.display = 'inline-block';
+  } else {
+    badge.textContent = '';
+    badge.style.display = 'none';
+  }
+}
+
+function updateNavBadges(d) {
+  setNavBadge('nav-badge-inbox', d.newReports);
+  setNavBadge('nav-badge-providers', d.pendingApplications);
+  setNavBadge('nav-badge-nueva', 0);
+  setNavBadge('nav-badge-ajustes', 0);
+}
+
 async function loadStats() {
   try {
     const res = await fetch(API + '/api/admin/stats', { headers: headers() });
     const d = await res.json();
+    updateNavBadges(d);
     document.getElementById('stats-row').innerHTML = [
       { num: d.requestsToday, label: 'Solicitudes hoy' },
       { num: d.pendingOrders, label: 'Órdenes pendientes' },
@@ -1247,20 +1271,23 @@ async function loadOrders() {
     if (search) params.set('search', search);
     if (status) params.set('status', status);
 
+    // 'Retiradas' is a web-request-only view: withdrawn intake requests, no paid orders.
+    const isWithdrawnFilter = status === 'Withdrawn';
     // Web submissions surface alongside orders: pending ones in the default view, and
-    // withdrawn (canceled) ones when the Canceled filter is active so they don't vanish.
-    const wantCanceledSubs = /^cancel/i.test(status);
+    // withdrawn (canceled) ones under both the Canceled and Retiradas filters so they don't vanish.
+    const wantCanceledSubs = /^cancel/i.test(status) || isWithdrawnFilter;
     const subsFetch = (!status)
       ? fetch(API + '/api/service-requests?status=pending&limit=50', { headers: headers() })
       : (wantCanceledSubs ? fetch(API + '/api/service-requests?status=canceled&limit=50', { headers: headers() }) : Promise.resolve(null));
-    const [ordersRes, subsRes] = await Promise.all([
-      fetch(API + '/api/admin/orders?' + params, { headers: headers() }),
-      subsFetch
-    ]);
+    // Skip the paid-orders query entirely for the web-only Retiradas view.
+    const ordersFetch = isWithdrawnFilter
+      ? Promise.resolve(null)
+      : fetch(API + '/api/admin/orders?' + params, { headers: headers() });
+    const [ordersRes, subsRes] = await Promise.all([ordersFetch, subsFetch]);
 
-    const d = await ordersRes.json();
+    const d = ordersRes ? await ordersRes.json() : { items: [], total: 0 };
 
-    // Build web submission rows (only when no status filter is active)
+    // Build web submission rows (pending in default view; withdrawn under Canceled/Retiradas)
     let subRows = '';
     if (subsRes && subsRes.ok) {
       const subData = await subsRes.json();
@@ -2069,17 +2096,7 @@ async function pollNewOrders(silent = true) {
     }
     _lastOrderCount = total;
 
-    // Sidebar count badges (Inbox: new reports; Providers: pending apps)
-    const inboxBadge = document.getElementById('nav-badge-inbox');
-    if (inboxBadge) {
-      if (d.newReports > 0) { inboxBadge.textContent = d.newReports; inboxBadge.style.display = 'inline-block'; }
-      else inboxBadge.style.display = 'none';
-    }
-    const provBadge = document.getElementById('nav-badge-providers');
-    if (provBadge) {
-      if (d.pendingApplications > 0) { provBadge.textContent = d.pendingApplications; provBadge.style.display = 'inline-block'; }
-      else provBadge.style.display = 'none';
-    }
+    updateNavBadges(d);
     // Update stat cards quietly
     document.getElementById('stats-row').innerHTML = [
       { num: d.requestsToday, label: 'Solicitudes hoy' },
