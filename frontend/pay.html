@@ -1040,8 +1040,10 @@
 
         const status = (result.paymentIntent?.status || '').toLowerCase();
         const piId = result.paymentIntent?.id || null;
+        const pmValue = result.paymentIntent?.payment_method || null;
+        const pmId = typeof pmValue === 'string' ? pmValue : (pmValue?.id || null);
         if (piId) {
-          await syncProcessingFee(orderId, piId, null, { billingEmail: email });
+          await syncProcessingFee(orderId, piId, pmId, { billingEmail: email });
         }
 
         if (COMPLETED_STATUSES.has(status) || status === 'requires_capture' || status === 'succeeded') {

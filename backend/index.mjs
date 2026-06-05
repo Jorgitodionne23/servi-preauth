@@ -23,6 +23,7 @@ import nodemailer from 'nodemailer';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { NodeHttpHandler } from '@smithy/node-http-handler';
 import https from 'https';
+import { classifyOrderOps, sortOpsItems, summarizeOps } from './ops-radar.mjs';
 
 // --- R2 / S3 Client ---
 const r2 = new S3Client({
@@ -539,6 +540,100 @@ async function upsertSavedServiUserContact({
     `,
     [customerId, name || null, normalizeEmail(email), phone || null, lastOrderId || null]
   );
+}
+
+async function syncSavedPaymentMethodForOrder({ orderId, paymentIntentId, paymentMethodId, customerId } = {}) {
+  let pmId = typeof paymentMethodId === 'string' ? paymentMethodId : paymentMethodId?.id || null;
+  let custId = typeof customerId === 'string' ? customerId : customerId?.id || null;
+
+  if ((!pmId || !custId) && paymentIntentId) {
+    try {
+      const pi = await stripe.paymentIntents.retrieve(paymentIntentId);
+      pmId = pmId || (typeof pi.payment_method === 'string' ? pi.payment_method : pi.payment_method?.id || null);
+      custId = custId || (typeof pi.customer === 'string' ? pi.customer : pi.customer?.id || null);
+    } catch (err) {
+      console.warn('syncSavedPaymentMethodForOrder: PI lookup failed', paymentIntentId, err?.message || err);
+    }
+  }
+
+  if (pmId && !custId) {
+    try {
+      const pm = await stripe.paymentMethods.retrieve(pmId);
+      custId = typeof pm.customer === 'string' ? pm.customer : pm.customer?.id || null;
+    } catch (err) {
+      console.warn('syncSavedPaymentMethodForOrder: PM lookup failed', pmId, err?.message || err);
+    }
+  }
+
+  let row = null;
+  if (orderId || paymentIntentId) {
+    const params = [];
+    const where = [];
+    if (orderId) {
+      params.push(orderId);
+      where.push(`id = $${params.length}`);
+    }
+    if (paymentIntentId) {
+      params.push(paymentIntentId);
+      where.push(`payment_intent_id = $${params.length}`);
+    }
+    const { rows } = await pool.query(
+      `SELECT id, customer_id, client_name, client_email, client_phone, parent_id_of_adjustment
+         FROM all_bookings
+        WHERE ${where.join(' OR ')}
+        ORDER BY created_at DESC
+        LIMIT 1`,
+      params
+    );
+    row = rows[0] || null;
+    custId = custId || row?.customer_id || null;
+  }
+
+  if (row && (pmId || custId)) {
+    await pool.query(
+      `UPDATE all_bookings
+          SET saved_payment_method_id = COALESCE($1, saved_payment_method_id),
+              customer_id = COALESCE($2, customer_id)
+        WHERE id = $3`,
+      [pmId || null, custId || null, row.id]
+    );
+  }
+
+  if (custId) {
+    await pool.query(
+      `
+        INSERT INTO saved_servi_users (
+          customer_id,
+          customer_name,
+          customer_email,
+          customer_phone,
+          latest_payment_method_id,
+          last_order_id,
+          first_checked_at,
+          last_checked_at
+        )
+        VALUES ($1,$2,$3,$4,$5,$6,NOW(),NOW())
+        ON CONFLICT (customer_id) DO UPDATE SET
+          customer_name = COALESCE(EXCLUDED.customer_name, saved_servi_users.customer_name),
+          customer_email = COALESCE(EXCLUDED.customer_email, saved_servi_users.customer_email),
+          customer_phone = COALESCE(EXCLUDED.customer_phone, saved_servi_users.customer_phone),
+          latest_payment_method_id = COALESCE(EXCLUDED.latest_payment_method_id, saved_servi_users.latest_payment_method_id),
+          last_order_id = COALESCE(EXCLUDED.last_order_id, saved_servi_users.last_order_id),
+          first_checked_at = COALESCE(saved_servi_users.first_checked_at, EXCLUDED.first_checked_at),
+          last_checked_at = NOW()
+      `,
+      [
+        custId,
+        row?.client_name || null,
+        row?.client_email || null,
+        row?.client_phone || null,
+        pmId || null,
+        row?.id || null
+      ]
+    );
+  }
+
+  return { customerId: custId || null, paymentMethodId: pmId || null, orderId: row?.id || orderId || null };
 }
 
 const BOOK_SUCCESS_STATUSES = new Set(['Scheduled', 'Confirmed', 'Captured']);
@@ -1264,7 +1359,10 @@ async function refreshOrderFees(orderId, { paymentIntentId, paymentMethodId, ret
             stripe_percent_fee,
             stripe_fixed_fee,
             stripe_fee_tax_rate,
+            processing_fee_type,
             payment_intent_id,
+            saved_payment_method_id,
+            customer_id,
             created_at,
             retry_token,
             retry_token_created_at
@@ -1319,6 +1417,19 @@ async function refreshOrderFees(orderId, { paymentIntentId, paymentMethodId, ret
       cardCountry = (pm?.card?.country || '').toUpperCase() || cardCountry;
     } catch (err) {
       console.warn('refreshOrderFees: could not retrieve payment method', pmId, err?.message || err);
+    }
+  }
+
+  if (pmId || paymentIntentId) {
+    try {
+      await syncSavedPaymentMethodForOrder({
+        orderId,
+        paymentIntentId,
+        paymentMethodId: pmId,
+        customerId: order.customer_id || null
+      });
+    } catch (err) {
+      console.warn('refreshOrderFees: saved payment method sync failed', orderId, err?.message || err);
     }
   }
 
@@ -2082,6 +2193,93 @@ async function reconcileOrderRows(rows, { cap = 12 } = {}) {
   }).slice(0, cap);
   if (!worthy.length) return;
   await Promise.all(worthy.map((r) => reconcileOrderStatusFromStripe(r)));
+}
+
+async function enrichOrdersWithOps(rows, { persistSeen = false } = {}) {
+  if (!Array.isArray(rows) || !rows.length) return rows || [];
+  const now = new Date();
+  const activePairs = [];
+
+  for (const row of rows) {
+    row.ops = classifyOrderOps(row, { now });
+    if (row.ops.code !== 'safe') activePairs.push({ orderId: row.id, code: row.ops.code });
+  }
+
+  if (!activePairs.length) return rows;
+
+  if (persistSeen) {
+    await pool.query(
+      `
+        INSERT INTO ops_alerts (order_id, alert_code, status, last_seen_at, resolved_at)
+        SELECT order_id, alert_code, 'active', NOW(), NULL
+          FROM UNNEST($1::text[], $2::text[]) AS t(order_id, alert_code)
+        ON CONFLICT (order_id, alert_code) DO UPDATE
+           SET last_seen_at = NOW(),
+               status = CASE WHEN ops_alerts.status = 'resolved' THEN 'active' ELSE ops_alerts.status END,
+               resolved_at = NULL
+      `,
+      [
+        activePairs.map(p => p.orderId),
+        activePairs.map(p => p.code),
+      ]
+    );
+  }
+
+  const { rows: alertRows } = await pool.query(
+    `SELECT order_id, alert_code, status, snoozed_until, last_seen_at, resolved_at, admin_note
+       FROM ops_alerts
+      WHERE order_id = ANY($1::text[])`,
+    [[...new Set(activePairs.map(p => p.orderId))]]
+  );
+  const alertMap = new Map(alertRows.map(a => [`${a.order_id}:${a.alert_code}`, a]));
+  const nowMs = now.getTime();
+
+  for (const row of rows) {
+    if (!row.ops || row.ops.code === 'safe') continue;
+    const alert = alertMap.get(`${row.id}:${row.ops.code}`);
+    if (!alert) continue;
+    const snoozedMs = alert.snoozed_until ? new Date(alert.snoozed_until).getTime() : NaN;
+    row.ops.alertStatus = alert.status || 'active';
+    row.ops.snoozedUntil = alert.snoozed_until || null;
+    row.ops.isSnoozed = Number.isFinite(snoozedMs) && snoozedMs > nowMs && alert.status !== 'resolved';
+    row.ops.adminNote = alert.admin_note || null;
+  }
+
+  return rows;
+}
+
+function compactOpsOrder(row) {
+  return {
+    id: row.id,
+    public_code: row.public_code,
+    client_name: row.client_name,
+    client_phone: row.client_phone,
+    service_description: row.service_description,
+    service_date: row.service_date,
+    service_datetime: row.service_datetime,
+    is_asap: row.is_asap,
+    category: row.category,
+    status: row.status,
+    amount: row.amount,
+    pricing_total_amount: row.pricing_total_amount,
+    payment_intent_id: row.payment_intent_id,
+    cash_selected: row.cash_selected,
+    ops: row.ops,
+  };
+}
+
+function resolveSnoozeUntil(value) {
+  const v = String(value || '').toLowerCase();
+  const now = new Date();
+  if (v === '15m' || v === '15min') return new Date(now.getTime() + 15 * 60_000);
+  if (v === '1h' || v === '60m') return new Date(now.getTime() + 60 * 60_000);
+  if (v === 'tomorrow' || v === 'tomorrow_morning') {
+    const d = new Date(now);
+    d.setDate(d.getDate() + 1);
+    d.setHours(9, 0, 0, 0);
+    return d;
+  }
+  return null;
 }
 
 async function getOrderPayload(orderId, { allowExpiredQuery = false, retryTokenRaw = '' } = {}) {
@@ -4042,6 +4240,15 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
           'UPDATE all_bookings SET saved_payment_method_id = COALESCE($1, saved_payment_method_id), customer_id = COALESCE($2, customer_id) WHERE payment_intent_id = $3',
           [pmId, cust, obj.id]
         );
+        try {
+          await syncSavedPaymentMethodForOrder({
+            paymentIntentId: obj.id,
+            paymentMethodId: pmId,
+            customerId: cust
+          });
+        } catch (syncErr) {
+          console.warn('PI capturable saved payment method sync failed', obj.id, syncErr?.message || syncErr);
+        }
       }
 
       if (obj.capture_method === 'manual' && obj.status === 'requires_capture') {
@@ -6496,27 +6703,37 @@ app.post('/api/auth/orders/:id/reschedule-request', publicFormLimit, async (req,
 // Resolve or create a Stripe customer for an authenticated user
 async function getStripeCustomerForUser(userId, { createIfMissing = true } = {}) {
   const { rows } = await pool.query(
-    'SELECT id, name, email, phone FROM auth_users WHERE id = $1',
+    'SELECT id, name, email, phone, stripe_customer_id FROM auth_users WHERE id = $1',
     [userId]
   );
   const user = rows[0];
   if (!user) throw new Error('user_not_found');
+  if (user.stripe_customer_id) return user.stripe_customer_id;
+
+  const rememberCustomer = async (customerId) => {
+    if (!customerId) return null;
+    await pool.query(
+      'UPDATE auth_users SET stripe_customer_id = $1 WHERE id = $2 AND stripe_customer_id IS NULL',
+      [customerId, user.id]
+    );
+    return customerId;
+  };
 
   // Look up existing customer by email
   if (user.email) {
     const saved = await findSavedClientByEmailNormalized(user.email);
-    if (saved?.customer_id) return saved.customer_id;
+    if (saved?.customer_id) return rememberCustomer(saved.customer_id);
     const { rows: bRows } = await pool.query(
       `SELECT customer_id FROM all_bookings WHERE LOWER(client_email) = LOWER($1) AND customer_id IS NOT NULL ORDER BY created_at DESC LIMIT 1`,
       [user.email]
     );
-    if (bRows[0]?.customer_id) return bRows[0].customer_id;
+    if (bRows[0]?.customer_id) return rememberCustomer(bRows[0].customer_id);
   }
   // Look up by phone digits
   if (user.phone) {
     const digits = user.phone.replace(/\D/g, '');
     const saved = await findSavedClientByPhoneDigits(digits);
-    if (saved?.customer_id) return saved.customer_id;
+    if (saved?.customer_id) return rememberCustomer(saved.customer_id);
   }
   if (!createIfMissing) return null;
   // Create new Stripe customer and register in saved_servi_users
@@ -6532,6 +6749,7 @@ async function getStripeCustomerForUser(userId, { createIfMissing = true } = {})
      ON CONFLICT (customer_id) DO UPDATE SET last_checked_at = NOW()`,
     [customer.id, user.name || null, user.email || null, user.phone || null]
   );
+  await rememberCustomer(customer.id);
   return customer.id;
 }
 
@@ -6801,6 +7019,7 @@ app.get('/api/admin/orders', adminRateLimit, requireAdminAuth, async (req, res) 
     );
     // Heal stale statuses from Stripe (missed webhooks) so the dashboard reflects reality.
     await reconcileOrderRows(rows, { cap: 15 });
+    await enrichOrdersWithOps(rows);
     const { rows: countRows } = await pool.query(
       `SELECT count(*)::int AS total FROM all_bookings ${where}`,
       countParams
@@ -6808,6 +7027,179 @@ app.get('/api/admin/orders', adminRateLimit, requireAdminAuth, async (req, res) 
     return res.json({ items: rows, total: countRows[0]?.total || 0 });
   } catch (err) {
     console.error('[GET /api/admin/orders]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+app.get('/api/admin/ops-radar', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, public_code, kind, client_name, client_phone, client_email,
+              service_description, service_date, service_datetime, is_asap, service_address,
+              category, amount, pricing_total_amount, status, customer_id, payment_intent_id,
+              saved_payment_method_id, cash_selected, created_at
+         FROM all_bookings
+        WHERE status IS NULL
+           OR (
+                status NOT ILIKE 'Captured%'
+            AND status NOT ILIKE 'Canceled%'
+            AND status NOT ILIKE 'Cancelled%'
+            AND status NOT ILIKE 'Refunded%'
+            AND status <> 'Pending Cash'
+           )
+        ORDER BY created_at DESC
+        LIMIT 500`
+    );
+    await reconcileOrderRows(rows, { cap: 15 });
+    await enrichOrdersWithOps(rows, { persistSeen: true });
+    const active = rows
+      .filter(r => r.ops?.code && r.ops.code !== 'safe' && !r.ops.isSnoozed)
+      .map(compactOpsOrder)
+      .sort(sortOpsItems);
+    return res.json({
+      ok: true,
+      generatedAt: new Date().toISOString(),
+      summary: summarizeOps(active),
+      next: active[0] || null,
+      items: active.slice(0, 12),
+    });
+  } catch (err) {
+    console.error('[GET /api/admin/ops-radar]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+app.post('/api/admin/orders/:id/preauth-now', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, amount, pricing_total_amount, customer_id, saved_payment_method_id,
+              parent_id_of_adjustment, kind, provider_id, provider_name, client_name,
+              client_email, service_date, service_datetime, status, payment_intent_id,
+              capture_method, cash_selected
+         FROM all_bookings
+        WHERE id = $1
+        LIMIT 1`,
+      [req.params.id]
+    );
+    const row = rows[0];
+    if (!row) return res.status(404).json({ error: 'not_found' });
+    if (row.cash_selected) return res.status(409).json({ error: 'cash_order', message: 'Orden marcada como efectivo' });
+    if (!row.customer_id) return res.status(409).json({ error: 'no_customer', message: 'La orden no tiene cliente Stripe guardado.' });
+
+    let savedPmId = row.saved_payment_method_id || null;
+    if (!savedPmId) {
+      const list = await stripe.paymentMethods.list({ customer: row.customer_id, type: 'card', limit: 1 });
+      savedPmId = list.data[0]?.id || null;
+    }
+    if (!savedPmId) {
+      return res.status(409).json({ error: 'no_saved_card', message: 'No hay tarjeta guardada para autorizar.' });
+    }
+
+    if (row.payment_intent_id && String(row.payment_intent_id).startsWith('pi_')) {
+      const existing = await stripe.paymentIntents.retrieve(row.payment_intent_id);
+      if (existing.status === 'requires_capture') {
+        await pool.query(
+          `UPDATE all_bookings
+              SET status = 'Confirmed',
+                  saved_payment_method_id = COALESCE(saved_payment_method_id, $1)
+            WHERE id = $2`,
+          [savedPmId, row.id]
+        );
+        return res.json({ ok: true, existing: true, status: existing.status, paymentIntentId: existing.id });
+      }
+      if (existing.status === 'succeeded') {
+        await pool.query(`UPDATE all_bookings SET status = 'Captured' WHERE id = $1`, [row.id]);
+        return res.json({ ok: true, existing: true, status: existing.status, paymentIntentId: existing.id });
+      }
+      return res.status(409).json({ error: 'payment_intent_not_ready', status: existing.status, paymentIntentId: existing.id });
+    }
+
+    const providerMeta = {};
+    if (row.provider_id) providerMeta.provider_id = row.provider_id;
+    if (row.provider_name) providerMeta.provider_name = row.provider_name;
+    const receiptEmail = normalizeEmail(row.client_email);
+    const captureMethod = String(row.capture_method || '').toLowerCase() === 'automatic' ? 'automatic' : 'manual';
+
+    const pi = await stripe.paymentIntents.create({
+      amount: row.pricing_total_amount || row.amount,
+      currency: 'mxn',
+      capture_method: captureMethod,
+      customer: row.customer_id,
+      payment_method: savedPmId,
+      receipt_email: receiptEmail || undefined,
+      confirm: true,
+      off_session: true,
+      metadata: {
+        order_id: row.id,
+        kind: row.kind || 'primary',
+        parent_order_id: row.parent_id_of_adjustment || '',
+        ...providerMeta
+      }
+    }, { idempotencyKey: `pi-preauth-now-${row.id}` });
+
+    const statusLabel =
+      pi.status === 'requires_capture'
+        ? 'Confirmed'
+        : pi.status === 'succeeded'
+          ? 'Captured'
+          : row.status || 'Pending';
+    await pool.query(
+      `UPDATE all_bookings
+          SET payment_intent_id = $1,
+              saved_payment_method_id = COALESCE(saved_payment_method_id, $2),
+              status = $3
+        WHERE id = $4`,
+      [pi.id, savedPmId, statusLabel, row.id]
+    );
+    try {
+      await refreshOrderFees(row.id, { paymentIntentId: pi.id });
+    } catch (feeErr) {
+      console.warn('[preauth-now] fee refresh failed', feeErr?.message || feeErr);
+    }
+    postToGoogleWebhook({
+      type: 'order.status',
+      orderId: row.id,
+      status: statusLabel,
+      customerId: row.customer_id || '',
+      paymentIntentId: pi.id,
+      parentOrderId: row.parent_id_of_adjustment || ''
+    });
+    return res.json({ ok: true, status: pi.status, paymentIntentId: pi.id });
+  } catch (err) {
+    const failure = describeStripeFailure(err);
+    try {
+      const { rows } = await pool.query(`SELECT * FROM all_bookings WHERE id = $1 LIMIT 1`, [req.params.id]);
+      if (rows[0]) await handlePreauthFailure(rows[0], { error: err, failure });
+    } catch (handleErr) {
+      console.warn('[preauth-now] handlePreauthFailure failed', req.params.id, handleErr?.message || handleErr);
+    }
+    console.error('[POST /api/admin/orders/:id/preauth-now]', err?.message || err);
+    return res.status(409).json({
+      error: 'preauth_failed',
+      message: failure?.friendly || failure?.message || err?.message || 'No se pudo autorizar la tarjeta'
+    });
+  }
+});
+
+app.post('/api/admin/orders/:id/ops-alerts/:code/snooze', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const until = resolveSnoozeUntil(req.body?.duration || req.body?.snooze || '15m');
+    if (!until) return res.status(400).json({ error: 'invalid_snooze_duration' });
+    const { rowCount } = await pool.query(`SELECT 1 FROM all_bookings WHERE id = $1`, [req.params.id]);
+    if (!rowCount) return res.status(404).json({ error: 'not_found' });
+    await pool.query(
+      `INSERT INTO ops_alerts (order_id, alert_code, status, snoozed_until, last_seen_at)
+       VALUES ($1, $2, 'active', $3, NOW())
+       ON CONFLICT (order_id, alert_code) DO UPDATE
+          SET status = 'active',
+              snoozed_until = $3,
+              last_seen_at = NOW(),
+              resolved_at = NULL`,
+      [req.params.id, req.params.code, until]
+    );
+    return res.json({ ok: true, snoozedUntil: until.toISOString() });
+  } catch (err) {
+    console.error('[POST /api/admin/orders/:id/ops-alerts/:code/snooze]', err);
     return res.status(500).json({ error: 'internal_error' });
   }
 });
@@ -6824,6 +7216,7 @@ app.get('/api/admin/orders/:id', adminRateLimit, requireAdminAuth, async (req, r
     );
     // Heal stale statuses from Stripe (missed webhooks) for this order and its adjustments.
     await reconcileOrderRows([rows[0], ...adjustments]);
+    await enrichOrdersWithOps([rows[0]]);
     return res.json({ order: rows[0], adjustments });
   } catch (err) {
     console.error('[GET /api/admin/orders/:id]', err);

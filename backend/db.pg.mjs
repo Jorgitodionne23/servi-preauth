@@ -291,6 +291,24 @@ export async function initDb() {
     CREATE INDEX IF NOT EXISTS idx_order_changes_order ON order_changes(order_id);
     CREATE INDEX IF NOT EXISTS idx_order_changes_status ON order_changes(status);
 
+    -- Lightweight Ops Radar alert metadata. Alerts are computed from current order
+    -- state; this table only stores operator handling state such as snoozes.
+    CREATE TABLE IF NOT EXISTS ops_alerts (
+      order_id TEXT NOT NULL REFERENCES all_bookings(id) ON DELETE CASCADE,
+      alert_code TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      snoozed_until TIMESTAMPTZ,
+      last_seen_at TIMESTAMPTZ DEFAULT NOW(),
+      resolved_at TIMESTAMPTZ,
+      admin_note TEXT,
+      PRIMARY KEY (order_id, alert_code)
+    );
+    CREATE INDEX IF NOT EXISTS idx_ops_alerts_snoozed_until
+      ON ops_alerts(snoozed_until)
+      WHERE snoozed_until IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_ops_alerts_status
+      ON ops_alerts(status);
+
     CREATE INDEX IF NOT EXISTS idx_saved_servi_users_latest_pm
       ON saved_servi_users (latest_payment_method_id);
 

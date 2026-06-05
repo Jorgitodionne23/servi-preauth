@@ -151,6 +151,104 @@
     .stat-card .num { font-size:22px; font-weight:700; color:var(--text); letter-spacing:-0.01em; }
     .stat-card .label { font-size:11px; color:var(--text-mute); margin-top:3px; }
 
+    /* ─── Ops Radar ───────────────────────────────────────────────────────── */
+    .ops-radar {
+      display:grid;
+      grid-template-columns:minmax(260px,1.4fr) minmax(260px,0.9fr) minmax(170px,0.45fr);
+      gap:12px;
+      margin:0 0 16px;
+      align-items:stretch;
+    }
+    .ops-command, .ops-counters, .ops-heartbeat {
+      background:var(--surface);
+      border:1px solid var(--border);
+      border-radius:12px;
+    }
+    .ops-command {
+      position:relative;
+      overflow:hidden;
+      padding:16px 18px;
+      min-height:104px;
+    }
+    .ops-command::before {
+      content:'';
+      position:absolute;
+      left:0; top:0; bottom:0;
+      width:4px;
+      background:var(--border);
+    }
+    .ops-command--critical::before { background:var(--danger); }
+    .ops-command--soon::before { background:var(--warn); }
+    .ops-command--watch::before { background:var(--brand); }
+    .ops-command--safe::before { background:var(--ok); }
+    .ops-kicker { font-size:10px; text-transform:uppercase; letter-spacing:0.08em; color:var(--text-faint); font-weight:800; margin-bottom:8px; }
+    .ops-title { font-size:16px; font-weight:800; color:var(--text); letter-spacing:-0.01em; margin-bottom:4px; }
+    .ops-meta { font-size:12px; color:var(--text-mute); line-height:1.45; max-width:68ch; }
+    .ops-command-actions { display:flex; gap:7px; flex-wrap:wrap; margin-top:12px; }
+    .ops-counters { display:grid; grid-template-columns:repeat(3,1fr); overflow:hidden; }
+    .ops-counter {
+      padding:16px 14px;
+      border-right:1px solid var(--border-soft);
+      display:flex;
+      flex-direction:column;
+      justify-content:center;
+      min-height:104px;
+    }
+    .ops-counter:last-child { border-right:none; }
+    .ops-counter span { font-size:24px; font-weight:800; color:var(--text); font-variant-numeric:tabular-nums; }
+    .ops-counter small { font-size:10px; color:var(--text-faint); text-transform:uppercase; letter-spacing:0.06em; margin-top:3px; }
+    .ops-counter--critical span { color:var(--danger-soft); }
+    .ops-counter--soon span { color:var(--warn); }
+    .ops-counter--watch span { color:var(--brand); }
+    .ops-heartbeat {
+      display:flex;
+      align-items:center;
+      gap:12px;
+      padding:16px;
+      min-height:104px;
+    }
+    .ops-pulse {
+      width:10px; height:10px; border-radius:50%;
+      background:var(--ok);
+      box-shadow:0 0 0 0 rgba(40,167,69,0.45);
+      animation:opsPulse 2.2s ease-out infinite;
+      flex-shrink:0;
+    }
+    @keyframes opsPulse {
+      0% { box-shadow:0 0 0 0 rgba(40,167,69,0.45); }
+      70% { box-shadow:0 0 0 12px rgba(40,167,69,0); }
+      100% { box-shadow:0 0 0 0 rgba(40,167,69,0); }
+    }
+    .ops-heartbeat__label { font-size:12px; font-weight:800; color:var(--text); }
+    .ops-heartbeat__time { font-size:11px; color:var(--text-faint); margin-top:3px; }
+    .ops-attention-pill.filter-pill--active-status {
+      background:rgba(239,68,68,0.12);
+      color:var(--danger-soft);
+      border-color:rgba(239,68,68,0.38);
+    }
+    .ops-badge {
+      display:inline-flex; align-items:center;
+      padding:2px 7px; border-radius:999px;
+      font-size:10px; font-weight:800;
+      text-transform:uppercase; letter-spacing:0.04em;
+      border:1px solid var(--border);
+      color:var(--text-mute);
+      white-space:nowrap;
+    }
+    .ops-badge--critical { color:var(--danger-soft); border-color:rgba(239,68,68,0.35); background:rgba(239,68,68,0.08); }
+    .ops-badge--soon { color:var(--warn); border-color:rgba(241,196,15,0.35); background:rgba(241,196,15,0.08); }
+    .ops-badge--watch { color:var(--brand); border-color:rgba(149,204,213,0.35); background:rgba(149,204,213,0.08); }
+    .ops-detail-card {
+      border:1px solid var(--border);
+      border-radius:10px;
+      background:var(--surface-2);
+      padding:13px;
+    }
+    .ops-detail-card__head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:9px; }
+    .ops-detail-card__title { font-size:13px; font-weight:800; color:var(--text); }
+    .ops-detail-card__meta { font-size:12px; color:var(--text-mute); line-height:1.55; }
+    .ops-detail-card__actions { margin-top:12px; display:flex; gap:7px; flex-wrap:wrap; }
+
     /* ─── Filters ──────────────────────────────────────────────────────────── */
     .filter-row { display:flex; gap:10px; margin-bottom:16px; flex-wrap:wrap; align-items:center; }
     .filter-select, .filter-input {
@@ -264,9 +362,13 @@
     .badge-web       { background:rgba(167,139,250,0.14);color:#a78bfa; }
 
     /* ─── Hours-to-service row accents ────────────────────────────────────── */
-    .admin-table tbody tr.row-warn-yellow td:first-child { border-left:4px solid #f1c40f; }
-    .admin-table tbody tr.row-warn-green  td:first-child { border-left:4px solid #28a745; }
-    .admin-table tbody tr.row-warn-red    td:first-child { border-left:4px solid #ef4444; }
+    .admin-table tbody tr.row-warn-yellow td:first-child,
+    .admin-table tbody tr.row-ops-watch td:first-child,
+    .admin-table tbody tr.row-ops-soon td:first-child { border-left:4px solid #f1c40f; }
+    .admin-table tbody tr.row-warn-green td:first-child,
+    .admin-table tbody tr.row-ops-safe td:first-child { border-left:4px solid #28a745; }
+    .admin-table tbody tr.row-warn-red td:first-child,
+    .admin-table tbody tr.row-ops-critical td:first-child { border-left:4px solid #ef4444; }
     .hours-cell { font-variant-numeric:tabular-nums; font-size:12px; white-space:nowrap; }
     .hours-cell.hours-past { color:#666; }
     .hours-cell.hours-warn { color:#f1c40f; font-weight:600; }
@@ -290,6 +392,11 @@
 
     .empty-state { text-align:center; padding:48px 0; color:var(--text-faint); font-size:13px; }
     .table-scroll { overflow-x:auto; border-radius:12px; }
+
+    @media (max-width: 900px) {
+      .ops-radar { grid-template-columns:1fr; }
+      .ops-counters { grid-template-columns:repeat(3,1fr); }
+    }
 
     /* ─── Card surface (for Nueva / Ajustes forms + result cards) ─────────── */
     .card-surface {
@@ -447,6 +554,25 @@
 
     <!-- Orders Panel -->
     <div id="panel-orders" class="panel-section panel-section--active">
+      <div class="ops-radar" id="ops-radar">
+        <div class="ops-command" id="ops-command">
+          <div class="ops-kicker">Ops Radar</div>
+          <div class="ops-title">Sin alertas críticas</div>
+          <div class="ops-meta">El sistema está esperando actividad operativa.</div>
+        </div>
+        <div class="ops-counters" id="ops-counters">
+          <div class="ops-counter ops-counter--critical"><span>0</span><small>Críticas</small></div>
+          <div class="ops-counter ops-counter--soon"><span>0</span><small>Próximas</small></div>
+          <div class="ops-counter ops-counter--watch"><span>0</span><small>Watch</small></div>
+        </div>
+        <div class="ops-heartbeat">
+          <div class="ops-pulse"></div>
+          <div>
+            <div class="ops-heartbeat__label">Live Dispatch</div>
+            <div class="ops-heartbeat__time" id="ops-heartbeat-time">Sin refresh</div>
+          </div>
+        </div>
+      </div>
       <div class="filter-row">
         <input class="filter-input" id="orders-search" placeholder="Buscar por nombre, teléfono, código..." oninput="debounceOrders()">
         <select class="filter-select" id="orders-status" onchange="ordersPage=0;loadOrders()">
@@ -460,6 +586,7 @@
           <option value="Withdrawn">Retiradas (web)</option>
           <option value="Declined">Declined</option>
         </select>
+        <button class="filter-pill ops-attention-pill" id="orders-attention" onclick="toggleAttentionFilter()">Atención</button>
       </div>
       <div class="table-scroll">
         <table class="admin-table">
@@ -775,6 +902,8 @@ const API = (window.CONFIG?.API_BASE || '');
 let TOKEN = sessionStorage.getItem('servi-admin-token') || '';
 let ordersPage = 0;
 let ordersTimer = null;
+let ordersAttentionOnly = false;
+let _lastOpsRadar = null;
 const _subsCache = {};
 
 function headers() { return { 'Authorization': 'Bearer ' + TOKEN, 'Content-Type': 'application/json' }; }
@@ -944,6 +1073,163 @@ function badgeClass(status) {
   return '';
 }
 
+function opsSeverityLabel(severity) {
+  if (severity === 'critical') return 'Crítico';
+  if (severity === 'soon') return 'Próximo';
+  if (severity === 'watch') return 'Watch';
+  return 'OK';
+}
+
+function opsBadgeHtml(ops) {
+  if (!ops || ops.code === 'safe') return '<span class="ops-badge">OK</span>';
+  return `<span class="ops-badge ops-badge--${escapeHtml(ops.severity || 'watch')}">${escapeHtml(opsSeverityLabel(ops.severity))}</span>`;
+}
+
+function orderNeedsAttention(o) {
+  return Boolean(o?.ops && o.ops.code && o.ops.code !== 'safe' && !o.ops.isSnoozed);
+}
+
+function opsRowClass(o, fallback) {
+  const ops = o?.ops;
+  if (ops?.isSnoozed) return '';
+  if (ops?.code && ops.code !== 'safe') return 'row-ops-' + (ops.severity || 'watch');
+  if (ops?.code === 'safe' && String(o?.status || '').toLowerCase() === 'confirmed') return 'row-ops-safe';
+  return fallback || '';
+}
+
+function opsCellClass(o, fallback) {
+  const severity = o?.ops?.severity;
+  if (o?.ops?.isSnoozed) return fallback || '';
+  if (severity === 'critical') return 'hours-crit';
+  if (severity === 'soon' || severity === 'watch') return 'hours-warn';
+  if (String(o?.status || '').toLowerCase() === 'confirmed') return 'hours-ok';
+  return fallback || '';
+}
+
+function opsTimeLabel(o, fallback) {
+  const ops = o?.ops;
+  if (!ops || ops.code === 'safe') return fallback || '—';
+  if (ops.minutesToStart !== null && ops.minutesToStart !== undefined) {
+    if (ops.minutesToStart >= 0) {
+      if (ops.minutesToStart < 60) return `${Math.max(0, Math.round(ops.minutesToStart))}m`;
+      if (ops.minutesToStart < 2880) return `${Math.round(ops.minutesToStart / 60)}h`;
+      return `${Math.round(ops.minutesToStart / 1440)}d`;
+    }
+    const past = Math.abs(ops.minutesToStart);
+    return past < 60 ? `-${Math.round(past)}m` : `-${Math.round(past / 60)}h`;
+  }
+  return fallback || '—';
+}
+
+function opsWindowText(ops) {
+  if (!ops) return 'Sin ventana operativa.';
+  const start = ops.startsAt ? `${fmtServiceDate(ops.startsAt)} · ${fmtTime(ops.startsAt)}` : 'Inicio pendiente';
+  const end = ops.estimatedEndsAt ? `${fmtServiceDate(ops.estimatedEndsAt)} · ${fmtTime(ops.estimatedEndsAt)}` : 'Fin estimado pendiente';
+  if (ops.minutesSinceEnd !== null && ops.minutesSinceEnd !== undefined && ops.minutesSinceEnd > 0) {
+    const mins = Math.round(ops.minutesSinceEnd);
+    const late = mins < 60 ? `${mins} min después del fin estimado` : `${Math.round(mins / 60)} h después del fin estimado`;
+    return `${start} → ${end}. ${late}.`;
+  }
+  return `${start} → ${end}.`;
+}
+
+function buildOpsActionBtns(o, { includeSnooze = true } = {}) {
+  const ops = o?.ops || {};
+  if (!ops.code || ops.code === 'safe') return [];
+  const id = o.id;
+  const authorized = Number(o.pricing_total_amount || o.amount || 0);
+  const btns = [];
+  if (ops.code === 'preauth_due' || (ops.code === 'starting_soon' && ops.actionLabel === 'Autorizar ahora')) {
+    btns.push(`<button class="action-btn action-btn--capture" onclick="preauthNow('${id}')" title="Intentar autorización con tarjeta guardada">Autorizar ahora</button>`);
+  } else if (ops.code === 'capture_due' || ops.code === 'capture_overdue') {
+    btns.push(`<button class="action-btn action-btn--capture" onclick="captureOrder('${id}', ${authorized})" title="Capturar pago">Capturar</button>`);
+  } else if (ops.code === 'needs_schedule') {
+    btns.push(`<button class="action-btn" style="background:#2b2513;color:#f1c40f;border:1px solid #57491f" onclick="openOrderEdit('${id}')" title="Asignar fecha y hora">Agendar</button>`);
+  } else if (ops.code === 'payment_failed') {
+    btns.push(`<button class="action-btn" style="background:#1f2937;color:#93c5fd;border:1px solid #334155" onclick="regenerateLink('${id}')" title="Enviar enlace actualizado">Enviar enlace</button>`);
+  } else {
+    btns.push(`<button class="action-btn" onclick="openOrderDetail('${id}')" title="Revisar orden">Revisar</button>`);
+  }
+  if (includeSnooze && !ops.isSnoozed) {
+    btns.push(`<button class="action-btn" style="background:#20232f;color:#aeb4c8;border:1px solid #34394d" onclick="snoozeOps('${id}', '${ops.code}', '15m')" title="Ocultar de Ops Radar por 15 minutos">Snooze</button>`);
+  }
+  return btns;
+}
+
+function opsDetailHtml(o) {
+  const ops = o?.ops || { code: 'safe', severity: 'safe', label: 'Sin alerta operativa' };
+  const actions = buildOpsActionBtns(o).join('');
+  const paymentState = o.payment_intent_id
+    ? `PI ${o.payment_intent_id}`
+    : (o.cash_selected ? 'Pago en efectivo' : 'Sin PaymentIntent');
+  return `
+    <div class="ops-detail-card">
+      <div class="ops-detail-card__head">
+        <div class="ops-detail-card__title">${escapeHtml(ops.label || 'Estado operativo')}</div>
+        ${opsBadgeHtml(ops)}
+      </div>
+      <div class="ops-detail-card__meta">
+        ${escapeHtml(opsWindowText(ops))}<br>
+        Estado de pago: ${escapeHtml(paymentState)}.
+        ${ops.isSnoozed && ops.snoozedUntil ? `<br>Snooze activo hasta ${escapeHtml(fmtTime(ops.snoozedUntil))}.` : ''}
+      </div>
+      ${actions ? `<div class="ops-detail-card__actions">${actions}</div>` : ''}
+    </div>`;
+}
+
+function renderOpsRadar(data) {
+  _lastOpsRadar = data || null;
+  const summary = data?.summary || {};
+  const next = data?.next || null;
+  const command = document.getElementById('ops-command');
+  const counters = document.getElementById('ops-counters');
+  const heartbeat = document.getElementById('ops-heartbeat-time');
+  if (!command || !counters) return;
+
+  counters.innerHTML = [
+    ['critical', summary.critical || 0, 'Críticas'],
+    ['soon', summary.soon || 0, 'Próximas'],
+    ['watch', summary.watch || 0, 'Watch'],
+  ].map(([key, n, label]) => `<div class="ops-counter ops-counter--${key}"><span>${escapeHtml(n)}</span><small>${escapeHtml(label)}</small></div>`).join('');
+
+  command.className = 'ops-command ops-command--' + (next?.ops?.severity || 'safe');
+  if (!next) {
+    command.innerHTML = `
+      <div class="ops-kicker">Ops Radar</div>
+      <div class="ops-title">Sin alertas críticas</div>
+      <div class="ops-meta">No hay órdenes activas que requieran intervención inmediata.</div>`;
+  } else {
+    command.innerHTML = `
+      <div class="ops-kicker">Ops Radar · ${escapeHtml(next.public_code || next.id.slice(0,8))}</div>
+      <div class="ops-title">${escapeHtml(next.ops.label || 'Atención requerida')}</div>
+      <div class="ops-meta">${escapeHtml(next.client_name || 'Cliente')} · ${escapeHtml(next.service_description || 'Servicio')} · ${escapeHtml(opsWindowText(next.ops))}</div>
+      <div class="ops-command-actions">${buildOpsActionBtns(next).join('')}</div>`;
+  }
+  if (heartbeat) heartbeat.textContent = data?.generatedAt ? `Refresh ${fmtTime(data.generatedAt)}` : 'Sin refresh';
+}
+
+async function loadOpsRadar() {
+  if (!TOKEN) return;
+  try {
+    const res = await fetch(API + '/api/admin/ops-radar', { headers: headers() });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    renderOpsRadar(await res.json());
+  } catch (_) {
+    const command = document.getElementById('ops-command');
+    if (command) {
+      command.className = 'ops-command ops-command--watch';
+      command.innerHTML = '<div class="ops-kicker">Ops Radar</div><div class="ops-title">Radar no disponible</div><div class="ops-meta">No se pudo cargar la cola operativa.</div>';
+    }
+  }
+}
+
+function toggleAttentionFilter() {
+  ordersAttentionOnly = !ordersAttentionOnly;
+  ordersPage = 0;
+  document.getElementById('orders-attention')?.classList.toggle('filter-pill--active-status', ordersAttentionOnly);
+  loadOrders();
+}
+
 // Auth
 function doLogin() {
   const input = document.getElementById('token-input').value.trim();
@@ -965,6 +1251,7 @@ async function testAuth() {
     document.getElementById('auth-gate').style.display = 'none';
     document.getElementById('dashboard').style.display = 'flex';
     loadStats();
+    loadOpsRadar();
     wireInboxFilters();
     loadOrders();
   } catch {
@@ -1349,8 +1636,8 @@ async function loadOrders() {
   const status = document.getElementById('orders-status').value;
   const body = document.getElementById('orders-body');
   const empty = document.getElementById('orders-empty');
-  const limit = 30;
-  const offset = ordersPage * limit;
+  const limit = ordersAttentionOnly ? 200 : 30;
+  const offset = ordersAttentionOnly ? 0 : ordersPage * limit;
 
   body.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;color:#666">Cargando...</td></tr>';
   try {
@@ -1363,8 +1650,8 @@ async function loadOrders() {
     const isWithdrawnFilter = status === 'Withdrawn';
     // Web submissions surface alongside orders: pending ones in the default view, and
     // withdrawn (canceled) ones under both the Canceled and Retiradas filters so they don't vanish.
-    const wantCanceledSubs = /^cancel/i.test(status) || isWithdrawnFilter;
-    const wantPendingSubs = !status || isIncomingFilter;
+    const wantCanceledSubs = !ordersAttentionOnly && (/^cancel/i.test(status) || isWithdrawnFilter);
+    const wantPendingSubs = !ordersAttentionOnly && (!status || isIncomingFilter);
     const subsParams = new URLSearchParams({ limit: String(isIncomingFilter || isWithdrawnFilter ? limit : 50) });
     if (isIncomingFilter || isWithdrawnFilter) subsParams.set('offset', String(offset));
     if (wantPendingSubs) subsParams.set('status', 'pending');
@@ -1397,17 +1684,24 @@ async function loadOrders() {
       subRows = subs.map(s => buildSubmissionRow(s)).join('');
     }
 
-    const orderRows = d.items.map(o => {
+    const orderItems = ordersAttentionOnly ? (d.items || []).filter(orderNeedsAttention) : (d.items || []);
+    const orderRows = orderItems.map(o => {
       const ht = computeHoursToService(o);
+      const rowClass = opsRowClass(o, ht.rowClass);
+      const cellClass = opsCellClass(o, ht.cellClass);
+      const timeLabel = opsTimeLabel(o, ht.label);
+      const opsLine = o.ops?.code && o.ops.code !== 'safe'
+        ? `<br><span style="font-size:10px;color:#777">${escapeHtml(o.ops.label || '')}</span>`
+        : '';
       return `
-      <tr onclick="openOrderDetail('${o.id}')" style="cursor:pointer" class="${ht.rowClass}">
+      <tr onclick="openOrderDetail('${o.id}')" style="cursor:pointer" class="${rowClass}">
         <td style="font-family:monospace;font-size:12px">${escapeHtml(o.public_code || o.id.slice(0,8))}</td>
         <td>${escapeHtml(o.client_name || '—')}<br><span style="color:#666;font-size:11px">${escapeHtml(o.client_phone || '')}</span></td>
         <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(o.service_description || '—')}</td>
         <td>${fmtMoney(o.pricing_total_amount || o.amount)}</td>
         <td>${scheduleRowText(o)}</td>
-        <td class="hours-cell ${ht.cellClass}">${ht.label}</td>
-        <td><span class="badge ${badgeClass(o.status)}">${escapeHtml(o.status || '—')}</span></td>
+        <td class="hours-cell ${cellClass}">${escapeHtml(timeLabel)}</td>
+        <td><span class="badge ${badgeClass(o.status)}">${escapeHtml(o.status || '—')}</span>${opsLine}</td>
         <td onclick="event.stopPropagation()">${buildActionBtns(o)}</td>
       </tr>`;
     }).join('');
@@ -1418,7 +1712,7 @@ async function loadOrders() {
     body.innerHTML = allRows;
 
     // Pagination
-    const totalPages = Math.ceil((isIncomingFilter || isWithdrawnFilter ? subTotal : d.total) / limit);
+    const totalPages = ordersAttentionOnly ? 1 : Math.ceil((isIncomingFilter || isWithdrawnFilter ? subTotal : d.total) / limit);
     document.getElementById('orders-pagination').innerHTML = `
       <button onclick="ordersPage=Math.max(0,ordersPage-1);loadOrders()" ${ordersPage === 0 ? 'disabled' : ''}>Anterior</button>
       <span class="page-info">${ordersPage + 1} / ${totalPages || 1}</span>
@@ -1673,11 +1967,12 @@ function buildActionBtns(o) {
   const s = (o.status || '').toLowerCase();
   const id = o.id;
   const authorized = Number(o.pricing_total_amount || o.amount || 0);
-  const btns = [];
+  const opsCode = o?.ops?.code || '';
+  const btns = buildOpsActionBtns(o);
 
   // Capture (full or partial) — only for orders in manual pre-auth state
   const capturable = s === 'scheduled' || s === 'confirmed';
-  if (capturable) {
+  if (capturable && !['capture_due', 'capture_overdue'].includes(opsCode)) {
     btns.push(`<button class="action-btn action-btn--capture" onclick="captureOrder('${id}', ${authorized})" title="Capturar pago (total o parcial)">⚡ Capturar</button>`);
   }
 
@@ -1695,7 +1990,7 @@ function buildActionBtns(o) {
 
   // Regenerate payment link — for any order awaiting payment (not yet captured/canceled/refunded)
   const linkRegenerable = !['captured', 'canceled', 'cancelled', 'refunded', 'captured (partial refund)', 'pending cash'].includes(s);
-  if (linkRegenerable) {
+  if (linkRegenerable && opsCode !== 'payment_failed') {
     btns.push(`<button class="action-btn" style="background:#1f2937;color:#93c5fd;border:1px solid #334155" onclick="regenerateLink('${id}')" title="Regenerar enlace de pago (extiende 2h)">🔗 Enlace</button>`);
   }
 
@@ -1734,6 +2029,47 @@ function admModal({ title, body, inputLabel, inputType = 'text', inputPlaceholde
     });
     document.getElementById('adm-inp')?.focus();
   });
+}
+
+// ─── Ops Radar actions ───────────────────────────────────────────────────────
+async function preauthNow(orderId) {
+  const ok = await admModal({
+    title: 'Autorizar ahora',
+    body: 'Se intentará colocar la autorización con la tarjeta guardada. No se capturará el pago.',
+    confirmText: 'Autorizar',
+  });
+  if (!ok) return;
+  try {
+    const res = await fetch(API + '/api/admin/orders/' + encodeURIComponent(orderId) + '/preauth-now', {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({})
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(d.message || d.error || `HTTP ${res.status}`);
+    toast('Autorización solicitada correctamente.', 'ok');
+    await Promise.all([loadOpsRadar(), loadOrders(), loadStats()]);
+    if (_openDetailOrderId === orderId) openOrderDetail(orderId);
+  } catch (err) {
+    toast('Error al autorizar: ' + err.message, 'err');
+  }
+}
+
+async function snoozeOps(orderId, code, duration = '15m') {
+  try {
+    const res = await fetch(API + '/api/admin/orders/' + encodeURIComponent(orderId) + '/ops-alerts/' + encodeURIComponent(code) + '/snooze', {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ duration })
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(d.message || d.error || `HTTP ${res.status}`);
+    toast('Alerta en snooze por 15 min.', 'info', 2600);
+    await Promise.all([loadOpsRadar(), loadOrders()]);
+    if (_openDetailOrderId === orderId) openOrderDetail(orderId);
+  } catch (err) {
+    toast('Error al hacer snooze: ' + err.message, 'err');
+  }
 }
 
 // ─── Capture (full or partial) ───────────────────────────────────────────────
@@ -1775,7 +2111,7 @@ async function captureOrder(orderId, authorizedAmountCents) {
     if (!res.ok) throw new Error(d.error || `HTTP ${res.status}`);
     const capturedTxt = amountCents ? ` ($${(amountCents/100).toFixed(2)} MXN)` : '';
     toast(`Capturado correctamente${capturedTxt}.`, 'ok');
-    loadOrders(); loadStats();
+    loadOrders(); loadStats(); loadOpsRadar();
     if (_openDetailOrderId === orderId) openOrderDetail(orderId);
   } catch (err) {
     toast(`Error al capturar: ${err.message}`, 'err');
@@ -1798,7 +2134,7 @@ async function markAsCash(orderId) {
     const d = await res.json();
     if (!res.ok) throw new Error(d.message || d.error || `HTTP ${res.status}`);
     toast(`Marcada como efectivo. Estado: ${d.status}`, 'ok');
-    loadOrders(); loadStats();
+    loadOrders(); loadStats(); loadOpsRadar();
     if (_openDetailOrderId === orderId) openOrderDetail(orderId);
   } catch (err) {
     toast(`Error: ${err.message}`, 'err');
@@ -1814,6 +2150,7 @@ async function regenerateLink(orderId) {
     const d = await res.json();
     if (!res.ok) throw new Error(d.message || d.error || `HTTP ${res.status}`);
     showCopyLinkModal(d.url, d.flow);
+    loadOpsRadar();
   } catch (err) {
     toast(`Error al regenerar enlace: ${err.message}`, 'err');
   }
@@ -1876,7 +2213,7 @@ async function cancelOrder(orderId) {
     const d = await res.json();
     if (!res.ok) throw new Error(d.message || d.error || `HTTP ${res.status}`);
     toast(`Orden cancelada. ${d.message || ''}`, 'ok');
-    loadOrders(); loadStats();
+    loadOrders(); loadStats(); loadOpsRadar();
     if (_openDetailOrderId === orderId) openOrderDetail(orderId);
   } catch (err) {
     toast(`Error al cancelar: ${err.message}`, 'err');
@@ -1926,7 +2263,7 @@ async function refundOrder(orderId, totalAmountCents) {
     if (!res.ok) throw new Error(d.message || d.error || `HTTP ${res.status}`);
     const refundedMXN = ((d.refundedAmountCents || 0) / 100).toFixed(2);
     toast(`Reembolso procesado: $${refundedMXN} MXN`, 'ok');
-    loadOrders(); loadStats();
+    loadOrders(); loadStats(); loadOpsRadar();
     if (_openDetailOrderId === orderId) openOrderDetail(orderId);
   } catch (err) {
     toast(`Error al reembolsar: ${err.message}`, 'err');
@@ -2214,7 +2551,7 @@ async function liveTick() {
   _liveTickInFlight = true;
   try {
     const active = activePanelName();
-    const tasks = [pollNewOrders()];
+    const tasks = [pollNewOrders(), loadOpsRadar()];
     if (active === 'orders') tasks.push(loadOrders());
     if (active === 'inbox') tasks.push(loadInbox());
     if (active === 'providers') tasks.push((_provSub === 'roster') ? loadRoster() : loadProviders());
@@ -2294,6 +2631,7 @@ function renderOrderDetail(o, adjustments) {
       <div class="sp-sec">
         <div class="sp-sec-t">Servicio</div>
         <div class="sp-grid">
+          <div style="grid-column:1/-1"><div class="sp-lbl">Estado operativo</div>${opsDetailHtml(o)}</div>
           <div style="grid-column:1/-1"><div class="sp-lbl">Horario del servicio</div>${scheduleDetailHtml(o)}</div>
           <div style="grid-column:1/-1"><div class="sp-lbl">Descripción</div><div class="sp-val">${escapeHtml(o.service_description || '—')}</div></div>
           <div><div class="sp-lbl">Tipo</div><div class="sp-val">${escapeHtml(o.kind || '—')}</div></div>

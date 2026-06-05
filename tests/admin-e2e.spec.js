@@ -100,9 +100,43 @@ function orderFixture(overrides = {}) {
   };
 }
 
-async function mockAdminApis(page, { orders = [], submissions = [], detailOrder = null, onCreatePaymentIntent = null } = {}) {
+function opsFixture(overrides = {}) {
+  return {
+    code: 'preauth_due',
+    severity: 'soon',
+    label: 'Autorización dentro de 24h',
+    actionLabel: 'Autorizar ahora',
+    startsAt: '2026-06-08T16:30:00.000Z',
+    estimatedEndsAt: '2026-06-08T18:30:00.000Z',
+    minutesToStart: 120,
+    minutesSinceEnd: null,
+    score: 2200,
+    ...overrides,
+  };
+}
+
+async function mockAdminApis(page, {
+  orders = [],
+  submissions = [],
+  detailOrder = null,
+  opsRadar = null,
+  onCreatePaymentIntent = null,
+  onPreauthNow = null,
+  onSnooze = null,
+} = {}) {
   await page.route('**/api/admin/stats', route => route.fulfill({ json: EMPTY_STATS }));
+  await page.route('**/api/admin/ops-radar', route => route.fulfill({
+    json: (typeof opsRadar === 'function' ? opsRadar() : opsRadar) || { ok: true, generatedAt: '2026-06-05T18:00:00.000Z', summary: { critical: 0, soon: 0, watch: 0 }, next: null, items: [] },
+  }));
   await page.route('**/api/admin/orders/*/changes', route => route.fulfill({ json: { items: [] } }));
+  await page.route('**/api/admin/orders/*/preauth-now', async route => {
+    if (onPreauthNow) await onPreauthNow(route.request());
+    return route.fulfill({ json: { ok: true, status: 'requires_capture', paymentIntentId: 'pi_preauth_now' } });
+  });
+  await page.route('**/api/admin/orders/*/ops-alerts/*/snooze', async route => {
+    if (onSnooze) await onSnooze(route.request());
+    return route.fulfill({ json: { ok: true, snoozedUntil: '2026-06-05T18:15:00.000Z' } });
+  });
   await page.route('**/api/admin/orders/*', route => {
     const order = detailOrder || orders[0] || orderFixture();
     return route.fulfill({ json: { order, adjustments: [] } });
@@ -358,6 +392,123 @@ test.describe('Orders panel', () => {
 });
 
 test.describe('Orders panel scheduling UI (mocked)', () => {
+  test('Ops Radar renders summary counters and next alert', async ({ page }) => {
+    const risky = orderFixture({
+      id: 'order-risk-1',
+      public_code: 'SV-RISK',
+      ops: opsFixture({ severity: 'critical', label: 'Captura vencida', code: 'capture_overdue', actionLabel: 'Capturar' }),
+    });
+    await mockAdminApis(page, {
+      orders: [risky],
+      opsRadar: {
+        ok: true,
+        generatedAt: '2026-06-05T18:00:00.000Z',
+        summary: { critical: 1, soon: 0, watch: 0 },
+        next: risky,
+        items: [risky],
+      },
+    });
+    await loginAndWait(page);
+
+    await expect(page.locator('#ops-radar')).toBeVisible();
+    await expect(page.locator('#ops-command')).toContainText('Captura vencida');
+    await expect(page.locator('#ops-counters')).toContainText('1');
+    await expect(page.locator('#ops-heartbeat-time')).toContainText('Refresh');
+  });
+
+  test('Atención filter shows only active risky orders', async ({ page }) => {
+    const risky = orderFixture({
+      id: 'order-risk-2',
+      public_code: 'SV-RISK2',
+      client_name: 'Cliente Riesgo',
+      ops: opsFixture(),
+    });
+    const safe = orderFixture({
+      id: 'order-safe-1',
+      public_code: 'SV-SAFE',
+      client_name: 'Cliente Seguro',
+      status: 'Confirmed',
+      ops: opsFixture({ code: 'safe', severity: 'safe', label: 'Confirmada y lista', actionLabel: '' }),
+    });
+    await mockAdminApis(page, { orders: [risky, safe] });
+    await loginAndWait(page);
+    await page.locator('#orders-attention').click();
+    await waitForListLoad(page, 'orders-body', 10000);
+
+    await expect(page.locator('#orders-body tr')).toHaveCount(1);
+    await expect(page.locator('#orders-body')).toContainText('Cliente Riesgo');
+    await expect(page.locator('#orders-body')).not.toContainText('Cliente Seguro');
+  });
+
+  test('risk rails render from ops severity', async ({ page }) => {
+    const risky = orderFixture({
+      id: 'order-risk-rail',
+      ops: opsFixture({ severity: 'critical', code: 'payment_failed', label: 'Pago requiere atención' }),
+    });
+    await mockAdminApis(page, { orders: [risky] });
+    await loginAndWait(page);
+    await waitForListLoad(page, 'orders-body', 10000);
+
+    await expect(page.locator('#orders-body tr').first()).toHaveClass(/row-ops-critical/);
+  });
+
+  test('preauth ops action calls preauth-now endpoint', async ({ page }) => {
+    let called = false;
+    const risky = orderFixture({
+      id: 'order-preauth-action',
+      public_code: 'SV-AUTH',
+      ops: opsFixture({ code: 'preauth_due', severity: 'soon', actionLabel: 'Autorizar ahora' }),
+    });
+    await mockAdminApis(page, {
+      orders: [risky],
+      opsRadar: { ok: true, generatedAt: '2026-06-05T18:00:00.000Z', summary: { critical: 0, soon: 1, watch: 0 }, next: risky, items: [risky] },
+      onPreauthNow: () => { called = true; },
+    });
+    await loginAndWait(page);
+    await waitForListLoad(page, 'orders-body', 10000);
+
+    await page.locator('#orders-body button', { hasText: 'Autorizar ahora' }).first().click();
+    await page.locator('.adm-box button', { hasText: 'Autorizar' }).click();
+    await expect.poll(() => called).toBe(true);
+  });
+
+  test('snoozed alert disappears from Ops Radar after snooze', async ({ page }) => {
+    let snoozed = false;
+    const risky = orderFixture({
+      id: 'order-snooze-1',
+      public_code: 'SV-SNZ',
+      ops: opsFixture({ code: 'preauth_due', severity: 'soon', label: 'Autorización dentro de 24h' }),
+    });
+    await mockAdminApis(page, {
+      orders: [risky],
+      opsRadar: () => snoozed
+        ? { ok: true, generatedAt: '2026-06-05T18:01:00.000Z', summary: { critical: 0, soon: 0, watch: 0 }, next: null, items: [] }
+        : { ok: true, generatedAt: '2026-06-05T18:00:00.000Z', summary: { critical: 0, soon: 1, watch: 0 }, next: risky, items: [risky] },
+      onSnooze: () => { snoozed = true; },
+    });
+    await loginAndWait(page);
+    await expect(page.locator('#ops-command')).toContainText('Autorización dentro de 24h');
+
+    await page.locator('#ops-command button', { hasText: 'Snooze' }).click();
+    await expect(page.locator('#ops-command')).toContainText('Sin alertas críticas');
+  });
+
+  test('order detail shows operational status block', async ({ page }) => {
+    const risky = orderFixture({
+      id: 'order-detail-ops',
+      public_code: 'SV-OPS',
+      ops: opsFixture({ code: 'capture_due', severity: 'soon', label: 'Captura pendiente', actionLabel: 'Capturar' }),
+    });
+    await mockAdminApis(page, { orders: [risky], detailOrder: risky });
+    await loginAndWait(page);
+    await waitForListLoad(page, 'orders-body', 10000);
+
+    await page.locator('#orders-body tr').first().click();
+    await expect(page.locator('#order-panel')).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('#op-body')).toContainText('Estado operativo');
+    await expect(page.locator('#op-body')).toContainText('Captura pendiente');
+  });
+
   test('order detail separates service schedule from order creation metadata', async ({ page }) => {
     const order = orderFixture();
     await mockAdminApis(page, { orders: [order], submissions: [], detailOrder: order });
