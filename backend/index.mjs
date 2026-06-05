@@ -2008,6 +2008,73 @@ app.get('/admin/contact-lookup', adminRateLimit, requireAdminAuth, async (req, r
   }
 });
 
+// Read-time safety net for the canonical Stripe webhook. Recomputes one order's DB status
+// from its own PaymentIntent and applies ONLY the two positive transitions the webhook already
+// performs (requires_capture → Confirmed, succeeded → Captured). It is deliberately surgical so
+// it can never interfere with other order wirings:
+//   • skips orders with no PaymentIntent, or a SetupIntent (seti_) → card-save/setup flow untouched
+//   • skips cash orders (cash_selected) and already-settled statuses (Captured/Refunded/Declined/
+//     Pending Cash/Canceled…) → never downgrades or re-touches
+//   • ignores pre-authorization PI states and cancellations → never advances early or guesses cancel reasons
+// It only ever writes a status the webhook itself would write, so it introduces no new state.
+// Pass an already-retrieved `pi` to avoid a second Stripe call. Returns the (maybe new) status.
+async function reconcileOrderStatusFromStripe(row, opts = {}) {
+  try {
+    if (!row || !row.id) return row?.status || null;
+    const piId = row.payment_intent_id;
+    const current = String(row.status || '').trim();
+    if (!piId || !piId.startsWith('pi_')) return current;           // no PI, or SetupIntent → leave alone
+    if (row.cash_selected) return current;                          // cash lifecycle is separate
+    const SETTLED = new Set(['Captured', 'Refunded', 'Declined', 'Pending Cash']);
+    if (SETTLED.has(current) || /^cancel/i.test(current)) return current;
+
+    let pi = opts.pi || null;
+    if (!pi) {
+      try { pi = await stripe.paymentIntents.retrieve(piId); }
+      catch (e) { return current; }
+    }
+    if (!pi || typeof pi.status !== 'string') return current;
+
+    let next = null;
+    if (pi.capture_method === 'manual' && pi.status === 'requires_capture') next = 'Confirmed';
+    else if (pi.status === 'succeeded') next = 'Captured';
+    if (!next || next === current) return current;
+
+    // Forward-only at the DB level too, mirroring the webhook's guard.
+    await pool.query(
+      `UPDATE all_bookings SET status = $1 WHERE id = $2 AND status NOT IN ('Captured','Refunded')`,
+      [next, row.id]
+    );
+    row.status = next;
+    console.log(`[reconcile] order ${row.id} pi ${piId}: ${current} → ${next}`);
+    postToGoogleWebhook({
+      type: 'order.status', orderId: row.id, status: next, paymentIntentId: piId,
+      customerId: row.customer_id || '', parentOrderId: row.parent_id_of_adjustment || ''
+    });
+    return next;
+  } catch (err) {
+    console.warn('[reconcile] failed for order', row?.id, err?.message || err);
+    return row?.status || null;
+  }
+}
+
+// Reconciles a list of order rows in place — only the bounded subset that could actually advance
+// (card PI present, not cash, not already settled), capped and run in parallel so a list read
+// makes at most a handful of Stripe calls. Each worthy row triggers its own retrieve.
+async function reconcileOrderRows(rows, { cap = 12 } = {}) {
+  if (!Array.isArray(rows) || !rows.length) return;
+  const worthy = rows.filter((r) => {
+    const piId = r && r.payment_intent_id;
+    if (!piId || !String(piId).startsWith('pi_')) return false;
+    if (r.cash_selected) return false;
+    const s = String(r.status || '').trim();
+    if (['Captured', 'Refunded', 'Declined', 'Pending Cash'].includes(s) || /^cancel/i.test(s)) return false;
+    return true;
+  }).slice(0, cap);
+  if (!worthy.length) return;
+  await Promise.all(worthy.map((r) => reconcileOrderStatusFromStripe(r)));
+}
+
 async function getOrderPayload(orderId, { allowExpiredQuery = false, retryTokenRaw = '' } = {}) {
   const wantsOverride = allowExpiredQuery || !!retryTokenRaw;
   const retryTokenParam = wantsOverride ? retryTokenRaw : '';
@@ -2259,6 +2326,10 @@ async function getOrderPayload(orderId, { allowExpiredQuery = false, retryTokenR
         pi = null;
       }
       intentType = isSetup ? 'setup' : 'payment';
+      // Safety net: heal the order status from the PI we just fetched (e.g. a missed webhook).
+      if (!isSetup && pi) {
+        try { await reconcileOrderStatusFromStripe(row, { pi }); } catch (_) {}
+      }
     } else {
       pi = null;
       intentType = null;
@@ -5896,7 +5967,7 @@ app.get('/api/auth/orders', async (req, res) => {
               service_date, service_datetime, service_address, provider_name,
               amount, provider_amount, booking_fee_amount, processing_fee_amount,
               vat_amount, pricing_total_amount, final_captured_amount,
-              cash_selected, customer_id, created_at
+              cash_selected, customer_id, payment_intent_id, created_at
          FROM all_bookings
         WHERE ${matchClause}
           AND COALESCE(parent_id_of_adjustment, '') = ''
@@ -5905,6 +5976,10 @@ app.get('/api/auth/orders', async (req, res) => {
         LIMIT 100`,
       ids
     );
+
+    // Heal stale statuses from Stripe (missed webhooks) before computing payable/bucket — only
+    // the bounded subset that could actually advance, to keep Stripe calls minimal.
+    await reconcileOrderRows(orderRows);
 
     // Pending intake requests that have not yet been turned into an order.
     const { rows: reqRows } = await pool.query(
@@ -5994,7 +6069,8 @@ app.post('/api/auth/orders/:id/payment-link', publicFormLimit, async (req, res) 
     if (!conds.length) return res.status(404).json({ error: 'not_found' });
 
     const { rows } = await pool.query(
-      `SELECT id, status, kind, customer_id, cash_selected, amount, pricing_total_amount
+      `SELECT id, status, kind, customer_id, cash_selected, amount, pricing_total_amount,
+              payment_intent_id, parent_id_of_adjustment
          FROM all_bookings
         WHERE id = $${ids.length + 1}
           AND (${conds.join(' OR ')})
@@ -6004,6 +6080,9 @@ app.post('/api/auth/orders/:id/payment-link', publicFormLimit, async (req, res) 
     );
     const row = rows[0];
     if (!row) return res.status(404).json({ error: 'not_found' });
+    // Heal the status first: if it was already authorized (missed webhook), the payable check
+    // below returns 409 and the client refreshes instead of minting a link for a paid order.
+    await reconcileOrderStatusFromStripe(row);
     if (!isOrderPayableOnline(row)) return res.status(409).json({ error: 'not_payable' });
 
     const token = randomBytes(12).toString('base64url');
@@ -6318,12 +6397,15 @@ app.get('/api/admin/orders', adminRateLimit, requireAdminAuth, async (req, res) 
       `SELECT id, public_code, kind, client_name, client_phone, client_email,
               service_description, service_date, service_datetime, service_address,
               amount, provider_amount, booking_fee_amount, processing_fee_amount, vat_amount, pricing_total_amount,
-              status, provider_id, provider_name, customer_id, created_at
+              status, provider_id, provider_name, customer_id, payment_intent_id, cash_selected,
+              parent_id_of_adjustment, created_at
          FROM all_bookings ${where}
          ORDER BY ${sortCol} ${sortDir}
          LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params
     );
+    // Heal stale statuses from Stripe (missed webhooks) so the dashboard reflects reality.
+    await reconcileOrderRows(rows, { cap: 15 });
     const { rows: countRows } = await pool.query(
       `SELECT count(*)::int AS total FROM all_bookings ${where}`,
       countParams
@@ -6345,6 +6427,8 @@ app.get('/api/admin/orders/:id', adminRateLimit, requireAdminAuth, async (req, r
       `SELECT * FROM all_bookings WHERE parent_id_of_adjustment = $1 ORDER BY created_at`,
       [req.params.id]
     );
+    // Heal stale statuses from Stripe (missed webhooks) for this order and its adjustments.
+    await reconcileOrderRows([rows[0], ...adjustments]);
     return res.json({ order: rows[0], adjustments });
   } catch (err) {
     console.error('[GET /api/admin/orders/:id]', err);
