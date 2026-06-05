@@ -326,6 +326,19 @@
     .sp-grid { display:grid;grid-template-columns:1fr 1fr;gap:12px; }
     .sp-lbl { font-size:10px;color:var(--text-faint);margin-bottom:3px;text-transform:uppercase;letter-spacing:0.04em; }
     .sp-val { font-size:13px;color:var(--text);word-break:break-word; }
+    .schedule-asap-text { color:var(--warn); font-weight:700; letter-spacing:0.02em; }
+    .schedule-card { grid-column:1/-1; background:var(--surface-2); border:1px solid var(--border); border-radius:10px; padding:13px 14px; }
+    .schedule-card--asap { background:rgba(241,196,15,0.08); border-color:rgba(241,196,15,0.30); }
+    .schedule-card--partial { background:rgba(116,184,196,0.06); border-color:rgba(116,184,196,0.20); }
+    .schedule-card__top { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:9px; }
+    .schedule-card__main { color:var(--text); font-size:15px; font-weight:700; line-height:1.35; }
+    .schedule-card__sub { color:var(--text-dim); font-size:12px; margin-top:3px; }
+    .schedule-card__meta { color:var(--text-mute); font-size:11px; font-variant-numeric:tabular-nums; }
+    .schedule-badge { display:inline-flex; align-items:center; border-radius:20px; padding:3px 9px; background:rgba(40,167,69,0.14); color:var(--ok); font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; }
+    .schedule-badge--asap { background:rgba(241,196,15,0.14); color:var(--warn); }
+    .schedule-badge--partial { background:rgba(116,184,196,0.12); color:var(--accent); }
+    .schedule-helper { color:var(--text-mute); font-size:12px; line-height:1.45; margin-top:6px; }
+    .schedule-note { background:rgba(241,196,15,0.10); border:1px solid rgba(241,196,15,0.30); color:var(--warn); border-radius:8px; padding:9px 11px; font-size:12px; line-height:1.45; margin-bottom:10px; }
     .sp-mono { font-family:monospace;font-size:11px;color:var(--text-dim);word-break:break-all; }
     .sp-acts { padding:18px 22px;display:flex;gap:8px;flex-wrap:wrap; }
     .sp-stripe-btn { display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:6px;font-size:11px;font-weight:700;background:rgba(40,167,69,0.12);color:var(--ok);border:1px solid rgba(40,167,69,0.3);text-decoration:none; }
@@ -436,8 +449,9 @@
     <div id="panel-orders" class="panel-section panel-section--active">
       <div class="filter-row">
         <input class="filter-input" id="orders-search" placeholder="Buscar por nombre, teléfono, código..." oninput="debounceOrders()">
-        <select class="filter-select" id="orders-status" onchange="loadOrders()">
+        <select class="filter-select" id="orders-status" onchange="ordersPage=0;loadOrders()">
           <option value="">Todos los estados</option>
+          <option value="Incoming">Incoming</option>
           <option value="Pending">Pending</option>
           <option value="Confirmed">Confirmed</option>
           <option value="Scheduled">Scheduled</option>
@@ -450,7 +464,7 @@
       <div class="table-scroll">
         <table class="admin-table">
           <thead>
-            <tr><th>Código</th><th>Cliente</th><th>Servicio</th><th>Monto</th><th>Fecha</th><th>Horas</th><th>Estado</th><th>Acciones</th></tr>
+            <tr><th>Código</th><th>Cliente</th><th>Servicio</th><th>Monto</th><th>Servicio</th><th>Faltan</th><th>Estado</th><th>Acciones</th></tr>
           </thead>
           <tbody id="orders-body"></tbody>
         </table>
@@ -838,6 +852,79 @@ function toast(msg, type = 'ok', timeout = 4200) {
 }
 function fmtDate(d) { if (!d) return '—'; const dt = new Date(d); return dt.toLocaleDateString('es-MX', { day:'2-digit', month:'short', year:'numeric' }); }
 function fmtTime(d) { if (!d) return '—'; const dt = new Date(d); return dt.toLocaleTimeString('es-MX', { hour:'2-digit', minute:'2-digit' }); }
+function isDateOnly(value) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(value || '').trim());
+}
+function fmtServiceDate(value) {
+  if (!value) return '—';
+  const raw = String(value);
+  const dt = isDateOnly(raw) ? new Date(raw + 'T12:00:00') : new Date(raw);
+  if (isNaN(dt.getTime())) return '—';
+  return dt.toLocaleDateString('es-MX', { day:'2-digit', month:'short', year:'numeric' });
+}
+function fmtServiceDateTime(dateValue, dateTimeValue) {
+  if (dateTimeValue) return `${fmtServiceDate(dateTimeValue)} · ${fmtTime(dateTimeValue)}`;
+  if (dateValue) return `${fmtServiceDate(dateValue)} · Hora por definir`;
+  return 'Pendiente de agendar';
+}
+function orderIsAsap(o) {
+  return o?.is_asap === true || o?.isAsap === true || String(o?.is_asap ?? o?.isAsap ?? '').toLowerCase() === 'true';
+}
+function scheduleRowText(o) {
+  if (orderIsAsap(o) && !o.service_datetime) return '<span class="schedule-asap-text">ASAP</span> · pendiente de agendar';
+  return escapeHtml(fmtServiceDateTime(o.service_date, o.service_datetime));
+}
+function submissionScheduleText(s) {
+  if (orderIsAsap(s)) return '<span class="schedule-asap-text">ASAP</span>';
+  if (s.preferred_date) {
+    return escapeHtml(`${fmtServiceDate(s.preferred_date)}${s.preferred_time ? ' · ' + s.preferred_time : ' · Hora por definir'}`);
+  }
+  return '<span style="color:var(--text-mute)">Pendiente</span>';
+}
+function scheduleDetailHtml(o) {
+  const ht = computeHoursToService(o);
+  if (orderIsAsap(o) && !o.service_datetime) {
+    return `
+      <div class="schedule-card schedule-card--asap">
+        <div class="schedule-card__top">
+          <span class="schedule-badge schedule-badge--asap">ASAP</span>
+          <span class="schedule-card__meta">Pendiente de agendar</span>
+        </div>
+        <div class="schedule-card__main">Solicitado lo antes posible</div>
+        <div class="schedule-card__sub">Aún sin hora confirmada</div>
+      </div>`;
+  }
+  if (o.service_datetime) {
+    return `
+      <div class="schedule-card">
+        <div class="schedule-card__top">
+          <span class="schedule-badge">Confirmado</span>
+          <span class="schedule-card__meta">${escapeHtml(ht.label !== '—' ? 'Faltan ' + ht.label : 'Sin contador')}</span>
+        </div>
+        <div class="schedule-card__main">${escapeHtml(fmtServiceDate(o.service_datetime))}</div>
+        <div class="schedule-card__sub">${escapeHtml(fmtTime(o.service_datetime))}</div>
+      </div>`;
+  }
+  if (o.service_date) {
+    return `
+      <div class="schedule-card schedule-card--partial">
+        <div class="schedule-card__top">
+          <span class="schedule-badge schedule-badge--partial">Fecha definida</span>
+          <span class="schedule-card__meta">${escapeHtml(ht.label !== '—' ? 'Faltan ' + ht.label : 'Sin hora')}</span>
+        </div>
+        <div class="schedule-card__main">${escapeHtml(fmtServiceDate(o.service_date))}</div>
+        <div class="schedule-card__sub">Hora por definir</div>
+      </div>`;
+  }
+  return `
+    <div class="schedule-card schedule-card--partial">
+      <div class="schedule-card__top">
+        <span class="schedule-badge schedule-badge--partial">Pendiente</span>
+      </div>
+      <div class="schedule-card__main">Pendiente de agendar</div>
+      <div class="schedule-card__sub">Sin fecha ni hora confirmada</div>
+    </div>`;
+}
 function fmtMoney(cents) { if (!cents && cents !== 0) return '—'; return '$' + (cents / 100).toFixed(2) + ' MXN'; }
 
 function badgeClass(status) {
@@ -1271,26 +1358,34 @@ async function loadOrders() {
     if (search) params.set('search', search);
     if (status) params.set('status', status);
 
-    // 'Retiradas' is a web-request-only view: withdrawn intake requests, no paid orders.
+    // 'Incoming' and 'Retiradas' are web-request-only views, no paid orders.
+    const isIncomingFilter = status === 'Incoming';
     const isWithdrawnFilter = status === 'Withdrawn';
     // Web submissions surface alongside orders: pending ones in the default view, and
     // withdrawn (canceled) ones under both the Canceled and Retiradas filters so they don't vanish.
     const wantCanceledSubs = /^cancel/i.test(status) || isWithdrawnFilter;
-    const subsFetch = (!status)
-      ? fetch(API + '/api/service-requests?status=pending&limit=50', { headers: headers() })
-      : (wantCanceledSubs ? fetch(API + '/api/service-requests?status=canceled&limit=50', { headers: headers() }) : Promise.resolve(null));
-    // Skip the paid-orders query entirely for the web-only Retiradas view.
-    const ordersFetch = isWithdrawnFilter
+    const wantPendingSubs = !status || isIncomingFilter;
+    const subsParams = new URLSearchParams({ limit: String(isIncomingFilter || isWithdrawnFilter ? limit : 50) });
+    if (isIncomingFilter || isWithdrawnFilter) subsParams.set('offset', String(offset));
+    if (wantPendingSubs) subsParams.set('status', 'pending');
+    if (wantCanceledSubs) subsParams.set('status', 'canceled');
+    const subsFetch = (wantPendingSubs || wantCanceledSubs)
+      ? fetch(API + '/api/service-requests?' + subsParams, { headers: headers() })
+      : Promise.resolve(null);
+    // Skip the paid-orders query entirely for web-only views.
+    const ordersFetch = (isIncomingFilter || isWithdrawnFilter)
       ? Promise.resolve(null)
       : fetch(API + '/api/admin/orders?' + params, { headers: headers() });
     const [ordersRes, subsRes] = await Promise.all([ordersFetch, subsFetch]);
 
     const d = ordersRes ? await ordersRes.json() : { items: [], total: 0 };
 
-    // Build web submission rows (pending in default view; withdrawn under Canceled/Retiradas)
+    // Build web submission rows (pending in default/Incoming views; withdrawn under Canceled/Retiradas)
     let subRows = '';
+    let subTotal = 0;
     if (subsRes && subsRes.ok) {
       const subData = await subsRes.json();
+      subTotal = subData.total || 0;
       const subs = (subData.items || []).filter(s => {
         // Client-side search filter
         if (!search) return true;
@@ -1310,7 +1405,7 @@ async function loadOrders() {
         <td>${escapeHtml(o.client_name || '—')}<br><span style="color:#666;font-size:11px">${escapeHtml(o.client_phone || '')}</span></td>
         <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(o.service_description || '—')}</td>
         <td>${fmtMoney(o.pricing_total_amount || o.amount)}</td>
-        <td>${fmtDate(o.service_date || o.created_at)}</td>
+        <td>${scheduleRowText(o)}</td>
         <td class="hours-cell ${ht.cellClass}">${ht.label}</td>
         <td><span class="badge ${badgeClass(o.status)}">${escapeHtml(o.status || '—')}</span></td>
         <td onclick="event.stopPropagation()">${buildActionBtns(o)}</td>
@@ -1323,7 +1418,7 @@ async function loadOrders() {
     body.innerHTML = allRows;
 
     // Pagination
-    const totalPages = Math.ceil(d.total / limit);
+    const totalPages = Math.ceil((isIncomingFilter || isWithdrawnFilter ? subTotal : d.total) / limit);
     document.getElementById('orders-pagination').innerHTML = `
       <button onclick="ordersPage=Math.max(0,ordersPage-1);loadOrders()" ${ordersPage === 0 ? 'disabled' : ''}>Anterior</button>
       <span class="page-info">${ordersPage + 1} / ${totalPages || 1}</span>
@@ -1339,9 +1434,10 @@ async function loadOrders() {
 // Green:  Confirmed and 2 < hours ≤ 24 (in window, authorized).
 // Red:    ≤ 2h until service and not a terminal status.
 function computeHoursToService(o) {
+  if (orderIsAsap(o) && !o.service_datetime) return { label: '—', rowClass: 'row-warn-yellow', cellClass: '' };
   const raw = o.service_datetime || o.service_date || '';
   if (!raw) return { label: '—', rowClass: '', cellClass: '' };
-  const target = new Date(raw);
+  const target = isDateOnly(raw) ? new Date(raw + 'T00:00:00') : new Date(raw);
   if (isNaN(target.getTime())) return { label: '—', rowClass: '', cellClass: '' };
   const diffMs = target.getTime() - Date.now();
   const hours = diffMs / 3.6e6;
@@ -1397,7 +1493,7 @@ function buildSubmissionRow(s) {
         ${attachmentsHtml}
       </td>
       <td><span style="color:#555;font-size:11px">Sin precio</span></td>
-      <td>${fmtDate(s.created_at)}</td>
+      <td>${submissionScheduleText(s)}</td>
       <td class="hours-cell">—</td>
       <td>${badge}</td>
       <td>${action}</td>
@@ -1449,8 +1545,10 @@ function openSubmissionLinkModal(subId) {
         <input class="adm-input" id="sub-email" type="email" value="${escapeHtml(sub.client_email || '')}" placeholder="correo@email.com" style="margin-bottom:0">
       </div>
       <div style="margin-bottom:16px">
+        ${orderIsAsap(sub) ? '<div class="schedule-note"><strong>ASAP solicitado.</strong> Si ya acordaste una hora, asígnala aquí; si no, el pedido seguirá marcado como ASAP.</div>' : ''}
         <label class="form-label">Fecha y hora del servicio</label>
         <input class="adm-input" id="sub-datetime" type="datetime-local" value="${escapeHtml(datetimeValue)}" style="margin-bottom:0">
+        ${orderIsAsap(sub) ? '' : '<div class="schedule-helper">Usa este campo para guardar la fecha y hora confirmada del servicio.</div>'}
       </div>
       <label style="display:flex;gap:10px;align-items:flex-start;margin-bottom:16px;color:#ddd;font-size:13px;line-height:1.4">
         <input type="checkbox" id="sub-allow-cash" style="margin-top:2px;accent-color:#fbbf24">
@@ -1528,6 +1626,7 @@ async function submitSubmissionLink(subId) {
         capture: 'manual',
         providerName: provider || undefined,
         allowCashOnce,
+        isAsap: orderIsAsap(sub) && !serviceDateTime,
         category: sub.category || undefined,
       })
     });
@@ -2195,9 +2294,8 @@ function renderOrderDetail(o, adjustments) {
       <div class="sp-sec">
         <div class="sp-sec-t">Servicio</div>
         <div class="sp-grid">
+          <div style="grid-column:1/-1"><div class="sp-lbl">Horario del servicio</div>${scheduleDetailHtml(o)}</div>
           <div style="grid-column:1/-1"><div class="sp-lbl">Descripción</div><div class="sp-val">${escapeHtml(o.service_description || '—')}</div></div>
-          <div><div class="sp-lbl">Fecha</div><div class="sp-val">${fmtDate(o.service_date || o.service_datetime)}</div></div>
-          <div><div class="sp-lbl">Hora</div><div class="sp-val">${o.service_datetime ? fmtTime(o.service_datetime) : '—'}</div></div>
           <div><div class="sp-lbl">Tipo</div><div class="sp-val">${escapeHtml(o.kind || '—')}</div></div>
           <div><div class="sp-lbl">Estado</div><div class="sp-val"><span class="badge ${badgeClass(o.status)}">${escapeHtml(o.status || '—')}</span></div></div>
         </div>
@@ -2217,10 +2315,15 @@ function renderOrderDetail(o, adjustments) {
         <div class="sp-sec-t">Stripe</div>
         <div class="sp-grid">
           <div style="grid-column:1/-1"><div class="sp-lbl">Payment Intent ID</div><div class="sp-mono">${escapeHtml(o.payment_intent_id || '—')}</div></div>
-          <div><div class="sp-lbl">Creado</div><div class="sp-val">${fmtDate(o.created_at)} ${fmtTime(o.created_at)}</div></div>
-          <div><div class="sp-lbl">Order ID</div><div class="sp-mono">${escapeHtml(o.id)}</div></div>
         </div>
         ${piLink ? `<div style="margin-top:12px">${piLink}</div>` : ''}
+      </div>
+      <div class="sp-sec">
+        <div class="sp-sec-t">Orden</div>
+        <div class="sp-grid">
+          <div><div class="sp-lbl">Orden creada</div><div class="sp-val">${fmtDate(o.created_at)} ${fmtTime(o.created_at)}</div></div>
+          <div><div class="sp-lbl">Order ID</div><div class="sp-mono">${escapeHtml(o.id)}</div></div>
+        </div>
       </div>
       ${o.attachments ? `
       <div class="sp-sec">
@@ -2418,7 +2521,11 @@ function openOrderEdit(orderId) {
           <div><label class="form-label">Email</label><input class="auth-input" id="ed-client_email" value="${escapeHtml(o.client_email||'')}"></div>
           <div><label class="form-label">Proveedor (nombre)</label><input class="auth-input" id="ed-provider_name" value="${escapeHtml(o.provider_name||'')}"></div>
           <div><label class="form-label">Monto proveedor (MXN)</label><input class="auth-input" id="ed-provider_amount" type="number" min="1" value="${providerMxn}"></div>
-          <div><label class="form-label">Fecha y hora</label><input class="auth-input" id="ed-service_datetime" type="datetime-local" value="${escapeHtml(curDt)}"></div>
+          <div>
+            <label class="form-label">Fecha y hora confirmada del servicio</label>
+            ${orderIsAsap(o) ? '<div class="schedule-helper" style="margin:0 0 7px">Esta orden está marcada como ASAP. Al guardar una fecha y hora, quedará agendada.</div>' : ''}
+            <input class="auth-input" id="ed-service_datetime" type="datetime-local" value="${escapeHtml(curDt)}">
+          </div>
           <div style="grid-column:1/-1"><label class="form-label">Descripción</label><textarea class="auth-input" id="ed-service_description" rows="2">${escapeHtml(o.service_description||'')}</textarea></div>
           <div style="grid-column:1/-1"><label class="form-label">Dirección</label><textarea class="auth-input" id="ed-service_address" rows="2">${escapeHtml(o.service_address||'')}</textarea></div>
         </div>

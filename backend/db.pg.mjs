@@ -46,6 +46,7 @@ export async function initDb() {
       cash_selected BOOLEAN DEFAULT FALSE,
       service_description TEXT,
       service_date TEXT,              -- date-only (YYYY-MM-DD) for >7d rule
+      is_asap BOOLEAN DEFAULT FALSE,
       category TEXT,
       service_datetime TEXT,
       service_address TEXT,
@@ -81,6 +82,8 @@ export async function initDb() {
       ADD COLUMN IF NOT EXISTS service_address TEXT;
     ALTER TABLE all_bookings
       ADD COLUMN IF NOT EXISTS booking_type TEXT;
+    ALTER TABLE all_bookings
+      ADD COLUMN IF NOT EXISTS is_asap BOOLEAN DEFAULT FALSE;
 
     ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS provider_amount INTEGER;
     ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS booking_fee_amount INTEGER;

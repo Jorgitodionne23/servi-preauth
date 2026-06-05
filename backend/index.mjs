@@ -1457,7 +1457,9 @@ app.use(express.static(FRONTEND_DIR));
       provider_name: providerNameSnake,
       allowCashOnce,
       allow_cash_once,
-      category: categoryRaw
+      category: categoryRaw,
+      isAsap,
+      is_asap
     } = req.body;
     const categoryInput = String(categoryRaw || '').trim().toLowerCase() || null;
     const VALID_CATEGORIES = new Set(['cleaning','repair','wellness','maintenance','supply','custom']);
@@ -1510,6 +1512,12 @@ app.use(express.static(FRONTEND_DIR));
         allowCashOnce === '1' ||
         allow_cash_once === '1';
   const cashExceptionAllowed = allowCashFlag && isFirstTimer;
+  const isAsapFlag =
+    isAsap === true ||
+    is_asap === true ||
+    String(isAsap ?? is_asap ?? '').toLowerCase() === 'true' ||
+    isAsap === '1' ||
+    is_asap === '1';
   try {
     const captureMethod = String(capture).toLowerCase() === 'automatic' ? 'automatic' : 'manual';
     const savedPhoneRecord = phoneDigits ? await findSavedClientByPhoneDigits(phoneDigits) : null;
@@ -1736,7 +1744,7 @@ app.use(express.static(FRONTEND_DIR));
 
     // also persist service_date/service_datetime (you already do)
   await pool.query(
-    'UPDATE all_bookings SET service_date=$1, service_datetime=$2, client_phone=$3, client_email=$4, service_address=$5, booking_type=$6, provider_id=$7, provider_name=$8, category=$9 WHERE id=$10',
+    'UPDATE all_bookings SET service_date=$1, service_datetime=$2, client_phone=$3, client_email=$4, service_address=$5, booking_type=$6, provider_id=$7, provider_name=$8, category=$9, is_asap=$10 WHERE id=$11',
     [
       serviceDate || null,
       serviceDateTime || null,
@@ -1747,6 +1755,7 @@ app.use(express.static(FRONTEND_DIR));
       providerId || null,
       providerName || null,
       category || null,
+      isAsapFlag && !serviceDateTime,
       orderId
     ]
   );
@@ -2086,7 +2095,7 @@ async function getOrderPayload(orderId, { allowExpiredQuery = false, retryTokenR
         stripe_fee_tax_rate, processing_fee_type, urgency_multiplier, alpha_value,
         client_name, client_phone, client_email, provider_id, provider_name,
         cash_exception_allowed, cash_selected,
-        service_description, service_date, service_datetime, service_address, booking_type, status, created_at,
+        service_description, service_date, service_datetime, is_asap, service_address, booking_type, status, created_at,
         public_code, kind, parent_id_of_adjustment, customer_id, saved_payment_method_id, capture_method, adjustment_reason,
         retry_token, retry_token_created_at
       FROM all_bookings
@@ -6100,7 +6109,7 @@ app.get('/api/auth/orders', async (req, res) => {
     // Real orders (exclude child adjustment rows — they roll up into their parent).
     const { rows: orderRows } = await pool.query(
       `SELECT id, public_code, kind, status, category, service_description,
-              service_date, service_datetime, service_address, provider_name,
+              service_date, service_datetime, is_asap, service_address, provider_name,
               amount, provider_amount, booking_fee_amount, processing_fee_amount,
               vat_amount, pricing_total_amount, final_captured_amount,
               cash_selected, customer_id, payment_intent_id, created_at
@@ -6141,7 +6150,7 @@ app.get('/api/auth/orders', async (req, res) => {
       serviceDate: r.service_date || null,
       serviceDateTime: r.service_datetime || null,
       preferredTime: null,
-      isAsap: false,
+      isAsap: !!r.is_asap,
       address: r.service_address || null,
       providerName: r.provider_name || null,
       cashSelected: !!r.cash_selected,
@@ -6756,7 +6765,7 @@ app.get('/api/admin/orders', adminRateLimit, requireAdminAuth, async (req, res) 
 
     const { rows } = await pool.query(
       `SELECT id, public_code, kind, client_name, client_phone, client_email,
-              service_description, service_date, service_datetime, service_address,
+              service_description, service_date, service_datetime, is_asap, service_address,
               amount, provider_amount, booking_fee_amount, processing_fee_amount, vat_amount, pricing_total_amount,
               status, provider_id, provider_name, customer_id, payment_intent_id, cash_selected,
               parent_id_of_adjustment, created_at
@@ -7099,6 +7108,7 @@ app.patch('/api/admin/orders/:id', adminRateLimit, requireAdminAuth, async (req,
       const t = new Date(updates.service_datetime);
       if (isNaN(t.getTime())) return res.status(400).json({ error: 'invalid_service_datetime' });
       updates.service_date = String(updates.service_datetime).slice(0, 10);
+      updates.is_asap = false;
     }
 
     // Recompute pricing if provider_amount changed (visita keeps fixed pricing)

@@ -59,6 +59,63 @@ async function waitForListLoad(page, listId, timeout = 8000) {
   );
 }
 
+const EMPTY_STATS = {
+  requestsToday: 0,
+  pendingOrders: 0,
+  confirmedOrders: 0,
+  capturedOrders: 0,
+  capturedRevenue: 0,
+  newReports: 0,
+  pendingApplications: 0,
+};
+
+function orderFixture(overrides = {}) {
+  return {
+    id: 'order-sch-1',
+    public_code: 'SV-TEST',
+    kind: 'primary',
+    client_name: 'Cliente Prueba',
+    client_phone: '+525555555555',
+    client_email: 'cliente@test.dev',
+    service_description: 'Reparación de prueba',
+    service_date: '2026-06-08',
+    service_datetime: '2026-06-08T16:30:00.000-06:00',
+    is_asap: false,
+    service_address: 'Calle Test 123',
+    amount: 120000,
+    provider_amount: 90000,
+    booking_fee_amount: 18000,
+    processing_fee_amount: 5000,
+    vat_amount: 7000,
+    pricing_total_amount: 120000,
+    status: 'Scheduled',
+    provider_id: null,
+    provider_name: 'Proveedor Test',
+    customer_id: null,
+    payment_intent_id: 'pi_test_123',
+    cash_selected: false,
+    parent_id_of_adjustment: null,
+    created_at: '2026-06-05T18:00:00.000Z',
+    ...overrides,
+  };
+}
+
+async function mockAdminApis(page, { orders = [], submissions = [], detailOrder = null, onCreatePaymentIntent = null } = {}) {
+  await page.route('**/api/admin/stats', route => route.fulfill({ json: EMPTY_STATS }));
+  await page.route('**/api/admin/orders/*/changes', route => route.fulfill({ json: { items: [] } }));
+  await page.route('**/api/admin/orders/*', route => {
+    const order = detailOrder || orders[0] || orderFixture();
+    return route.fulfill({ json: { order, adjustments: [] } });
+  });
+  await page.route('**/api/admin/orders?*', route => route.fulfill({ json: { items: orders, total: orders.length } }));
+  await page.route('**/api/service-requests?*', route => route.fulfill({ json: { items: submissions, total: submissions.length } }));
+  await page.route('**/api/service-requests/*', route => route.fulfill({ json: { ok: true } }));
+  await page.route('**/create-payment-intent', async route => {
+    if (onCreatePaymentIntent) await onCreatePaymentIntent(route.request().postDataJSON());
+    return route.fulfill({ json: { orderId: 'order-from-asap', payUrl: 'http://localhost:4242/pay.html?order=order-from-asap' } });
+  });
+}
+
 // ─── Auth gate ───────────────────────────────────────────────────────────────
 
 test.describe('Auth gate', () => {
@@ -247,6 +304,10 @@ test.describe('Orders panel', () => {
     await expect(page.locator('#orders-status')).toBeVisible();
   });
 
+  test('status filter includes incoming web requests', async ({ page }) => {
+    await expect(page.locator('#orders-status option[value="Incoming"]')).toHaveText('Incoming');
+  });
+
   test('orders load (table rows or empty state)', async ({ page }) => {
     await waitForListLoad(page, 'orders-body', 10000);
     const rowCount = await page.locator('#orders-body tr').count();
@@ -293,6 +354,88 @@ test.describe('Orders panel', () => {
 
   test('pagination container is present', async ({ page }) => {
     await expect(page.locator('#orders-pagination')).toBeAttached();
+  });
+});
+
+test.describe('Orders panel scheduling UI (mocked)', () => {
+  test('order detail separates service schedule from order creation metadata', async ({ page }) => {
+    const order = orderFixture();
+    await mockAdminApis(page, { orders: [order], submissions: [], detailOrder: order });
+    await loginAndWait(page);
+    await page.locator('.nav-item[data-panel="orders"]').click();
+    await waitForListLoad(page, 'orders-body', 10000);
+
+    await page.locator('#orders-body tr').first().click();
+    await expect(page.locator('#order-panel')).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('#op-body')).toContainText('Horario del servicio');
+    await expect(page.locator('#op-body')).toContainText('Orden creada');
+    await expect(page.locator('#op-body')).toContainText('Payment Intent ID');
+
+    const stripeSection = page.locator('.sp-sec').filter({ has: page.locator('.sp-sec-t', { hasText: /^Stripe$/ }) });
+    await expect(stripeSection).not.toContainText('Creado');
+    await expect(stripeSection).not.toContainText('Orden creada');
+  });
+
+  test('ASAP web submission row renders ASAP instead of created date', async ({ page }) => {
+    await mockAdminApis(page, {
+      orders: [],
+      submissions: [{
+        id: 'sub-asap-1',
+        category: 'repair',
+        description: 'Fuga urgente',
+        preferred_date: null,
+        preferred_time: null,
+        is_asap: true,
+        service_address: 'Calle Urgente 42',
+        client_name: 'Cliente ASAP',
+        client_phone: '+525500000000',
+        client_email: '',
+        status: 'pending',
+        created_at: '2026-06-05T18:00:00.000Z',
+      }],
+    });
+    await loginAndWait(page);
+    await page.locator('.nav-item[data-panel="orders"]').click();
+    await waitForListLoad(page, 'orders-body', 10000);
+
+    const firstRow = page.locator('#orders-body tr').first();
+    await expect(firstRow).toContainText('ASAP');
+    await expect(firstRow).not.toContainText('05 jun 2026');
+  });
+
+  test('creating payment link from ASAP submission preserves isAsap flag', async ({ page }) => {
+    let createPayload;
+    await mockAdminApis(page, {
+      orders: [],
+      submissions: [{
+        id: 'sub-asap-2',
+        category: 'repair',
+        description: 'Fuga urgente',
+        preferred_date: null,
+        preferred_time: null,
+        is_asap: true,
+        service_address: 'Calle Urgente 42',
+        client_name: 'Cliente ASAP',
+        client_phone: '+525500000001',
+        client_email: '',
+        status: 'pending',
+        created_at: '2026-06-05T18:00:00.000Z',
+      }],
+      onCreatePaymentIntent: payload => { createPayload = payload; },
+    });
+    await loginAndWait(page);
+    await page.locator('.nav-item[data-panel="orders"]').click();
+    await waitForListLoad(page, 'orders-body', 10000);
+
+    await page.locator('#orders-body button', { hasText: '+ Crear enlace' }).click();
+    await expect(page.locator('#sub-modal-overlay')).toContainText('ASAP solicitado');
+    await page.fill('#sub-amount', '800');
+    await page.click('#sub-modal-submit');
+    await expect(page.locator('#sub-modal-result')).toBeVisible({ timeout: 5000 });
+
+    expect(createPayload).toBeTruthy();
+    expect(createPayload.isAsap).toBe(true);
+    expect(createPayload.serviceDateTime).toBe('');
   });
 });
 
