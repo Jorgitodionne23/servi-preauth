@@ -891,11 +891,11 @@
       host.innerHTML =
         `<div class="svc-addr-picker">${opts}` +
         `<label class="svc-addr-opt svc-addr-opt--new"><input type="radio" name="svc-addr-pick-${prefix}" value="new"${newChecked} onchange="window._svcAddrPick('${prefix}', this.value)"><span class="svc-addr-opt__body"><span class="svc-addr-opt__title">➕ ${esc(es ? 'Usar otra dirección' : 'Use another address')}</span></span></label></div>` +
-        `<div class="svc-newaddr" id="svc-newaddr-${prefix}" style="${newChecked ? '' : 'display:none'}">${window.ServiAddress.fieldsHTML(fp, { showLabel: true, showDefault: false })}${saveBox}</div>`;
+        `<div class="svc-newaddr" id="svc-newaddr-${prefix}" style="${newChecked ? '' : 'display:none'}">${window.ServiAddress.fieldsHTML(fp, { compact: true, showDefault: false })}${saveBox}</div>`;
       window.ServiAddress.init(fp, {});
     } else {
       _svcAddrChoice[prefix] = 'new';
-      host.innerHTML = `<div class="svc-newaddr">${window.ServiAddress.fieldsHTML(fp, { showLabel: true, showDefault: false })}${saveBox}</div>`;
+      host.innerHTML = `<div class="svc-newaddr">${window.ServiAddress.fieldsHTML(fp, { compact: true, showDefault: false })}${saveBox}</div>`;
       window.ServiAddress.init(fp, {});
     }
   }

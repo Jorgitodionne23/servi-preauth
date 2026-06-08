@@ -51,6 +51,7 @@
       detailsHint: 'Entre más claro, más rápido y puntual llega tu especialista.',
       between: 'Entre calles', betweenPh: 'Entre Av. Reforma y Calle 5',
       references: 'Referencias para llegar', referencesPh: 'Casa azul con portón negro, junto a la tienda OXXO…',
+      referencesCompact: 'Referencias y acceso', referencesCompactPh: 'Casa azul con portón negro, código de acceso, qué decir en caseta…',
       access: 'Instrucciones de acceso', accessPh: 'Código de portón, qué decir en caseta, dónde estacionarse…',
       contactName: '¿Quién recibe? (opcional)', contactNamePh: 'Nombre de quien atiende',
       contactPhone: 'Teléfono de contacto (opcional)', contactPhonePh: '55 1234 5678',
@@ -76,6 +77,7 @@
       detailsHint: 'The clearer it is, the faster and more punctual your specialist arrives.',
       between: 'Between streets', betweenPh: 'Between Av. Reforma and Calle 5',
       references: 'How to find it', referencesPh: 'Blue house with a black gate, next to the OXXO store…',
+      referencesCompact: 'How to find it & access', referencesCompactPh: 'Blue house with black gate, access code, what to tell the doorman…',
       access: 'Access instructions', accessPh: 'Gate code, what to tell the doorman, where to park…',
       contactName: 'Who receives? (optional)', contactNamePh: 'Name of who will be there',
       contactPhone: 'Contact phone (optional)', contactPhonePh: '55 1234 5678',
@@ -193,13 +195,18 @@
   }
 
   // ─── Field set HTML ────────────────────────────────────────────────────────
-  // opts: { showLabel=true, showDefault=false, openDetails=false }
+  // opts: { showLabel=true, showDefault=false, openDetails=false, compact=false }
+  // compact mode (used by the small service.html booking panel): keeps the
+  // Address type selector but drops label, municipality, state/city dropdowns and
+  // the contact/between/access detail fields — leaving street, ext/int, colonia,
+  // CP, geolocation and a single "referencias / cómo llegar" notes field.
   function fieldsHTML(prefix, opts) {
     opts = opts || {};
     ensureStyles();
     var x = t();
     var p = prefix;
-    var showLabel = opts.showLabel !== false;
+    var compact = !!opts.compact;
+    var showLabel = !compact && opts.showLabel !== false;
     var typeOpts = [
       ['house', x.typeHouse, '🏠'], ['apartment', x.typeApartment, '🏢'],
       ['office', x.typeOffice, '💼'], ['other', x.typeOther, '📍'],
@@ -240,10 +247,17 @@
       fld(p + '_ext', x.ext, input(p + '_ext', x.extPh, ' inputmode="numeric"')) +
       fld(p + '_int', x.int, input(p + '_int', x.intPh)) + '</div>';
 
-    // Colonia + municipality
-    html += '<div class="sa-row">' +
-      fld(p + '_neighborhood', x.neighborhood, input(p + '_neighborhood', x.neighborhoodPh)) +
-      fld(p + '_municipality', x.municipality, input(p + '_municipality', x.municipalityPh)) + '</div>';
+    if (compact) {
+      // Colonia + CP (compact drops municipality + state/city dropdowns)
+      html += '<div class="sa-row">' +
+        fld(p + '_neighborhood', x.neighborhood, input(p + '_neighborhood', x.neighborhoodPh)) +
+        fld(p + '_postal', x.postal, input(p + '_postal', x.postalPh, ' inputmode="numeric" autocomplete="postal-code"')) + '</div>';
+    } else {
+      // Colonia + municipality
+      html += '<div class="sa-row">' +
+        fld(p + '_neighborhood', x.neighborhood, input(p + '_neighborhood', x.neighborhoodPh)) +
+        fld(p + '_municipality', x.municipality, input(p + '_municipality', x.municipalityPh)) + '</div>';
+    }
 
     // Geolocation
     html += '<button class="sa-geo" type="button" id="' + p + '_geo">' +
@@ -253,26 +267,33 @@
       '<span id="' + p + '_geolabel">' + esc(x.locationBtn) + '</span></button>' +
       '<div class="sa-geo-status" id="' + p + '_geostatus" aria-live="polite"></div>';
 
-    // State / city / postal
-    html += '<div class="sa-row sa-3">' +
-      fld(p + '_state', x.state, '<select class="sa-input" id="' + p + '_state"></select>') +
-      fld(p + '_city', x.city, '<select class="sa-input" id="' + p + '_city"></select>') +
-      fld(p + '_postal', x.postal, input(p + '_postal', x.postalPh, ' inputmode="numeric" autocomplete="postal-code"')) +
-      '</div>';
+    if (!compact) {
+      // State / city / postal
+      html += '<div class="sa-row sa-3">' +
+        fld(p + '_state', x.state, '<select class="sa-input" id="' + p + '_state"></select>') +
+        fld(p + '_city', x.city, '<select class="sa-input" id="' + p + '_city"></select>') +
+        fld(p + '_postal', x.postal, input(p + '_postal', x.postalPh, ' inputmode="numeric" autocomplete="postal-code"')) +
+        '</div>';
+    }
 
     // Collapsible "find me" details
+    var detailsBody = '<div class="sa-more-hint">' + esc(x.detailsHint) + '</div>';
+    if (compact) {
+      detailsBody += fld(p + '_references', x.referencesCompact, area(p + '_references', x.referencesCompactPh));
+    } else {
+      detailsBody +=
+        fld(p + '_between', x.between, input(p + '_between', x.betweenPh)) +
+        fld(p + '_references', x.references, area(p + '_references', x.referencesPh)) +
+        fld(p + '_access', x.access, area(p + '_access', x.accessPh)) +
+        '<div class="sa-row">' +
+        fld(p + '_contactName', x.contactName, input(p + '_contactName', x.contactNamePh)) +
+        fld(p + '_contactPhone', x.contactPhone, input(p + '_contactPhone', x.contactPhonePh, ' inputmode="tel" autocomplete="tel"')) +
+        '</div>';
+    }
     html += '<details class="sa-more"' + (opts.openDetails ? ' open' : '') + '>' +
       '<summary>' + esc(x.detailsToggle) +
       '<svg class="sa-chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>' +
-      '</summary><div class="sa-more-body">' +
-      '<div class="sa-more-hint">' + esc(x.detailsHint) + '</div>' +
-      fld(p + '_between', x.between, input(p + '_between', x.betweenPh)) +
-      fld(p + '_references', x.references, area(p + '_references', x.referencesPh)) +
-      fld(p + '_access', x.access, area(p + '_access', x.accessPh)) +
-      '<div class="sa-row">' +
-      fld(p + '_contactName', x.contactName, input(p + '_contactName', x.contactNamePh)) +
-      fld(p + '_contactPhone', x.contactPhone, input(p + '_contactPhone', x.contactPhonePh, ' inputmode="tel" autocomplete="tel"')) +
-      '</div></div></details>';
+      '</summary><div class="sa-more-body">' + detailsBody + '</div></details>';
 
     // Default checkbox (account book only)
     if (opts.showDefault) {

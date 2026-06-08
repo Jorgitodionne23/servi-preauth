@@ -23,7 +23,9 @@ import nodemailer from 'nodemailer';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { NodeHttpHandler } from '@smithy/node-http-handler';
 import https from 'https';
+import Anthropic from '@anthropic-ai/sdk';
 import { classifyOrderOps, sortOpsItems, summarizeOps } from './ops-radar.mjs';
+import { buildParseSystemPrompt, buildParseUserPrompt, parseModelResponse, MAX_TEXT } from './smartRequestParse.mjs';
 
 // --- R2 / S3 Client ---
 const r2 = new S3Client({
@@ -905,6 +907,9 @@ const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET || '';
 const FRONTEND_BASE_URL = (process.env.FRONTEND_BASE_URL || process.env.PUBLIC_BASE_URL || 'https://servi-preauth.pages.dev').replace(/\/+$/, '');
 const GMAIL_USER = process.env.GMAIL_USER || '';
 const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD || '';
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
+const anthropic = ANTHROPIC_API_KEY ? new Anthropic({ apiKey: ANTHROPIC_API_KEY }) : null;
+const PARSE_SYSTEM_PROMPT = buildParseSystemPrompt();
 const emailTransporter = (GMAIL_USER && GMAIL_APP_PASSWORD)
   ? nodemailer.createTransport({
       host: 'smtp.gmail.com',
@@ -5048,10 +5053,35 @@ app.post('/api/uploads', publicFormLimit, upload.single('file'), async (req, res
   }
 });
 
+// --- Public: AI parse of a free-text service request (Claude Haiku) ---
+// The frontend keeps a keyword heuristic fallback, so any error here is non-fatal.
+app.post('/api/parse-request', publicFormLimit, async (req, res) => {
+  try {
+    const { text, lang } = req.body || {};
+    const cleanText = typeof text === 'string' ? text.trim().slice(0, MAX_TEXT) : '';
+    if (!cleanText) return res.status(400).json({ error: 'missing_text' });
+    if (!anthropic) return res.status(503).json({ error: 'ai_unavailable' });
+    const langCode = lang === 'en' ? 'en' : 'es';
+
+    const msg = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 700,
+      system: [{ type: 'text', text: PARSE_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
+      messages: [{ role: 'user', content: buildParseUserPrompt(cleanText, langCode) }],
+    });
+    const raw = (msg.content || []).map((b) => b.text || '').join('');
+    return res.json(parseModelResponse(raw));
+  } catch (err) {
+    console.error('[POST /api/parse-request]', err && err.message);
+    return res.status(502).json({ error: 'parse_failed' });
+  }
+});
+
 // --- Public: Submit a service request ---
 app.post('/api/service-requests', publicFormLimit, async (req, res) => {
   try {
-    const { category, description, preferredDate, preferredTime, isAsap, serviceAddress, serviceAddressDetails, clientName, clientPhone, clientEmail, customerId, lang, attachments, clientRequestId } = req.body || {};
+    const { category, description, preferredDate, preferredTime, isAsap, serviceAddress, serviceAddressDetails, clientName, clientPhone, clientEmail, customerId, lang, attachments, clientRequestId,
+      requestMode, matchedService, matchedSubKey, aiSummary, aiConfidence, aiSource, detailAnswers } = req.body || {};
     if (!category || !clientName || !clientPhone) {
       return res.status(400).json({ error: 'missing_required_fields', message: 'category, clientName, and clientPhone are required' });
     }
@@ -5139,12 +5169,17 @@ app.post('/api/service-requests', publicFormLimit, async (req, res) => {
     const addressDetailsStr = serviceAddressDetails && typeof serviceAddressDetails === 'object'
       ? JSON.stringify(serviceAddressDetails)
       : null;
+    const detailAnswersStr = detailAnswers && typeof detailAnswers === 'object'
+      ? JSON.stringify(detailAnswers)
+      : null;
+    const aiConfidenceNum = (typeof aiConfidence === 'number' && Number.isFinite(aiConfidence)) ? aiConfidence : null;
     const id = randomUUID();
     try {
       await pool.query(
-        `INSERT INTO service_requests (id, category, description, preferred_date, preferred_time, is_asap, service_address, service_address_details, client_name, client_phone, client_email, client_request_id, customer_id, lang, attachments)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
-        [id, category, description || null, preferredDate || null, preferredTime || null, !!isAsap, serviceAddress || null, addressDetailsStr, clientName, clientPhone, clientEmail || null, clientRequestIdNorm || null, effectiveCustomerId, lang || 'es', attachmentsStr]
+        `INSERT INTO service_requests (id, category, description, preferred_date, preferred_time, is_asap, service_address, service_address_details, client_name, client_phone, client_email, client_request_id, customer_id, lang, attachments, request_mode, matched_service, matched_sub_key, ai_summary, ai_confidence, ai_source, detail_answers)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
+        [id, category, description || null, preferredDate || null, preferredTime || null, !!isAsap, serviceAddress || null, addressDetailsStr, clientName, clientPhone, clientEmail || null, clientRequestIdNorm || null, effectiveCustomerId, lang || 'es', attachmentsStr,
+          requestMode || null, matchedService || null, matchedSubKey || null, aiSummary || null, aiConfidenceNum, aiSource || null, detailAnswersStr]
       );
     } catch (insertErr) {
       if (insertErr.code === '23505' && clientRequestIdNorm) {

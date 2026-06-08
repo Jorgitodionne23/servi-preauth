@@ -199,10 +199,11 @@
     if (sectionVariant) return buildSectionHeader(sectionVariant);
 
     const t = window.__t;
+    const isSmartRequestPage = window.location.pathname === '/smart-request.html';
     const isBrowsePage = window.location.pathname === '/browse.html';
     const browseAttr = isBrowsePage ? ' data-page="browse"' : '';
     const onHome = window.location.pathname === '/' || window.location.pathname === '/index.html';
-    const isServicesPage = onHome || window.location.pathname === '/browse.html' || window.location.pathname === '/service.html';
+    const isServicesPage = onHome || isSmartRequestPage || window.location.pathname === '/browse.html' || window.location.pathname === '/service.html';
     // Pre-compute correct initial state for browse so the bar renders at the
     // right size immediately — avoids the height/grid-row transition on load.
     const foldY = isBrowsePage ? getBrowseHeaderMorphY() : 0;
@@ -226,7 +227,7 @@
             >${t.header.linkPartners}</a>
         </nav>
 
-        <div class="site-header__center">
+        ${isSmartRequestPage ? '' : `<div class="site-header__center">
           <div class="site-header__pill" role="search" aria-label="${t.header.pillDescribe || 'Search'}">
             <button type="button" class="search-pill__segment search-pill__segment--describe" data-segment="describe" aria-label="${t.header.pillDescribe || 'Describe'}">
               <span class="search-pill__icon">${ICON.search}</span>
@@ -241,7 +242,7 @@
             <span>${t.header.pillBrowse || 'Browse'}</span>
           </button>`}
           <div class="search-pill-popover" id="search-pill-popover" aria-hidden="true" data-segment=""></div>
-        </div>
+        </div>`}
 
         <div class="site-header__right">
           ${buildAccountBtn()}

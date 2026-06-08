@@ -11,13 +11,15 @@
     "emulators:auth": "XDG_CONFIG_HOME=.firebase-config NO_UPDATE_NOTIFIER=1 firebase emulators:start --only auth --project servi-bec91",
     "start:auth-emulator": "FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099 FIREBASE_PROJECT_ID=servi-bec91 DISABLE_RATE_LIMITS=1 node backend/index.mjs",
     "test:e2e": "node tests/preflight.mjs && playwright test",
-    "test:e2e:install": "playwright install chromium"
+    "test:e2e:install": "playwright install chromium",
+    "test:unit": "node --test backend/*.test.mjs"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.102.0",
     "@aws-sdk/client-s3": "^3.1026.0",
     "dotenv": "^17.2.1",
     "express": "^5.1.0",
@@ -25,8 +27,8 @@
     "firebase-admin": "^13.7.0",
     "lowdb": "^7.0.1",
     "multer": "^2.1.1",
-    "nodemailer": "^6.9.7",
     "node-fetch": "^3.3.2",
+    "nodemailer": "^6.9.7",
     "pg": "^8.16.3",
     "stripe": "^18.4.0"
   },

@@ -63,11 +63,12 @@ SERVI offers 5 main categories + a custom/catch-all option:
 
 ## Core User Flows
 
-### Service Booking (3-step flow)
+### Service Booking
 
-1. **Browse / Smart search** (`browse.html`) — Choose from the 6 service categories or search. No login required.
-2. **Describe + Schedule** (`service.html`) — Free-text description + choose "ASAP" or schedule a date/time. No login required.
-3. **Address + Confirm** — Enter full address, review summary, confirm. **Login required** (Firebase phone OTP, email magic link, or Google Sign-In). Logged-in users get name/phone/email pre-filled.
+1. **Smart Request** (`index.html` + `frontend/smart-request/`) — Primary landing-page request flow. Users can describe, show, or say what they need; text parsing goes through `POST /api/parse-request` and falls back to the client heuristic.
+2. **Browse / Smart search** (`browse.html`) — Choose from the service catalog or search. No login required.
+3. **Describe + Schedule** (`service.html`) — Individual service pages still support free-text description + "ASAP" or scheduled date/time.
+4. **Address + Confirm** — Enter full address, review summary, confirm. **Login required** (Firebase phone OTP, email magic link, or Google Sign-In). Logged-in users get name/phone/email pre-filled.
 
 After confirmation: "¡Solicitud enviada! Te contactaremos pronto por WhatsApp." Admin manually matches a provider and creates a payment link.
 
@@ -152,6 +153,7 @@ This is NOT a simple payment form. It's a complete **admin-driven order manageme
 - **Admin auth:** Bearer token via `ADMIN_API_TOKEN` env var, constant-time comparison
 - **Webhook:** Stripe webhook at `/webhook` with raw body parsing + signature verification
 - **Google Sheets sync:** Outbound POST to Apps Script web app URL for status updates (legacy, `SHEETS_WEBHOOK_URL`)
+- **Smart Request AI parse:** `POST /api/parse-request` proxies Claude Haiku via `@anthropic-ai/sdk` using `ANTHROPIC_API_KEY`; the browser never sees the key. `POST /api/service-requests` persists additive Smart Request metadata (`request_mode`, matched service/subkey, AI summary/confidence/source, detail answers).
 
 ### Key Backend Concepts
 
@@ -250,6 +252,7 @@ See `backend/db.pg.mjs` for the full schema. Key tables: `all_bookings`, `consen
 - `FIREBASE_SERVICE_ACCOUNT_JSON` — Firebase Admin SDK credentials (backend auth verification)
 - `JWT_SECRET` — Custom session token secret. Required in production: backend throws at startup if missing when `NODE_ENV=production`. Locally it falls back to a dev-only string so a missing `.env` doesn't crash development.
 - `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`, `R2_PUBLIC_URL` — Cloudflare R2 file uploads
+- `ANTHROPIC_API_KEY` — Backend-only Claude API key for Smart Request text parsing
 - `CORS_ALLOWLIST` — Additional allowed origins
 - `NODE_ENV` — `production` on Render
 
@@ -289,13 +292,14 @@ Work on `dev`, merge to `main` when ready for production. No manual env var swap
 - `STRIPE_SECRET_KEY=sk_test_...`
 - `STRIPE_WEBHOOK_SECRET=whsec_test_...` (run `stripe listen --forward-to localhost:4242/webhook` to get current one)
 - `FIREBASE_SERVICE_ACCOUNT_JSON={...}` (Firebase Admin SDK service account JSON — required for token verification)
+- `ANTHROPIC_API_KEY=sk-ant-...` (enables real Smart Request parsing; missing key falls back to heuristic)
 - `NODE_ENV=development`
 
 **Frontend:** `config.js` uses test Stripe key and falls back to `window.location.origin` for API (Express serves frontend on same port).
 
 ### Production Keys (Auto-Injected)
 
-- **Render production:** Has `STRIPE_SECRET_KEY=sk_live_...` and `FIREBASE_SERVICE_ACCOUNT_JSON`
+- **Render production:** Has `STRIPE_SECRET_KEY=sk_live_...`, `FIREBASE_SERVICE_ACCOUNT_JSON`, and must include `ANTHROPIC_API_KEY` for Smart Request AI parsing
 - **Cloudflare Pages:** Middleware injects `STRIPE_PUBLISHABLE_KEY=pk_live_...` and `API_BASE` at edge via env vars
 
 No manual key changes needed — push to `main` and production uses live keys automatically.

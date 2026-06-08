@@ -332,6 +332,13 @@ export async function initDb() {
       converted_order_id TEXT,
       admin_notes TEXT,
       lang TEXT DEFAULT 'es',
+      request_mode TEXT,
+      matched_service TEXT,
+      matched_sub_key TEXT,
+      ai_summary TEXT,
+      ai_confidence NUMERIC,
+      ai_source TEXT,
+      detail_answers JSONB,
       created_at TIMESTAMPTZ DEFAULT NOW(),
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
@@ -347,6 +354,13 @@ export async function initDb() {
     ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS attachments TEXT;
     ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS client_request_id TEXT;
     ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS service_address_details TEXT; -- JSON of structured address
+    ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS request_mode TEXT;
+    ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS matched_service TEXT;
+    ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS matched_sub_key TEXT;
+    ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS ai_summary TEXT;
+    ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS ai_confidence NUMERIC;
+    ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS ai_source TEXT;
+    ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS detail_answers JSONB;
     CREATE UNIQUE INDEX IF NOT EXISTS idx_service_requests_client_request_id
       ON service_requests(client_request_id)
       WHERE client_request_id IS NOT NULL;
