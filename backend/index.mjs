@@ -5086,16 +5086,29 @@ app.post('/api/service-requests', publicFormLimit, async (req, res) => {
     }
 
     // If the request comes from an authenticated user, enforce both identifiers verified.
+    // Verification status is read live from Firebase (source of truth) so the gate is never
+    // stuck on a stale DB flag. Falls back to DB flags if the Firebase lookup fails.
     if (userPayload?.user_id) {
       const { rows: vRows } = await pool.query(
-        'SELECT phone, phone_verified, email_verified, email_skipped_at FROM auth_users WHERE id = $1',
+        'SELECT phone, firebase_uid, phone_verified, email_verified FROM auth_users WHERE id = $1',
         [userPayload.user_id]
       );
       const v = vRows[0];
-      if (v && !v.phone_verified) {
+      let phoneVerified = v?.phone_verified;
+      let emailVerified = v?.email_verified;
+      if (v?.firebase_uid) {
+        try {
+          const fbUser = await firebaseAdmin.auth().getUser(v.firebase_uid);
+          phoneVerified = !!fbUser.phoneNumber;
+          emailVerified = fbUser.emailVerified;
+        } catch (fbErr) {
+          console.warn('[service-requests] Firebase lookup failed, falling back to DB flags:', fbErr.message);
+        }
+      }
+      if (v && !phoneVerified) {
         return res.status(409).json({ error: 'phone_required', message: 'Verifica tu número de teléfono para confirmar tu solicitud.' });
       }
-      if (v && !v.email_verified) {
+      if (v && !emailVerified) {
         const phoneDigits = normalizePhoneDigits(v.phone || clientPhone);
         const hasPriorActivity = await hasPriorServiceActivity({
           userId: userPayload.user_id,
