@@ -2309,7 +2309,19 @@ async function getOrderPayload(orderId, { allowExpiredQuery = false, retryTokenR
   if (row.provider_id) providerMeta.provider_id = row.provider_id;
   if (row.provider_name) providerMeta.provider_name = row.provider_name;
 
+  const retryTokenProvided = !!normalizeRetryToken(retryTokenParam);
   const { usingRetryToken, createdAtOverride } = resolveRetryTokenContext(row, retryTokenParam);
+  // Single active link: generating a new payment link overwrites the order's stored
+  // retry_token. So once an order HAS a stored token, any link carrying a DIFFERENT
+  // token has been superseded by a newer link → reject it as expired (410) instead of
+  // silently falling through to the original creation window (which could still be live
+  // within the first 2h). This guarantees only the most recent link works.
+  const hasStoredToken = !!(row.retry_token || row.retry_token_created_at);
+  if (retryTokenProvided && !usingRetryToken && hasStoredToken) {
+    const err = makeError('link_expired', 'This payment or booking link has expired', 410);
+    err.linkExpiresAt = null;
+    throw err;
+  }
   const allowExpired = wantsOverride && !usingRetryToken;
   const linkSource = createdAtOverride ? { ...row, created_at: createdAtOverride } : row;
   const linkInfo = assertOrderLinkActive(linkSource, { allowExpired });
@@ -7011,7 +7023,8 @@ app.get('/api/admin/orders', adminRateLimit, requireAdminAuth, async (req, res) 
               service_description, service_date, service_datetime, is_asap, service_address,
               amount, provider_amount, booking_fee_amount, processing_fee_amount, vat_amount, pricing_total_amount,
               status, provider_id, provider_name, customer_id, payment_intent_id, cash_selected,
-              parent_id_of_adjustment, created_at
+              parent_id_of_adjustment, created_at,
+              EXISTS (SELECT 1 FROM order_changes oc WHERE oc.order_id = all_bookings.id AND oc.status = 'pending') AS has_pending_change
          FROM all_bookings ${where}
          ORDER BY ${sortCol} ${sortDir}
          LIMIT $${params.length - 1} OFFSET $${params.length}`,
@@ -7228,13 +7241,14 @@ app.get('/api/admin/orders/:id', adminRateLimit, requireAdminAuth, async (req, r
 app.get('/api/admin/stats', adminRateLimit, requireAdminAuth, async (req, res) => {
   try {
     const today = new Date().toISOString().slice(0, 10);
-    const [requests, pendingOrders, confirmed, captured, reports, applications] = await Promise.all([
+    const [requests, pendingOrders, confirmed, captured, reports, applications, pendingChanges] = await Promise.all([
       pool.query(`SELECT count(*)::int AS c FROM service_requests WHERE created_at::date = $1`, [today]),
       pool.query(`SELECT count(*)::int AS c FROM all_bookings WHERE status = 'Pending'`),
       pool.query(`SELECT count(*)::int AS c FROM all_bookings WHERE status = 'Confirmed'`),
       pool.query(`SELECT count(*)::int AS c, COALESCE(sum(final_captured_amount),0)::int AS revenue FROM all_bookings WHERE status = 'Captured'`),
       pool.query(`SELECT count(*)::int AS c FROM service_reports WHERE status = 'new'`),
       pool.query(`SELECT count(*)::int AS c FROM partner_applications WHERE status = 'pending'`),
+      pool.query(`SELECT count(*)::int AS c FROM order_changes WHERE status = 'pending'`),
     ]);
     return res.json({
       requestsToday: requests.rows[0]?.c || 0,
@@ -7244,6 +7258,7 @@ app.get('/api/admin/stats', adminRateLimit, requireAdminAuth, async (req, res) =
       capturedRevenue: captured.rows[0]?.revenue || 0,
       newReports: reports.rows[0]?.c || 0,
       pendingApplications: applications.rows[0]?.c || 0,
+      pendingChanges: pendingChanges.rows[0]?.c || 0,
     });
   } catch (err) {
     console.error('[GET /api/admin/stats]', err);

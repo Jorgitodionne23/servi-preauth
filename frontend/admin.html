@@ -507,6 +507,7 @@
       <div class="nav-section-title">Operación</div>
       <button class="nav-item active" data-panel="orders" onclick="switchPanel('orders')">
         <span class="nav-item-label"><span class="nav-icon">📦</span><span>Órdenes</span></span>
+        <span class="nav-badge nav-badge--warn" id="nav-badge-changes" style="display:none" title="Solicitudes de cambio por revisar"></span>
         <span class="nav-badge" id="orders-badge" style="display:none"></span>
       </button>
       <button class="nav-item" data-panel="inbox" onclick="switchPanel('inbox')">
@@ -1277,6 +1278,7 @@ function setNavBadge(id, count, prefix = '') {
 function updateNavBadges(d) {
   setNavBadge('nav-badge-inbox', d.newReports);
   setNavBadge('nav-badge-providers', d.pendingApplications);
+  setNavBadge('nav-badge-changes', d.pendingChanges);
   setNavBadge('nav-badge-nueva', 0);
   setNavBadge('nav-badge-ajustes', 0);
 }
@@ -1294,6 +1296,7 @@ async function loadStats() {
       { num: fmtMoney(d.capturedRevenue), label: 'Revenue capturado' },
       { num: d.newReports, label: 'Reportes nuevos' },
       { num: d.pendingApplications, label: 'Apps pendientes' },
+      { num: d.pendingChanges, label: 'Cambios por revisar' },
     ].map(s => `<div class="stat-card"><div class="num">${escapeHtml(s.num)}</div><div class="label">${escapeHtml(s.label)}</div></div>`).join('');
   } catch {}
 }
@@ -1701,7 +1704,7 @@ async function loadOrders() {
         <td>${fmtMoney(o.pricing_total_amount || o.amount)}</td>
         <td>${scheduleRowText(o)}</td>
         <td class="hours-cell ${cellClass}">${escapeHtml(timeLabel)}</td>
-        <td><span class="badge ${badgeClass(o.status)}">${escapeHtml(o.status || '—')}</span>${opsLine}</td>
+        <td><span class="badge ${badgeClass(o.status)}">${escapeHtml(o.status || '—')}</span>${o.has_pending_change ? ' <span class="badge badge-pending" title="Solicitud de cambio pendiente por revisar">⏳ Cambio</span>' : ''}${opsLine}</td>
         <td onclick="event.stopPropagation()">${buildActionBtns(o)}</td>
       </tr>`;
     }).join('');
@@ -2542,6 +2545,7 @@ async function pollNewOrders(silent = true) {
       { num: fmtMoney(d.capturedRevenue), label: 'Revenue capturado' },
       { num: d.newReports, label: 'Reportes nuevos' },
       { num: d.pendingApplications, label: 'Apps pendientes' },
+      { num: d.pendingChanges, label: 'Cambios por revisar' },
     ].map(s => `<div class="stat-card"><div class="num">${escapeHtml(s.num)}</div><div class="label">${escapeHtml(s.label)}</div></div>`).join('');
   } catch (_) {}
 }
