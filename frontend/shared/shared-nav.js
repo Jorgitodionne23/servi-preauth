@@ -12,7 +12,7 @@
     if (type === 'helpcenter') {
       return [
         { label: t.nav.helpCenter, href: '/helpcenter.html' },
-        { label: t.hero.cta, href: '/index.html#services' },
+        { label: t.hero.cta, href: '/index.html#landing-hero' },
         { label: t.nav.partners, href: '/partners.html' },
       ];
     }
@@ -25,7 +25,7 @@
     }
     // main
     return [
-      { label: t.nav.services, anchor: 'services' },
+      { label: t.nav.services, anchor: 'landing-hero' },
       { label: t.nav.howItWorks, anchor: 'how' },
       { label: t.nav.testimonials, anchor: 'testimonials' },
       { label: t.nav.helpCenter, href: '/helpcenter.html' },
@@ -111,7 +111,7 @@
     <div id="mobile-overlay" class="mobile-overlay" style="display:none" onclick="toggleMobileMenu(false)"></div>
     <div id="mobile-menu" class="mobile-menu" style="display:none">
       <div style="display:flex;justify-content:flex-end;margin-bottom:32px">
-        <button onclick="toggleMobileMenu(false)" style="background:none;border:none;cursor:pointer;padding:4px">
+        <button onclick="toggleMobileMenu(false)" aria-label="${lang === 'es' ? 'Cerrar menú' : 'Close menu'}" style="background:none;border:none;cursor:pointer;padding:4px">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0a0a0a" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
         </button>
       </div>
@@ -236,6 +236,11 @@
     if (dd && menu && !menu.contains(e.target)) {
       dd.classList.remove('user-menu-dropdown--open');
     }
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    var dd = document.getElementById('user-menu-dropdown');
+    if (dd) dd.classList.remove('user-menu-dropdown--open');
   });
 
   window.toggleMobileMenu = function (show) {

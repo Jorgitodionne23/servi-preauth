@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" role="img" aria-labelledby="title desc">
+  <title id="title">Truck Boxes</title>
+  <desc id="desc">Flat service illustration for moving category discovery card.</desc>
+  <rect width="1200" height="900" fill="#EEF3F8"/>
+  <circle cx="958" cy="156" r="96" fill="#E8B45F" opacity=".2"/>
+  <circle cx="198" cy="742" r="132" fill="#527EA3" opacity=".12"/>
+  <path d="M130 705c150 72 291 101 464 85 184-17 286-84 476-52" fill="none" stroke="#30475C" stroke-width="18" stroke-linecap="round" opacity=".12"/>
+  <g fill="none" stroke="#30475C" stroke-linecap="round" stroke-linejoin="round">
+    <path stroke-width="28" d="M239 492h495v160H239z" fill="#527EA3" opacity=".88"/><path stroke-width="28" d="M734 535h126l92 117H734z" fill="#527EA3" opacity=".7"/><circle cx="379" cy="681" r="54" fill="#E8B45F"/><circle cx="802" cy="681" r="54" fill="#E8B45F"/><path stroke-width="20" d="M316 377h154v115H316zM470 409h154v83H470zM812 569h55M246 652h706"/><path stroke-width="20" d="M355 377v54M546 409v44"/>
+  </g>
+  <g fill="#E8B45F" opacity=".92">
+    <circle cx="214" cy="182" r="16"/>
+    <circle cx="997" cy="697" r="13"/>
+    <path d="M1017 264l19 36 37 18-37 18-19 36-18-36-37-18 37-18z"/>
+  </g>
+</svg>

@@ -4,6 +4,7 @@ import 'dotenv/config';
 import express from 'express';
 import StripePackage from 'stripe';
 import path from 'path';
+import fs from 'fs';
 import { pool, initDb } from './db.pg.mjs';
 import {
   computePricing,
@@ -18,7 +19,11 @@ import { randomUUID, randomBytes, createHash, createHmac, scryptSync, timingSafe
 import { rateLimit } from 'express-rate-limit';
 import firebaseAdmin from 'firebase-admin';
 import multer from 'multer';
+import nodemailer from 'nodemailer';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { NodeHttpHandler } from '@smithy/node-http-handler';
+import https from 'https';
+import { classifyOrderOps, sortOpsItems, summarizeOps } from './ops-radar.mjs';
 
 // --- R2 / S3 Client ---
 const r2 = new S3Client({
@@ -28,6 +33,10 @@ const r2 = new S3Client({
     accessKeyId: process.env.R2_ACCESS_KEY_ID || '',
     secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || '',
   },
+  // Explicit TLS 1.2 agent prevents SSL handshake failures on Render/OpenSSL vs Cloudflare
+  requestHandler: new NodeHttpHandler({
+    httpsAgent: new https.Agent({ minVersion: 'TLSv1.2' }),
+  }),
 });
 const R2_BUCKET = process.env.R2_BUCKET_NAME || 'uploads';
 const R2_PUBLIC_URL = (process.env.R2_PUBLIC_URL || '').replace(/\/$/, '');
@@ -44,32 +53,90 @@ const upload = multer({
 });
 
 // --- Firebase Admin Init ---
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const wantsFirebaseAuthEmulator = !IS_PRODUCTION
+  && !process.env.FIREBASE_SERVICE_ACCOUNT_JSON
+  && !['0', 'false'].includes(String(process.env.USE_FIREBASE_AUTH_EMULATOR || '').toLowerCase());
+
+if (wantsFirebaseAuthEmulator && !process.env.FIREBASE_AUTH_EMULATOR_HOST) {
+  process.env.FIREBASE_AUTH_EMULATOR_HOST = '127.0.0.1:9099';
+}
+
+const USING_FIREBASE_AUTH_EMULATOR = !!process.env.FIREBASE_AUTH_EMULATOR_HOST;
+const CAN_CHECK_FIREBASE_TOKEN_REVOCATION = !!process.env.FIREBASE_SERVICE_ACCOUNT_JSON || USING_FIREBASE_AUTH_EMULATOR;
+
 if (!firebaseAdmin.apps.length) {
+  if (IS_PRODUCTION && !process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+    throw new Error('FIREBASE_SERVICE_ACCOUNT_JSON must be configured in production. Without it, Firebase token revocation checks (checkRevoked) silently fail.');
+  }
   const firebaseInitConfig = process.env.FIREBASE_SERVICE_ACCOUNT_JSON
     ? { credential: firebaseAdmin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON)) }
     : { projectId: process.env.FIREBASE_PROJECT_ID || 'servi-bec91' };
   firebaseAdmin.initializeApp(firebaseInitConfig);
-  if (!process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
-    console.warn('[STARTUP WARNING] FIREBASE_SERVICE_ACCOUNT_JSON is not set. checkRevoked will fail — token revocation checks are disabled.');
+  if (USING_FIREBASE_AUTH_EMULATOR) {
+    console.warn(`[STARTUP WARNING] Firebase Admin Auth is using emulator at ${process.env.FIREBASE_AUTH_EMULATOR_HOST}.`);
+  }
+  if (!CAN_CHECK_FIREBASE_TOKEN_REVOCATION) {
+    console.warn('[STARTUP WARNING] FIREBASE_SERVICE_ACCOUNT_JSON is not set (dev mode). Token revocation checks are disabled.');
+  }
+}
+
+async function verifyFirebaseIdToken(idToken, checkRevoked = true) {
+  return firebaseAdmin.auth().verifyIdToken(idToken, checkRevoked && CAN_CHECK_FIREBASE_TOKEN_REVOCATION);
+}
+
+function normalizeFirebaseProvider(provider) {
+  const value = String(provider || '').toLowerCase();
+  if (value.includes('google')) return 'google';
+  if (value.includes('phone')) return 'phone';
+  if (value) return 'email';
+  return null;
+}
+
+async function findFirebaseAuthUserByIdentifier(identifier, isEmail) {
+  try {
+    if (isEmail) {
+      const emailNorm = normalizeEmail(identifier);
+      return emailNorm ? await firebaseAdmin.auth().getUserByEmail(emailNorm) : null;
+    }
+    const phoneNorm = normalizePhoneToE164(identifier);
+    return phoneNorm ? await firebaseAdmin.auth().getUserByPhoneNumber(phoneNorm) : null;
+  } catch (err) {
+    if (err.code === 'auth/user-not-found') return null;
+    throw err;
   }
 }
 
 // --- Auth Helpers ---
-// Use dedicated JWT_SECRET if available; fall back to existing secrets for backward compat.
-const JWT_SECRET = process.env.JWT_SECRET || process.env.STRIPE_WEBHOOK_SECRET || process.env.ADMIN_API_TOKEN || 'servi-fallback-auth-secret';
-if (!process.env.JWT_SECRET) {
-  console.warn('[STARTUP WARNING] JWT_SECRET env var is not set. Session tokens are signed with a fallback secret. Set JWT_SECRET on Render to decouple from Stripe webhook secret rotation.');
+// JWT_SECRET is required in production. Dev falls back to a deterministic dev-only key
+// so a missing .env doesn't crash local work — but never in prod.
+if (IS_PRODUCTION && !process.env.JWT_SECRET) {
+  throw new Error('JWT_SECRET must be configured in production. Set it on Render so session tokens are decoupled from Stripe webhook secret rotation.');
 }
+const JWT_SECRET = process.env.JWT_SECRET || 'servi-dev-only-jwt-secret-do-not-use-in-prod';
+if (!process.env.JWT_SECRET) {
+  console.warn('[STARTUP WARNING] JWT_SECRET not set — using dev-only fallback. NEVER deploy this configuration.');
+}
+
+// Session JWT TTL: 24 hours (down from 7 days). Refresh handled via /api/auth/refresh
+// which accepts tokens up to 24h past expiry, so active users stay logged in indefinitely
+// while idle/stolen tokens age out within a day. Logout writes the jti to revoked_sessions
+// for explicit server-side revocation before natural expiry.
+const SESSION_TTL_SECS = 24 * 60 * 60;
+const SESSION_REFRESH_GRACE_SECS = 24 * 60 * 60;
 
 function signSessionToken(payload) {
   const now = Math.floor(Date.now() / 1000);
-  const fullPayload = { ...payload, iat: now, exp: now + (7 * 24 * 60 * 60) };
+  const jti = randomUUID();
+  const fullPayload = { ...payload, iat: now, exp: now + SESSION_TTL_SECS, jti };
   const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
   const body = Buffer.from(JSON.stringify(fullPayload)).toString('base64url');
   const signature = createHmac('sha256', JWT_SECRET).update(`${header}.${body}`).digest('base64url');
   return `${header}.${body}.${signature}`;
 }
 
+// Synchronous: signature + expiry only. Does NOT consult the revocation list.
+// Use verifySessionTokenAsync for routes that need revocation checking.
 function verifySessionToken(token) {
   if (!token) return null;
   const [header, body, signature] = token.split('.');
@@ -81,6 +148,79 @@ function verifySessionToken(token) {
     if (payload.exp && Math.floor(Date.now() / 1000) > payload.exp) return null;
     return payload;
   } catch (e) { return null; }
+}
+
+async function verifySessionTokenAsync(token) {
+  const payload = verifySessionToken(token);
+  if (!payload) return null;
+  if (!payload.jti) return payload; // legacy 7d tokens predating jti — accept until they expire
+  try {
+    const { rows } = await pool.query('SELECT 1 FROM revoked_sessions WHERE jti = $1 LIMIT 1', [payload.jti]);
+    if (rows.length) return null;
+  } catch (err) {
+    console.error('[verifySessionTokenAsync] revocation check failed:', err.message);
+    // Fail closed in production; open in dev to keep local work unblocked.
+    if (IS_PRODUCTION) return null;
+  }
+  return payload;
+}
+
+async function revokeSessionJti(jti, userId, reason) {
+  if (!jti) return;
+  const expiresAt = new Date(Date.now() + SESSION_TTL_SECS * 1000);
+  try {
+    await pool.query(
+      `INSERT INTO revoked_sessions (jti, user_id, expires_at, reason)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (jti) DO NOTHING`,
+      [jti, userId || null, expiresAt, reason || null]
+    );
+  } catch (err) {
+    console.error('[revokeSessionJti]', err.message);
+  }
+}
+
+// Best-effort audit log writer. Never throws — auth_events is supplemental and must
+// not block the actual auth action.
+async function logAuthEvent(req, userId, eventType, metadata) {
+  try {
+    const ip = (req?.headers?.['x-forwarded-for'] || req?.ip || '').toString().split(',')[0].trim() || null;
+    const ua = (req?.headers?.['user-agent'] || '').toString().slice(0, 512) || null;
+    await pool.query(
+      `INSERT INTO auth_events (user_id, event_type, ip, user_agent, metadata)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [userId || null, eventType, ip, ua, metadata ? JSON.stringify(metadata) : null]
+    );
+  } catch (err) {
+    console.error('[logAuthEvent]', err.message);
+  }
+}
+
+// Per-identifier rate limiter using auth_otp_attempts. Returns true if allowed,
+// false if the identifier has exceeded `limit` attempts within `windowMs`.
+async function checkAndRecordIdentifierAttempt(identifier, kind, ip, limit, windowMs) {
+  if (process.env.DISABLE_RATE_LIMITS === '1') return true;
+  if (!identifier) return true;
+  const key = String(identifier).toLowerCase().trim();
+  try {
+    const since = new Date(Date.now() - windowMs);
+    const { rows } = await pool.query(
+      `SELECT COUNT(*)::int AS n FROM auth_otp_attempts
+       WHERE identifier = $1 AND kind = $2 AND created_at > $3`,
+      [key, kind, since]
+    );
+    const count = rows[0]?.n || 0;
+    if (count >= limit) return false;
+    await pool.query(
+      `INSERT INTO auth_otp_attempts (identifier, kind, ip) VALUES ($1, $2, $3)`,
+      [key, kind, ip || null]
+    );
+    return true;
+  } catch (err) {
+    console.error('[checkAndRecordIdentifierAttempt]', err.message);
+    // On DB error, fall back to permissive in dev / restrictive in prod
+    return !IS_PRODUCTION;
+  }
 }
 
 function hashPassword(password) {
@@ -311,6 +451,51 @@ async function isFirstTimeClient({ phoneDigits, emailNormalized }) {
   return rows.length === 0;
 }
 
+async function hasPriorServiceActivity({ userId, phoneDigits }) {
+  const phone = phoneDigits || null;
+  const localPhone = phone && phone.length >= 10 ? phone.slice(-10) : null;
+  const checks = [];
+
+  if (userId) {
+    checks.push(
+      pool.query(
+        `SELECT 1 FROM service_requests WHERE customer_id = $1 LIMIT 1`,
+        [userId]
+      )
+    );
+  }
+
+  if (phone) {
+    const phoneClause = localPhone
+      ? `(regexp_replace(COALESCE(client_phone, ''), '[^0-9]', '', 'g') = $1
+          OR RIGHT(regexp_replace(COALESCE(client_phone, ''), '[^0-9]', '', 'g'), 10) = $2)`
+      : `regexp_replace(COALESCE(client_phone, ''), '[^0-9]', '', 'g') = $1`;
+    const phoneParams = localPhone ? [phone, localPhone] : [phone];
+    checks.push(
+      pool.query(
+        `SELECT 1 FROM service_requests
+          WHERE ${phoneClause}
+          LIMIT 1`,
+        phoneParams
+      )
+    );
+    checks.push(
+      pool.query(
+        `SELECT 1 FROM all_bookings
+          WHERE ${phoneClause}
+            AND COALESCE(parent_id_of_adjustment, '') = ''
+            AND COALESCE(kind, '') <> 'adjustment'
+          LIMIT 1`,
+        phoneParams
+      )
+    );
+  }
+
+  if (!checks.length) return false;
+  const results = await Promise.all(checks);
+  return results.some((result) => result.rows.length > 0);
+}
+
 async function lookupContactByPhoneDigits(digits) {
   if (!digits) return null;
   const found = await findLatestEmailByPhoneDigits(digits);
@@ -355,6 +540,100 @@ async function upsertSavedServiUserContact({
     `,
     [customerId, name || null, normalizeEmail(email), phone || null, lastOrderId || null]
   );
+}
+
+async function syncSavedPaymentMethodForOrder({ orderId, paymentIntentId, paymentMethodId, customerId } = {}) {
+  let pmId = typeof paymentMethodId === 'string' ? paymentMethodId : paymentMethodId?.id || null;
+  let custId = typeof customerId === 'string' ? customerId : customerId?.id || null;
+
+  if ((!pmId || !custId) && paymentIntentId) {
+    try {
+      const pi = await stripe.paymentIntents.retrieve(paymentIntentId);
+      pmId = pmId || (typeof pi.payment_method === 'string' ? pi.payment_method : pi.payment_method?.id || null);
+      custId = custId || (typeof pi.customer === 'string' ? pi.customer : pi.customer?.id || null);
+    } catch (err) {
+      console.warn('syncSavedPaymentMethodForOrder: PI lookup failed', paymentIntentId, err?.message || err);
+    }
+  }
+
+  if (pmId && !custId) {
+    try {
+      const pm = await stripe.paymentMethods.retrieve(pmId);
+      custId = typeof pm.customer === 'string' ? pm.customer : pm.customer?.id || null;
+    } catch (err) {
+      console.warn('syncSavedPaymentMethodForOrder: PM lookup failed', pmId, err?.message || err);
+    }
+  }
+
+  let row = null;
+  if (orderId || paymentIntentId) {
+    const params = [];
+    const where = [];
+    if (orderId) {
+      params.push(orderId);
+      where.push(`id = $${params.length}`);
+    }
+    if (paymentIntentId) {
+      params.push(paymentIntentId);
+      where.push(`payment_intent_id = $${params.length}`);
+    }
+    const { rows } = await pool.query(
+      `SELECT id, customer_id, client_name, client_email, client_phone, parent_id_of_adjustment
+         FROM all_bookings
+        WHERE ${where.join(' OR ')}
+        ORDER BY created_at DESC
+        LIMIT 1`,
+      params
+    );
+    row = rows[0] || null;
+    custId = custId || row?.customer_id || null;
+  }
+
+  if (row && (pmId || custId)) {
+    await pool.query(
+      `UPDATE all_bookings
+          SET saved_payment_method_id = COALESCE($1, saved_payment_method_id),
+              customer_id = COALESCE($2, customer_id)
+        WHERE id = $3`,
+      [pmId || null, custId || null, row.id]
+    );
+  }
+
+  if (custId) {
+    await pool.query(
+      `
+        INSERT INTO saved_servi_users (
+          customer_id,
+          customer_name,
+          customer_email,
+          customer_phone,
+          latest_payment_method_id,
+          last_order_id,
+          first_checked_at,
+          last_checked_at
+        )
+        VALUES ($1,$2,$3,$4,$5,$6,NOW(),NOW())
+        ON CONFLICT (customer_id) DO UPDATE SET
+          customer_name = COALESCE(EXCLUDED.customer_name, saved_servi_users.customer_name),
+          customer_email = COALESCE(EXCLUDED.customer_email, saved_servi_users.customer_email),
+          customer_phone = COALESCE(EXCLUDED.customer_phone, saved_servi_users.customer_phone),
+          latest_payment_method_id = COALESCE(EXCLUDED.latest_payment_method_id, saved_servi_users.latest_payment_method_id),
+          last_order_id = COALESCE(EXCLUDED.last_order_id, saved_servi_users.last_order_id),
+          first_checked_at = COALESCE(saved_servi_users.first_checked_at, EXCLUDED.first_checked_at),
+          last_checked_at = NOW()
+      `,
+      [
+        custId,
+        row?.client_name || null,
+        row?.client_email || null,
+        row?.client_phone || null,
+        pmId || null,
+        row?.id || null
+      ]
+    );
+  }
+
+  return { customerId: custId || null, paymentMethodId: pmId || null, orderId: row?.id || orderId || null };
 }
 
 const BOOK_SUCCESS_STATUSES = new Set(['Scheduled', 'Confirmed', 'Captured']);
@@ -605,6 +884,7 @@ app.set('trust proxy', 1); // Render sits behind a load balancer; trust first pr
 const adminRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 200,
+  skip: () => process.env.NODE_ENV === 'test' || process.env.DISABLE_RATE_LIMITS === '1',
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'too_many_requests' },
@@ -613,6 +893,7 @@ const adminRateLimit = rateLimit({
 const publicFormLimit = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 30,               // stricter than admin — public forms
+  skip: () => process.env.NODE_ENV === 'test' || process.env.DISABLE_RATE_LIMITS === '1',
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'too_many_requests' },
@@ -622,6 +903,20 @@ const GOOGLE_SCRIPT_WEBHOOK_URL = process.env.SHEETS_WEBHOOK_URL || '';
 const ADMIN_API_TOKEN = process.env.ADMIN_API_TOKEN || '';
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET || '';
 const FRONTEND_BASE_URL = (process.env.FRONTEND_BASE_URL || process.env.PUBLIC_BASE_URL || 'https://servi-preauth.pages.dev').replace(/\/+$/, '');
+const GMAIL_USER = process.env.GMAIL_USER || '';
+const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD || '';
+const emailTransporter = (GMAIL_USER && GMAIL_APP_PASSWORD)
+  ? nodemailer.createTransport({
+      host: 'smtp.gmail.com',
+      port: 587,
+      secure: false,
+      requireTLS: true,
+      auth: { user: GMAIL_USER, pass: GMAIL_APP_PASSWORD },
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 15000,
+    })
+  : null;
 
 if (!process.env.STRIPE_SECRET_KEY) {
   throw new Error('STRIPE_SECRET_KEY must be configured before starting the server');
@@ -751,20 +1046,28 @@ function requireAdminAuth(req, res, next) {
   return next();
 }
 
-async function postToGoogleWebhook(payload, { maxAttempts = 3, delayMs = 1000 } = {}) {
+async function postToGoogleWebhook(payload, { maxAttempts = 3, delayMs = 1000, timeoutMs = 8000 } = {}) {
   if (!GOOGLE_SCRIPT_WEBHOOK_URL) return;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    // Per-attempt AbortController bounds the fetch so a hung Apps Script can't pin
+    // a socket and leak retries off the back of Stripe webhook deliveries.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const res = await fetch(GOOGLE_SCRIPT_WEBHOOK_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal: controller.signal
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text().catch(() => '')}`);
       return;
     } catch (err) {
-      console.error(`[webhook] attempt ${attempt}/${maxAttempts} failed (type=${payload?.type}):`, err.message);
+      const reason = err?.name === 'AbortError' ? `timeout after ${timeoutMs}ms` : (err?.message || String(err));
+      console.error(`[webhook] attempt ${attempt}/${maxAttempts} failed (type=${payload?.type}): ${reason}`);
       if (attempt < maxAttempts) await new Promise(r => setTimeout(r, delayMs * attempt));
+    } finally {
+      clearTimeout(timer);
     }
   }
   console.error('[webhook] all retry attempts exhausted for payload:', JSON.stringify(payload));
@@ -1056,7 +1359,10 @@ async function refreshOrderFees(orderId, { paymentIntentId, paymentMethodId, ret
             stripe_percent_fee,
             stripe_fixed_fee,
             stripe_fee_tax_rate,
+            processing_fee_type,
             payment_intent_id,
+            saved_payment_method_id,
+            customer_id,
             created_at,
             retry_token,
             retry_token_created_at
@@ -1111,6 +1417,19 @@ async function refreshOrderFees(orderId, { paymentIntentId, paymentMethodId, ret
       cardCountry = (pm?.card?.country || '').toUpperCase() || cardCountry;
     } catch (err) {
       console.warn('refreshOrderFees: could not retrieve payment method', pmId, err?.message || err);
+    }
+  }
+
+  if (pmId || paymentIntentId) {
+    try {
+      await syncSavedPaymentMethodForOrder({
+        orderId,
+        paymentIntentId,
+        paymentMethodId: pmId,
+        customerId: order.customer_id || null
+      });
+    } catch (err) {
+      console.warn('refreshOrderFees: saved payment method sync failed', orderId, err?.message || err);
     }
   }
 
@@ -1214,6 +1533,15 @@ app.use((req, res, next) => {
 // 🚫 Block direct access to the static success.html; force gated route instead
 app.get('/success.html', successGate);
 
+// Apple Pay domain verification (required for Apple Pay to appear in Payment Element)
+app.get('/.well-known/apple-developer-merchantid-domain-association', (_req, res) => {
+  const associationPath = path.join(FRONTEND_DIR, '.well-known', 'apple-developer-merchantid-domain-association');
+  if (!fs.existsSync(associationPath)) {
+    return res.status(404).type('text/plain').send('Apple Pay domain association file is not configured.');
+  }
+  return res.sendFile(associationPath);
+});
+
 app.use(express.static(FRONTEND_DIR));
 
 // 🎯 Create PaymentIntent (save card for later off-session charges)
@@ -1240,7 +1568,9 @@ app.use(express.static(FRONTEND_DIR));
       provider_name: providerNameSnake,
       allowCashOnce,
       allow_cash_once,
-      category: categoryRaw
+      category: categoryRaw,
+      isAsap,
+      is_asap
     } = req.body;
     const categoryInput = String(categoryRaw || '').trim().toLowerCase() || null;
     const VALID_CATEGORIES = new Set(['cleaning','repair','wellness','maintenance','supply','custom']);
@@ -1264,18 +1594,20 @@ app.use(express.static(FRONTEND_DIR));
   } else if (!Number.isFinite(providerPricePesos) || providerPricePesos <= 0) {
     return res.status(400).send({ error: 'invalid_provider_amount', message: 'amount must be a positive number (MXN pesos)' });
   }
-  const clientEmailNormalized = normalizeEmail(clientEmail);
-  if (!clientEmailNormalized) {
-    return res.status(400).send({
-      error: 'email_required',
-      message: 'Ingresa un email válido antes de generar el enlace.'
-    });
-  }
   const phoneDigits = normalizePhoneDigits(clientPhone);
   if (!phoneDigits) {
     return res.status(400).send({
       error: 'phone_required_for_email',
       message: 'Agrega el WhatsApp del cliente antes de generar el enlace.'
+    });
+  }
+  const rawClientEmail = String(clientEmail || '').trim();
+  const clientEmailNormalized = normalizeEmail(rawClientEmail);
+  const hasPriorActivity = await hasPriorServiceActivity({ phoneDigits });
+  if ((rawClientEmail && !clientEmailNormalized) || (!clientEmailNormalized && hasPriorActivity)) {
+    return res.status(400).send({
+      error: 'email_required',
+      message: 'Ingresa un email válido antes de generar el enlace.'
     });
   }
   const isFirstTimer = await isFirstTimeClient({
@@ -1284,13 +1616,19 @@ app.use(express.static(FRONTEND_DIR));
   });
   const allowCashFlag =
     allowCashOnce === undefined && allow_cash_once === undefined
-      ? true // default: offer to first-time users
+      ? false
       : allowCashOnce === true ||
         allow_cash_once === true ||
         String(allowCashOnce || allow_cash_once || '').toLowerCase() === 'true' ||
         allowCashOnce === '1' ||
         allow_cash_once === '1';
   const cashExceptionAllowed = allowCashFlag && isFirstTimer;
+  const isAsapFlag =
+    isAsap === true ||
+    is_asap === true ||
+    String(isAsap ?? is_asap ?? '').toLowerCase() === 'true' ||
+    isAsap === '1' ||
+    is_asap === '1';
   try {
     const captureMethod = String(capture).toLowerCase() === 'automatic' ? 'automatic' : 'manual';
     const savedPhoneRecord = phoneDigits ? await findSavedClientByPhoneDigits(phoneDigits) : null;
@@ -1517,7 +1855,7 @@ app.use(express.static(FRONTEND_DIR));
 
     // also persist service_date/service_datetime (you already do)
   await pool.query(
-    'UPDATE all_bookings SET service_date=$1, service_datetime=$2, client_phone=$3, client_email=$4, service_address=$5, booking_type=$6, provider_id=$7, provider_name=$8, category=$9 WHERE id=$10',
+    'UPDATE all_bookings SET service_date=$1, service_datetime=$2, client_phone=$3, client_email=$4, service_address=$5, booking_type=$6, provider_id=$7, provider_name=$8, category=$9, is_asap=$10 WHERE id=$11',
     [
       serviceDate || null,
       serviceDateTime || null,
@@ -1528,6 +1866,7 @@ app.use(express.static(FRONTEND_DIR));
       providerId || null,
       providerName || null,
       category || null,
+      isAsapFlag && !serviceDateTime,
       orderId
     ]
   );
@@ -1789,6 +2128,160 @@ app.get('/admin/contact-lookup', adminRateLimit, requireAdminAuth, async (req, r
   }
 });
 
+// Read-time safety net for the canonical Stripe webhook. Recomputes one order's DB status
+// from its own PaymentIntent and applies ONLY the two positive transitions the webhook already
+// performs (requires_capture → Confirmed, succeeded → Captured). It is deliberately surgical so
+// it can never interfere with other order wirings:
+//   • skips orders with no PaymentIntent, or a SetupIntent (seti_) → card-save/setup flow untouched
+//   • skips cash orders (cash_selected) and already-settled statuses (Captured/Refunded/Declined/
+//     Pending Cash/Canceled…) → never downgrades or re-touches
+//   • ignores pre-authorization PI states and cancellations → never advances early or guesses cancel reasons
+// It only ever writes a status the webhook itself would write, so it introduces no new state.
+// Pass an already-retrieved `pi` to avoid a second Stripe call. Returns the (maybe new) status.
+async function reconcileOrderStatusFromStripe(row, opts = {}) {
+  try {
+    if (!row || !row.id) return row?.status || null;
+    const piId = row.payment_intent_id;
+    const current = String(row.status || '').trim();
+    if (!piId || !piId.startsWith('pi_')) return current;           // no PI, or SetupIntent → leave alone
+    if (row.cash_selected) return current;                          // cash lifecycle is separate
+    const SETTLED = new Set(['Captured', 'Refunded', 'Declined', 'Pending Cash']);
+    if (SETTLED.has(current) || /^cancel/i.test(current)) return current;
+
+    let pi = opts.pi || null;
+    if (!pi) {
+      try { pi = await stripe.paymentIntents.retrieve(piId); }
+      catch (e) { return current; }
+    }
+    if (!pi || typeof pi.status !== 'string') return current;
+
+    let next = null;
+    if (pi.capture_method === 'manual' && pi.status === 'requires_capture') next = 'Confirmed';
+    else if (pi.status === 'succeeded') next = 'Captured';
+    if (!next || next === current) return current;
+
+    // Forward-only at the DB level too, mirroring the webhook's guard.
+    await pool.query(
+      `UPDATE all_bookings SET status = $1 WHERE id = $2 AND status NOT IN ('Captured','Refunded')`,
+      [next, row.id]
+    );
+    row.status = next;
+    console.log(`[reconcile] order ${row.id} pi ${piId}: ${current} → ${next}`);
+    postToGoogleWebhook({
+      type: 'order.status', orderId: row.id, status: next, paymentIntentId: piId,
+      customerId: row.customer_id || '', parentOrderId: row.parent_id_of_adjustment || ''
+    });
+    return next;
+  } catch (err) {
+    console.warn('[reconcile] failed for order', row?.id, err?.message || err);
+    return row?.status || null;
+  }
+}
+
+// Reconciles a list of order rows in place — only the bounded subset that could actually advance
+// (card PI present, not cash, not already settled), capped and run in parallel so a list read
+// makes at most a handful of Stripe calls. Each worthy row triggers its own retrieve.
+async function reconcileOrderRows(rows, { cap = 12 } = {}) {
+  if (!Array.isArray(rows) || !rows.length) return;
+  const worthy = rows.filter((r) => {
+    const piId = r && r.payment_intent_id;
+    if (!piId || !String(piId).startsWith('pi_')) return false;
+    if (r.cash_selected) return false;
+    const s = String(r.status || '').trim();
+    if (['Captured', 'Refunded', 'Declined', 'Pending Cash'].includes(s) || /^cancel/i.test(s)) return false;
+    return true;
+  }).slice(0, cap);
+  if (!worthy.length) return;
+  await Promise.all(worthy.map((r) => reconcileOrderStatusFromStripe(r)));
+}
+
+async function enrichOrdersWithOps(rows, { persistSeen = false } = {}) {
+  if (!Array.isArray(rows) || !rows.length) return rows || [];
+  const now = new Date();
+  const activePairs = [];
+
+  for (const row of rows) {
+    row.ops = classifyOrderOps(row, { now });
+    if (row.ops.code !== 'safe') activePairs.push({ orderId: row.id, code: row.ops.code });
+  }
+
+  if (!activePairs.length) return rows;
+
+  if (persistSeen) {
+    await pool.query(
+      `
+        INSERT INTO ops_alerts (order_id, alert_code, status, last_seen_at, resolved_at)
+        SELECT order_id, alert_code, 'active', NOW(), NULL
+          FROM UNNEST($1::text[], $2::text[]) AS t(order_id, alert_code)
+        ON CONFLICT (order_id, alert_code) DO UPDATE
+           SET last_seen_at = NOW(),
+               status = CASE WHEN ops_alerts.status = 'resolved' THEN 'active' ELSE ops_alerts.status END,
+               resolved_at = NULL
+      `,
+      [
+        activePairs.map(p => p.orderId),
+        activePairs.map(p => p.code),
+      ]
+    );
+  }
+
+  const { rows: alertRows } = await pool.query(
+    `SELECT order_id, alert_code, status, snoozed_until, last_seen_at, resolved_at, admin_note
+       FROM ops_alerts
+      WHERE order_id = ANY($1::text[])`,
+    [[...new Set(activePairs.map(p => p.orderId))]]
+  );
+  const alertMap = new Map(alertRows.map(a => [`${a.order_id}:${a.alert_code}`, a]));
+  const nowMs = now.getTime();
+
+  for (const row of rows) {
+    if (!row.ops || row.ops.code === 'safe') continue;
+    const alert = alertMap.get(`${row.id}:${row.ops.code}`);
+    if (!alert) continue;
+    const snoozedMs = alert.snoozed_until ? new Date(alert.snoozed_until).getTime() : NaN;
+    row.ops.alertStatus = alert.status || 'active';
+    row.ops.snoozedUntil = alert.snoozed_until || null;
+    row.ops.isSnoozed = Number.isFinite(snoozedMs) && snoozedMs > nowMs && alert.status !== 'resolved';
+    row.ops.adminNote = alert.admin_note || null;
+  }
+
+  return rows;
+}
+
+function compactOpsOrder(row) {
+  return {
+    id: row.id,
+    public_code: row.public_code,
+    client_name: row.client_name,
+    client_phone: row.client_phone,
+    service_description: row.service_description,
+    service_date: row.service_date,
+    service_datetime: row.service_datetime,
+    is_asap: row.is_asap,
+    category: row.category,
+    status: row.status,
+    amount: row.amount,
+    pricing_total_amount: row.pricing_total_amount,
+    payment_intent_id: row.payment_intent_id,
+    cash_selected: row.cash_selected,
+    ops: row.ops,
+  };
+}
+
+function resolveSnoozeUntil(value) {
+  const v = String(value || '').toLowerCase();
+  const now = new Date();
+  if (v === '15m' || v === '15min') return new Date(now.getTime() + 15 * 60_000);
+  if (v === '1h' || v === '60m') return new Date(now.getTime() + 60 * 60_000);
+  if (v === 'tomorrow' || v === 'tomorrow_morning') {
+    const d = new Date(now);
+    d.setDate(d.getDate() + 1);
+    d.setHours(9, 0, 0, 0);
+    return d;
+  }
+  return null;
+}
+
 async function getOrderPayload(orderId, { allowExpiredQuery = false, retryTokenRaw = '' } = {}) {
   const wantsOverride = allowExpiredQuery || !!retryTokenRaw;
   const retryTokenParam = wantsOverride ? retryTokenRaw : '';
@@ -1800,7 +2293,7 @@ async function getOrderPayload(orderId, { allowExpiredQuery = false, retryTokenR
         stripe_fee_tax_rate, processing_fee_type, urgency_multiplier, alpha_value,
         client_name, client_phone, client_email, provider_id, provider_name,
         cash_exception_allowed, cash_selected,
-        service_description, service_date, service_datetime, service_address, booking_type, status, created_at,
+        service_description, service_date, service_datetime, is_asap, service_address, booking_type, status, created_at,
         public_code, kind, parent_id_of_adjustment, customer_id, saved_payment_method_id, capture_method, adjustment_reason,
         retry_token, retry_token_created_at
       FROM all_bookings
@@ -1816,7 +2309,19 @@ async function getOrderPayload(orderId, { allowExpiredQuery = false, retryTokenR
   if (row.provider_id) providerMeta.provider_id = row.provider_id;
   if (row.provider_name) providerMeta.provider_name = row.provider_name;
 
+  const retryTokenProvided = !!normalizeRetryToken(retryTokenParam);
   const { usingRetryToken, createdAtOverride } = resolveRetryTokenContext(row, retryTokenParam);
+  // Single active link: generating a new payment link overwrites the order's stored
+  // retry_token. So once an order HAS a stored token, any link carrying a DIFFERENT
+  // token has been superseded by a newer link → reject it as expired (410) instead of
+  // silently falling through to the original creation window (which could still be live
+  // within the first 2h). This guarantees only the most recent link works.
+  const hasStoredToken = !!(row.retry_token || row.retry_token_created_at);
+  if (retryTokenProvided && !usingRetryToken && hasStoredToken) {
+    const err = makeError('link_expired', 'This payment or booking link has expired', 410);
+    err.linkExpiresAt = null;
+    throw err;
+  }
   const allowExpired = wantsOverride && !usingRetryToken;
   const linkSource = createdAtOverride ? { ...row, created_at: createdAtOverride } : row;
   const linkInfo = assertOrderLinkActive(linkSource, { allowExpired });
@@ -2040,6 +2545,10 @@ async function getOrderPayload(orderId, { allowExpiredQuery = false, retryTokenR
         pi = null;
       }
       intentType = isSetup ? 'setup' : 'payment';
+      // Safety net: heal the order status from the PI we just fetched (e.g. a missed webhook).
+      if (!isSetup && pi) {
+        try { await reconcileOrderStatusFromStripe(row, { pi }); } catch (_) {}
+      }
     } else {
       pi = null;
       intentType = null;
@@ -2436,31 +2945,32 @@ app.get('/o/:code', async (req, res) => {
 });
 
 // Customer lookup by phone (for save.html portal access)
+// Lookup the Stripe customer ID for the authenticated user. The session is the
+// identity proof — client-supplied phone/email is intentionally ignored to prevent
+// account-takeover via identifier enumeration.
 app.get('/customer-lookup', async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
   try {
-    const { phone } = req.query;
-    if (!phone) return res.status(400).json({ error: 'phone required' });
-
-    const esc = (s) => String(s || '').replace(/'/g, "\\'");
-    const found = await stripe.customers.search({ query: `phone:'${esc(phone)}'` });
-    
-    if (!found.data?.length) {
-      return res.status(404).json({ error: 'customer not found' });
-    }
-
-    return res.json({ customerId: found.data[0].id });
+    const customerId = await getStripeCustomerForUser(payload.user_id, { createIfMissing: false });
+    if (!customerId) return res.status(404).json({ error: 'customer_not_found' });
+    return res.json({ customerId });
   } catch (err) {
     console.error('customer-lookup error:', err);
-    return res.status(500).json({ error: 'Internal error' });
+    return res.status(500).json({ error: 'internal_error' });
   }
 });
 
-// Standalone billing portal (no order required)
+// Standalone billing portal — generates a Stripe billing portal URL for the
+// authenticated user's customer. Body customerId (if any) is ignored.
 app.post('/billing-portal-standalone', async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
   try {
-    const { customerId, returnUrl } = req.body || {};
-    if (!customerId) return res.status(400).json({ error: 'customerId required' });
+    const customerId = await getStripeCustomerForUser(payload.user_id, { createIfMissing: false });
+    if (!customerId) return res.status(404).json({ error: 'customer_not_found' });
 
+    const { returnUrl } = req.body || {};
     const base = buildFrontendUrl('/save.html');
     const session = await stripe.billingPortal.sessions.create({
       customer: customerId,
@@ -2470,23 +2980,28 @@ app.post('/billing-portal-standalone', async (req, res) => {
     return res.json({ url: session.url });
   } catch (err) {
     console.error('billing-portal-standalone error:', err);
-    return res.status(500).json({ error: err.message || 'Portal error' });
+    return res.status(500).json({ error: 'internal_error' });
   }
 });
 
-// Create standalone SetupIntent (no order)
+// Create a SetupIntent attached to the authenticated user's Stripe customer.
+// Customer is find-or-created so first-time savers also work.
 app.post('/create-standalone-setup', async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
   try {
+    const customerId = await getStripeCustomerForUser(payload.user_id);
     const si = await stripe.setupIntents.create({
+      customer: customerId,
       automatic_payment_methods: { enabled: true },
       usage: 'off_session',
-      metadata: { kind: 'standalone_account_creation' }
+      metadata: { kind: 'standalone_account_creation', auth_user_id: payload.user_id }
     });
 
     return res.json({ client_secret: si.client_secret });
   } catch (err) {
     console.error('create-standalone-setup error:', err);
-    return res.status(500).json({ error: err.message || 'Setup error' });
+    return res.status(500).json({ error: 'internal_error' });
   }
 });
 
@@ -3390,7 +3905,7 @@ app.post('/capture-order', adminRateLimit, requireAdminAuth, async (req, res) =>
 });
 
 app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
-  
+
   const sig = req.headers['stripe-signature'];
   let event;
 
@@ -3408,16 +3923,58 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
     paymentIntentId = event.data.object.id;
   }
 
+  // Idempotency guard: dedupe Stripe retries by event.id. A successful INSERT means
+  // we own this delivery; a conflict means another delivery already started and we
+  // should ack 200 so Stripe stops retrying.
+  let claimedDelivery = false;
+  try {
+    const claim = await pool.query(
+      `INSERT INTO stripe_webhook_events (event_id, event_type, payment_intent_id)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (event_id) DO NOTHING`,
+      [event.id, event.type, paymentIntentId || null]
+    );
+    if (claim.rowCount === 0) {
+      console.log(`[webhook] duplicate event ignored: ${event.id} (${event.type})`);
+      return res.status(200).send('Duplicate event ignored');
+    }
+    claimedDelivery = true;
+  } catch (claimErr) {
+    // If the dedupe insert itself fails (DB blip), fall through and process the event.
+    // Worst case is we double-process this one delivery; Stripe will not retry on 200.
+    console.error('[webhook] idempotency claim failed (processing anyway):', claimErr?.message || claimErr);
+  }
+
+  try {
+
   switch (event.type) {
     case 'payment_intent.succeeded': {
-      console.log('💰 Captured (payment_intent.succeeded):', paymentIntentId);
+      const pi = event.data.object;
+      // A late-cancellation fee is collected by partial-capturing the hold, which also fires
+      // 'succeeded'. The metadata flag (set before capture) tells us this is a cancellation, not
+      // a completed service, so we relabel instead of marking Captured.
+      const isPenaltyCapture = pi?.metadata?.servi_penalty_cancel === '1';
+      const nextStatus = isPenaltyCapture ? 'Canceled (late fee)' : 'Captured';
+      console.log(`${isPenaltyCapture ? '🚫 Canceled (late fee)' : '💰 Captured'} (payment_intent.succeeded):`, paymentIntentId);
 
       const r = await pool.query('SELECT id, customer_id FROM all_bookings WHERE payment_intent_id = $1 LIMIT 1', [paymentIntentId]);
       const row = r.rows[0] || {};
 
-      await pool.query('UPDATE all_bookings SET status = $1 WHERE payment_intent_id = $2', ['Captured', paymentIntentId]);
+      // Forward-only, mirroring the sibling handlers: never overwrite a refund, and never let a
+      // normal capture clobber a cancellation status. A penalty capture sets its own cancel label.
+      if (isPenaltyCapture) {
+        await pool.query(
+          `UPDATE all_bookings SET status = $1 WHERE payment_intent_id = $2 AND status NOT IN ('Captured', 'Refunded')`,
+          [nextStatus, paymentIntentId]
+        );
+      } else {
+        await pool.query(
+          `UPDATE all_bookings SET status = $1 WHERE payment_intent_id = $2 AND status <> 'Refunded' AND status NOT LIKE 'Cancel%'`,
+          [nextStatus, paymentIntentId]
+        );
+      }
 
-      postToGoogleWebhook({ type: 'order.status', paymentIntentId, status: 'Captured', orderId: row.id || '', customerId: row.customer_id || '' });
+      postToGoogleWebhook({ type: 'order.status', paymentIntentId, status: nextStatus, orderId: row.id || '', customerId: row.customer_id || '' });
       break;
     }
 
@@ -3575,27 +4132,52 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
     case 'charge.failed': {
       console.log('❌ Failed (charge.failed):', paymentIntentId);
-      await pool.query('UPDATE all_bookings SET status = $1 WHERE payment_intent_id = $2',
-                      ['Failed', paymentIntentId]);
-      postToGoogleWebhook({ paymentIntentId, status: 'Failed' });
+      const r = await pool.query(
+        'SELECT id, customer_id FROM all_bookings WHERE payment_intent_id = $1 LIMIT 1',
+        [paymentIntentId]
+      );
+      const row = r.rows[0] || {};
+      // Forward-only: never overwrite a terminal-positive status with Failed.
+      await pool.query(
+        `UPDATE all_bookings SET status = $1
+          WHERE payment_intent_id = $2 AND status NOT IN ('Captured', 'Refunded')`,
+        ['Failed', paymentIntentId]
+      );
+      postToGoogleWebhook({ type: 'order.status', paymentIntentId, status: 'Failed', orderId: row.id || '', customerId: row.customer_id || '' });
       break;
     }
 
     // === PI-level failure (keep distinct label so it never looks like 'expired') ===
     case 'payment_intent.payment_failed': {
       console.log('⛔ Declined (payment_intent.payment_failed):', paymentIntentId);
-      await pool.query('UPDATE all_bookings SET status = $1 WHERE payment_intent_id = $2',
-                      ['Declined', paymentIntentId]); // <-- not "Failed"
-      postToGoogleWebhook({ paymentIntentId, status: 'Declined' });
+      const r = await pool.query(
+        'SELECT id, customer_id FROM all_bookings WHERE payment_intent_id = $1 LIMIT 1',
+        [paymentIntentId]
+      );
+      const row = r.rows[0] || {};
+      await pool.query(
+        `UPDATE all_bookings SET status = $1
+          WHERE payment_intent_id = $2 AND status NOT IN ('Captured', 'Refunded')`,
+        ['Declined', paymentIntentId]
+      );
+      postToGoogleWebhook({ type: 'order.status', paymentIntentId, status: 'Declined', orderId: row.id || '', customerId: row.customer_id || '' });
       break;
     }
 
     // === legacy/processor-side authorization expiry signal ===
     case 'charge.expired': {
       console.log('🕒 Canceled (expired) via charge.expired:', paymentIntentId);
-      await pool.query('UPDATE all_bookings SET status = $1 WHERE payment_intent_id = $2',
-                      ['Canceled (expired)', paymentIntentId]);
-      postToGoogleWebhook({ paymentIntentId, status: 'Canceled (expired)' });
+      const r = await pool.query(
+        'SELECT id, customer_id FROM all_bookings WHERE payment_intent_id = $1 LIMIT 1',
+        [paymentIntentId]
+      );
+      const row = r.rows[0] || {};
+      await pool.query(
+        `UPDATE all_bookings SET status = $1
+          WHERE payment_intent_id = $2 AND status NOT IN ('Captured', 'Refunded')`,
+        ['Canceled (expired)', paymentIntentId]
+      );
+      postToGoogleWebhook({ type: 'order.status', paymentIntentId, status: 'Canceled (expired)', orderId: row.id || '', customerId: row.customer_id || '' });
       break;
     }
 
@@ -3610,34 +4192,52 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
       // Try to map the PI back to the order either by PI lookup or metadata.order_id
       let isCash = false;
       let orderIdForWebhook = null;
+      let customerIdForWebhook = null;
       const byPi = await pool.query(
-        'SELECT id, cash_selected FROM all_bookings WHERE payment_intent_id = $1 LIMIT 1',
+        'SELECT id, cash_selected, customer_id FROM all_bookings WHERE payment_intent_id = $1 LIMIT 1',
         [paymentIntentId]
       );
       if (byPi.rows.length) {
         isCash = byPi.rows[0].cash_selected === true;
         orderIdForWebhook = byPi.rows[0].id;
+        customerIdForWebhook = byPi.rows[0].customer_id || null;
       } else if (pi?.metadata?.order_id) {
         const byMeta = await pool.query(
-          'SELECT id, cash_selected FROM all_bookings WHERE id = $1 LIMIT 1',
+          'SELECT id, cash_selected, customer_id FROM all_bookings WHERE id = $1 LIMIT 1',
           [pi.metadata.order_id]
         );
         if (byMeta.rows.length) {
           isCash = byMeta.rows[0].cash_selected === true;
           orderIdForWebhook = byMeta.rows[0].id;
+          customerIdForWebhook = byMeta.rows[0].customer_id || null;
         }
       }
 
       const nextStatus = isCash ? 'Pending Cash' : label;
 
+      // Forward-only: never overwrite a terminal-positive status (Captured/Refunded)
+      // with a late-arriving cancellation event.
       if (orderIdForWebhook) {
-        await pool.query('UPDATE all_bookings SET status = $1 WHERE id = $2', [nextStatus, orderIdForWebhook]);
+        await pool.query(
+          `UPDATE all_bookings SET status = $1
+            WHERE id = $2 AND status NOT IN ('Captured', 'Refunded')`,
+          [nextStatus, orderIdForWebhook]
+        );
       } else {
-        await pool.query('UPDATE all_bookings SET status = $1 WHERE payment_intent_id = $2', [nextStatus, paymentIntentId]);
+        await pool.query(
+          `UPDATE all_bookings SET status = $1
+            WHERE payment_intent_id = $2 AND status NOT IN ('Captured', 'Refunded')`,
+          [nextStatus, paymentIntentId]
+        );
       }
 
-      // Only notify Sheets/webhook when it is a real cancellation; for cash we keep Pending Cash
-      postToGoogleWebhook({ paymentIntentId, status: nextStatus });
+      postToGoogleWebhook({
+        type: 'order.status',
+        paymentIntentId,
+        status: nextStatus,
+        orderId: orderIdForWebhook || '',
+        customerId: customerIdForWebhook || ''
+      });
       break;
     }
 
@@ -3652,6 +4252,15 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
           'UPDATE all_bookings SET saved_payment_method_id = COALESCE($1, saved_payment_method_id), customer_id = COALESCE($2, customer_id) WHERE payment_intent_id = $3',
           [pmId, cust, obj.id]
         );
+        try {
+          await syncSavedPaymentMethodForOrder({
+            paymentIntentId: obj.id,
+            paymentMethodId: pmId,
+            customerId: cust
+          });
+        } catch (syncErr) {
+          console.warn('PI capturable saved payment method sync failed', obj.id, syncErr?.message || syncErr);
+        }
       }
 
       if (obj.capture_method === 'manual' && obj.status === 'requires_capture') {
@@ -3917,8 +4526,23 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
       console.log(`Unhandled event type: ${event.type}`);
   }
 
+  if (claimedDelivery) {
+    await pool.query(
+      `UPDATE stripe_webhook_events SET processed_at = NOW() WHERE event_id = $1`,
+      [event.id]
+    ).catch(err => console.error('[webhook] processed_at update failed:', err?.message || err));
+  }
 
   res.status(200).send('Webhook received');
+
+  } catch (handlerErr) {
+    console.error(`[webhook] handler error event=${event.id} type=${event.type}:`, handlerErr?.message || handlerErr);
+    if (claimedDelivery) {
+      await pool.query('DELETE FROM stripe_webhook_events WHERE event_id = $1', [event.id])
+        .catch(delErr => console.error('[webhook] dedupe row cleanup failed:', delErr?.message || delErr));
+    }
+    return res.status(500).send('Webhook handler error');
+  }
 });
 
 app.post('/confirm-with-saved', async (req, res) => {
@@ -4394,6 +5018,10 @@ async function successGate(req, res) {
 // --- Public: Upload media attachment to R2 ---
 app.post('/api/uploads', publicFormLimit, upload.single('file'), async (req, res) => {
   try {
+    if (!process.env.R2_ACCOUNT_ID || !process.env.R2_ACCESS_KEY_ID || !process.env.R2_SECRET_ACCESS_KEY) {
+      console.error('[POST /api/uploads] R2 environment variables not configured (R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY)');
+      return res.status(503).json({ error: 'storage_not_configured', message: 'File uploads are not available on this server.' });
+    }
     if (!req.file) return res.status(400).json({ error: 'no_file', message: 'No file received' });
     const { mimetype, size, originalname, buffer } = req.file;
     const isVideo = mimetype.startsWith('video/');
@@ -4423,35 +5051,95 @@ app.post('/api/uploads', publicFormLimit, upload.single('file'), async (req, res
 // --- Public: Submit a service request ---
 app.post('/api/service-requests', publicFormLimit, async (req, res) => {
   try {
-    const { category, description, preferredDate, preferredTime, isAsap, serviceAddress, clientName, clientPhone, clientEmail, customerId, lang, attachments } = req.body || {};
+    const { category, description, preferredDate, preferredTime, isAsap, serviceAddress, serviceAddressDetails, clientName, clientPhone, clientEmail, customerId, lang, attachments, clientRequestId } = req.body || {};
     if (!category || !clientName || !clientPhone) {
       return res.status(400).json({ error: 'missing_required_fields', message: 'category, clientName, and clientPhone are required' });
     }
+    const clientRequestIdNorm = typeof clientRequestId === 'string' ? clientRequestId.trim() : '';
+    if (clientRequestIdNorm && !/^[a-zA-Z0-9._:-]{8,120}$/.test(clientRequestIdNorm)) {
+      return res.status(400).json({ error: 'invalid_client_request_id', message: 'clientRequestId is invalid' });
+    }
 
-    // If the request comes from an authenticated user, enforce both identifiers verified
     const authHeader = req.headers.authorization || '';
     const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
     const userPayload = token ? verifySessionToken(token) : null;
+    let effectiveCustomerId = customerId || null;
+    if (userPayload?.user_id) effectiveCustomerId = userPayload.user_id;
+
+    async function findExistingClientRequest() {
+      if (!clientRequestIdNorm) return null;
+      const { rows } = await pool.query(
+        `SELECT id, status, customer_id, client_phone, client_email
+           FROM service_requests
+          WHERE client_request_id = $1
+          LIMIT 1`,
+        [clientRequestIdNorm]
+      );
+      return rows[0] || null;
+    }
+    function sameRequester(row) {
+      if (!row) return false;
+      if (effectiveCustomerId && row.customer_id === effectiveCustomerId) return true;
+      const rowPhone = normalizePhoneDigits(row.client_phone);
+      const reqPhone = normalizePhoneDigits(clientPhone);
+      const rowEmail = normalizeEmail(row.client_email || '');
+      const reqEmail = normalizeEmail(clientEmail || '');
+      return !!rowPhone && !!reqPhone && rowPhone === reqPhone && (!rowEmail || !reqEmail || rowEmail === reqEmail);
+    }
+    function existingRequestResponse(row) {
+      return res.status(200).json({ id: row.id, status: row.status || 'pending', duplicate: true });
+    }
+    const existingRequest = await findExistingClientRequest();
+    if (existingRequest) {
+      if (!sameRequester(existingRequest)) {
+        return res.status(409).json({ error: 'client_request_conflict', message: 'This request token already belongs to another request.' });
+      }
+      return existingRequestResponse(existingRequest);
+    }
+
+    // If the request comes from an authenticated user, enforce both identifiers verified.
     if (userPayload?.user_id) {
       const { rows: vRows } = await pool.query(
-        'SELECT phone_verified, email_verified FROM auth_users WHERE id = $1',
+        'SELECT phone, phone_verified, email_verified, email_skipped_at FROM auth_users WHERE id = $1',
         [userPayload.user_id]
       );
       const v = vRows[0];
-      if (v && !v.email_verified) {
-        return res.status(409).json({ error: 'email_required', message: 'Verifica tu correo electrónico para confirmar tu solicitud.' });
-      }
       if (v && !v.phone_verified) {
         return res.status(409).json({ error: 'phone_required', message: 'Verifica tu número de teléfono para confirmar tu solicitud.' });
       }
+      if (v && !v.email_verified) {
+        const phoneDigits = normalizePhoneDigits(v.phone || clientPhone);
+        const hasPriorActivity = await hasPriorServiceActivity({
+          userId: userPayload.user_id,
+          phoneDigits
+        });
+        if (hasPriorActivity) {
+          return res.status(409).json({
+            error: 'email_required',
+            message: 'Verifica tu correo electrónico para confirmar tu solicitud.',
+            requiresEmailVerification: true
+          });
+        }
+      }
     }
     const attachmentsStr = Array.isArray(attachments) ? attachments.join(',') : (attachments || null);
+    const addressDetailsStr = serviceAddressDetails && typeof serviceAddressDetails === 'object'
+      ? JSON.stringify(serviceAddressDetails)
+      : null;
     const id = randomUUID();
-    await pool.query(
-      `INSERT INTO service_requests (id, category, description, preferred_date, preferred_time, is_asap, service_address, client_name, client_phone, client_email, customer_id, lang, attachments)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-      [id, category, description || null, preferredDate || null, preferredTime || null, !!isAsap, serviceAddress || null, clientName, clientPhone, clientEmail || null, customerId || null, lang || 'es', attachmentsStr]
-    );
+    try {
+      await pool.query(
+        `INSERT INTO service_requests (id, category, description, preferred_date, preferred_time, is_asap, service_address, service_address_details, client_name, client_phone, client_email, client_request_id, customer_id, lang, attachments)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+        [id, category, description || null, preferredDate || null, preferredTime || null, !!isAsap, serviceAddress || null, addressDetailsStr, clientName, clientPhone, clientEmail || null, clientRequestIdNorm || null, effectiveCustomerId, lang || 'es', attachmentsStr]
+      );
+    } catch (insertErr) {
+      if (insertErr.code === '23505' && clientRequestIdNorm) {
+        const duplicateRequest = await findExistingClientRequest();
+        if (sameRequester(duplicateRequest)) return existingRequestResponse(duplicateRequest);
+      }
+      throw insertErr;
+    }
     // Notify Google Sheets
     postToGoogleWebhook({ type: 'service_request.created', requestId: id, category, clientName, clientPhone, clientEmail: clientEmail || '', serviceAddress: serviceAddress || '', isAsap: !!isAsap, preferredDate: preferredDate || '', preferredTime: preferredTime || '' });
     return res.status(201).json({ id, status: 'pending' });
@@ -4518,11 +5206,11 @@ app.post('/api/auth/login', publicFormLimit, (req, res) => {
 app.get('/api/auth/me', async (req, res) => {
   const authHeader = req.headers.authorization || '';
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
-  const payload = verifySessionToken(token);
+  const payload = await verifySessionTokenAsync(token);
   if (!payload?.user_id) return res.status(401).json({ error: 'unauthorized' });
   try {
     const { rows } = await pool.query(
-      'SELECT id, email, name, phone, auth_provider, phone_verified, email_verified FROM auth_users WHERE id = $1',
+      'SELECT id, email, name, phone, auth_provider, phone_verified, email_verified, terms_accepted_at, email_skipped_at FROM auth_users WHERE id = $1',
       [payload.user_id]
     );
     const user = rows[0];
@@ -4531,6 +5219,8 @@ app.get('/api/auth/me', async (req, res) => {
       id: user.id, email: user.email, name: user.name,
       phone: user.phone || null, auth_provider: user.auth_provider || null,
       phone_verified: !!user.phone_verified, email_verified: !!user.email_verified,
+      terms_accepted_at: user.terms_accepted_at || null,
+      email_skipped_at: user.email_skipped_at || null,
     }});
   } catch (err) {
     console.error('[GET /api/auth/me]', err);
@@ -4543,34 +5233,64 @@ app.post('/api/auth/social', publicFormLimit, (req, res) => {
   return res.status(410).json({ error: 'deprecated', message: 'Use Firebase auth instead.' });
 });
 
-// POST /api/auth/check-identifier — USL flow: check if phone or email already has an account
+// POST /api/auth/check-identifier — USL flow: check if phone or email already has an account.
+// Data-minimised against enumeration: no name, no full phone. Only last4 + verified flag so
+// the client can render a masked greeting and decide whether to prompt email verification.
+// Full phone is collected on the "Confirm phone" step where the user re-types it before OTP.
 app.post('/api/auth/check-identifier', publicFormLimit, async (req, res) => {
   try {
     const { identifier } = req.body || {};
     if (!identifier) return res.status(400).json({ error: 'missing_identifier' });
 
+    const ip = (req.headers['x-forwarded-for'] || req.ip || '').toString().split(',')[0].trim() || null;
+    const allowed = await checkAndRecordIdentifierAttempt(identifier, 'enum_check', ip, 10, 60 * 60 * 1000);
+    if (!allowed) return res.status(429).json({ error: 'rate_limited' });
+
     const isEmail = identifier.includes('@');
     let exists = false;
     let provider = null;
+    let accountRow = null;
 
     if (isEmail) {
       const emailNorm = identifier.toLowerCase().trim();
-      const { rows } = await pool.query('SELECT id, auth_provider FROM auth_users WHERE email = $1', [emailNorm]);
-      if (rows.length > 0) { exists = true; provider = rows[0].auth_provider || 'email'; }
+      const { rows } = await pool.query(
+        'SELECT id, phone, email_verified, auth_provider FROM auth_users WHERE email = $1',
+        [emailNorm]
+      );
+      if (rows.length > 0) { exists = true; accountRow = rows[0]; provider = rows[0].auth_provider || 'email'; }
     } else {
       const phoneNorm = normalizePhoneToE164(identifier);
       if (phoneNorm) {
-        const { rows } = await pool.query('SELECT id, auth_provider FROM auth_users WHERE phone = $1', [phoneNorm]);
-        if (rows.length > 0) { exists = true; provider = rows[0].auth_provider || 'phone'; }
+        const { rows } = await pool.query(
+          'SELECT id, phone, email_verified, auth_provider FROM auth_users WHERE phone = $1',
+          [phoneNorm]
+        );
+        if (rows.length > 0) { exists = true; accountRow = rows[0]; provider = 'phone'; }
       }
     }
 
-    // Normalise provider to the three values the frontend needs
-    if (provider && provider.includes('google')) provider = 'google';
-    else if (provider && (provider === 'phone' || provider === 'phone')) provider = 'phone';
-    else if (provider) provider = 'email';
+    if (!exists) {
+      const firebaseUser = await findFirebaseAuthUserByIdentifier(identifier, isEmail);
+      if (firebaseUser) {
+        exists = true;
+        const providerIds = (firebaseUser.providerData || []).map((entry) => entry.providerId);
+        provider = isEmail && providerIds.includes('google.com') ? 'google' : (isEmail ? 'email' : 'phone');
+      }
+    }
 
-    return res.json({ exists, provider });
+    provider = normalizeFirebaseProvider(provider);
+
+    const response = { exists, provider };
+
+    // Email-identifier login on an existing account: surface masked-phone hint + email-verified flag
+    // so the client can route to the Confirm-Phone screen. Full phone is NOT returned.
+    if (isEmail && accountRow && accountRow.phone) {
+      const phoneDigits = String(accountRow.phone).replace(/\D/g, '');
+      response.phone_last4 = phoneDigits.slice(-4);
+      response.email_verified = !!accountRow.email_verified;
+    }
+
+    return res.json(response);
   } catch (err) {
     console.error('[POST /api/auth/check-identifier]', err);
     return res.status(500).json({ error: 'internal_error' });
@@ -4587,9 +5307,9 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
     // Verify the Firebase ID token
     let decoded;
     try {
-      decoded = await firebaseAdmin.auth().verifyIdToken(idToken, true);
+      decoded = await verifyFirebaseIdToken(idToken, true);
     } catch (verifyErr) {
-      console.error('[POST /api/auth/firebase] token verification failed:', verifyErr.code);
+      console.error('[POST /api/auth/firebase] token verification failed:', verifyErr.code, verifyErr.message);
       if (verifyErr.code === 'auth/id-token-revoked') {
         return res.status(401).json({ error: 'token_revoked', message: 'Session has been revoked. Please sign in again.' });
       }
@@ -4601,13 +5321,45 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
 
     const firebaseUid = decoded.uid;
     const email = decoded.email || req.body.email || null;
-    const name = decoded.name || req.body.name || null;
+    const name = req.body.name || decoded.name || null;
     const phone = decoded.phone_number || req.body.phone || null;
+    const emailNormFromToken = email ? normalizeEmail(email) : null;
+    const phoneNormFromToken = phone ? normalizePhoneToE164(phone) : null;
+    const decodedPhoneNorm = decoded.phone_number ? normalizePhoneToE164(decoded.phone_number) : null;
     const provider = decoded.firebase?.sign_in_provider || 'unknown';
-    // Verification flags forwarded by frontend after OTP steps
-    const phoneVerified = req.body.phone_verified != null ? !!req.body.phone_verified : (decoded.phone_number ? true : null);
-    const emailVerified = req.body.email_verified != null ? !!req.body.email_verified : (decoded.email_verified || decoded.email ? true : null);
+    const isGoogleProvider = normalizeFirebaseProvider(provider) === 'google';
+    const phoneVerifiedByFirebase = !!decodedPhoneNorm;
+    const emailVerifiedByFirebase = !!emailNormFromToken && !!(isGoogleProvider || decoded.email_verified === true);
+    // False flags can close gates after profile edits; true flags are trusted only
+    // when the Firebase token proves the matching identifier.
+    const phoneVerified = req.body.phone_verified === false ? false : (phoneVerifiedByFirebase ? true : null);
+    const emailVerified = req.body.email_verified === false ? false : (emailVerifiedByFirebase ? true : null);
     const firstIdentifierType = req.body.first_identifier_type || null;
+    const signupComplete = req.body.signup_complete === true;
+    const termsAccepted = req.body.terms_accepted === true;
+    const emailSkipped = req.body.email_skipped === true && firstIdentifierType === 'phone' && !emailNormFromToken;
+
+    // Confirm-Phone login flow: the user typed their email, then re-typed their full phone
+    // to receive an OTP. The Firebase token carries the verified phone; the client passes the
+    // typed email as a hint via req.body.email. Without this guard, an attacker who completes
+    // OTP on any phone they control could supply someone else's email and have their Firebase
+    // UID grafted onto that account by the email-merge path below (effective takeover).
+    const emailHintFromClient = !decoded.email && req.body.email && decodedPhoneNorm;
+    if (emailHintFromClient) {
+      const emailHintNorm = normalizeEmail(req.body.email);
+      if (emailHintNorm) {
+        const { rows: hintRows } = await pool.query(
+          'SELECT phone FROM auth_users WHERE email = $1',
+          [emailHintNorm]
+        );
+        if (hintRows.length > 0) {
+          const hintAccountPhone = hintRows[0].phone ? normalizePhoneToE164(hintRows[0].phone) : null;
+          if (!hintAccountPhone || hintAccountPhone !== decodedPhoneNorm) {
+            return res.status(403).json({ error: 'email_phone_mismatch', message: 'Phone does not match the account for this email.' });
+          }
+        }
+      }
+    }
 
     // Look up existing user by firebase_uid, then email, then phone (for phone-only OTP users)
     let { rows } = await pool.query('SELECT * FROM auth_users WHERE firebase_uid = $1', [firebaseUid]);
@@ -4623,13 +5375,16 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
           [firebaseUid, provider, user.id]
         );
         if (name && !user.name) await pool.query('UPDATE auth_users SET name = $1 WHERE id = $2', [name, user.id]);
-        if (phone && !user.phone) await pool.query('UPDATE auth_users SET phone = $1 WHERE id = $2', [phone, user.id]);
+        if (phoneNormFromToken && !user.phone) {
+          await pool.query('UPDATE auth_users SET phone = $1 WHERE id = $2', [phoneNormFromToken, user.id]);
+          user.phone = phoneNormFromToken;
+        }
       }
     }
 
     // Update email_verified if Firebase confirms email is verified
     if (user && email && emailVerified) {
-      await pool.query('UPDATE auth_users SET email_verified = true WHERE id = $1 AND email = $2', [user.id, email.toLowerCase().trim()]);
+      await pool.query('UPDATE auth_users SET email_verified = true, email_skipped_at = NULL WHERE id = $1 AND email = $2', [user.id, email.toLowerCase().trim()]);
       user.email_verified = true;
     }
 
@@ -4650,24 +5405,40 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
 
     if (!user) {
       const id = randomUUID();
-      const emailNorm = email ? email.toLowerCase().trim() : null;
-      const phoneNorm = phone ? normalizePhoneToE164(phone) : null;
-      try {
+      const emailNorm = emailNormFromToken;
+      const phoneNorm = decodedPhoneNorm;
+      const cleanName = name ? String(name).trim() : '';
+      const finalPhoneVerified = phoneVerifiedByFirebase;
+      const finalEmailVerified = emailVerifiedByFirebase;
+      const phoneFirstMaySkipEmail = firstIdentifierType === 'phone' && (finalEmailVerified || emailSkipped);
+      const nonPhoneFirstHasVerifiedEmail = firstIdentifierType !== 'phone' && finalEmailVerified;
+      if (!signupComplete || !cleanName || !termsAccepted || !phoneNorm || !finalPhoneVerified || !(phoneFirstMaySkipEmail || nonPhoneFirstHasVerifiedEmail)) {
+        return res.status(409).json({
+          error: 'signup_incomplete',
+          message: 'Complete required signup steps before creating an account.',
+        });
+      }
+      if (!user) try {
         await pool.query(
-          `INSERT INTO auth_users (id, email, name, phone, firebase_uid, auth_provider, phone_verified, email_verified, first_identifier_type)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-          [id, emailNorm, name, phoneNorm, firebaseUid, provider,
-           phoneVerified !== null ? phoneVerified : !!phoneNorm,
-           emailVerified !== null ? emailVerified : !!emailNorm,
-           firstIdentifierType]
+          `INSERT INTO auth_users (id, email, name, phone, firebase_uid, auth_provider, phone_verified, email_verified, first_identifier_type, terms_accepted_at, email_skipped_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), CASE WHEN $10 THEN NOW() ELSE NULL END)`,
+          [id, emailNorm, cleanName, phoneNorm, firebaseUid, provider,
+           finalPhoneVerified,
+           finalEmailVerified,
+           firstIdentifierType,
+           emailSkipped]
         );
-        user = { id, email: emailNorm, name, phone: phoneNorm, phone_verified: !!phoneNorm, email_verified: !!emailNorm };
+        user = { id, email: emailNorm, name: cleanName, phone: phoneNorm, phone_verified: finalPhoneVerified, email_verified: finalEmailVerified, email_skipped_at: emailSkipped ? new Date().toISOString() : null };
         console.log('[POST /api/auth/firebase] new user created:', id, emailNorm || phoneNorm);
       } catch (insertErr) {
         if (insertErr.code === '23505') {
           const isPhone = (insertErr.constraint || '').includes('phone');
           if (isPhone) {
             return res.status(409).json({ error: 'phone_exists', message: 'Este número ya está registrado con otra cuenta.' });
+          }
+          const isEmail = (insertErr.constraint || '').includes('email');
+          if (isEmail) {
+            return res.status(409).json({ error: 'email_taken', message: 'Este correo ya está registrado con otra cuenta.' });
           }
           // Firebase UID race: re-fetch
           ({ rows } = await pool.query('SELECT * FROM auth_users WHERE firebase_uid = $1', [firebaseUid]));
@@ -4679,8 +5450,24 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
       // Update last_login and persist any newly-provided verification flags
       const vSets = ['last_login = NOW()'];
       const vParams = [];
-      if (phoneVerified !== null) { vParams.push(phoneVerified); vSets.push(`phone_verified = $${vParams.length}`); }
-      if (emailVerified !== null) { vParams.push(emailVerified); vSets.push(`email_verified = $${vParams.length}`); }
+      if (phoneVerified !== null) {
+        const currentPhoneNorm = user.phone ? normalizePhoneToE164(user.phone) : null;
+        if (!phoneVerified || (phoneNormFromToken && currentPhoneNorm && phoneNormFromToken === currentPhoneNorm)) {
+          vParams.push(phoneVerified);
+          vSets.push(`phone_verified = $${vParams.length}`);
+        } else if (phoneVerified) {
+          console.warn('[POST /api/auth/firebase] ignored stale phone verification for user:', user.id);
+        }
+      }
+      if (emailVerified !== null) {
+        const currentEmailNorm = user.email ? normalizeEmail(user.email) : null;
+        if (!emailVerified || (emailNormFromToken && currentEmailNorm && emailNormFromToken === currentEmailNorm)) {
+          vParams.push(emailVerified);
+          vSets.push(`email_verified = $${vParams.length}`);
+        } else if (emailVerified) {
+          console.warn('[POST /api/auth/firebase] ignored stale email verification for user:', user.id);
+        }
+      }
       if (firstIdentifierType && !user.first_identifier_type) { vParams.push(firstIdentifierType); vSets.push(`first_identifier_type = $${vParams.length}`); }
       if (name && !user.name) { vParams.push(name); vSets.push(`name = $${vParams.length}`); }
       vParams.push(user.id);
@@ -4688,7 +5475,7 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
     }
 
     // Re-fetch to get canonical verified state
-    ({ rows } = await pool.query('SELECT phone_verified, email_verified FROM auth_users WHERE id = $1', [user.id]));
+    ({ rows } = await pool.query('SELECT phone_verified, email_verified, terms_accepted_at, email_skipped_at FROM auth_users WHERE id = $1', [user.id]));
     const verifiedState = rows[0] || {};
 
     // Resolve Stripe customer if applicable
@@ -4709,6 +5496,9 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
       phone: user.phone || phone || null,
     });
 
+    // A12: audit log
+    logAuthEvent(req, user.id, 'login', { provider, email_verified: !!verifiedState.email_verified, phone_verified: !!verifiedState.phone_verified });
+
     return res.json({
       token,
       user: {
@@ -4716,6 +5506,8 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
         phone: user.phone || phone || null,
         phone_verified: !!verifiedState.phone_verified,
         email_verified: !!verifiedState.email_verified,
+        terms_accepted_at: verifiedState.terms_accepted_at || null,
+        email_skipped_at: verifiedState.email_skipped_at || null,
       },
     });
   } catch (err) {
@@ -4726,20 +5518,46 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
 
 // POST /api/auth/add-email — add + verify email for an authenticated phone-first user
 app.post('/api/auth/add-email', publicFormLimit, async (req, res) => {
-  const payload = requireUserAuth(req, res);
+  const payload = await requireUserAuth(req, res);
   if (!payload) return;
   try {
     const { email, firebase_id_token } = req.body || {};
-    if (!email || !firebase_id_token) return res.status(400).json({ error: 'missing_fields' });
+    if (!email) return res.status(400).json({ error: 'missing_fields' });
     const emailNorm = normalizeEmail(email);
     if (!emailNorm) return res.status(400).json({ error: 'invalid_email' });
 
-    // Verify Firebase token proves ownership of this email
-    let decoded;
-    try { decoded = await firebaseAdmin.auth().verifyIdToken(firebase_id_token, true); }
-    catch (e) { return res.status(401).json({ error: 'invalid_token' }); }
-    if (!decoded.email || decoded.email.toLowerCase() !== emailNorm) {
-      return res.status(400).json({ error: 'email_mismatch', message: 'Token email does not match supplied email.' });
+    const { rows: userRows } = await pool.query('SELECT firebase_uid FROM auth_users WHERE id = $1', [payload.user_id]);
+    const currentFirebaseUid = userRows[0]?.firebase_uid || null;
+    if (!currentFirebaseUid) return res.status(401).json({ error: 'firebase_user_missing' });
+
+    if (firebase_id_token) {
+      // Verify Firebase token proves this same SERVI user owns a verified email.
+      let decoded;
+      try { decoded = await verifyFirebaseIdToken(firebase_id_token, true); }
+      catch (e) { return res.status(401).json({ error: 'invalid_token' }); }
+      if (decoded.uid !== currentFirebaseUid) {
+        return res.status(401).json({ error: 'firebase_user_mismatch' });
+      }
+      if (!decoded.email || decoded.email.toLowerCase() !== emailNorm) {
+        return res.status(400).json({ error: 'email_mismatch', message: 'Token email does not match supplied email.' });
+      }
+      if (decoded.email_verified !== true) {
+        return res.status(400).json({ error: 'email_not_verified', message: 'Firebase email is not verified.' });
+      }
+    } else {
+      // Hosted Firebase action pages can consume verifyBeforeUpdateEmail links and
+      // leave the browser without a current Firebase client user. In that case,
+      // use Admin Auth as the verifier for the SERVI user's stored Firebase UID.
+      let firebaseUser;
+      try { firebaseUser = await firebaseAdmin.auth().getUser(currentFirebaseUid); }
+      catch (e) { return res.status(401).json({ error: 'firebase_user_missing' }); }
+      const adminEmail = normalizeEmail(firebaseUser.email || '');
+      if (!adminEmail || adminEmail !== emailNorm) {
+        return res.status(400).json({ error: 'email_mismatch', message: 'Firebase user email does not match supplied email.' });
+      }
+      if (firebaseUser.emailVerified !== true) {
+        return res.status(400).json({ error: 'email_not_verified', message: 'Firebase email is not verified.' });
+      }
     }
 
     // Check not already taken by another account
@@ -4749,7 +5567,7 @@ app.post('/api/auth/add-email', publicFormLimit, async (req, res) => {
     }
 
     await pool.query(
-      'UPDATE auth_users SET email = $1, email_verified = true WHERE id = $2',
+      'UPDATE auth_users SET email = $1, email_verified = true, email_skipped_at = NULL WHERE id = $2',
       [emailNorm, payload.user_id]
     );
     console.log('[POST /api/auth/add-email] email verified for user:', payload.user_id, emailNorm);
@@ -4762,7 +5580,7 @@ app.post('/api/auth/add-email', publicFormLimit, async (req, res) => {
 
 // POST /api/auth/add-phone — add + verify phone for an authenticated email-first user
 app.post('/api/auth/add-phone', publicFormLimit, async (req, res) => {
-  const payload = requireUserAuth(req, res);
+  const payload = await requireUserAuth(req, res);
   if (!payload) return;
   try {
     const { phone, firebase_id_token } = req.body || {};
@@ -4772,7 +5590,7 @@ app.post('/api/auth/add-phone', publicFormLimit, async (req, res) => {
 
     // Verify Firebase token proves ownership of this phone number
     let decoded;
-    try { decoded = await firebaseAdmin.auth().verifyIdToken(firebase_id_token, true); }
+    try { decoded = await verifyFirebaseIdToken(firebase_id_token, true); }
     catch (e) { return res.status(401).json({ error: 'invalid_token' }); }
     if (!decoded.phone_number || decoded.phone_number !== phoneNorm) {
       return res.status(400).json({ error: 'phone_mismatch', message: 'Token phone does not match supplied phone.' });
@@ -4796,17 +5614,39 @@ app.post('/api/auth/add-phone', publicFormLimit, async (req, res) => {
   }
 });
 
+// POST /api/auth/check-phone-available — public pre-check used during signup
+// to warn users before sending an OTP to a phone already tied to another account.
+app.post('/api/auth/check-phone-available', publicFormLimit, async (req, res) => {
+  try {
+    const { phone } = req.body || {};
+    if (!phone) return res.status(400).json({ error: 'missing_phone' });
+    const phoneNorm = normalizePhoneToE164(phone);
+    if (!phoneNorm) return res.status(400).json({ error: 'invalid_phone' });
+    const ip = (req.headers['x-forwarded-for'] || req.ip || '').toString().split(',')[0].trim() || null;
+    const allowed = await checkAndRecordIdentifierAttempt(phoneNorm, 'enum_check', ip, 10, 60 * 60 * 1000);
+    if (!allowed) return res.status(429).json({ error: 'rate_limited' });
+    const { rows } = await pool.query(
+      'SELECT 1 FROM auth_users WHERE phone = $1 LIMIT 1',
+      [phoneNorm]
+    );
+    return res.json({ available: rows.length === 0 });
+  } catch (err) {
+    console.error('[POST /api/auth/check-phone-available]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
 // POST /api/auth/resolve-identifier-mismatch — detect orphaned phone account for an email that isn't registered.
 // Requires a valid Firebase ID token proving ownership of the email BEFORE returning any hint.
 // Rate-limited via publicFormLimit (5/min per IP from express-rate-limit config).
 app.post('/api/auth/resolve-identifier-mismatch', publicFormLimit, async (req, res) => {
   try {
-    const { identifier, firebase_id_token } = req.body || {};
+    const { identifier, firebase_id_token, phone } = req.body || {};
     if (!identifier || !firebase_id_token) return res.status(400).json({ error: 'missing_fields' });
 
     // Must prove email ownership before we reveal anything
     let decoded;
-    try { decoded = await firebaseAdmin.auth().verifyIdToken(firebase_id_token, true); }
+    try { decoded = await verifyFirebaseIdToken(firebase_id_token, true); }
     catch (e) { return res.status(401).json({ error: 'invalid_token' }); }
 
     const emailNorm = normalizeEmail(identifier);
@@ -4815,12 +5655,19 @@ app.post('/api/auth/resolve-identifier-mismatch', publicFormLimit, async (req, r
       return res.status(400).json({ error: 'email_mismatch' });
     }
 
-    // Look for a phone-only account that has no email (potential orphan)
+    // Avoid linking an unrelated phone-only account. Without an explicit phone
+    // candidate, an email-first signup has no stable way to identify an orphan.
+    const phoneNorm = phone ? normalizePhoneToE164(phone) : null;
+    if (!phoneNorm) {
+      return res.json({ resolution: 'new_account' });
+    }
+
+    // Look for the explicit phone-only account candidate.
     const { rows } = await pool.query(
       `SELECT id, name FROM auth_users
-       WHERE email IS NULL AND phone IS NOT NULL AND phone_verified = true
+       WHERE email IS NULL AND phone = $1 AND phone_verified = true
        LIMIT 1`,
-      []
+      [phoneNorm]
     );
 
     if (!rows.length) {
@@ -4839,24 +5686,35 @@ app.post('/api/auth/resolve-identifier-mismatch', publicFormLimit, async (req, r
 
 // ─── Account management (authenticated user routes) ───────────────────────────
 
-function requireUserAuth(req, res) {
+async function requireUserAuth(req, res) {
   const authHeader = req.headers.authorization || '';
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
-  const payload = verifySessionToken(token);
+  const payload = await verifySessionTokenAsync(token);
   if (!payload?.user_id) { res.status(401).json({ error: 'unauthorized' }); return null; }
   return payload;
 }
 
 // Requires a fresh Firebase ID token (auth_time within maxAgeSecs) on sensitive operations.
 // Client must include the token in X-Firebase-Reauth-Token header.
-async function requireRecentAuth(req, res, maxAgeSecs = 300) {
+//
+// A7: Two windows. Default 300s for routine edits (name, address). Pass 60s for
+// destructive/security-critical actions (phone change, email change, account delete).
+async function requireRecentAuth(req, res, maxAgeSecs = 300, sessionPayload = null) {
   const rawToken = req.headers['x-firebase-reauth-token'] || '';
   if (!rawToken) {
     res.status(401).json({ error: 'reauth_required', message: 'Re-authentication required. Please verify your identity again.' });
     return false;
   }
   try {
-    const decoded = await firebaseAdmin.auth().verifyIdToken(rawToken, true);
+    const decoded = await verifyFirebaseIdToken(rawToken, true);
+    if (sessionPayload?.user_id) {
+      const { rows } = await pool.query('SELECT firebase_uid FROM auth_users WHERE id = $1', [sessionPayload.user_id]);
+      const firebaseUid = rows[0]?.firebase_uid || null;
+      if (!firebaseUid || decoded.uid !== firebaseUid) {
+        res.status(401).json({ error: 'reauth_user_mismatch', message: 'Re-authentication token does not match this account.' });
+        return false;
+      }
+    }
     const now = Math.floor(Date.now() / 1000);
     if ((now - decoded.auth_time) > maxAgeSecs) {
       res.status(401).json({ error: 'reauth_too_old', message: 'Re-authentication expired. Please verify your identity again.' });
@@ -4874,27 +5732,39 @@ async function requireRecentAuth(req, res, maxAgeSecs = 300) {
   }
 }
 
+const RECENT_AUTH_DESTRUCTIVE_SECS = 60;   // phone/email change
+const RECENT_AUTH_ROUTINE_SECS = 300;      // name, address, etc.
+
 // PATCH /api/auth/me — update profile
 app.patch('/api/auth/me', publicFormLimit, async (req, res) => {
-  const payload = requireUserAuth(req, res);
+  const payload = await requireUserAuth(req, res);
   if (!payload) return;
-  // Gate phone changes behind re-auth (fresh Firebase ID token required)
-  if (req.body?.phone !== undefined) {
-    const reauthed = await requireRecentAuth(req, res);
+  // A7: identifier changes require fresh re-auth (60s window).
+  // Email changes are persisted as unverified until Firebase proves the new address.
+  const isDestructive = req.body?.phone !== undefined || req.body?.email !== undefined;
+  if (isDestructive) {
+    const reauthed = await requireRecentAuth(req, res, RECENT_AUTH_DESTRUCTIVE_SECS, payload);
     if (!reauthed) return;
   }
   try {
     const { name, email, phone } = req.body || {};
     const sets = []; const params = [];
-    if (name !== undefined) { params.push(String(name).trim()); sets.push(`name = $${params.length}`); }
+    const changes = []; // for audit log
+
+    if (name !== undefined) {
+      params.push(String(name).trim());
+      sets.push(`name = $${params.length}`);
+      changes.push('name');
+    }
     if (email !== undefined) {
       const emailNorm = normalizeEmail(email);
       if (!emailNorm) return res.status(400).json({ error: 'invalid_email' });
       const { rows } = await pool.query('SELECT id FROM auth_users WHERE email = $1 AND id != $2', [emailNorm, payload.user_id]);
       if (rows.length) return res.status(409).json({ error: 'email_exists', message: 'Este correo ya está en uso.' });
       params.push(emailNorm); sets.push(`email = $${params.length}`);
-      // When email changes, require re-verification
+      // Email changed → require re-verification before booking gate re-opens
       params.push(false); sets.push(`email_verified = $${params.length}`);
+      changes.push('email');
     }
     if (phone !== undefined) {
       const phoneNorm = normalizePhoneToE164(phone);
@@ -4902,16 +5772,27 @@ app.patch('/api/auth/me', publicFormLimit, async (req, res) => {
       const { rows } = await pool.query('SELECT id FROM auth_users WHERE phone = $1 AND id != $2', [phoneNorm, payload.user_id]);
       if (rows.length) return res.status(409).json({ error: 'phone_exists', message: 'Este teléfono ya está en uso.' });
       params.push(phoneNorm); sets.push(`phone = $${params.length}`);
+      // A4: Phone changed → reset phone_verified so booking gate re-requires OTP on the new number
+      params.push(false); sets.push(`phone_verified = $${params.length}`);
+      changes.push('phone');
     }
     if (!sets.length) return res.status(400).json({ error: 'no_fields' });
     params.push(payload.user_id);
     await pool.query(`UPDATE auth_users SET ${sets.join(', ')} WHERE id = $${params.length}`, params);
-    const { rows } = await pool.query('SELECT id, email, name, phone, auth_provider, phone_verified, email_verified FROM auth_users WHERE id = $1', [payload.user_id]);
+    const { rows } = await pool.query('SELECT id, email, name, phone, auth_provider, phone_verified, email_verified, terms_accepted_at, email_skipped_at FROM auth_users WHERE id = $1', [payload.user_id]);
     const u = rows[0];
+
+    // A12: audit identifier changes
+    if (changes.includes('email') || changes.includes('phone')) {
+      logAuthEvent(req, payload.user_id, 'profile_change', { fields: changes });
+    }
+
     return res.json({ user: {
       id: u.id, email: u.email, name: u.name, phone: u.phone || null,
       auth_provider: u.auth_provider || null,
       phone_verified: !!u.phone_verified, email_verified: !!u.email_verified,
+      terms_accepted_at: u.terms_accepted_at || null,
+      email_skipped_at: u.email_skipped_at || null,
     }});
   } catch (err) {
     if (err.code === '23505') return res.status(409).json({ error: 'conflict', message: 'Ese dato ya está en uso.' });
@@ -4920,28 +5801,72 @@ app.patch('/api/auth/me', publicFormLimit, async (req, res) => {
   }
 });
 
-// POST /api/auth/send-email-verification — send verification email to user's current email
+// POST /api/auth/send-email-verification — send verification email via Gmail + token
 app.post('/api/auth/send-email-verification', publicFormLimit, async (req, res) => {
-  const payload = requireUserAuth(req, res);
+  const payload = await requireUserAuth(req, res);
   if (!payload) return;
   try {
+    if (!emailTransporter) {
+      return res.status(503).json({ error: 'email_not_configured', message: 'Email service not configured.' });
+    }
     const { rows } = await pool.query('SELECT email FROM auth_users WHERE id = $1', [payload.user_id]);
     if (!rows.length || !rows[0].email) {
       return res.status(400).json({ error: 'no_email', message: 'No hay correo electrónico registrado.' });
     }
     const email = rows[0].email;
-    // Call Firebase to send sign-in link (which verifies the email)
-    const idToken = req.headers.authorization?.replace('Bearer ', '');
-    if (!idToken) {
-      return res.status(401).json({ error: 'no_token' });
-    }
-    // Send verification link via Firebase
-    // Note: In a real implementation, you might use Firebase Admin SDK to send custom emails
-    // For now, we'll rely on the frontend to send the link using Firebase client SDK
-    // This endpoint just confirms the email is unverified and ready to receive a verification link
-    return res.json({ email, ready: true, message: 'El enlace será enviado a tu correo.' });
+    const verifyToken = randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    await pool.query(
+      'UPDATE auth_users SET email_verify_token = $1, email_verify_token_expires_at = $2 WHERE id = $3',
+      [verifyToken, expiresAt, payload.user_id]
+    );
+    const verifyUrl = `${FRONTEND_BASE_URL}/email-verified.html?token=${verifyToken}`;
+    const htmlContent = `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 480px; margin: 0 auto; padding: 32px 24px; color: #333;">
+        <h2 style="font-size: 20px; font-weight: 600; margin: 0 0 8px 0;">Verifica tu correo en SERVI</h2>
+        <p style="color: #666; font-size: 15px; margin: 0 0 24px 0; line-height: 1.5;">
+          Haz clic en el botón para confirmar tu dirección de correo y activar tu cuenta.
+        </p>
+        <div style="margin-bottom: 24px;">
+          <a href="${verifyUrl}" style="display: inline-block; background: #000; color: #fff; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-size: 15px; font-weight: 500;">
+            Verificar correo
+          </a>
+        </div>
+        <p style="color: #999; font-size: 13px; margin: 0; line-height: 1.5;">
+          Este enlace expira en 24 horas. Si no solicitaste esto, ignora este correo.
+        </p>
+      </div>
+    `;
+    await emailTransporter.sendMail({
+      from: `"SERVI" <${GMAIL_USER}>`,
+      to: email,
+      subject: 'Verifica tu correo en SERVI',
+      html: htmlContent
+    });
+    return res.json({ sent: true });
   } catch (err) {
-    console.error('[POST /api/auth/send-email-verification]', err);
+    console.error('[POST /api/auth/send-email-verification] code=%s message=%s', err.code, err.message, err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// GET /api/auth/verify-email — verify email token and mark email as verified
+app.get('/api/auth/verify-email', async (req, res) => {
+  try {
+    const { token } = req.query;
+    if (!token) return res.status(400).json({ error: 'missing_token' });
+    const { rows } = await pool.query(
+      `SELECT id FROM auth_users WHERE email_verify_token = $1 AND email_verify_token_expires_at > NOW()`,
+      [token]
+    );
+    if (!rows.length) return res.status(400).json({ error: 'invalid_or_expired_token' });
+    await pool.query(
+      `UPDATE auth_users SET email_verified = true, email_verify_token = NULL, email_verify_token_expires_at = NULL WHERE id = $1`,
+      [rows[0].id]
+    );
+    return res.json({ verified: true });
+  } catch (err) {
+    console.error('[GET /api/auth/verify-email]', err);
     return res.status(500).json({ error: 'internal_error' });
   }
 });
@@ -4952,21 +5877,31 @@ app.post('/api/auth/change-password', publicFormLimit, (req, res) => {
 });
 
 // DELETE /api/auth/me — delete account
+// Note (audit A2): does NOT require requireRecentAuth per product decision.
+// JWT alone is sufficient. Risk acknowledged: an XSS-stolen token could delete the account.
 app.delete('/api/auth/me', publicFormLimit, async (req, res) => {
-  const payload = requireUserAuth(req, res);
+  const payload = await requireUserAuth(req, res);
   if (!payload) return;
-  const reauthed = await requireRecentAuth(req, res);
-  if (!reauthed) return;
+  const userId = payload.user_id;
   try {
-    // Fetch firebase_uid before deleting the row
-    const { rows } = await pool.query('SELECT firebase_uid FROM auth_users WHERE id = $1', [payload.user_id]);
+    const { rows } = await pool.query('SELECT firebase_uid, stripe_customer_id FROM auth_users WHERE id = $1', [userId]);
+    if (!rows.length) {
+      console.warn('[DELETE /api/auth/me] user row not found for id:', userId);
+      return res.status(404).json({ error: 'user_not_found' });
+    }
     const firebaseUid = rows[0]?.firebase_uid;
+    const stripeCustomerId = rows[0]?.stripe_customer_id;
 
-    // Delete user addresses and then the user record
-    await pool.query('DELETE FROM user_addresses WHERE user_id = $1', [payload.user_id]);
-    await pool.query('DELETE FROM auth_users WHERE id = $1', [payload.user_id]);
+    await pool.query('DELETE FROM user_addresses WHERE user_id = $1', [userId]);
+    if (stripeCustomerId) {
+      await pool.query('DELETE FROM saved_servi_users WHERE customer_id = $1', [stripeCustomerId]);
+    }
+    const delRes = await pool.query('DELETE FROM auth_users WHERE id = $1', [userId]);
+    console.log('[DELETE /api/auth/me] deleted user row, rowCount=', delRes.rowCount, 'userId=', userId);
 
-    // Delete the Firebase user (best-effort — don't fail the request if this errors)
+    // A6: revoke this session's JWT so it can't be replayed before natural expiry
+    await revokeSessionJti(payload.jti, userId, 'account_delete');
+
     if (firebaseUid) {
       try {
         await firebaseAdmin.auth().deleteUser(firebaseUid);
@@ -4978,9 +5913,22 @@ app.delete('/api/auth/me', publicFormLimit, async (req, res) => {
 
     return res.json({ ok: true });
   } catch (err) {
-    console.error('[DELETE /api/auth/me]', err);
-    return res.status(500).json({ error: 'internal_error' });
+    console.error('[DELETE /api/auth/me] error code=', err.code, 'detail=', err.detail, 'message=', err.message);
+    return res.status(500).json({ error: 'internal_error', code: err.code || null, detail: err.detail || null });
   }
+});
+
+// POST /api/auth/logout — revoke the current SERVI session JWT server-side.
+// Idempotent — succeeds even with missing/invalid tokens (don't leak existence info).
+app.post('/api/auth/logout', publicFormLimit, async (req, res) => {
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+  const payload = verifySessionToken(token);
+  if (payload?.jti) {
+    await revokeSessionJti(payload.jti, payload.user_id, 'logout');
+    logAuthEvent(req, payload.user_id, 'logout');
+  }
+  return res.json({ ok: true });
 });
 
 // POST /api/auth/refresh — silently refresh a nearly-expired or recently-expired JWT
@@ -5014,10 +5962,21 @@ app.post('/api/auth/refresh', publicFormLimit, async (req, res) => {
 
   if (!payload?.user_id) return res.status(401).json({ error: 'no_user_id' });
 
+  // A6: reject if the old token's jti has been revoked
+  if (payload.jti) {
+    try {
+      const { rows: revoked } = await pool.query('SELECT 1 FROM revoked_sessions WHERE jti = $1 LIMIT 1', [payload.jti]);
+      if (revoked.length) return res.status(401).json({ error: 'token_revoked' });
+    } catch (err) {
+      console.error('[POST /api/auth/refresh] revocation check failed:', err.message);
+      if (IS_PRODUCTION) return res.status(500).json({ error: 'internal_error' });
+    }
+  }
+
   try {
     // Re-fetch user from DB (don't trust JWT claims for user data)
     const { rows } = await pool.query(
-      'SELECT id, email, name, phone, auth_provider, phone_verified, email_verified FROM auth_users WHERE id = $1',
+      'SELECT id, email, name, phone, auth_provider, phone_verified, email_verified, terms_accepted_at, email_skipped_at FROM auth_users WHERE id = $1',
       [payload.user_id]
     );
     if (!rows.length) return res.status(404).json({ error: 'user_not_found' });
@@ -5028,6 +5987,9 @@ app.post('/api/auth/refresh', publicFormLimit, async (req, res) => {
       auth_provider: u.auth_provider,
     });
 
+    // A6: rotate the jti — revoke the old one so a stolen pre-refresh JWT can't be reused
+    if (payload.jti) await revokeSessionJti(payload.jti, u.id, 'refresh_rotation');
+
     return res.json({
       token: newToken,
       user: {
@@ -5035,6 +5997,8 @@ app.post('/api/auth/refresh', publicFormLimit, async (req, res) => {
         auth_provider: u.auth_provider || null,
         phone_verified: !!u.phone_verified,
         email_verified: !!u.email_verified,
+        terms_accepted_at: u.terms_accepted_at || null,
+        email_skipped_at: u.email_skipped_at || null,
       }
     });
   } catch (err) {
@@ -5045,7 +6009,7 @@ app.post('/api/auth/refresh', publicFormLimit, async (req, res) => {
 
 // GET /api/auth/addresses
 app.get('/api/auth/addresses', async (req, res) => {
-  const payload = requireUserAuth(req, res);
+  const payload = await requireUserAuth(req, res);
   if (!payload) return;
   try {
     const { rows } = await pool.query(
@@ -5061,19 +6025,27 @@ app.get('/api/auth/addresses', async (req, res) => {
 
 // POST /api/auth/addresses
 app.post('/api/auth/addresses', publicFormLimit, async (req, res) => {
-  const payload = requireUserAuth(req, res);
+  const payload = await requireUserAuth(req, res);
   if (!payload) return;
   try {
-    const { label, street, city, state, postal_code, country, is_default } = req.body || {};
+    const {
+      label, street, city, state, postal_code, country, is_default,
+      address_type, exterior_number, interior_number, neighborhood, municipality,
+      between_streets, reference_notes, access_instructions, contact_name, contact_phone,
+    } = req.body || {};
     if (!street) return res.status(400).json({ error: 'missing_street' });
     const id = randomUUID();
     if (is_default) {
       await pool.query('UPDATE user_addresses SET is_default = FALSE WHERE user_id = $1', [payload.user_id]);
     }
     await pool.query(
-      `INSERT INTO user_addresses (id, user_id, label, street, city, state, postal_code, country, is_default)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-      [id, payload.user_id, label || null, street, city || null, state || null, postal_code || null, country || 'MX', !!is_default]
+      `INSERT INTO user_addresses (id, user_id, label, street, city, state, postal_code, country, is_default,
+         address_type, exterior_number, interior_number, neighborhood, municipality,
+         between_streets, reference_notes, access_instructions, contact_name, contact_phone)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
+      [id, payload.user_id, label || null, street, city || null, state || null, postal_code || null, country || 'MX', !!is_default,
+       address_type || null, exterior_number || null, interior_number || null, neighborhood || null, municipality || null,
+       between_streets || null, reference_notes || null, access_instructions || null, contact_name || null, contact_phone || null]
     );
     const { rows } = await pool.query('SELECT * FROM user_addresses WHERE id = $1', [id]);
     return res.status(201).json({ address: rows[0] });
@@ -5085,17 +6057,31 @@ app.post('/api/auth/addresses', publicFormLimit, async (req, res) => {
 
 // PATCH /api/auth/addresses/:id
 app.patch('/api/auth/addresses/:id', publicFormLimit, async (req, res) => {
-  const payload = requireUserAuth(req, res);
+  const payload = await requireUserAuth(req, res);
   if (!payload) return;
   try {
-    const { label, street, city, state, postal_code, country } = req.body || {};
+    const {
+      label, street, city, state, postal_code, country,
+      address_type, exterior_number, interior_number, neighborhood, municipality,
+      between_streets, reference_notes, access_instructions, contact_name, contact_phone,
+    } = req.body || {};
     const sets = []; const params = [];
-    if (label !== undefined)       { params.push(label);       sets.push(`label = $${params.length}`); }
-    if (street !== undefined)      { params.push(street);      sets.push(`street = $${params.length}`); }
-    if (city !== undefined)        { params.push(city);        sets.push(`city = $${params.length}`); }
-    if (state !== undefined)       { params.push(state);       sets.push(`state = $${params.length}`); }
-    if (postal_code !== undefined) { params.push(postal_code); sets.push(`postal_code = $${params.length}`); }
-    if (country !== undefined)     { params.push(country);     sets.push(`country = $${params.length}`); }
+    if (label !== undefined)               { params.push(label);               sets.push(`label = $${params.length}`); }
+    if (street !== undefined)              { params.push(street);              sets.push(`street = $${params.length}`); }
+    if (city !== undefined)                { params.push(city);                sets.push(`city = $${params.length}`); }
+    if (state !== undefined)               { params.push(state);               sets.push(`state = $${params.length}`); }
+    if (postal_code !== undefined)         { params.push(postal_code);         sets.push(`postal_code = $${params.length}`); }
+    if (country !== undefined)             { params.push(country);             sets.push(`country = $${params.length}`); }
+    if (address_type !== undefined)        { params.push(address_type);        sets.push(`address_type = $${params.length}`); }
+    if (exterior_number !== undefined)     { params.push(exterior_number);     sets.push(`exterior_number = $${params.length}`); }
+    if (interior_number !== undefined)     { params.push(interior_number);     sets.push(`interior_number = $${params.length}`); }
+    if (neighborhood !== undefined)        { params.push(neighborhood);        sets.push(`neighborhood = $${params.length}`); }
+    if (municipality !== undefined)        { params.push(municipality);        sets.push(`municipality = $${params.length}`); }
+    if (between_streets !== undefined)     { params.push(between_streets);     sets.push(`between_streets = $${params.length}`); }
+    if (reference_notes !== undefined)     { params.push(reference_notes);     sets.push(`reference_notes = $${params.length}`); }
+    if (access_instructions !== undefined) { params.push(access_instructions); sets.push(`access_instructions = $${params.length}`); }
+    if (contact_name !== undefined)        { params.push(contact_name);        sets.push(`contact_name = $${params.length}`); }
+    if (contact_phone !== undefined)       { params.push(contact_phone);       sets.push(`contact_phone = $${params.length}`); }
     if (!sets.length) return res.status(400).json({ error: 'no_fields' });
     params.push(req.params.id, payload.user_id);
     const { rowCount } = await pool.query(
@@ -5113,7 +6099,7 @@ app.patch('/api/auth/addresses/:id', publicFormLimit, async (req, res) => {
 
 // DELETE /api/auth/addresses/:id
 app.delete('/api/auth/addresses/:id', async (req, res) => {
-  const payload = requireUserAuth(req, res);
+  const payload = await requireUserAuth(req, res);
   if (!payload) return;
   try {
     const { rowCount } = await pool.query(
@@ -5130,7 +6116,7 @@ app.delete('/api/auth/addresses/:id', async (req, res) => {
 
 // PATCH /api/auth/addresses/:id/default
 app.patch('/api/auth/addresses/:id/default', publicFormLimit, async (req, res) => {
-  const payload = requireUserAuth(req, res);
+  const payload = await requireUserAuth(req, res);
   if (!payload) return;
   try {
     await pool.query('UPDATE user_addresses SET is_default = FALSE WHERE user_id = $1', [payload.user_id]);
@@ -5146,33 +6132,622 @@ app.patch('/api/auth/addresses/:id/default', publicFormLimit, async (req, res) =
   }
 });
 
+// GET /api/auth/favorites
+app.get('/api/auth/favorites', async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, category_key, subcategory_key, service_name, category_name,
+              subcategory_name, image_url, href, created_at, updated_at
+       FROM user_favorite_services
+       WHERE user_id = $1
+       ORDER BY created_at DESC`,
+      [payload.user_id]
+    );
+    return res.json({ favorites: rows });
+  } catch (err) {
+    console.error('[GET /api/auth/favorites]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// POST /api/auth/favorites
+app.post('/api/auth/favorites', publicFormLimit, async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const {
+      category_key,
+      subcategory_key,
+      service_name,
+      category_name,
+      subcategory_name,
+      image_url,
+      href,
+    } = req.body || {};
+
+    if (!category_key || !subcategory_key || !service_name) {
+      return res.status(400).json({ error: 'missing_favorite_fields' });
+    }
+
+    const id = randomUUID();
+    const { rows } = await pool.query(
+      `INSERT INTO user_favorite_services
+        (id, user_id, category_key, subcategory_key, service_name, category_name, subcategory_name, image_url, href)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       ON CONFLICT (user_id, category_key, subcategory_key, service_name)
+       DO UPDATE SET
+         category_name = EXCLUDED.category_name,
+         subcategory_name = EXCLUDED.subcategory_name,
+         image_url = EXCLUDED.image_url,
+         href = EXCLUDED.href,
+         updated_at = NOW()
+       RETURNING id, category_key, subcategory_key, service_name, category_name,
+                 subcategory_name, image_url, href, created_at, updated_at`,
+      [
+        id,
+        payload.user_id,
+        String(category_key).slice(0, 80),
+        String(subcategory_key).slice(0, 120),
+        String(service_name).slice(0, 240),
+        category_name ? String(category_name).slice(0, 160) : null,
+        subcategory_name ? String(subcategory_name).slice(0, 160) : null,
+        image_url ? String(image_url).slice(0, 1000) : null,
+        href ? String(href).slice(0, 1000) : null,
+      ]
+    );
+    return res.status(201).json({ favorite: rows[0] });
+  } catch (err) {
+    console.error('[POST /api/auth/favorites]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// DELETE /api/auth/favorites/:id
+app.delete('/api/auth/favorites/:id', async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const { rowCount } = await pool.query(
+      'DELETE FROM user_favorite_services WHERE id = $1 AND user_id = $2',
+      [req.params.id, payload.user_id]
+    );
+    if (!rowCount) return res.status(404).json({ error: 'not_found' });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('[DELETE /api/auth/favorites/:id]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// ─── Customer order history ──────────────────────────────────────────────────
+
+// Statuses that represent a closed/finished order (everything else is "active").
+const CUSTOMER_PAST_ORDER_STATUSES = new Set([
+  'Captured', 'Canceled', 'Cancelled', 'Declined', 'Refunded', 'Expired', 'Refused',
+]);
+// Compound labels the webhooks actually emit (e.g. 'Canceled (expired)',
+// 'Canceled (requested_by_customer)', 'Canceled (late fee)', 'Captured (partial refund)')
+// must also bucket as past — exact-set matching alone would mis-file them as active.
+const CUSTOMER_PAST_STATUS_RE = /^(cancel|refund|captured|declined|expired)/i;
+
+function customerOrderBucket(status) {
+  const s = String(status || '').trim();
+  return (CUSTOMER_PAST_ORDER_STATUSES.has(s) || CUSTOMER_PAST_STATUS_RE.test(s)) ? 'past' : 'active';
+}
+
+// Intake requests (service_requests) have their own status set ('pending', 'contacted',
+// 'canceled', …). A withdrawn request is closed/past; everything else is still active.
+function customerRequestBucket(status) {
+  return /^cancel/i.test(String(status || '').trim()) ? 'past' : 'active';
+}
+
+// The SERVI-fee portion of an order (booking fee + processing fee + VAT), i.e. everything
+// except the provider's payout. This is what a late cancellation captures from the hold.
+function lateCancelFeeCents(row) {
+  const fees = Number(row?.booking_fee_amount || 0)
+    + Number(row?.processing_fee_amount || 0)
+    + Number(row?.vat_amount || 0);
+  if (fees > 0) return fees;
+  // Fallback if the per-component columns are missing: total minus provider portion.
+  const total = Number(row?.pricing_total_amount || row?.amount || 0);
+  const provider = Number(row?.provider_amount || 0);
+  return Math.max(0, total - provider);
+}
+
+// Per-order self-service action policy for the customer's My Orders UI. Server is the source
+// of truth — the front end only renders what this allows. Mirrors the pre-auth model: nothing
+// is owed until money is actually held ('Confirmed') or captured. ORDER_EDITABLE_STATUSES is
+// defined further down but only read at call time (request handling), so the reference is safe.
+function computeOrderActionPolicy(row) {
+  const status = String(row?.status || '').trim();
+  const isCaptured = /^captured/i.test(status);            // Captured / Captured (partial refund)
+  const isPast = customerOrderBucket(status) === 'past';
+  const editable = ORDER_EDITABLE_STATUSES.has(status);    // Pending..Confirmed, never terminal
+
+  // Cancel: any editable order can be cancelled. Captured/terminal cannot (→ support).
+  let canCancel = editable;
+  let cancelTier = canCancel ? 'free' : 'none';            // 'free' | 'late' | 'none'
+  let cancelFeeCents = 0;
+  if (canCancel && status === 'Confirmed') {
+    // Card is pre-authorized. Free while still ≥24h out; late fee inside the window.
+    const h = hoursUntilService(row);
+    if (h < PREAUTH_WINDOW_HOURS) {
+      cancelTier = 'late';
+      cancelFeeCents = lateCancelFeeCents(row);
+    }
+  }
+
+  return {
+    canCancel,
+    cancelTier,
+    cancelFeeCents,
+    canEditAddress: editable,        // applies instantly
+    canRequestReschedule: editable,  // creates an admin-reviewed request
+    canReorder: isPast && !!row?.category,
+    isCaptured,
+  };
+}
+
+// Resolves the WHERE fragment + params that match a user's own orders/requests,
+// scoped to identifiers read fresh from auth_users (Stripe customer id, email, phone).
+// Both all_bookings and service_requests share customer_id / client_email / client_phone.
+async function resolveUserOrderMatch(userId) {
+  const { rows } = await pool.query(
+    'SELECT stripe_customer_id, email, phone FROM auth_users WHERE id = $1',
+    [userId]
+  );
+  const u = rows[0];
+  const ids = [];
+  const conds = [];
+  if (!u) return { conds, ids };
+  if (u.stripe_customer_id) {
+    ids.push(u.stripe_customer_id);
+    conds.push(`customer_id = $${ids.length}`);
+  }
+  if (u.email) {
+    ids.push(String(u.email).toLowerCase());
+    conds.push(`LOWER(client_email) = $${ids.length}`);
+  }
+  const phoneDigits = String(u.phone || '').replace(/[^0-9]/g, '').slice(-10);
+  if (phoneDigits.length === 10) {
+    ids.push(phoneDigits);
+    conds.push(`RIGHT(regexp_replace(COALESCE(client_phone,''), '[^0-9]', '', 'g'), 10) = $${ids.length}`);
+  }
+  return { conds, ids };
+}
+
+// Statuses where the customer can still pay/authorize online. Case-insensitive,
+// because the admin create path stores 'pending' while Apps Script stores 'Pending'.
+const PAYABLE_ONLINE_STATUSES = new Set(['pending', 'pending (3ds)', 'setup required', 'setup created']);
+
+function isOrderPayableOnline(row) {
+  if (!row) return false;
+  if (row.cash_selected) return false;
+  const status = String(row.status || '').trim().toLowerCase();
+  if (!PAYABLE_ONLINE_STATUSES.has(status)) return false;
+  const kind = String(row.kind || '').toLowerCase();
+  const hasPrice = row.pricing_total_amount != null || row.amount != null;
+  return hasPrice || kind === 'setup' || kind === 'setup_required';
+}
+
+// Which checkout page a payable order should open (mirrors useBookFlow in admin regenerate-link).
+function orderPayFlow(row) {
+  const kind = String(row?.kind || '').toLowerCase();
+  return (row?.customer_id || kind === 'book' || kind === 'adjustment') ? 'book' : 'pay';
+}
+
+// GET /api/auth/orders — the authenticated user's own orders + pending requests.
+// Scoped strictly to identifiers resolved fresh from auth_users (never trusts the JWT body),
+// matching on Stripe customer id, email, and normalized phone so guest orders placed before
+// signup still surface for the same person.
+app.get('/api/auth/orders', async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const { conds, ids } = await resolveUserOrderMatch(payload.user_id);
+    if (!conds.length) return res.json({ orders: [] });
+    const matchClause = `(${conds.join(' OR ')})`;
+
+    // Real orders (exclude child adjustment rows — they roll up into their parent).
+    const { rows: orderRows } = await pool.query(
+      `SELECT id, public_code, kind, status, category, service_description,
+              service_date, service_datetime, is_asap, service_address, provider_name,
+              amount, provider_amount, booking_fee_amount, processing_fee_amount,
+              vat_amount, pricing_total_amount, final_captured_amount,
+              cash_selected, customer_id, payment_intent_id, created_at
+         FROM all_bookings
+        WHERE ${matchClause}
+          AND COALESCE(parent_id_of_adjustment, '') = ''
+          AND COALESCE(kind, '') <> 'adjustment'
+        ORDER BY created_at DESC
+        LIMIT 100`,
+      ids
+    );
+
+    // Heal stale statuses from Stripe (missed webhooks) before computing payable/bucket — only
+    // the bounded subset that could actually advance, to keep Stripe calls minimal.
+    await reconcileOrderRows(orderRows);
+
+    // Pending intake requests that have not yet been turned into an order.
+    const { rows: reqRows } = await pool.query(
+      `SELECT id, category, description, preferred_date, preferred_time, is_asap,
+              service_address, status, created_at
+         FROM service_requests
+        WHERE ${matchClause}
+          AND COALESCE(converted_order_id, '') = ''
+        ORDER BY created_at DESC
+        LIMIT 50`,
+      ids
+    );
+
+    const orders = orderRows.map((r) => ({
+      id: r.id,
+      source: 'order',
+      publicCode: r.public_code || null,
+      kind: r.kind || 'primary',
+      status: r.status || null,
+      bucket: customerOrderBucket(r.status),
+      category: r.category || null,
+      description: r.service_description || null,
+      serviceDate: r.service_date || null,
+      serviceDateTime: r.service_datetime || null,
+      preferredTime: null,
+      isAsap: !!r.is_asap,
+      address: r.service_address || null,
+      providerName: r.provider_name || null,
+      cashSelected: !!r.cash_selected,
+      payable: isOrderPayableOnline(r),
+      payFlow: orderPayFlow(r),
+      policy: computeOrderActionPolicy(r),
+      createdAt: r.created_at,
+      pricing: {
+        total: r.final_captured_amount ?? r.pricing_total_amount ?? r.amount ?? null,
+        amount: r.amount ?? null,
+        providerAmount: r.provider_amount ?? null,
+        bookingFee: r.booking_fee_amount ?? null,
+        processingFee: r.processing_fee_amount ?? null,
+        vat: r.vat_amount ?? null,
+        finalCaptured: r.final_captured_amount ?? null,
+        captured: r.final_captured_amount != null,
+      },
+    }));
+
+    const requests = reqRows.map((r) => {
+      const reqBucket = customerRequestBucket(r.status);
+      return {
+        id: r.id,
+        source: 'request',
+        publicCode: null,
+        kind: 'request',
+        status: r.status || 'pending',
+        bucket: reqBucket,
+        category: r.category || null,
+        description: r.description || null,
+        serviceDate: r.preferred_date || null,
+        serviceDateTime: null,
+        preferredTime: r.preferred_time || null,
+        isAsap: !!r.is_asap,
+        address: r.service_address || null,
+        providerName: null,
+        cashSelected: false,
+        payable: false,
+        payFlow: null,
+        // An active intake request can only be withdrawn (no order/PI yet exists); a
+        // withdrawn one is closed and offers "order again" like any past order.
+        policy: {
+          canCancel: reqBucket === 'active',
+          cancelTier: 'free', cancelFeeCents: 0,
+          canEditAddress: false, canRequestReschedule: false,
+          canReorder: reqBucket === 'past' && !!r.category,
+          isCaptured: false,
+        },
+        createdAt: r.created_at,
+        pricing: null,
+      };
+    });
+
+    const all = [...orders, ...requests].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+    res.set('Cache-Control', 'no-store');
+    return res.json({ orders: all });
+  } catch (err) {
+    console.error('[GET /api/auth/orders]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// POST /api/auth/orders/:id/payment-link — mint a FRESH payment link for one of the
+// user's own payable orders. Mirrors admin regenerate-link (rotates retry_token so the
+// 2h window restarts), but scoped to the authenticated owner. The customer never hits
+// link-expired from their account. Purely additive — admin/WhatsApp links are untouched.
+app.post('/api/auth/orders/:id/payment-link', publicFormLimit, async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const { conds, ids } = await resolveUserOrderMatch(payload.user_id);
+    if (!conds.length) return res.status(404).json({ error: 'not_found' });
+
+    const { rows } = await pool.query(
+      `SELECT id, status, kind, customer_id, cash_selected, amount, pricing_total_amount,
+              payment_intent_id, parent_id_of_adjustment
+         FROM all_bookings
+        WHERE id = $${ids.length + 1}
+          AND (${conds.join(' OR ')})
+          AND COALESCE(parent_id_of_adjustment, '') = ''
+        LIMIT 1`,
+      [...ids, req.params.id]
+    );
+    const row = rows[0];
+    if (!row) return res.status(404).json({ error: 'not_found' });
+    // Heal the status first: if it was already authorized (missed webhook), the payable check
+    // below returns 409 and the client refreshes instead of minting a link for a paid order.
+    await reconcileOrderStatusFromStripe(row);
+    if (!isOrderPayableOnline(row)) return res.status(409).json({ error: 'not_payable' });
+
+    const token = randomBytes(12).toString('base64url');
+    await pool.query(
+      `UPDATE all_bookings SET retry_token = $1, retry_token_created_at = NOW() WHERE id = $2`,
+      [token, row.id]
+    );
+
+    res.set('Cache-Control', 'no-store');
+    return res.json({ ok: true, flow: orderPayFlow(row), rt: token, orderId: row.id });
+  } catch (err) {
+    console.error('[POST /api/auth/orders/:id/payment-link]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// ─── Customer self-service: cancel / modify their own orders ──────────────────
+// All three routes are scoped strictly to the authenticated owner via
+// resolveUserOrderMatch (Stripe customer id / email / phone) and never trust the JWT body.
+
+// Fetch one order owned by the user (excludes child adjustment rows).
+async function fetchOwnedOrder(userId, orderId) {
+  const { conds, ids } = await resolveUserOrderMatch(userId);
+  if (!conds.length) return null;
+  const { rows } = await pool.query(
+    `SELECT id, public_code, status, kind, category, customer_id, cash_selected,
+            payment_intent_id, service_date, service_datetime, service_address,
+            booking_fee_amount, processing_fee_amount, vat_amount, provider_amount,
+            pricing_total_amount, amount, parent_id_of_adjustment
+       FROM all_bookings
+      WHERE id = $${ids.length + 1}
+        AND (${conds.join(' OR ')})
+        AND COALESCE(parent_id_of_adjustment, '') = ''
+        AND COALESCE(kind, '') <> 'adjustment'
+      LIMIT 1`,
+    [...ids, orderId]
+  );
+  return rows[0] || null;
+}
+
+// POST /api/auth/orders/:id/cancel — customer-initiated cancellation.
+// Free when no money is held or ≥24h before service; late fee (SERVI fee captured from the
+// hold, provider amount released) for a pre-authorized order inside the 24h window. Captured
+// orders cannot be self-cancelled (→ support). Also withdraws a not-yet-converted intake request.
+app.post('/api/auth/orders/:id/cancel', publicFormLimit, async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const reason = String(req.body?.reason || '').trim().slice(0, 200) || null;
+    const order = await fetchOwnedOrder(payload.user_id, req.params.id);
+
+    // Not an order → maybe a pending intake request the user wants to withdraw.
+    if (!order) {
+      const { conds, ids } = await resolveUserOrderMatch(payload.user_id);
+      if (!conds.length) return res.status(404).json({ error: 'not_found' });
+      const { rows: reqRows } = await pool.query(
+        `SELECT id, status FROM service_requests
+          WHERE id = $${ids.length + 1} AND (${conds.join(' OR ')})
+            AND COALESCE(converted_order_id, '') = '' LIMIT 1`,
+        [...ids, req.params.id]
+      );
+      const reqRow = reqRows[0];
+      if (!reqRow) return res.status(404).json({ error: 'not_found' });
+      if (String(reqRow.status || '').toLowerCase() === 'canceled') {
+        return res.json({ ok: true, status: 'canceled', feeCents: 0, kind: 'request' });
+      }
+      await pool.query(`UPDATE service_requests SET status = 'canceled' WHERE id = $1`, [reqRow.id]);
+      return res.json({ ok: true, status: 'canceled', feeCents: 0, kind: 'request' });
+    }
+
+    // Heal status from Stripe (missed webhook) before deciding what's allowed.
+    await reconcileOrderStatusFromStripe(order);
+    const policy = computeOrderActionPolicy(order);
+    if (policy.isCaptured) {
+      return res.status(409).json({ error: 'already_captured', message: 'Esta orden ya fue cobrada. Contáctanos para solicitar un reembolso.' });
+    }
+    if (!policy.canCancel) {
+      return res.status(409).json({ error: 'not_cancelable', message: `El estado "${order.status}" no permite cancelación.` });
+    }
+
+    const prevStatus = order.status;
+    let newStatus = 'Canceled';
+    let feeCents = 0;
+
+    // Late tier: pre-authorized order inside the 24h window → capture the SERVI fee from the hold.
+    if (policy.cancelTier === 'late' && policy.cancelFeeCents > 0 && order.payment_intent_id) {
+      let pi = null;
+      try { pi = await stripe.paymentIntents.retrieve(order.payment_intent_id); }
+      catch (e) { console.warn('[auth cancel] PI retrieve failed:', e?.message || e); }
+
+      if (pi && pi.status === 'succeeded') {
+        // Raced with capture — it's effectively captured now.
+        return res.status(409).json({ error: 'already_captured', message: 'Esta orden ya fue cobrada. Contáctanos para solicitar un reembolso.' });
+      }
+      if (pi && pi.status === 'requires_capture') {
+        feeCents = Math.min(policy.cancelFeeCents, Number.isInteger(pi.amount) ? pi.amount : policy.cancelFeeCents);
+        if (feeCents > 0) {
+          // Tag first so the succeeded webhook relabels (regardless of arrival timing),
+          // then partial-capture — Stripe auto-releases the provider remainder.
+          await stripe.paymentIntents.update(pi.id, {
+            metadata: { ...(pi.metadata || {}), servi_penalty_cancel: '1', servi_cancel_reason: reason || '' }
+          });
+          await stripe.paymentIntents.capture(pi.id, { amount_to_capture: feeCents });
+          newStatus = 'Canceled (late fee)';
+        }
+      } else if (pi && /^cancel/i.test(pi.status)) {
+        newStatus = 'Canceled';
+      }
+    }
+
+    // Free tier (or late tier with no live hold): release any cancelable hold.
+    if (newStatus === 'Canceled' && order.payment_intent_id) {
+      try {
+        const pi = await stripe.paymentIntents.retrieve(order.payment_intent_id);
+        const cancelable = new Set(['requires_payment_method', 'requires_confirmation', 'requires_action', 'processing', 'requires_capture']);
+        if (cancelable.has(pi.status)) {
+          await stripe.paymentIntents.cancel(pi.id, { cancellation_reason: 'requested_by_customer' });
+        }
+      } catch (e) {
+        console.warn('[auth cancel] PI cancel failed:', e?.message || e);
+      }
+    }
+
+    if (feeCents > 0) {
+      await pool.query(
+        `UPDATE all_bookings
+            SET status = $1, cancellation_fee_amount = $2, final_captured_amount = $2,
+                canceled_at = NOW(), canceled_by = 'cliente'
+          WHERE id = $3`,
+        [newStatus, feeCents, order.id]
+      );
+    } else {
+      await pool.query(
+        `UPDATE all_bookings SET status = $1, canceled_at = NOW(), canceled_by = 'cliente' WHERE id = $2`,
+        [newStatus, order.id]
+      );
+    }
+
+    const appliedNote = feeCents > 0
+      ? `Cancelado por cliente con tarifa de $${(feeCents / 100).toFixed(2)} MXN. Estado previo: ${prevStatus}.`
+      : `Cancelado por cliente (sin cargo). Estado previo: ${prevStatus}.`;
+    await pool.query(
+      `INSERT INTO order_changes
+         (id, order_id, change_type, requested_by, original_status, status, notes, applied_note, processed_at)
+       VALUES ($1,$2,'cancel','cliente',$3,'applied',$4,$5,NOW())`,
+      [newChangeId(), order.id, prevStatus, reason, appliedNote]
+    );
+
+    postToGoogleWebhook({
+      type: 'order.status', orderId: order.id, status: newStatus,
+      paymentIntentId: order.payment_intent_id || '', customerId: order.customer_id || ''
+    });
+
+    return res.json({ ok: true, status: newStatus, feeCents });
+  } catch (err) {
+    console.error('[POST /api/auth/orders/:id/cancel]', err);
+    return res.status(500).json({ error: 'internal_error', message: err.message });
+  }
+});
+
+// PATCH /api/auth/orders/:id/address — instant address change (pre-capture only).
+app.patch('/api/auth/orders/:id/address', publicFormLimit, async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const newAddress = String(req.body?.address || '').trim();
+    if (!newAddress) return res.status(400).json({ error: 'address_required' });
+    if (newAddress.length > 500) return res.status(400).json({ error: 'address_too_long' });
+
+    const order = await fetchOwnedOrder(payload.user_id, req.params.id);
+    if (!order) return res.status(404).json({ error: 'not_found' });
+    await reconcileOrderStatusFromStripe(order);
+    if (!computeOrderActionPolicy(order).canEditAddress) {
+      return res.status(409).json({ error: 'not_editable', message: `El estado "${order.status}" no permite editar la dirección.` });
+    }
+
+    const prevAddress = order.service_address;
+    await pool.query(`UPDATE all_bookings SET service_address = $1 WHERE id = $2`, [newAddress, order.id]);
+    await pool.query(
+      `INSERT INTO order_changes
+         (id, order_id, change_type, requested_by, original_service_address, requested_service_address, original_status, status, applied_note, processed_at)
+       VALUES ($1,$2,'address_update','cliente',$3,$4,$5,'applied',$6,NOW())`,
+      [newChangeId(), order.id, prevAddress, newAddress, order.status, `Dirección (cliente): ${prevAddress || '—'} → ${newAddress}`]
+    );
+    return res.json({ ok: true, address: newAddress });
+  } catch (err) {
+    console.error('[PATCH /api/auth/orders/:id/address]', err);
+    return res.status(500).json({ error: 'internal_error', message: err.message });
+  }
+});
+
+// POST /api/auth/orders/:id/reschedule-request — create a PENDING reschedule request for an
+// admin to approve (provider re-coordination). Surfaces in admin.html's order-changes list.
+app.post('/api/auth/orders/:id/reschedule-request', publicFormLimit, async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const requestedDt = String(req.body?.service_datetime || '').trim();
+    if (!requestedDt) return res.status(400).json({ error: 'datetime_required' });
+    const t = new Date(requestedDt);
+    if (isNaN(t.getTime())) return res.status(400).json({ error: 'invalid_datetime' });
+    if (t.getTime() < Date.now()) return res.status(400).json({ error: 'datetime_in_past' });
+    const notes = String(req.body?.notes || '').trim().slice(0, 1000) || null;
+
+    const order = await fetchOwnedOrder(payload.user_id, req.params.id);
+    if (!order) return res.status(404).json({ error: 'not_found' });
+    await reconcileOrderStatusFromStripe(order);
+    if (!computeOrderActionPolicy(order).canRequestReschedule) {
+      return res.status(409).json({ error: 'not_editable', message: `El estado "${order.status}" no permite reagendar.` });
+    }
+
+    const changeId = newChangeId();
+    await pool.query(
+      `INSERT INTO order_changes
+         (id, order_id, change_type, requested_by, original_service_datetime, original_service_address, original_status, requested_service_datetime, notes)
+       VALUES ($1,$2,'reschedule','cliente',$3,$4,$5,$6,$7)`,
+      [changeId, order.id, order.service_datetime, order.service_address, order.status, requestedDt, notes]
+    );
+    return res.json({ ok: true, id: changeId, pending: true });
+  } catch (err) {
+    console.error('[POST /api/auth/orders/:id/reschedule-request]', err);
+    return res.status(500).json({ error: 'internal_error', message: err.message });
+  }
+});
+
 // ─── Payment Methods (auth users) ────────────────────────────────────────────
 
 // Resolve or create a Stripe customer for an authenticated user
-async function getStripeCustomerForUser(userId) {
+async function getStripeCustomerForUser(userId, { createIfMissing = true } = {}) {
   const { rows } = await pool.query(
-    'SELECT id, name, email, phone FROM auth_users WHERE id = $1',
+    'SELECT id, name, email, phone, stripe_customer_id FROM auth_users WHERE id = $1',
     [userId]
   );
   const user = rows[0];
   if (!user) throw new Error('user_not_found');
+  if (user.stripe_customer_id) return user.stripe_customer_id;
+
+  const rememberCustomer = async (customerId) => {
+    if (!customerId) return null;
+    await pool.query(
+      'UPDATE auth_users SET stripe_customer_id = $1 WHERE id = $2 AND stripe_customer_id IS NULL',
+      [customerId, user.id]
+    );
+    return customerId;
+  };
 
   // Look up existing customer by email
   if (user.email) {
     const saved = await findSavedClientByEmailNormalized(user.email);
-    if (saved?.customer_id) return saved.customer_id;
+    if (saved?.customer_id) return rememberCustomer(saved.customer_id);
     const { rows: bRows } = await pool.query(
       `SELECT customer_id FROM all_bookings WHERE LOWER(client_email) = LOWER($1) AND customer_id IS NOT NULL ORDER BY created_at DESC LIMIT 1`,
       [user.email]
     );
-    if (bRows[0]?.customer_id) return bRows[0].customer_id;
+    if (bRows[0]?.customer_id) return rememberCustomer(bRows[0].customer_id);
   }
   // Look up by phone digits
   if (user.phone) {
     const digits = user.phone.replace(/\D/g, '');
     const saved = await findSavedClientByPhoneDigits(digits);
-    if (saved?.customer_id) return saved.customer_id;
+    if (saved?.customer_id) return rememberCustomer(saved.customer_id);
   }
+  if (!createIfMissing) return null;
   // Create new Stripe customer and register in saved_servi_users
   const customer = await stripe.customers.create({
     name: user.name || undefined,
@@ -5186,12 +6761,13 @@ async function getStripeCustomerForUser(userId) {
      ON CONFLICT (customer_id) DO UPDATE SET last_checked_at = NOW()`,
     [customer.id, user.name || null, user.email || null, user.phone || null]
   );
+  await rememberCustomer(customer.id);
   return customer.id;
 }
 
 // GET /api/auth/payment-methods — list saved payment methods
 app.get('/api/auth/payment-methods', publicFormLimit, async (req, res) => {
-  const payload = requireUserAuth(req, res);
+  const payload = await requireUserAuth(req, res);
   if (!payload) return;
   try {
     const customerId = await getStripeCustomerForUser(payload.user_id);
@@ -5219,7 +6795,7 @@ app.get('/api/auth/payment-methods', publicFormLimit, async (req, res) => {
 
 // POST /api/auth/payment-methods/setup — create SetupIntent for adding card/Apple Pay/Google Pay
 app.post('/api/auth/payment-methods/setup', publicFormLimit, async (req, res) => {
-  const payload = requireUserAuth(req, res);
+  const payload = await requireUserAuth(req, res);
   if (!payload) return;
   try {
     const customerId = await getStripeCustomerForUser(payload.user_id);
@@ -5238,7 +6814,7 @@ app.post('/api/auth/payment-methods/setup', publicFormLimit, async (req, res) =>
 
 // DELETE /api/auth/payment-methods/:pmId — detach a payment method
 app.delete('/api/auth/payment-methods/:pmId', publicFormLimit, async (req, res) => {
-  const payload = requireUserAuth(req, res);
+  const payload = await requireUserAuth(req, res);
   if (!payload) return;
   try {
     const customerId = await getStripeCustomerForUser(payload.user_id);
@@ -5254,7 +6830,7 @@ app.delete('/api/auth/payment-methods/:pmId', publicFormLimit, async (req, res) 
 
 // PATCH /api/auth/payment-methods/:pmId/default — set default payment method
 app.patch('/api/auth/payment-methods/:pmId/default', publicFormLimit, async (req, res) => {
-  const payload = requireUserAuth(req, res);
+  const payload = await requireUserAuth(req, res);
   if (!payload) return;
   try {
     const customerId = await getStripeCustomerForUser(payload.user_id);
@@ -5427,8 +7003,11 @@ app.get('/api/admin/orders', adminRateLimit, requireAdminAuth, async (req, res) 
     const params = [];
     const conditions = [];
     if (status) {
-      params.push(status);
-      conditions.push(`status = $${params.length}`);
+      // 'Canceled'/'Captured' filters must also catch compound labels the system emits
+      // ('Canceled (late fee)', 'Canceled (expired)', 'Captured (partial refund)', …).
+      if (/^cancel/i.test(status)) { params.push('cancel%'); conditions.push(`status ILIKE $${params.length}`); }
+      else if (/^captured/i.test(status)) { params.push('captured%'); conditions.push(`status ILIKE $${params.length}`); }
+      else { params.push(status); conditions.push(`status = $${params.length}`); }
     }
     if (search) {
       params.push(`%${search}%`);
@@ -5441,14 +7020,19 @@ app.get('/api/admin/orders', adminRateLimit, requireAdminAuth, async (req, res) 
 
     const { rows } = await pool.query(
       `SELECT id, public_code, kind, client_name, client_phone, client_email,
-              service_description, service_date, service_datetime, service_address,
+              service_description, service_date, service_datetime, is_asap, service_address,
               amount, provider_amount, booking_fee_amount, processing_fee_amount, vat_amount, pricing_total_amount,
-              status, provider_id, provider_name, customer_id, created_at
+              status, provider_id, provider_name, customer_id, payment_intent_id, cash_selected,
+              parent_id_of_adjustment, created_at,
+              EXISTS (SELECT 1 FROM order_changes oc WHERE oc.order_id = all_bookings.id AND oc.status = 'pending') AS has_pending_change
          FROM all_bookings ${where}
          ORDER BY ${sortCol} ${sortDir}
          LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params
     );
+    // Heal stale statuses from Stripe (missed webhooks) so the dashboard reflects reality.
+    await reconcileOrderRows(rows, { cap: 15 });
+    await enrichOrdersWithOps(rows);
     const { rows: countRows } = await pool.query(
       `SELECT count(*)::int AS total FROM all_bookings ${where}`,
       countParams
@@ -5456,6 +7040,179 @@ app.get('/api/admin/orders', adminRateLimit, requireAdminAuth, async (req, res) 
     return res.json({ items: rows, total: countRows[0]?.total || 0 });
   } catch (err) {
     console.error('[GET /api/admin/orders]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+app.get('/api/admin/ops-radar', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, public_code, kind, client_name, client_phone, client_email,
+              service_description, service_date, service_datetime, is_asap, service_address,
+              category, amount, pricing_total_amount, status, customer_id, payment_intent_id,
+              saved_payment_method_id, cash_selected, created_at
+         FROM all_bookings
+        WHERE status IS NULL
+           OR (
+                status NOT ILIKE 'Captured%'
+            AND status NOT ILIKE 'Canceled%'
+            AND status NOT ILIKE 'Cancelled%'
+            AND status NOT ILIKE 'Refunded%'
+            AND status <> 'Pending Cash'
+           )
+        ORDER BY created_at DESC
+        LIMIT 500`
+    );
+    await reconcileOrderRows(rows, { cap: 15 });
+    await enrichOrdersWithOps(rows, { persistSeen: true });
+    const active = rows
+      .filter(r => r.ops?.code && r.ops.code !== 'safe' && !r.ops.isSnoozed)
+      .map(compactOpsOrder)
+      .sort(sortOpsItems);
+    return res.json({
+      ok: true,
+      generatedAt: new Date().toISOString(),
+      summary: summarizeOps(active),
+      next: active[0] || null,
+      items: active.slice(0, 12),
+    });
+  } catch (err) {
+    console.error('[GET /api/admin/ops-radar]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+app.post('/api/admin/orders/:id/preauth-now', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, amount, pricing_total_amount, customer_id, saved_payment_method_id,
+              parent_id_of_adjustment, kind, provider_id, provider_name, client_name,
+              client_email, service_date, service_datetime, status, payment_intent_id,
+              capture_method, cash_selected
+         FROM all_bookings
+        WHERE id = $1
+        LIMIT 1`,
+      [req.params.id]
+    );
+    const row = rows[0];
+    if (!row) return res.status(404).json({ error: 'not_found' });
+    if (row.cash_selected) return res.status(409).json({ error: 'cash_order', message: 'Orden marcada como efectivo' });
+    if (!row.customer_id) return res.status(409).json({ error: 'no_customer', message: 'La orden no tiene cliente Stripe guardado.' });
+
+    let savedPmId = row.saved_payment_method_id || null;
+    if (!savedPmId) {
+      const list = await stripe.paymentMethods.list({ customer: row.customer_id, type: 'card', limit: 1 });
+      savedPmId = list.data[0]?.id || null;
+    }
+    if (!savedPmId) {
+      return res.status(409).json({ error: 'no_saved_card', message: 'No hay tarjeta guardada para autorizar.' });
+    }
+
+    if (row.payment_intent_id && String(row.payment_intent_id).startsWith('pi_')) {
+      const existing = await stripe.paymentIntents.retrieve(row.payment_intent_id);
+      if (existing.status === 'requires_capture') {
+        await pool.query(
+          `UPDATE all_bookings
+              SET status = 'Confirmed',
+                  saved_payment_method_id = COALESCE(saved_payment_method_id, $1)
+            WHERE id = $2`,
+          [savedPmId, row.id]
+        );
+        return res.json({ ok: true, existing: true, status: existing.status, paymentIntentId: existing.id });
+      }
+      if (existing.status === 'succeeded') {
+        await pool.query(`UPDATE all_bookings SET status = 'Captured' WHERE id = $1`, [row.id]);
+        return res.json({ ok: true, existing: true, status: existing.status, paymentIntentId: existing.id });
+      }
+      return res.status(409).json({ error: 'payment_intent_not_ready', status: existing.status, paymentIntentId: existing.id });
+    }
+
+    const providerMeta = {};
+    if (row.provider_id) providerMeta.provider_id = row.provider_id;
+    if (row.provider_name) providerMeta.provider_name = row.provider_name;
+    const receiptEmail = normalizeEmail(row.client_email);
+    const captureMethod = String(row.capture_method || '').toLowerCase() === 'automatic' ? 'automatic' : 'manual';
+
+    const pi = await stripe.paymentIntents.create({
+      amount: row.pricing_total_amount || row.amount,
+      currency: 'mxn',
+      capture_method: captureMethod,
+      customer: row.customer_id,
+      payment_method: savedPmId,
+      receipt_email: receiptEmail || undefined,
+      confirm: true,
+      off_session: true,
+      metadata: {
+        order_id: row.id,
+        kind: row.kind || 'primary',
+        parent_order_id: row.parent_id_of_adjustment || '',
+        ...providerMeta
+      }
+    }, { idempotencyKey: `pi-preauth-now-${row.id}` });
+
+    const statusLabel =
+      pi.status === 'requires_capture'
+        ? 'Confirmed'
+        : pi.status === 'succeeded'
+          ? 'Captured'
+          : row.status || 'Pending';
+    await pool.query(
+      `UPDATE all_bookings
+          SET payment_intent_id = $1,
+              saved_payment_method_id = COALESCE(saved_payment_method_id, $2),
+              status = $3
+        WHERE id = $4`,
+      [pi.id, savedPmId, statusLabel, row.id]
+    );
+    try {
+      await refreshOrderFees(row.id, { paymentIntentId: pi.id });
+    } catch (feeErr) {
+      console.warn('[preauth-now] fee refresh failed', feeErr?.message || feeErr);
+    }
+    postToGoogleWebhook({
+      type: 'order.status',
+      orderId: row.id,
+      status: statusLabel,
+      customerId: row.customer_id || '',
+      paymentIntentId: pi.id,
+      parentOrderId: row.parent_id_of_adjustment || ''
+    });
+    return res.json({ ok: true, status: pi.status, paymentIntentId: pi.id });
+  } catch (err) {
+    const failure = describeStripeFailure(err);
+    try {
+      const { rows } = await pool.query(`SELECT * FROM all_bookings WHERE id = $1 LIMIT 1`, [req.params.id]);
+      if (rows[0]) await handlePreauthFailure(rows[0], { error: err, failure });
+    } catch (handleErr) {
+      console.warn('[preauth-now] handlePreauthFailure failed', req.params.id, handleErr?.message || handleErr);
+    }
+    console.error('[POST /api/admin/orders/:id/preauth-now]', err?.message || err);
+    return res.status(409).json({
+      error: 'preauth_failed',
+      message: failure?.friendly || failure?.message || err?.message || 'No se pudo autorizar la tarjeta'
+    });
+  }
+});
+
+app.post('/api/admin/orders/:id/ops-alerts/:code/snooze', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const until = resolveSnoozeUntil(req.body?.duration || req.body?.snooze || '15m');
+    if (!until) return res.status(400).json({ error: 'invalid_snooze_duration' });
+    const { rowCount } = await pool.query(`SELECT 1 FROM all_bookings WHERE id = $1`, [req.params.id]);
+    if (!rowCount) return res.status(404).json({ error: 'not_found' });
+    await pool.query(
+      `INSERT INTO ops_alerts (order_id, alert_code, status, snoozed_until, last_seen_at)
+       VALUES ($1, $2, 'active', $3, NOW())
+       ON CONFLICT (order_id, alert_code) DO UPDATE
+          SET status = 'active',
+              snoozed_until = $3,
+              last_seen_at = NOW(),
+              resolved_at = NULL`,
+      [req.params.id, req.params.code, until]
+    );
+    return res.json({ ok: true, snoozedUntil: until.toISOString() });
+  } catch (err) {
+    console.error('[POST /api/admin/orders/:id/ops-alerts/:code/snooze]', err);
     return res.status(500).json({ error: 'internal_error' });
   }
 });
@@ -5470,6 +7227,9 @@ app.get('/api/admin/orders/:id', adminRateLimit, requireAdminAuth, async (req, r
       `SELECT * FROM all_bookings WHERE parent_id_of_adjustment = $1 ORDER BY created_at`,
       [req.params.id]
     );
+    // Heal stale statuses from Stripe (missed webhooks) for this order and its adjustments.
+    await reconcileOrderRows([rows[0], ...adjustments]);
+    await enrichOrdersWithOps([rows[0]]);
     return res.json({ order: rows[0], adjustments });
   } catch (err) {
     console.error('[GET /api/admin/orders/:id]', err);
@@ -5481,13 +7241,14 @@ app.get('/api/admin/orders/:id', adminRateLimit, requireAdminAuth, async (req, r
 app.get('/api/admin/stats', adminRateLimit, requireAdminAuth, async (req, res) => {
   try {
     const today = new Date().toISOString().slice(0, 10);
-    const [requests, pendingOrders, confirmed, captured, reports, applications] = await Promise.all([
+    const [requests, pendingOrders, confirmed, captured, reports, applications, pendingChanges] = await Promise.all([
       pool.query(`SELECT count(*)::int AS c FROM service_requests WHERE created_at::date = $1`, [today]),
       pool.query(`SELECT count(*)::int AS c FROM all_bookings WHERE status = 'Pending'`),
       pool.query(`SELECT count(*)::int AS c FROM all_bookings WHERE status = 'Confirmed'`),
       pool.query(`SELECT count(*)::int AS c, COALESCE(sum(final_captured_amount),0)::int AS revenue FROM all_bookings WHERE status = 'Captured'`),
       pool.query(`SELECT count(*)::int AS c FROM service_reports WHERE status = 'new'`),
       pool.query(`SELECT count(*)::int AS c FROM partner_applications WHERE status = 'pending'`),
+      pool.query(`SELECT count(*)::int AS c FROM order_changes WHERE status = 'pending'`),
     ]);
     return res.json({
       requestsToday: requests.rows[0]?.c || 0,
@@ -5497,9 +7258,447 @@ app.get('/api/admin/stats', adminRateLimit, requireAdminAuth, async (req, res) =
       capturedRevenue: captured.rows[0]?.revenue || 0,
       newReports: reports.rows[0]?.c || 0,
       pendingApplications: applications.rows[0]?.c || 0,
+      pendingChanges: pendingChanges.rows[0]?.c || 0,
     });
   } catch (err) {
     console.error('[GET /api/admin/stats]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// --- Admin dashboard: Regenerate payment link (resets retry_token + 2h expiry) ---
+app.post('/api/admin/orders/:id/regenerate-link', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { rows } = await pool.query(
+      `SELECT id, customer_id, kind, status FROM all_bookings WHERE id = $1 LIMIT 1`,
+      [id]
+    );
+    const row = rows[0];
+    if (!row) return res.status(404).json({ error: 'not_found' });
+
+    const token = randomBytes(12).toString('base64url');
+    const upd = await pool.query(
+      `UPDATE all_bookings
+          SET retry_token = $1,
+              retry_token_created_at = NOW()
+        WHERE id = $2
+        RETURNING retry_token_created_at`,
+      [token, id]
+    );
+
+    const useBookFlow = Boolean(row.customer_id) || row.kind === 'book' || row.kind === 'adjustment';
+    const baseUrl = useBookFlow
+      ? buildFrontendUrl('/book.html', { orderId: id })
+      : buildFrontendUrl('/pay.html', { order: id });
+    const urlObj = baseUrl ? new URL(baseUrl) : null;
+    if (urlObj) urlObj.searchParams.set('rt', token);
+
+    return res.json({
+      ok: true,
+      url: urlObj ? urlObj.toString() : baseUrl,
+      flow: useBookFlow ? 'book' : 'pay',
+      issued_at: upd.rows[0]?.retry_token_created_at || new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error('[POST /api/admin/orders/:id/regenerate-link]', err);
+    return res.status(500).json({ error: 'internal_error', message: err.message });
+  }
+});
+
+// --- Admin dashboard: Mark as cash (admin-side cash exception) ---
+app.post('/api/admin/orders/:id/mark-cash', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { rows } = await pool.query(
+      `SELECT id, payment_intent_id, cash_selected, status FROM all_bookings WHERE id = $1 LIMIT 1`,
+      [id]
+    );
+    const row = rows[0];
+    if (!row) return res.status(404).json({ error: 'not_found' });
+    if (row.cash_selected) return res.json({ ok: true, status: row.status || 'Pending Cash' });
+
+    if (row.payment_intent_id) {
+      try {
+        await stripe.paymentIntents.cancel(row.payment_intent_id, { cancellation_reason: 'requested_by_customer' });
+      } catch (cancelErr) {
+        console.warn('mark-cash: cancel PI failed', cancelErr?.message || cancelErr);
+      }
+    }
+
+    await pool.query(
+      `UPDATE all_bookings
+          SET cash_exception_allowed = TRUE,
+              cash_selected = TRUE,
+              status = 'Pending Cash',
+              payment_intent_id = NULL
+        WHERE id = $1`,
+      [id]
+    );
+    return res.json({ ok: true, status: 'Pending Cash' });
+  } catch (err) {
+    console.error('[POST /api/admin/orders/:id/mark-cash]', err);
+    return res.status(500).json({ error: 'internal_error', message: err.message });
+  }
+});
+
+// ─── Admin: Order Changes (reschedule / cancel / address_update / inline_edit) ─────
+
+const ORDER_EDITABLE_STATUSES = new Set([
+  'Pending', 'Setup required', 'Setup created', 'Pending (3DS)',
+  'Scheduled', 'Confirmed', 'Pending Cash', 'New'
+]);
+const ORDER_TERMINAL_STATUSES = new Set([
+  'Captured', 'Refunded', 'Canceled', 'Cancelled', 'Declined', 'Failed', 'Captured (partial refund)'
+]);
+
+function newChangeId() {
+  const d = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  const stamp = `${d.getUTCFullYear()}${pad(d.getUTCMonth()+1)}${pad(d.getUTCDate())}${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}`;
+  const tail = Math.random().toString(36).slice(2, 8);
+  return `CHG-${stamp}-${tail}`;
+}
+
+app.get('/api/admin/orders/:id/changes', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT * FROM order_changes WHERE order_id = $1 ORDER BY created_at DESC`,
+      [req.params.id]
+    );
+    return res.json({ items: rows });
+  } catch (err) {
+    console.error('[GET /api/admin/orders/:id/changes]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+app.post('/api/admin/orders/:id/changes', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { change_type, requested_service_datetime, requested_service_address, notes, requested_by } = req.body || {};
+    const allowedTypes = new Set(['reschedule', 'cancel', 'address_update']);
+    if (!allowedTypes.has(change_type)) {
+      return res.status(400).json({ error: 'invalid_change_type' });
+    }
+    if (change_type === 'reschedule' && !requested_service_datetime) {
+      return res.status(400).json({ error: 'requested_datetime_required' });
+    }
+    if (change_type === 'address_update' && !String(requested_service_address || '').trim()) {
+      return res.status(400).json({ error: 'requested_address_required' });
+    }
+    const { rows } = await pool.query(
+      `SELECT id, service_datetime, service_address, status FROM all_bookings WHERE id = $1 LIMIT 1`,
+      [id]
+    );
+    const order = rows[0];
+    if (!order) return res.status(404).json({ error: 'order_not_found' });
+
+    const changeId = newChangeId();
+    await pool.query(
+      `INSERT INTO order_changes
+        (id, order_id, change_type, requested_by,
+         original_service_datetime, original_service_address, original_status,
+         requested_service_datetime, requested_service_address, notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [
+        changeId, id, change_type, String(requested_by || 'cliente').slice(0, 80),
+        order.service_datetime, order.service_address, order.status,
+        change_type === 'reschedule' ? requested_service_datetime : null,
+        change_type === 'address_update' ? String(requested_service_address || '').trim() : null,
+        String(notes || '').slice(0, 1000) || null
+      ]
+    );
+    return res.json({ ok: true, id: changeId });
+  } catch (err) {
+    console.error('[POST /api/admin/orders/:id/changes]', err);
+    return res.status(500).json({ error: 'internal_error', message: err.message });
+  }
+});
+
+app.post('/api/admin/changes/:changeId/apply', adminRateLimit, requireAdminAuth, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: changeRows } = await client.query(
+      `SELECT * FROM order_changes WHERE id = $1 FOR UPDATE`,
+      [req.params.changeId]
+    );
+    const change = changeRows[0];
+    if (!change) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'change_not_found' }); }
+    if (change.status !== 'pending') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'change_not_pending', message: `Estado actual: ${change.status}` });
+    }
+    const { rows: orderRows } = await client.query(
+      `SELECT id, status, payment_intent_id, service_datetime, service_address FROM all_bookings WHERE id = $1 FOR UPDATE`,
+      [change.order_id]
+    );
+    const order = orderRows[0];
+    if (!order) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'order_not_found' }); }
+
+    let appliedNote = '';
+    if (change.change_type === 'reschedule') {
+      if (ORDER_TERMINAL_STATUSES.has(order.status)) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'order_terminal', message: 'No se puede reagendar una orden en estado terminal.' });
+      }
+      const newDt = change.requested_service_datetime;
+      const newDate = newDt ? String(newDt).slice(0, 10) : null;
+      await client.query(
+        `UPDATE all_bookings SET service_datetime = $1, service_date = $2 WHERE id = $3`,
+        [newDt, newDate, order.id]
+      );
+      appliedNote = `Reagendado: ${order.service_datetime || '—'} → ${newDt}`;
+    } else if (change.change_type === 'address_update') {
+      if (ORDER_TERMINAL_STATUSES.has(order.status)) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'order_terminal', message: 'No se puede actualizar la dirección en estado terminal.' });
+      }
+      const newAddr = change.requested_service_address;
+      await client.query(`UPDATE all_bookings SET service_address = $1 WHERE id = $2`, [newAddr, order.id]);
+      appliedNote = `Dirección: ${order.service_address || '—'} → ${newAddr}`;
+    } else if (change.change_type === 'cancel') {
+      if (String(order.status).toLowerCase() === 'captured') {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'already_captured', message: 'Orden ya capturada — debe reembolsarse.' });
+      }
+      if (order.payment_intent_id) {
+        try {
+          const pi = await stripe.paymentIntents.retrieve(order.payment_intent_id);
+          const cancelable = new Set(['requires_payment_method','requires_confirmation','requires_action','processing','requires_capture']);
+          if (cancelable.has(pi.status)) {
+            await stripe.paymentIntents.cancel(pi.id, { cancellation_reason: 'requested_by_customer' });
+          }
+        } catch (e) {
+          console.warn('[changes/apply cancel] PI cancel failed:', e?.message || e);
+        }
+      }
+      await client.query(`UPDATE all_bookings SET status = 'Canceled' WHERE id = $1`, [order.id]);
+      appliedNote = `Cancelado (vía cambio ${change.id}). Estado previo: ${order.status}.`;
+    } else {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'unsupported_change_type' });
+    }
+
+    await client.query(
+      `UPDATE order_changes SET status='applied', applied_note=$1, processed_at=NOW() WHERE id=$2`,
+      [appliedNote, change.id]
+    );
+    await client.query('COMMIT');
+    return res.json({ ok: true, applied_note: appliedNote });
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    console.error('[POST /api/admin/changes/:changeId/apply]', err);
+    return res.status(500).json({ error: 'internal_error', message: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/api/admin/changes/:changeId/reject', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const { reason } = req.body || {};
+    const note = String(reason || 'Rechazado por admin').slice(0, 500);
+    const { rowCount } = await pool.query(
+      `UPDATE order_changes SET status='rejected', applied_note=$1, processed_at=NOW() WHERE id=$2 AND status='pending'`,
+      [note, req.params.changeId]
+    );
+    if (!rowCount) return res.status(404).json({ error: 'change_not_found_or_not_pending' });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('[POST /api/admin/changes/:changeId/reject]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// Inline edit of order fields (B3). Writes an audit row to order_changes.
+app.patch('/api/admin/orders/:id', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const allowed = ['service_description','service_address','service_datetime','provider_amount','provider_name','client_name','client_email','client_phone'];
+    const body = req.body || {};
+    const updates = {};
+    for (const k of allowed) {
+      if (Object.prototype.hasOwnProperty.call(body, k)) updates[k] = body[k];
+    }
+    if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'no_fields_to_update' });
+
+    const { rows } = await pool.query(`SELECT * FROM all_bookings WHERE id = $1 LIMIT 1`, [id]);
+    const before = rows[0];
+    if (!before) return res.status(404).json({ error: 'order_not_found' });
+    if (!ORDER_EDITABLE_STATUSES.has(before.status)) {
+      return res.status(409).json({ error: 'order_not_editable', message: `Estado "${before.status}" no permite edición inline.` });
+    }
+
+    // provider_amount from the admin form is MXN (pesos). Convert to cents for storage.
+    if ('provider_amount' in updates) {
+      const pesos = Number(updates.provider_amount);
+      if (!isFinite(pesos) || pesos <= 0) return res.status(400).json({ error: 'invalid_provider_amount' });
+      updates.provider_amount = Math.round(pesos * 100);
+    }
+    if ('service_datetime' in updates && updates.service_datetime) {
+      const t = new Date(updates.service_datetime);
+      if (isNaN(t.getTime())) return res.status(400).json({ error: 'invalid_service_datetime' });
+      updates.service_date = String(updates.service_datetime).slice(0, 10);
+      updates.is_asap = false;
+    }
+
+    // Recompute pricing if provider_amount changed (visita keeps fixed pricing)
+    if ('provider_amount' in updates) {
+      try {
+        const bookingType = String(before.booking_type || '').toLowerCase();
+        const isVisita = bookingType.includes('visita');
+        const targetDt = updates.service_datetime || before.service_datetime;
+        const leadHrs = targetDt ? Math.max(0, (new Date(targetDt).getTime() - Date.now()) / 3.6e6) : null;
+        const priced = isVisita
+          ? computeVisitPreauthPricing({ totalPesos: VISIT_PREAUTH_TOTAL_PESOS, providerPesos: VISIT_PREAUTH_PROVIDER_PESOS })
+          : computePricing({ providerPricePesos: updates.provider_amount / 100, leadTimeHours: leadHrs });
+        updates.amount = priced.totalAmountCents;
+        updates.booking_fee_amount = priced.bookingFeeAmountCents;
+        updates.processing_fee_amount = priced.processingFeeAmountCents;
+        updates.vat_amount = priced.vatAmountCents;
+        updates.pricing_total_amount = priced.totalAmountCents;
+      } catch (e) {
+        console.warn('[PATCH order] pricing recompute failed:', e?.message || e);
+      }
+    }
+
+    const sets = [];
+    const params = [];
+    for (const [k, v] of Object.entries(updates)) {
+      params.push(v);
+      sets.push(`${k} = $${params.length}`);
+    }
+    params.push(id);
+    await pool.query(`UPDATE all_bookings SET ${sets.join(', ')} WHERE id = $${params.length}`, params);
+
+    // Audit
+    const diff = {};
+    for (const k of Object.keys(updates)) {
+      if (before[k] !== updates[k]) diff[k] = { from: before[k] ?? null, to: updates[k] ?? null };
+    }
+    const auditId = newChangeId();
+    await pool.query(
+      `INSERT INTO order_changes
+        (id, order_id, change_type, requested_by,
+         original_service_datetime, original_service_address, original_status,
+         requested_service_datetime, requested_service_address,
+         status, notes, applied_note, processed_at)
+       VALUES ($1,$2,'inline_edit',$3,$4,$5,$6,$7,$8,'applied',$9,$10,NOW())`,
+      [
+        auditId, id, 'admin (inline edit)',
+        before.service_datetime, before.service_address, before.status,
+        updates.service_datetime ?? before.service_datetime,
+        updates.service_address ?? before.service_address,
+        JSON.stringify(diff),
+        `Inline edit: ${Object.keys(diff).join(', ') || '(no diff)'}`
+      ]
+    );
+
+    return res.json({ ok: true, updated: Object.keys(updates), audit_id: auditId });
+  } catch (err) {
+    console.error('[PATCH /api/admin/orders/:id]', err);
+    return res.status(500).json({ error: 'internal_error', message: err.message });
+  }
+});
+
+// ─── Admin: Provider Roster ───────────────────────────────────────────────────
+
+app.get('/api/admin/providers', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const { status, search, limit = '50', offset = '0' } = req.query;
+    const params = [];
+    const conds = [];
+    if (status) { params.push(status); conds.push(`status = $${params.length}`); }
+    if (search) {
+      params.push(`%${search}%`);
+      const i = params.length;
+      conds.push(`(name ILIKE $${i} OR phone ILIKE $${i} OR specialty ILIKE $${i} OR city ILIKE $${i} OR provider_id ILIKE $${i})`);
+    }
+    const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
+    const countParams = [...params];
+    params.push(Number(limit) || 50, Number(offset) || 0);
+    const { rows } = await pool.query(
+      `SELECT * FROM providers ${where} ORDER BY created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params
+    );
+    const { rows: countRows } = await pool.query(
+      `SELECT count(*)::int AS total FROM providers ${where}`,
+      countParams
+    );
+    return res.json({ items: rows, total: countRows[0]?.total || 0 });
+  } catch (err) {
+    console.error('[GET /api/admin/providers]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+app.post('/api/admin/partner-applications/:appId/promote', adminRateLimit, requireAdminAuth, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: appRows } = await client.query(
+      `SELECT * FROM partner_applications WHERE id = $1 FOR UPDATE`,
+      [req.params.appId]
+    );
+    const app = appRows[0];
+    if (!app) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'application_not_found' }); }
+    if (app.linked_provider_id) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'already_promoted', provider_id: app.linked_provider_id });
+    }
+    const { rows: seqRows } = await client.query(
+      `SELECT 'prov-' || lpad(nextval('provider_id_seq')::text, 6, '0') AS pid`
+    );
+    const providerId = seqRows[0].pid;
+    await client.query(
+      `INSERT INTO providers (provider_id, status, name, phone, email, specialty, city)
+       VALUES ($1, 'verified', $2, $3, $4, $5, $6)`,
+      [providerId, app.name, app.phone, app.email, app.specialty, app.city]
+    );
+    const noteSuffix = `\n[${new Date().toISOString()}] Promoted to ${providerId}`;
+    const newNotes = (app.admin_notes || '') + noteSuffix;
+    await client.query(
+      `UPDATE partner_applications SET status='verified', admin_notes=$1, linked_provider_id=$2 WHERE id=$3`,
+      [newNotes, providerId, app.id]
+    );
+    await client.query('COMMIT');
+    return res.json({ ok: true, provider_id: providerId });
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    console.error('[POST /api/admin/partner-applications/:appId/promote]', err);
+    return res.status(500).json({ error: 'internal_error', message: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+app.patch('/api/admin/providers/:providerId', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const allowed = ['status','name','phone','email','specialty','city'];
+    const body = req.body || {};
+    const updates = {};
+    for (const k of allowed) if (Object.prototype.hasOwnProperty.call(body, k)) updates[k] = body[k];
+    if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'no_fields_to_update' });
+    if ('status' in updates && !['verified','removed'].includes(updates.status)) {
+      return res.status(400).json({ error: 'invalid_status' });
+    }
+    const sets = ['updated_at = NOW()'];
+    const params = [];
+    for (const [k, v] of Object.entries(updates)) {
+      params.push(v);
+      sets.push(`${k} = $${params.length}`);
+    }
+    params.push(req.params.providerId);
+    const { rowCount } = await pool.query(
+      `UPDATE providers SET ${sets.join(', ')} WHERE provider_id = $${params.length}`,
+      params
+    );
+    if (!rowCount) return res.status(404).json({ error: 'not_found' });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('[PATCH /api/admin/providers/:providerId]', err);
     return res.status(500).json({ error: 'internal_error' });
   }
 });

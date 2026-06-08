@@ -6,24 +6,81 @@
   <title>SERVI — Partners</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,700&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,700;1,9..40,400&family=Syne:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/shared/shared-styles.css">
+  <link rel="stylesheet" href="/shared/landing-theme.css">
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
   <style>
-    .partner-hero { background-image:linear-gradient(to bottom,rgba(250,250,250,0) 62%,#fafafa 100%),linear-gradient(135deg,#f0fdf4 0%,#ecfdf5 50%,#fafafa 100%); padding:140px 0 80px; }
-    .benefit-card { background:#fff; border:1px solid #e8e8e8; border-radius:16px; padding:28px 24px; }
-    .benefit-card h3 { font-family:'Syne',sans-serif; font-weight:700; font-size:18px; margin-bottom:10px; }
-    .how-step { text-align:center; }
-    .how-step-num { width:48px;height:48px;border-radius:50%;background:#0a0a0a;color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Syne',sans-serif;font-weight:700;font-size:18px;margin:0 auto 16px; }
-    .handbook-cta { background:#fff; border:1px solid #e8e8e8; border-radius:20px; padding:40px; text-align:center; }
+    .partner-hero {
+      background: var(--color-bg);
+      padding: 160px 0 96px;
+      position: relative;
+      overflow: hidden;
+    }
+    .partner-hero::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse at 75% 30%, rgba(149,204,213,0.12), transparent 60%);
+      pointer-events: none;
+    }
+    .partner-hero > .container { position: relative; z-index: 1; }
+    .benefit-card {
+      background: var(--color-card-bg);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-lg);
+      padding: 32px 28px;
+      transition: transform .25s var(--morph-ease, ease), border-color .25s ease;
+    }
+    .benefit-card:hover { transform: translateY(-3px); border-color: var(--color-accent); }
+    .benefit-card h3 {
+      font-family: var(--font-heading);
+      font-weight: 700;
+      font-size: 20px;
+      letter-spacing: -0.01em;
+      margin-bottom: 12px;
+      color: var(--color-text);
+    }
+    .how-step { text-align: center; }
+    .how-step-num {
+      width: 52px; height: 52px;
+      border-radius: 50%;
+      background: var(--color-text);
+      color: var(--color-bg);
+      display: flex; align-items: center; justify-content: center;
+      font-family: var(--font-heading);
+      font-weight: 700;
+      font-size: 18px;
+      margin: 0 auto 18px;
+    }
+    .handbook-cta {
+      background: var(--color-card-bg);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-xl);
+      padding: 48px;
+      text-align: center;
+    }
+    .handbook-cta h2 { letter-spacing: -0.02em; }
+    .landing-page .btn-partner {
+      background: linear-gradient(135deg, var(--color-accent) 0%, var(--color-accent-hover) 100%);
+      color: #fff;
+      box-shadow: 0 12px 28px -12px rgba(149,204,213,0.55);
+    }
+    .landing-page .btn-partner:hover {
+      background: linear-gradient(135deg, var(--color-accent-hover) 0%, #579aa6 100%);
+    }
+    @media (max-width: 768px) {
+      .partner-hero { padding: 120px 0 60px; }
+      .handbook-cta { padding: 28px; }
+    }
   </style>
 </head>
-<body>
-<script>window.__navType = 'partners';</script>
-<script src="/shared/i18n.js"></script>
+<body class="landing-page">
 <script src="/config.js"></script>
+<script src="/shared/i18n.js"></script>
 <script src="/shared/shared-auth.js"></script>
 <div id="navbar"></div>
-<script src="/shared/shared-nav.js"></script>
+<script src="/shared/morphing-nav.js"></script>
 
 <!-- Hero -->
 <section class="partner-hero">
@@ -88,7 +145,7 @@
       <div class="how-step">
         <div class="how-step-num">3</div>
         <h3 class="heading-sm" style="margin-bottom:10px" data-i18n="partnersPage.steps.step3Title">Completa tu aplicación</h3>
-        <p class="text-sm" data-i18n-html="partnersPage.steps.step3Body"><a href="/partners/registro.html" style="color:#10b981;font-weight:600">Haz clic aquí</a> para comenzar tu registro.</p>
+        <p class="text-sm" data-i18n-html="partnersPage.steps.step3Body"><a href="/partners/registro.html" style="color:#2a9fd6;font-weight:600">Haz clic aquí</a> para comenzar tu registro.</p>
       </div>
     </div>
   </div>

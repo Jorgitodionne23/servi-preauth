@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" role="img" aria-labelledby="title desc">
+  <title id="title">Paw Bowl</title>
+  <desc id="desc">Flat service illustration for pet care discovery card.</desc>
+  <rect width="1200" height="900" fill="#F6EEF2"/>
+  <circle cx="958" cy="156" r="96" fill="#8FBF9A" opacity=".2"/>
+  <circle cx="198" cy="742" r="132" fill="#B66E86" opacity=".12"/>
+  <path d="M130 705c150 72 291 101 464 85 184-17 286-84 476-52" fill="none" stroke="#4F3F49" stroke-width="18" stroke-linecap="round" opacity=".12"/>
+  <g fill="none" stroke="#4F3F49" stroke-linecap="round" stroke-linejoin="round">
+    <path stroke-width="28" d="M356 563h488l-57 138H413z" fill="#B66E86" opacity=".82"/><path stroke-width="20" d="M332 563h536M463 397c0 42-33 76-75 76s-75-34-75-76 33-76 75-76 75 34 75 76zM887 397c0 42-33 76-75 76s-75-34-75-76 33-76 75-76 75 34 75 76zM518 303c0 38-31 69-69 69s-69-31-69-69 31-69 69-69 69 31 69 69zM820 303c0 38-31 69-69 69s-69-31-69-69 31-69 69-69 69 31 69 69zM600 413c-72 0-129 51-129 116 0 52 52 74 129 74s129-22 129-74c0-65-57-116-129-116z"/><circle cx="600" cy="621" r="20" fill="#8FBF9A" stroke="none"/>
+  </g>
+  <g fill="#8FBF9A" opacity=".92">
+    <circle cx="214" cy="182" r="16"/>
+    <circle cx="997" cy="697" r="13"/>
+    <path d="M1017 264l19 36 37 18-37 18-19 36-18-36-37-18 37-18z"/>
+  </g>
+</svg>

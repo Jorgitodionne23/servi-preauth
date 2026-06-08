@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" role="img" aria-labelledby="title desc">
+  <title id="title">Saw Wood</title>
+  <desc id="desc">Flat service illustration for carpentry discovery card.</desc>
+  <rect width="1200" height="900" fill="#F2EFE9"/>
+  <circle cx="958" cy="156" r="96" fill="#E09F4F" opacity=".2"/>
+  <circle cx="198" cy="742" r="132" fill="#8E6B4F" opacity=".12"/>
+  <path d="M130 705c150 72 291 101 464 85 184-17 286-84 476-52" fill="none" stroke="#40352D" stroke-width="18" stroke-linecap="round" opacity=".12"/>
+  <g fill="none" stroke="#40352D" stroke-linecap="round" stroke-linejoin="round">
+    <path stroke-width="28" d="M326 631h530v98H326z" fill="#8E6B4F" opacity=".8"/><path stroke-width="20" d="M318 445l463-147 105 126-449 144zM781 298l59-92 107 107-61 111M442 544l-37 85M538 514l-37 115M634 483l-37 146"/><circle cx="852" cy="314" r="24" fill="#E09F4F" stroke="none"/>
+  </g>
+  <g fill="#E09F4F" opacity=".92">
+    <circle cx="214" cy="182" r="16"/>
+    <circle cx="997" cy="697" r="13"/>
+    <path d="M1017 264l19 36 37 18-37 18-19 36-18-36-37-18 37-18z"/>
+  </g>
+</svg>

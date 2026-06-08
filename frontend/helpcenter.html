@@ -6,21 +6,70 @@
   <title>SERVI — Help Center</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,700&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,700;1,9..40,400&family=Syne:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/shared/shared-styles.css">
+  <link rel="stylesheet" href="/shared/landing-theme.css">
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
   <style>
-    .hc-hero { background: #0a0a0a; color: #fff; padding: 140px 0 80px; }
-    .hc-btn { display: inline-flex; align-items: center; justify-content: center; padding: 20px 36px; border-radius: 14px; background: rgba(255,255,255,0.12); color: #fff; font-size: 16px; font-weight: 700; font-family: 'Syne', sans-serif; border: 1.5px solid rgba(255,255,255,0.2); transition: all 0.25s; text-decoration: none; text-align: center; min-width: 240px; }
-    .hc-btn:hover { background: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.4); transform: translateY(-2px); }
+    .hc-hero {
+      background: var(--color-bg-dark);
+      color: #fff;
+      padding: 180px 0 120px;
+      position: relative;
+      overflow: hidden;
+    }
+    .hc-hero::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse at 80% 20%, rgba(149,204,213,0.18), transparent 60%);
+      pointer-events: none;
+    }
+    .hc-hero > .container { position: relative; z-index: 1; }
+    .hc-hero h1 {
+      font-family: var(--font-heading);
+      font-size: clamp(44px, 6vw, 72px);
+      font-weight: 800;
+      line-height: 1.02;
+      letter-spacing: -0.02em;
+      color: #fff;
+    }
+    .hc-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 22px 36px;
+      border-radius: var(--radius-md);
+      background: rgba(255,255,255,0.08);
+      color: #fff;
+      font-size: 16px;
+      font-weight: 600;
+      font-family: var(--font-body);
+      border: 1px solid rgba(255,255,255,0.18);
+      transition: all 0.25s var(--morph-ease);
+      text-decoration: none;
+      text-align: center;
+      min-width: 240px;
+      backdrop-filter: blur(12px);
+    }
+    .hc-btn:hover {
+      background: var(--color-accent);
+      border-color: var(--color-accent);
+      transform: translateY(-2px);
+      box-shadow: 0 14px 28px -12px rgba(149,204,213,0.6);
+    }
+    @media (max-width: 768px) {
+      .hc-hero { padding: 120px 0 64px; }
+      .hc-btn { min-width: 0; padding: 16px 24px; width: 100%; }
+    }
   </style>
 </head>
-<body>
-<script>window.__navType = 'helpcenter';</script>
-<script src="/shared/i18n.js"></script>
-<div id="navbar"></div>
+<body class="landing-page">
 <script src="/config.js"></script>
+<script src="/shared/i18n.js"></script>
 <script src="/shared/shared-auth.js"></script>
-<script src="/shared/shared-nav.js"></script>
+<div id="navbar"></div>
+<script src="/shared/morphing-nav.js"></script>
 
 <section class="hc-hero">
   <div class="container">

@@ -36,6 +36,10 @@ SERVI is an on-demand home services platform based in **Santa Fe, Cuajimalpa de 
 - Smooth section dividers (gradient line)
 - Mobile-responsive with hamburger menu at 900px breakpoint
 
+**Customer-facing pages:** Uber-inspired, minimalist, generous whitespace, typography-driven, light theme, smooth animations (fadeUp, slideUp), bilingual ES/EN, Spanish default.
+
+**Admin dashboard + payment pages:** Dark theme, Inter font. DO NOT RESTYLE payment pages.
+
 ---
 
 ## Bilingual (ES/EN)
@@ -61,8 +65,8 @@ SERVI offers 5 main categories + a custom/catch-all option:
 
 ### Service Booking (3-step flow)
 
-1. **Smart search or select category** — Choose from the 6 service categories or use the intelligent custom request (picture, video, voice message). No login required.
-2. **Describe + Schedule** — Free-text description + choose "ASAP" or schedule a specific date/time. No login required.
+1. **Browse / Smart search** (`browse.html`) — Choose from the 6 service categories or search. No login required.
+2. **Describe + Schedule** (`service.html`) — Free-text description + choose "ASAP" or schedule a date/time. No login required.
 3. **Address + Confirm** — Enter full address, review summary, confirm. **Login required** (Firebase phone OTP, email magic link, or Google Sign-In). Logged-in users get name/phone/email pre-filled.
 
 After confirmation: "¡Solicitud enviada! Te contactaremos pronto por WhatsApp." Admin manually matches a provider and creates a payment link.
@@ -72,27 +76,19 @@ After confirmation: "¡Solicitud enviada! Te contactaremos pronto por WhatsApp."
 - Auth methods: Phone OTP (Firebase), Email magic link (Firebase), Google Sign-In (popup)
 - Unified identifier input — single field, auto-detects phone vs email
 - Signup collects: phone or email (primary) → name → secondary identifier (optional)
-- Backend syncs Firebase ID token → issues custom JWT (30-day HS256)
+- **Dual-auth model:** Firebase handles user identity on the frontend (phone OTP, email magic link, Google OAuth). The frontend posts the Firebase ID token to `POST /api/auth/firebase`; the backend verifies it via the Firebase Admin SDK and issues its own **custom HS256 session JWT (24-hour TTL)**. Clients send that JWT as `Authorization: Bearer …` for all `/api/auth/*` and other user-scoped routes.
+- Session refresh + revocation: `POST /api/auth/refresh` rotates a near-expired JWT (new `jti`); logout, account deletion, and password/phone changes write to the `revoked_sessions` table so old tokens fail server-side immediately.
 - Booking gate enforces both `email_verified=true` + `phone_verified=true`
 - Cross-identifier recovery merges orphaned phone-only accounts when email is added
 
 ### SERVI Match
 
-After a request is confirmed, SERVI Admin team assigns a verified specialist based on availability (this is the "SERVI Match" system). Users are notified when matched.
+After a request is confirmed, SERVI Admin team assigns a verified specialist based on availability. Users are notified when matched.
 
 ### Provider Onboarding
 
 - Separate section/flow for service providers ("SERVI Partners")
 - Partners can apply for free to offer their services through SERVI
-- Links: "Guide to earning with SERVI" and "Apply as a Partner"
-
----
-
-## How It Works (3 Steps — for marketing/landing page)
-
-1. **Choose your service** — Select a category and describe what you need
-2. **SERVI Match** — We assign the closest/available verified specialist
-3. **Done** — Your specialist arrives. We handle the rest.
 
 ---
 
@@ -141,7 +137,7 @@ This is NOT a simple payment form. It's a complete **admin-driven order manageme
 | Frontend | **Cloudflare Pages** | Static HTML from `frontend/` folder |
 | File Storage | **Cloudflare R2** | S3-compatible, for video/audio/image uploads |
 | Database | **Neon** (PostgreSQL) | Serverless Postgres, `pg` Pool connection |
-| Admin (legacy) | **Google Apps Script** | Container-bound to Google Sheet, synced via `clasp` — being phased out |
+| Admin (legacy) | **Google Apps Script** | Container-bound to Google Sheet, synced via `clasp` — still active for order creation and auto-preauth triggers; migration to `admin.html` in progress |
 | Payments | **Stripe** | Pre-auth (manual capture), saved cards, off-session, 3DS fallback |
 | Auth | **Firebase** | Phone OTP, email magic link, Google OAuth (free tier) |
 
@@ -149,33 +145,28 @@ This is NOT a simple payment form. It's a complete **admin-driven order manageme
 
 - **Runtime:** Node.js with ES modules (`.mjs` extensions only)
 - **Framework:** Express 5
-- **Entry point:** `backend/index.mjs` — ALL routes and business logic in one file (large monolith, 5.5k+ lines)
-- **Database:** `backend/db.pg.mjs` — Pool connection + full schema (`CREATE TABLE IF NOT EXISTS`)
+- **Entry point:** `backend/index.mjs` — ALL routes and business logic in one file (~6,000 lines)
+- **Database:** `backend/db.pg.mjs` — Pool connection + full schema (`CREATE TABLE IF NOT EXISTS`). See this file for authoritative table definitions.
 - **Pricing:** `backend/pricing.mjs` — Dynamic fee calculation (alpha curve for booking fees, Stripe processing fees with VAT)
 - **TLS guard:** `ALLOW_INSECURE_DB_TLS=true` throws at startup if `NODE_ENV=production`
 - **Admin auth:** Bearer token via `ADMIN_API_TOKEN` env var, constant-time comparison
 - **Webhook:** Stripe webhook at `/webhook` with raw body parsing + signature verification
-- **Google Sheets sync:** Outbound POST to Apps Script web app URL for status updates (legacy)
+- **Google Sheets sync:** Outbound POST to Apps Script web app URL for status updates (legacy, `SHEETS_WEBHOOK_URL`)
 
 ### Key Backend Concepts
 
 - **Order kinds:** `primary`, `book` (saved card), `setup` (needs card save), `setup_required` (needs consent + card), `adjustment` (child order for surcharges/corrections)
-- **Pre-auth window:** 24h before service → auto-authorize saved cards (hourly trigger in Apps Script + `/tasks/preauth-due` endpoint)
+- **Pre-auth window:** 24h before service → auto-authorize saved cards (hourly GitHub Actions trigger → `/tasks/preauth-due`)
 - **Early pre-auth:** ≤72h allows PI creation without confirm; >72h stays Scheduled
 - **Link expiration:** Payment links expire after 2 hours; `retry_token` can extend
 - **Consent system:** Per-order audit (`consented_offsession_bookings`) + per-customer registry (`saved_servi_users`)
 - **Cash exception:** First-time customers can opt for cash via `/orders/:id/choose-cash`
 - **Pricing engine:** `computePricing()` in `pricing.mjs` — provider price → alpha-curve booking fee → Stripe processing fee → VAT → total. Visit pre-auth has fixed pricing ($140 MXN total, $90 provider)
+- **Admin endpoints:** All `/api/admin/*` routes are in `backend/index.mjs` (orders list/detail/stats, reports, partner applications, capture/cancel/refund)
 
-### Database Tables (Neon PostgreSQL)
+### Database
 
-- `all_bookings` — Main orders table (primary, book, adjustment kinds)
-- `consented_offsession_bookings` — Per-order consent audit trail
-- `saved_servi_users` — Per-customer consent + saved payment method registry
-- `auth_users` — User authentication records (Firebase UID, phone/email verification, profile)
-- `user_addresses` — Saved addresses per user
-- `service_requests` — Customer service request intake (category, description, schedule, address, contact)
-- `providers` — Verified providers registry (id, name, phone, email, specialty, city)
+See `backend/db.pg.mjs` for the full schema. Key tables: `all_bookings`, `consented_offsession_bookings`, `saved_servi_users`, `auth_users`, `user_addresses`, `service_requests`, `providers`, `service_reports`, `partner_applications`, `revoked_sessions`.
 
 ### Frontend (`frontend/`)
 
@@ -184,14 +175,25 @@ This is NOT a simple payment form. It's a complete **admin-driven order manageme
 #### Shared Components (`frontend/shared/`)
 
 - `shared-styles.css` — Global design system (brand colors, components, animations)
-- `shared-auth.js` — Firebase USL auth flow (phone OTP, email magic link, Google OAuth, cross-identifier recovery — 1,400+ lines)
+- `landing-theme.css` — Extended CSS for landing/marketing pages (~79KB)
+- `shared-auth.js` — Firebase auth flow (phone OTP, email magic link, Google OAuth, cross-identifier recovery — ~1,775 lines)
 - `shared-nav.js` — Navigation bar (language toggle, auth state, user menu dropdown, mobile hamburger)
 - `shared-footer.js` — 4-column footer component
-- `i18n.js` — Full Spanish/English translation system (936 lines)
+- `morphing-nav.js` — Animated navbar variant used on landing page (~998 lines)
+- `i18n.js` — Full Spanish/English translation system
+- `browse-data.js` — Service category/provider data for browse and service pages
+
+**Navbar (customer-facing pages):** SERVI. logo, Servicios / Cómo funciona / Testimonios (index.html anchors), Partners, Help Center, ES/EN toggle, Login/Crear cuenta (or user avatar + dropdown if logged in), mobile hamburger at ≤900px.
+
+**Navbar variants:** Help Center pages use a simplified nav; Partners/Handbook pages use a partner-branded nav.
+
+**Footer (all pages):** 4 columns — SERVI, Partners, Help Center, Legal.
 
 #### Customer-Facing Pages
 
 - `index.html` — Landing page (hero, categories, how it works, testimonials, contact)
+- `browse.html` — Service category browser / discovery page
+- `service.html` — Individual service request flow (describe + schedule)
 - `account.html` — User account management (edit profile, saved addresses, delete account — auth-guarded)
 - `email-verified.html` — Post-email-verification landing page
 - `legal.html` — Legal terms (términos, privacidad, cancelación, aviso legal)
@@ -225,13 +227,13 @@ This is NOT a simple payment form. It's a complete **admin-driven order manageme
 - No npm/bundler on frontend side
 - All API calls via `fetch()` to `window.CONFIG.API_BASE`
 
-### Apps Script (`apps-script/`) — Legacy, Being Phased Out
+### Apps Script (`apps-script/`) — Active, Migration In Progress
 
 - **Synced via clasp** (NOT auto-deployed — must manually push + redeploy)
 - `Code.js` — Order creation, payment link generation, capture, cancel, adjustments, sidebar, auto-preauth trigger
 - `webhook.js` — Receives status updates from backend, writes to Sheet
 - Sheet tabs: `SERVI Orders`, `SERVI Adjustments`, `SERVI Changes`
-- **`admin.html` is now the primary admin tool.** Apps Script remains for order creation and auto-preauth triggers until fully migrated.
+- **`admin.html` is now the primary admin tool.** Apps Script still handles order creation and the preauth cron trigger until fully migrated.
 
 ### Apps Script Provider Recruitment (`apps-script-provider-recruitment/`)
 
@@ -251,70 +253,52 @@ This is NOT a simple payment form. It's a complete **admin-driven order manageme
 - `CORS_ALLOWLIST` — Additional allowed origins
 - `NODE_ENV` — `production` on Render
 
-### Admin Backend Endpoints
-
-- `GET /api/admin/orders` — List orders with pagination, filtering, search
-- `GET /api/admin/orders/:id` — Full order details
-- `GET /api/admin/stats` — Quick stats (requests today, pending orders, confirmed, revenue)
-- `GET /api/reports` — List reports/suggestions (admin auth; filters by type/status)
-- `PATCH /api/reports/:id` — Update report status/notes (admin auth)
-- `GET /api/partner-applications` — List applications (admin auth)
-- `PATCH /api/partner-applications/:id` — Update application status (admin auth)
-- Existing capture/cancel/refund endpoints already work — dashboard just calls them
-
 ---
 
 ### What's Incomplete / In Progress
 
-- **End-to-end QA testing** — All flows need testing on live domain (phone OTP, Google OAuth, booking, account management)
-- **Admin dashboard migration** — Order creation and auto-preauth triggers still depend on Apps Script
-- **Legal page text** — Structure built, placeholder content for legal documents
-- **Payment flow integration** — Verify booking flow → payment link creation works end-to-end
-
----
-
-## Shared Components
-
-All public-facing pages share these elements via JS includes:
-
-**Navbar (customer-facing pages):**
-
-- SERVI. logo (links to index.html)
-- Links: Servicios, Cómo funciona, Testimonios (index.html anchors), Partners, Help Center
-- ES/EN toggle
-- Login / Crear cuenta buttons (or user avatar + dropdown if logged in)
-- Mobile hamburger at ≤900px
-
-**Navbar (Help Center pages):** SERVI. logo, Help Center, Solicitar, Trabajar links
-
-**Navbar (Partners/Handbook pages):** SERVI. | Partner logo, ¿Qué?, ¿Cómo?, Handbook links
-
-**Footer (all pages):** 4 columns — SERVI, Partners, Help Center, Legal
-
----
-
-## Design System
-
-**Customer-facing pages (landing, help center, partners, handbook, legal, account):**
-
-- Uber-inspired: minimalist, generous whitespace, typography-driven
-- Light theme throughout
-- Sticky navbar with scroll-aware blur, mobile hamburger at 900px
-- Cards with subtle borders (#e8e8e8), 16px radius, hover lift + shadow
-- Smooth animations (fadeUp, slideUp)
-- Bilingual ES/EN with toggle in navbar, Spanish default
-
-**Admin dashboard + payment pages:** Dark theme, Inter font. DO NOT RESTYLE payment pages.
+- **Smoke test before first real users** — All flows need end-to-end testing on live domain: phone OTP, Google OAuth, browse→service→confirm booking, account management, payment link flow
+- **Admin dashboard migration** — Order creation still requires Apps Script; target is full `admin.html` + backend workflow
+- **Legal page text** — `legal.html` structure is built but contains placeholder content; real legal copy needed
+- **pay.html / book.html code duplication** — ~60% of HTML/JS is identical between the two; refactor into a shared component when convenient (not urgent)
 
 ---
 
 ## Reference Files & Resources
 
-- **PDF content:** `/docs/pdfs/` — Help Center, Partners, Handbook content
 - **Auth state machine:** `docs/AUTH_STATE_MACHINE.md` — Detailed auth flow documentation
 - **i18n system:** `frontend/shared/i18n.js` — Full translation system (ES/EN)
 - **Design system:** `frontend/shared/shared-styles.css` — All brand colors, components, animations
 - **Cloudflare middleware:** `functions/_middleware.js` — Injects Firebase API key into config.js at deploy time
+- **Auth flow visualization:** `docs/auth-flows.html`
+
+---
+
+## Development Workflow & Environment Management
+
+### Git Branches
+
+- **`main`** — Production (auto-deploys to Render & Cloudflare)
+- **`dev`** — Staging (auto-deploys to Render staging service)
+
+Work on `dev`, merge to `main` when ready for production. No manual env var swapping — each environment has its keys set permanently in their respective dashboards.
+
+### Local Setup
+
+**`.env` (local only, test keys):**
+- `STRIPE_SECRET_KEY=sk_test_...`
+- `STRIPE_WEBHOOK_SECRET=whsec_test_...` (run `stripe listen --forward-to localhost:4242/webhook` to get current one)
+- `FIREBASE_SERVICE_ACCOUNT_JSON={...}` (Firebase Admin SDK service account JSON — required for token verification)
+- `NODE_ENV=development`
+
+**Frontend:** `config.js` uses test Stripe key and falls back to `window.location.origin` for API (Express serves frontend on same port).
+
+### Production Keys (Auto-Injected)
+
+- **Render production:** Has `STRIPE_SECRET_KEY=sk_live_...` and `FIREBASE_SERVICE_ACCOUNT_JSON`
+- **Cloudflare Pages:** Middleware injects `STRIPE_PUBLISHABLE_KEY=pk_live_...` and `API_BASE` at edge via env vars
+
+No manual key changes needed — push to `main` and production uses live keys automatically.
 
 ---
 

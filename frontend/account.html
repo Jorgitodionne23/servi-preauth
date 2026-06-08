@@ -6,108 +6,688 @@
   <title>SERVI — Mi Cuenta</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,700&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,700;1,9..40,400&family=Syne:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/shared/shared-styles.css">
+  <link rel="stylesheet" href="/shared/landing-theme.css">
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
   <style>
-    .account-page { padding: 120px 0 80px; min-height: 100vh; }
-    .account-layout { display: grid; grid-template-columns: 220px 1fr; gap: 32px; align-items: start; }
-    .account-sidebar { background: #fff; border: 1px solid #e8e8e8; border-radius: 16px; overflow: hidden; position: sticky; top: 100px; }
-    .account-sidebar-item { display: flex; align-items: center; gap: 12px; padding: 14px 20px; font-size: 14px; font-weight: 500; color: #555; cursor: pointer; border: none; background: none; width: 100%; text-align: left; font-family: 'DM Sans', sans-serif; transition: background 0.15s, color 0.15s; border-left: 3px solid transparent; }
-    .account-sidebar-item:hover { background: #f5f5f5; color: #0a0a0a; }
-    .account-sidebar-item.active { color: #0a0a0a; font-weight: 700; background: #f0fdf8; border-left-color: #10b981; }
-    .account-sidebar-item.danger { color: #dc2626; }
-    .account-sidebar-item.danger:hover { background: #fef2f2; }
-    .account-sidebar-item.danger.active { background: #fef2f2; border-left-color: #dc2626; }
-    .account-card { background: #fff; border: 1px solid #e8e8e8; border-radius: 16px; padding: 32px; }
+    .account-page {
+      --account-accent-soft: rgba(149, 204, 213, 0.14);
+      --account-accent-ring: rgba(149, 204, 213, 0.24);
+      --account-danger: #c55d49;
+      --account-danger-soft: rgba(197, 93, 73, 0.10);
+      padding: 132px 0 88px;
+      min-height: 100vh;
+      position: relative;
+    }
+    .account-page::before {
+      content: "";
+      position: absolute;
+      inset: 0 0 auto;
+      height: 520px;
+      background:
+        radial-gradient(circle at 12% 18%, rgba(149, 204, 213, 0.24), transparent 34%),
+        radial-gradient(circle at 82% 0%, rgba(149, 204, 213, 0.14), transparent 30%);
+      pointer-events: none;
+      opacity: 0.95;
+      -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 38%, transparent 100%);
+      mask-image: linear-gradient(to bottom, #000 0%, #000 38%, transparent 100%);
+    }
+    .account-page > .container { position: relative; z-index: 1; }
+    .account-layout { display: grid; grid-template-columns: 240px 1fr; gap: 32px; align-items: start; }
+    .account-sidebar {
+      background: rgba(255, 255, 255, 0.8);
+      border: 1px solid var(--color-border);
+      border-radius: 20px;
+      overflow: hidden;
+      position: sticky;
+      top: 104px;
+      backdrop-filter: blur(18px);
+      box-shadow: 0 24px 48px -30px rgba(17, 17, 17, 0.25);
+    }
+    .account-sidebar-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 15px 20px;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--color-text-secondary);
+      cursor: pointer;
+      border: none;
+      background: none;
+      width: 100%;
+      text-align: left;
+      font-family: var(--font-body);
+      transition: background var(--duration-fast), color var(--duration-fast), border-color var(--duration-fast);
+      border-left: 3px solid transparent;
+    }
+    .account-sidebar-item:hover { background: var(--color-surface); color: var(--color-text); }
+    .account-sidebar-item.active {
+      color: var(--color-text);
+      font-weight: 700;
+      background: var(--account-accent-soft);
+      border-left-color: var(--color-accent);
+    }
+    .account-sidebar-item.danger { color: var(--account-danger); }
+    .account-sidebar-item.danger:hover { background: var(--account-danger-soft); }
+    .account-sidebar-item.danger.active { background: var(--account-danger-soft); border-left-color: var(--account-danger); }
+    .account-sidebar-icon {
+      width: 20px;
+      flex: 0 0 20px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      line-height: 1;
+    }
+    .account-card {
+      background: rgba(255, 255, 255, 0.84);
+      border: 1px solid var(--color-border);
+      border-radius: 24px;
+      padding: 32px;
+      backdrop-filter: blur(18px);
+      box-shadow: 0 28px 56px -34px rgba(17, 17, 17, 0.24);
+    }
     .account-card + .account-card { margin-top: 20px; }
     .account-section { display: none; }
     .account-section.active { display: block; }
-    .section-title { font-family: 'Syne', sans-serif; font-size: 22px; font-weight: 800; color: #0a0a0a; margin-bottom: 6px; }
-    .section-sub { font-size: 14px; color: #888; margin-bottom: 28px; }
+    .section-title {
+      font-family: var(--font-heading);
+      font-size: 24px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      color: var(--color-text);
+      margin-bottom: 6px;
+    }
+    .section-sub { font-size: 14px; color: var(--color-text-muted); margin-bottom: 28px; line-height: 1.6; }
+    .profile-view { display: flex; flex-direction: column; gap: 12px; }
+    .profile-row {
+      display: grid;
+      grid-template-columns: minmax(120px, 0.34fr) 1fr;
+      gap: 16px;
+      align-items: center;
+      padding: 15px 0;
+      border-bottom: 1px solid rgba(17, 17, 17, 0.07);
+    }
+    .profile-row:first-child { padding-top: 0; }
+    .profile-row:last-child { border-bottom: none; }
+    .profile-label { font-size: 12px; font-weight: 700; color: var(--color-text-secondary); text-transform: uppercase; letter-spacing: 0.08em; }
+    .profile-value-wrap { min-width: 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .profile-value { min-width: 0; color: var(--color-text); font-size: 15px; font-weight: 700; overflow-wrap: anywhere; }
+    .profile-value.muted { color: var(--color-text-muted); font-weight: 600; }
+    .verified-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(52, 168, 83, 0.12);
+      color: #1f7a3a;
+      font-size: 11px;
+      font-weight: 800;
+      line-height: 1;
+      white-space: nowrap;
+    }
+    .verified-badge.pending { background: rgba(255, 251, 235, 0.95); color: #a16207; }
+    .verified-badge svg {
+      width: 13px;
+      height: 13px;
+      flex: 0 0 auto;
+      display: block;
+      stroke: currentColor;
+    }
+    .profile-actions,
+    .profile-edit-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 22px;
+    }
+    .profile-edit { display: none; }
+    .account-card.is-editing .profile-view { display: none; }
+    .account-card.is-editing .profile-edit { display: block; }
     .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
     .form-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
-    .form-label { font-size: 12px; font-weight: 700; color: #555; text-transform: uppercase; letter-spacing: 0.04em; }
-    .form-input { padding: 12px 14px; border: 1.5px solid #e0e0e0; border-radius: 12px; font-size: 15px; font-family: 'DM Sans', sans-serif; color: #0a0a0a; background: #fff; outline: none; transition: border-color 0.2s; }
-    .form-input:focus { border-color: #10b981; }
-    .form-input:disabled { background: #f9f9f9; color: #aaa; cursor: not-allowed; }
-    .form-input::placeholder { color: #bbb; }
-    .btn-save { display: inline-flex; align-items: center; gap: 8px; padding: 12px 24px; background: #0a0a0a; color: #fff; border: none; border-radius: 12px; font-size: 14px; font-weight: 700; font-family: 'DM Sans', sans-serif; cursor: pointer; transition: opacity 0.2s; }
-    .btn-save:hover { opacity: 0.85; }
+    .form-label { font-size: 12px; font-weight: 700; color: var(--color-text-secondary); text-transform: uppercase; letter-spacing: 0.08em; }
+    .form-input {
+      padding: 13px 15px;
+      border: 1.5px solid var(--color-border-input);
+      border-radius: 14px;
+      font-size: 15px;
+      font-family: var(--font-body);
+      color: var(--color-text);
+      background: rgba(255, 255, 255, 0.95);
+      outline: none;
+      transition: border-color var(--duration-fast), box-shadow var(--duration-fast), background var(--duration-fast);
+    }
+    .form-input:focus {
+      border-color: var(--color-accent);
+      box-shadow: 0 0 0 4px var(--account-accent-ring);
+    }
+    .form-select { appearance: auto; }
+    .form-input:disabled { background: var(--color-surface); color: var(--color-text-muted); cursor: not-allowed; }
+    .form-input::placeholder { color: #b2b2b2; }
+    .btn-save {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 13px 24px;
+      background: var(--color-text);
+      color: #fff;
+      border: none;
+      border-radius: 14px;
+      font-size: 14px;
+      font-weight: 700;
+      font-family: var(--font-body);
+      cursor: pointer;
+      transition: transform var(--duration-fast), box-shadow var(--duration-fast), background var(--duration-fast);
+      box-shadow: 0 18px 30px -22px rgba(17, 17, 17, 0.7);
+    }
+    .btn-save:hover {
+      background: var(--color-accent);
+      color: #fff;
+      transform: translateY(-1px);
+      box-shadow: 0 20px 34px -20px rgba(149, 204, 213, 0.65);
+    }
     .btn-save:disabled { opacity: 0.4; cursor: default; }
-    .btn-outline { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; background: #fff; color: #0a0a0a; border: 1.5px solid #e0e0e0; border-radius: 10px; font-size: 13px; font-weight: 600; font-family: 'DM Sans', sans-serif; cursor: pointer; transition: border-color 0.2s, background 0.2s; }
-    .btn-outline:hover { border-color: #0a0a0a; background: #f5f5f5; }
-    .btn-danger { display: inline-flex; align-items: center; gap: 8px; padding: 12px 24px; background: #dc2626; color: #fff; border: none; border-radius: 12px; font-size: 14px; font-weight: 700; font-family: 'DM Sans', sans-serif; cursor: pointer; transition: opacity 0.2s; }
+    .btn-outline {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 11px 18px;
+      background: rgba(255, 255, 255, 0.92);
+      color: var(--color-text);
+      border: 1.5px solid var(--color-border-input);
+      border-radius: 12px;
+      font-size: 13px;
+      font-weight: 600;
+      font-family: var(--font-body);
+      cursor: pointer;
+      transition: border-color var(--duration-fast), background var(--duration-fast), color var(--duration-fast);
+    }
+    .btn-outline:hover { border-color: var(--color-accent); background: var(--account-accent-soft); color: var(--color-text); }
+    .btn-danger { display: inline-flex; align-items: center; gap: 8px; padding: 12px 24px; background: var(--account-danger); color: #fff; border: none; border-radius: 14px; font-size: 14px; font-weight: 700; font-family: var(--font-body); cursor: pointer; transition: opacity 0.2s; }
     .btn-danger:hover { opacity: 0.85; }
-    .success-msg { display: none; align-items: center; gap: 8px; font-size: 14px; color: #059669; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 10px 14px; margin-top: 14px; }
-    .error-msg { display: none; font-size: 13px; color: #dc2626; margin-top: 8px; }
-    .info-box { background: #f8f8f8; border: 1px solid #e8e8e8; border-radius: 12px; padding: 16px 20px; font-size: 14px; color: #555; display: flex; align-items: center; gap: 10px; margin-bottom: 20px; }
+    /* Outlined danger button — self-contained colors so it stays visible inside the order
+       drawer, which renders OUTSIDE .account-page (where --account-danger isn't inherited). */
+    .btn-danger-line { display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 11px 18px; background: #fff; color: #c55d49; border: 1.5px solid rgba(197, 93, 73, 0.55); border-radius: 12px; font-size: 13px; font-weight: 700; font-family: var(--font-body); cursor: pointer; transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease; }
+    .btn-danger-line:hover { background: #c55d49; color: #fff; border-color: #c55d49; }
+    .btn-danger-line:disabled { opacity: 0.5; cursor: default; }
+    .success-msg {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      color: var(--color-text);
+      background: var(--account-accent-soft);
+      border: 1px solid rgba(149, 204, 213, 0.42);
+      border-radius: 12px;
+      padding: 10px 14px;
+      margin-top: 14px;
+    }
+    .error-msg { display: none; font-size: 13px; color: var(--account-danger); margin-top: 8px; }
+    .info-box {
+      background: rgba(255, 255, 255, 0.72);
+      border: 1px solid var(--color-border);
+      border-radius: 16px;
+      padding: 16px 20px;
+      font-size: 14px;
+      color: var(--color-text-secondary);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .security-stack { display: flex; flex-direction: column; gap: 16px; }
+    .security-panel {
+      border: 1.5px solid var(--color-border);
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.66);
+      overflow: hidden;
+    }
+    .security-panel-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 18px 20px 14px;
+      border-bottom: 1px solid rgba(17, 17, 17, 0.07);
+    }
+    .security-panel-title { font-size: 15px; font-weight: 800; color: var(--color-text); margin-bottom: 4px; }
+    .security-panel-sub { font-size: 13px; line-height: 1.45; color: var(--color-text-muted); }
+    .security-status {
+      display: inline-flex;
+      align-items: center;
+      align-self: flex-start;
+      gap: 6px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 800;
+      white-space: nowrap;
+      background: var(--color-surface);
+      color: var(--color-text-secondary);
+    }
+    .security-status.ok { background: var(--account-accent-soft); color: #327883; }
+    .security-status.warn { background: rgba(255, 251, 235, 0.95); color: #a16207; }
+    .security-rows { display: flex; flex-direction: column; }
+    .security-row {
+      display: grid;
+      grid-template-columns: 32px 1fr auto;
+      gap: 14px;
+      align-items: center;
+      padding: 16px 20px;
+    }
+    .security-row + .security-row { border-top: 1px solid rgba(17, 17, 17, 0.07); }
+    .security-row-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--color-surface);
+      color: var(--color-text);
+      font-size: 14px;
+      font-weight: 900;
+    }
+    .security-row-title { font-size: 14px; font-weight: 800; color: var(--color-text); margin-bottom: 3px; }
+    .security-row-sub { font-size: 13px; line-height: 1.4; color: var(--color-text-muted); }
+    .security-row-action { justify-self: end; }
+    .security-inline-error { display: none; padding: 0 20px 16px 66px; font-size: 13px; color: var(--account-danger); }
+    .security-inline-note { display: none; padding: 0 20px 16px 66px; font-size: 13px; color: #327883; }
+    .security-inline-error.visible,
+    .security-inline-note.visible { display: block; }
+    .verify-warning {
+      display: none;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 18px 20px;
+      margin-bottom: 20px;
+      border-radius: 18px;
+      border: 1px solid rgba(161, 98, 7, 0.22);
+      background: rgba(255, 251, 235, 0.94);
+      box-shadow: 0 18px 40px -34px rgba(120, 53, 15, 0.45);
+    }
+    .verify-warning.visible { display: flex; }
+    .verify-warning-mark {
+      width: 28px;
+      height: 28px;
+      border-radius: 999px;
+      background: #a16207;
+      color: #fff;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 15px;
+      font-weight: 800;
+      flex: 0 0 auto;
+      margin-top: 1px;
+    }
+    .verify-warning-body { display: flex; gap: 12px; min-width: 0; }
+    .verify-warning-title { font-size: 14px; font-weight: 800; color: #4a3421; margin-bottom: 3px; }
+    .verify-warning-text { font-size: 13px; line-height: 1.45; color: #6f5742; }
+    .verify-warning-action {
+      flex: 0 0 auto;
+      border: none;
+      border-radius: 12px;
+      padding: 10px 14px;
+      background: #15110d;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 700;
+      font-family: var(--font-body);
+      cursor: pointer;
+      transition: transform var(--duration-fast), opacity var(--duration-fast);
+    }
+    .verify-warning-action:hover { transform: translateY(-1px); }
+    .verify-warning-action:active { transform: translateY(0); opacity: 0.86; }
+    .verify-warning-action:disabled { opacity: 0.55; cursor: default; transform: none; }
     /* Addresses */
     .address-list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px; }
-    .address-card { border: 1.5px solid #e8e8e8; border-radius: 12px; padding: 16px 18px; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; transition: border-color 0.2s; }
-    .address-card.default { border-color: #10b981; background: #f0fdf8; }
-    .address-label { font-size: 13px; font-weight: 700; color: #0a0a0a; display: flex; align-items: center; gap: 8px; }
-    .badge-default { background: #10b981; color: #fff; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.05em; }
-    .address-detail { font-size: 13px; color: #666; margin-top: 2px; }
+    .address-card {
+      border: 1.5px solid var(--color-border);
+      border-radius: 16px;
+      padding: 16px 18px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      transition: border-color var(--duration-fast), background var(--duration-fast);
+      background: rgba(255, 255, 255, 0.68);
+    }
+    .address-card.default { border-color: var(--color-accent); background: var(--account-accent-soft); }
+    .address-label { font-size: 13px; font-weight: 700; color: var(--color-text); display: flex; align-items: center; gap: 8px; }
+    .badge-default {
+      background: var(--color-accent);
+      color: #fff;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 20px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .address-detail { font-size: 13px; color: var(--color-text-secondary); margin-top: 2px; }
     .address-actions { display: flex; gap: 6px; flex-shrink: 0; }
-    .addr-btn { padding: 5px 10px; border-radius: 7px; font-size: 11px; font-weight: 700; font-family: 'DM Sans', sans-serif; cursor: pointer; border: 1.5px solid #e0e0e0; background: #fff; color: #555; transition: all 0.15s; }
-    .addr-btn:hover { border-color: #0a0a0a; color: #0a0a0a; }
-    .addr-btn.default-btn:hover { border-color: #10b981; color: #10b981; }
-    .addr-btn.delete-btn:hover { border-color: #dc2626; color: #dc2626; }
-    .add-address-form { background: #f8f8f8; border: 1.5px dashed #d0d0d0; border-radius: 12px; padding: 20px; display: none; }
+    .addr-btn {
+      padding: 6px 10px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 700;
+      font-family: var(--font-body);
+      cursor: pointer;
+      border: 1.5px solid var(--color-border-input);
+      background: rgba(255, 255, 255, 0.92);
+      color: var(--color-text-secondary);
+      transition: all var(--duration-fast);
+    }
+    .addr-btn:hover { border-color: var(--color-text); color: var(--color-text); }
+    .addr-btn.default-btn:hover { border-color: var(--color-accent); color: var(--color-accent); background: var(--account-accent-soft); }
+    .addr-btn.delete-btn:hover { border-color: var(--account-danger); color: var(--account-danger); background: var(--account-danger-soft); }
+    .add-address-form { background: rgba(255, 255, 255, 0.58); border: 1.5px dashed rgba(149, 204, 213, 0.58); border-radius: 16px; padding: 20px; display: none; }
     .add-address-form.open { display: block; }
+    .address-location-btn {
+      width: 100%;
+      margin: 0 0 16px;
+      padding: 12px 14px;
+      justify-content: center;
+    }
+    .address-location-btn svg {
+      width: 17px;
+      height: 17px;
+      stroke: currentColor;
+      flex: 0 0 auto;
+    }
+    .address-location-btn:disabled { opacity: 0.55; cursor: default; }
+    .address-location-btn[data-busy="true"] svg { animation: accountSpin 1s linear infinite; }
+    .address-location-status {
+      min-height: 18px;
+      margin: -8px 0 14px;
+      font-size: 12px;
+      color: var(--color-text-secondary);
+      line-height: 1.4;
+    }
+    .address-location-status:empty { display: none; }
+    .address-location-status[data-tone="success"] { color: var(--color-accent); }
+    .address-location-status[data-tone="error"] { color: var(--account-danger); }
+    @keyframes accountSpin { to { transform: rotate(360deg); } }
     /* Danger zone */
-    .danger-zone { border: 1.5px solid #fecaca; border-radius: 16px; padding: 28px; background: #fff; }
-    .danger-title { font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 800; color: #dc2626; margin-bottom: 8px; }
-    .danger-text { font-size: 14px; color: #666; margin-bottom: 20px; line-height: 1.6; }
+    .danger-zone { border: 1.5px solid rgba(197, 93, 73, 0.28); border-radius: 24px; padding: 28px; background: rgba(255, 255, 255, 0.84); box-shadow: 0 24px 48px -34px rgba(17, 17, 17, 0.24); }
+    .danger-title { font-family: var(--font-heading); font-size: 20px; font-weight: 800; color: var(--account-danger); margin-bottom: 8px; letter-spacing: -0.02em; }
+    .danger-text { font-size: 14px; color: var(--color-text-secondary); margin-bottom: 20px; line-height: 1.6; }
     /* Mobile top tabs */
     .mobile-tabs { display: none; overflow-x: auto; gap: 8px; padding-bottom: 4px; margin-bottom: 20px; }
-    .mobile-tab { flex-shrink: 0; padding: 8px 16px; border-radius: 20px; font-size: 13px; font-weight: 600; border: 1.5px solid #e0e0e0; background: #fff; color: #555; cursor: pointer; font-family: 'DM Sans', sans-serif; white-space: nowrap; }
-    .mobile-tab.active { background: #0a0a0a; color: #fff; border-color: #0a0a0a; }
-    .mobile-tab.danger.active { background: #dc2626; border-color: #dc2626; }
+    .mobile-tab { flex-shrink: 0; padding: 10px 16px; border-radius: 9999px; font-size: 13px; font-weight: 600; border: 1.5px solid var(--color-border-input); background: rgba(255, 255, 255, 0.92); color: var(--color-text-secondary); cursor: pointer; font-family: var(--font-body); white-space: nowrap; }
+    .mobile-tab.active { background: var(--color-text); color: #fff; border-color: var(--color-text); }
+    .mobile-tab.danger.active { background: var(--account-danger); border-color: var(--account-danger); }
     /* Payment Methods */
     .pm-list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px; }
-    .pm-card { border: 1.5px solid #e8e8e8; border-radius: 12px; padding: 16px 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px; transition: border-color 0.2s; }
-    .pm-card.default { border-color: #10b981; background: #f0fdf8; }
+    .pm-card { border: 1.5px solid var(--color-border); border-radius: 16px; padding: 16px 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px; transition: border-color var(--duration-fast), background var(--duration-fast); background: rgba(255, 255, 255, 0.68); }
+    .pm-card.default { border-color: var(--color-accent); background: var(--account-accent-soft); }
     .pm-brand-wrap { display: flex; align-items: center; gap: 12px; }
-    .pm-brand-badge { border-radius: 6px; padding: 4px 10px; font-size: 11px; font-weight: 700; color: #fff; text-transform: uppercase; letter-spacing: 0.05em; background: #555; }
+    .pm-brand-badge { border-radius: 9999px; padding: 5px 10px; font-size: 11px; font-weight: 700; color: #fff; text-transform: uppercase; letter-spacing: 0.05em; background: var(--color-text-secondary); }
     .pm-brand-badge.visa { background: #1a1f71; }
     .pm-brand-badge.mastercard { background: #eb001b; }
     .pm-brand-badge.amex { background: #2e77bc; }
     .pm-brand-badge.discover { background: #f76d1b; }
     .pm-brand-badge.apple { background: #000; }
     .pm-brand-badge.google { background: #4285f4; }
-    .pm-info { font-size: 14px; color: #0a0a0a; font-weight: 500; display: flex; align-items: center; gap: 8px; }
-    .pm-exp { font-size: 12px; color: #888; margin-top: 2px; }
+    .pm-info { font-size: 14px; color: var(--color-text); font-weight: 500; display: flex; align-items: center; gap: 8px; }
+    .pm-exp { font-size: 12px; color: var(--color-text-muted); margin-top: 2px; }
     .pm-actions { display: flex; gap: 6px; flex-shrink: 0; }
     /* Add payment modal */
     .pm-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 9999; backdrop-filter: blur(4px); }
-    .pm-modal-box { background: #fff; border-radius: 20px; padding: 28px; width: 460px; max-width: 95%; box-shadow: 0 20px 60px rgba(0,0,0,0.15); }
-    .pm-modal-title { font-family: 'Syne', sans-serif; font-size: 20px; font-weight: 800; color: #0a0a0a; margin-bottom: 6px; }
-    .pm-modal-sub { font-size: 13px; color: #888; margin-bottom: 24px; line-height: 1.5; }
+    .pm-modal-box { background: rgba(255, 255, 255, 0.96); border: 1px solid rgba(255,255,255,0.7); border-radius: 24px; padding: 28px; width: 460px; max-width: 95%; box-shadow: 0 28px 80px rgba(0,0,0,0.18); }
+    .pm-modal-title { font-family: var(--font-heading); font-size: 20px; font-weight: 800; color: var(--color-text); margin-bottom: 6px; letter-spacing: -0.02em; }
+    .pm-modal-sub { font-size: 13px; color: var(--color-text-muted); margin-bottom: 24px; line-height: 1.5; }
     #payment-element-mount { margin-bottom: 20px; min-height: 48px; }
     .pm-modal-actions { display: flex; gap: 10px; }
+    /* Favorite services */
+    .favorite-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+    .favorite-card {
+      border: 1.5px solid var(--color-border);
+      border-radius: 16px;
+      overflow: hidden;
+      background: rgba(255, 255, 255, 0.74);
+      display: grid;
+      grid-template-columns: 120px 1fr;
+      min-height: 118px;
+    }
+    .favorite-media { background: var(--color-surface); min-height: 118px; }
+    .favorite-media img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .favorite-body { padding: 14px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+    .favorite-kicker { font-size: 11px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .favorite-title { font-size: 15px; font-weight: 800; line-height: 1.25; color: var(--color-text); }
+    .favorite-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: auto; }
+    .favorite-empty { border: 1.5px dashed rgba(149, 204, 213, 0.55); border-radius: 18px; padding: 28px; text-align: center; background: rgba(255,255,255,0.58); }
+    .favorite-empty-title { font-size: 16px; font-weight: 800; color: var(--color-text); margin-bottom: 6px; }
+    .favorite-empty-text { font-size: 13px; color: var(--color-text-secondary); line-height: 1.5; margin-bottom: 16px; }
     /* Confirm modal */
     .confirm-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 9999; backdrop-filter: blur(4px); }
-    .confirm-box { background: #fff; border-radius: 16px; padding: 28px; width: 380px; max-width: 94%; box-shadow: 0 20px 60px rgba(0,0,0,0.15); }
-    .confirm-box h3 { font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 800; margin-bottom: 8px; }
-    .confirm-box p { font-size: 14px; color: #666; margin-bottom: 18px; line-height: 1.5; }
+    .confirm-box { background: rgba(255, 255, 255, 0.96); border: 1px solid rgba(255,255,255,0.7); border-radius: 24px; padding: 28px; width: 380px; max-width: 94%; box-shadow: 0 28px 80px rgba(0,0,0,0.18); }
+    .confirm-box h3 { font-family: var(--font-heading); font-size: 18px; font-weight: 800; margin-bottom: 8px; letter-spacing: -0.02em; }
+    .confirm-box p { font-size: 14px; color: var(--color-text-secondary); margin-bottom: 18px; line-height: 1.5; }
     .confirm-row { display: flex; gap: 10px; justify-content: flex-end; }
-    .confirm-cancel { padding: 10px 18px; border-radius: 10px; border: 1.5px solid #e0e0e0; background: #fff; color: #555; font-size: 13px; font-weight: 600; font-family: 'DM Sans', sans-serif; cursor: pointer; }
-    .confirm-ok { padding: 10px 18px; border-radius: 10px; border: none; background: #dc2626; color: #fff; font-size: 13px; font-weight: 700; font-family: 'DM Sans', sans-serif; cursor: pointer; }
+    .confirm-cancel { padding: 10px 18px; border-radius: 12px; border: 1.5px solid var(--color-border-input); background: #fff; color: var(--color-text-secondary); font-size: 13px; font-weight: 600; font-family: var(--font-body); cursor: pointer; }
+    .confirm-ok { padding: 10px 18px; border-radius: 12px; border: none; background: #c55d49; color: #fff; font-size: 13px; font-weight: 700; font-family: var(--font-body); cursor: pointer; }
+    .confirm-ok:hover { background: #b04e3c; }
+    .confirm-ok:disabled { opacity: 0.6; cursor: not-allowed; }
+    /* ─── Orders / history ─────────────────────────────────────────────── */
+    .orders-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+    .orders-new-btn { flex: 0 0 auto; white-space: nowrap; gap: 9px; }
+    .orders-new-plus {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      flex: 0 0 auto;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--color-accent);
+      color: #fff;
+      font-size: 0;
+      line-height: 0;
+    }
+    .orders-new-plus::before,
+    .orders-new-plus::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 9px;
+      height: 2px;
+      border-radius: 999px;
+      background: currentColor;
+      transform: translate(-50%, -50%);
+    }
+    .orders-new-plus::after {
+      transform: translate(-50%, -50%) rotate(90deg);
+    }
+    .orders-new-label { line-height: 1; }
+    .orders-segment {
+      display: inline-flex;
+      gap: 4px;
+      padding: 4px;
+      background: rgba(255, 255, 255, 0.7);
+      border: 1px solid var(--color-border);
+      border-radius: 14px;
+      margin-bottom: 22px;
+    }
+    .orders-seg-btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 9px 18px; border: none; background: none; cursor: pointer;
+      font-family: var(--font-body); font-size: 13.5px; font-weight: 700;
+      color: var(--color-text-secondary); border-radius: 10px;
+      transition: background var(--duration-fast), color var(--duration-fast);
+    }
+    .orders-seg-btn:hover { color: var(--color-text); }
+    .orders-seg-btn.active { background: var(--color-text); color: #fff; }
+    .orders-seg-count {
+      font-size: 11px; font-weight: 800; padding: 1px 7px; border-radius: 999px;
+      background: var(--color-surface); color: var(--color-text-secondary); line-height: 1.5;
+    }
+    .orders-seg-btn.active .orders-seg-count { background: rgba(255, 255, 255, 0.22); color: #fff; }
+    .orders-list { display: flex; flex-direction: column; gap: 14px; }
+    .order-card {
+      position: relative;
+      border: 1px solid var(--color-border);
+      border-radius: 20px;
+      background: rgba(255, 255, 255, 0.82);
+      backdrop-filter: blur(14px);
+      padding: 18px 20px;
+      cursor: pointer;
+      transition: transform var(--duration-fast), box-shadow var(--duration-fast), border-color var(--duration-fast);
+      animation: orderCardIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+    }
+    .order-card:hover { transform: translateY(-2px); border-color: var(--account-accent-ring); box-shadow: 0 22px 44px -28px rgba(17, 17, 17, 0.32); }
+    .order-card:focus-visible { outline: none; border-color: var(--color-accent); box-shadow: 0 0 0 4px var(--account-accent-ring); }
+    @keyframes orderCardIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+    .order-card-top { display: grid; grid-template-columns: 52px 1fr auto; gap: 16px; align-items: start; }
+    .order-icon {
+      width: 52px; height: 52px; border-radius: 15px;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 24px; line-height: 1;
+      background: var(--order-tint, var(--color-surface));
+    }
+    .order-main { min-width: 0; }
+    .order-title { font-size: 16px; font-weight: 800; color: var(--color-text); letter-spacing: -0.01em; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .order-desc { font-size: 13.5px; color: var(--color-text-secondary); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .order-meta { display: flex; flex-wrap: wrap; gap: 5px 14px; margin-top: 11px; }
+    .order-meta-item { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--color-text-muted); min-width: 0; max-width: 100%; }
+    .order-meta-item svg { width: 14px; height: 14px; stroke: currentColor; fill: none; flex: 0 0 auto; opacity: 0.85; }
+    .order-meta-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .order-right { display: flex; flex-direction: column; align-items: flex-end; gap: 9px; text-align: right; flex: 0 0 auto; }
+    .order-price { font-size: 16px; font-weight: 800; color: var(--color-text); white-space: nowrap; }
+    .order-price small { font-size: 11px; font-weight: 700; color: var(--color-text-muted); margin-left: 2px; }
+    .order-status { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 999px; font-size: 11px; font-weight: 800; white-space: nowrap; }
+    .order-status::before { content: ""; width: 6px; height: 6px; border-radius: 999px; background: currentColor; }
+    .order-status.is-pending { background: rgba(161, 98, 7, 0.12); color: #a16207; }
+    .order-status.is-progress { background: rgba(49, 120, 131, 0.13); color: #2b6d77; }
+    .order-status.is-authorized { background: var(--account-accent-soft); color: #2b6d77; }
+    .order-status.is-done { background: rgba(31, 122, 58, 0.13); color: #1f7a3a; }
+    .order-status.is-canceled { background: rgba(17, 17, 17, 0.06); color: #7c7c7c; }
+    .order-status.is-declined { background: var(--account-danger-soft); color: var(--account-danger); }
+    .order-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; padding-top: 14px; border-top: 1px solid rgba(17, 17, 17, 0.06); }
+    .order-actions .addr-btn { padding: 8px 14px; font-size: 12px; }
+    .order-cta {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 15px; border-radius: 10px; border: none;
+      background: var(--color-text); color: #fff;
+      font-size: 12px; font-weight: 700; font-family: var(--font-body); cursor: pointer;
+      transition: background var(--duration-fast), transform var(--duration-fast);
+    }
+    .order-cta:hover { background: var(--color-accent); transform: translateY(-1px); }
+    /* Skeletons */
+    .order-skeleton { border: 1px solid var(--color-border); border-radius: 20px; background: rgba(255, 255, 255, 0.7); padding: 18px 20px; display: grid; grid-template-columns: 52px 1fr 76px; gap: 16px; align-items: center; }
+    .sk { background: linear-gradient(100deg, rgba(17, 17, 17, 0.05) 28%, rgba(17, 17, 17, 0.09) 50%, rgba(17, 17, 17, 0.05) 72%); background-size: 220% 100%; animation: skShimmer 1.3s ease-in-out infinite; border-radius: 8px; }
+    @keyframes skShimmer { from { background-position: 220% 0; } to { background-position: -220% 0; } }
+    .sk-icon { width: 52px; height: 52px; border-radius: 15px; }
+    .sk-line { height: 12px; }
+    .order-empty { border: 1.5px dashed rgba(149, 204, 213, 0.55); border-radius: 18px; padding: 40px 28px; text-align: center; background: rgba(255, 255, 255, 0.58); }
+    .order-empty-emoji { font-size: 34px; line-height: 1; margin-bottom: 14px; }
+    .order-empty-title { font-size: 16px; font-weight: 800; color: var(--color-text); margin-bottom: 6px; }
+    .order-empty-text { font-size: 13px; color: var(--color-text-secondary); line-height: 1.5; margin-bottom: 18px; max-width: 360px; margin-left: auto; margin-right: auto; }
+    /* Detail drawer */
+    .order-drawer-overlay { position: fixed; inset: 0; background: rgba(17, 17, 17, 0.42); backdrop-filter: blur(4px); z-index: 10000; opacity: 0; pointer-events: none; transition: opacity 0.32s ease; }
+    .order-drawer-overlay.open { opacity: 1; pointer-events: auto; }
+    .order-drawer {
+      position: fixed; top: 0; right: 0; height: 100%; width: min(488px, 100%);
+      background: #fbfaf8;
+      box-shadow: -30px 0 80px -42px rgba(0, 0, 0, 0.5);
+      transform: translateX(100%);
+      transition: transform 0.42s cubic-bezier(0.16, 1, 0.3, 1);
+      overflow-y: auto; -webkit-overflow-scrolling: touch;
+    }
+    .order-drawer-overlay.open .order-drawer { transform: none; }
+    .drawer-hero { position: relative; padding: 26px 24px 22px; background: linear-gradient(160deg, var(--order-tint, var(--account-accent-soft)), rgba(255, 255, 255, 0) 78%); border-bottom: 1px solid rgba(17, 17, 17, 0.06); }
+    .drawer-close { position: absolute; top: 18px; right: 18px; width: 34px; height: 34px; border-radius: 999px; border: 1px solid var(--color-border); background: rgba(255, 255, 255, 0.85); color: var(--color-text); font-size: 17px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: background var(--duration-fast); }
+    .drawer-close:hover { background: #fff; }
+    .drawer-hero-icon { width: 56px; height: 56px; border-radius: 16px; background: rgba(255, 255, 255, 0.7); display: inline-flex; align-items: center; justify-content: center; font-size: 27px; margin-bottom: 14px; box-shadow: 0 10px 24px -16px rgba(17, 17, 17, 0.5); }
+    .drawer-hero-title { font-family: var(--font-heading); font-size: 21px; font-weight: 800; letter-spacing: -0.02em; color: var(--color-text); line-height: 1.2; }
+    .drawer-hero-code { font-size: 12px; font-weight: 700; color: var(--color-text-muted); margin-top: 6px; letter-spacing: 0.02em; }
+    .drawer-hero-status { margin-top: 14px; }
+    .drawer-section { padding: 22px 24px; border-bottom: 1px solid rgba(17, 17, 17, 0.06); }
+    .drawer-section:last-child { border-bottom: none; }
+    .drawer-section-title { font-size: 11.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; color: var(--color-text-secondary); margin-bottom: 14px; }
+    .order-timeline { display: flex; flex-direction: column; }
+    .otl-step { display: grid; grid-template-columns: 24px 1fr; gap: 14px; padding-bottom: 20px; position: relative; }
+    .otl-step:last-child { padding-bottom: 0; }
+    .otl-step::before { content: ""; position: absolute; left: 11px; top: 24px; bottom: -2px; width: 2px; background: var(--color-border); }
+    .otl-step:last-child::before { display: none; }
+    .otl-dot { width: 24px; height: 24px; border-radius: 999px; border: 2px solid var(--color-border); background: #fff; display: inline-flex; align-items: center; justify-content: center; z-index: 1; color: transparent; }
+    .otl-dot svg { width: 12px; height: 12px; stroke: #fff; fill: none; }
+    .otl-step.done .otl-dot { background: var(--color-accent); border-color: var(--color-accent); }
+    .otl-step.done::before { background: var(--color-accent); }
+    .otl-step.current .otl-dot { border-color: var(--color-accent); box-shadow: 0 0 0 4px var(--account-accent-ring); }
+    .otl-step.canceled .otl-dot { background: var(--account-danger); border-color: var(--account-danger); }
+    .otl-label { font-size: 13.5px; font-weight: 700; color: var(--color-text); line-height: 1.3; }
+    .otl-step:not(.done):not(.current) .otl-label { color: var(--color-text-muted); font-weight: 600; }
+    .otl-sub { font-size: 12px; color: var(--color-text-muted); margin-top: 2px; }
+    .drawer-info-row { display: grid; grid-template-columns: 18px 1fr; gap: 12px; padding: 11px 0; align-items: start; }
+    .drawer-info-row + .drawer-info-row { border-top: 1px solid rgba(17, 17, 17, 0.05); }
+    .drawer-info-row svg { width: 17px; height: 17px; stroke: var(--color-text-secondary); fill: none; margin-top: 1px; }
+    .drawer-info-label { font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-text-muted); }
+    .drawer-info-value { font-size: 14px; font-weight: 600; color: var(--color-text); margin-top: 2px; line-height: 1.4; overflow-wrap: anywhere; }
+    .order-receipt { border: 1px solid var(--color-border); border-radius: 16px; overflow: hidden; }
+    .order-receipt-row { display: flex; justify-content: space-between; gap: 16px; padding: 12px 16px; font-size: 13.5px; }
+    .order-receipt-row + .order-receipt-row { border-top: 1px solid rgba(17, 17, 17, 0.06); }
+    .order-receipt-row .lbl { color: var(--color-text-secondary); }
+    .order-receipt-row .val { font-weight: 700; color: var(--color-text); white-space: nowrap; }
+    .order-receipt-row.total { background: var(--color-surface); }
+    .order-receipt-row.total .lbl, .order-receipt-row.total .val { font-weight: 800; font-size: 15px; }
+    .drawer-actions { padding: 22px 24px calc(22px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 10px; }
+    .drawer-actions .btn-save, .drawer-actions .btn-outline { width: 100%; }
     @media (max-width: 900px) {
+      .account-page { padding: 112px 0 72px; }
       .account-layout { grid-template-columns: 1fr; }
       .account-sidebar { display: none; }
       .mobile-tabs { display: flex; }
+      .profile-row { grid-template-columns: 1fr; gap: 7px; align-items: start; }
+      .profile-actions,
+      .profile-edit-actions { width: 100%; }
+      .profile-actions .btn-outline,
+      .profile-edit-actions .btn-save,
+      .profile-edit-actions .btn-outline { width: 100%; }
       .form-row { grid-template-columns: 1fr; }
+      .favorite-list { grid-template-columns: 1fr; }
+      .favorite-card { grid-template-columns: 96px 1fr; }
+      .orders-head { flex-direction: column; align-items: stretch; }
+      .orders-new-btn { width: 100%; }
+      .orders-segment { display: grid; grid-template-columns: 1fr 1fr; }
+      .orders-seg-btn { justify-content: center; }
+      .order-card { padding: 16px; }
+      .order-card-top { grid-template-columns: 46px 1fr; }
+      .order-icon { width: 46px; height: 46px; font-size: 21px; }
+      .order-right { grid-column: 1 / -1; flex-direction: row; justify-content: space-between; align-items: center; gap: 12px; margin-top: 13px; padding-top: 12px; border-top: 1px solid rgba(17,17,17,0.06); }
+      .account-card,
+      .danger-zone { padding: 24px; border-radius: 20px; }
+      .verify-warning { flex-direction: column; }
+      .verify-warning-action { width: 100%; }
+      .security-panel-head { flex-direction: column; gap: 10px; }
+      .security-row { grid-template-columns: 32px 1fr; }
+      .security-row-action { grid-column: 1 / -1; justify-self: stretch; }
+      .security-row-action .btn-outline,
+      .security-row-action .btn-save { width: 100%; }
+      .security-inline-error,
+      .security-inline-note { padding-left: 20px; }
+      /* Prevent iOS Safari auto-zoom on input focus */
+      .form-input { font-size: 16px; }
     }
   </style>
 </head>
-<body>
-<script src="/shared/i18n.js"></script>
+<body class="landing-page">
 <script src="/config.js"></script>
+<script src="/shared/i18n.js"></script>
+<script src="/shared/address-form.js"></script>
 <script src="/shared/shared-auth.js"></script>
 <div id="navbar"></div>
-<script src="/shared/shared-nav.js"></script>
+<script src="/shared/morphing-nav.js"></script>
 
 <script src="https://js.stripe.com/v3/"></script>
 
@@ -121,31 +701,93 @@
 
       <!-- Content -->
       <div id="account-content">
+        <div class="verify-warning" id="email-verify-warning">
+          <div class="verify-warning-body">
+            <span class="verify-warning-mark">!</span>
+            <div>
+              <div class="verify-warning-title" id="email-warning-title">Verifica tu correo</div>
+              <div class="verify-warning-text" id="email-warning-text">Verifica tu correo para proteger tu cuenta y confirmar solicitudes.</div>
+            </div>
+          </div>
+          <button class="verify-warning-action" id="email-warning-action" onclick="handleEmailWarningAction()">Verificar correo</button>
+        </div>
+
+        <!-- Orders / History -->
+        <section class="account-section" id="section-orders">
+          <div class="orders-head">
+            <div>
+              <div class="section-title" id="title-orders">Mis pedidos</div>
+              <div class="section-sub" id="sub-orders" style="margin-bottom:0">Da seguimiento a tus solicitudes y revisa tu historial.</div>
+            </div>
+            <a class="btn-outline orders-new-btn" href="/browse.html" id="orders-new-btn">
+              <span class="orders-new-plus" aria-hidden="true">+</span>
+              <span class="orders-new-label" id="orders-new-label">Nueva solicitud</span>
+            </a>
+          </div>
+          <div class="orders-segment" id="orders-segment" role="tablist">
+            <button class="orders-seg-btn active" role="tab" data-bucket="active" onclick="switchOrdersBucket('active')">
+              <span id="orders-seg-active">Activos</span><span class="orders-seg-count" id="orders-count-active" hidden></span>
+            </button>
+            <button class="orders-seg-btn" role="tab" data-bucket="past" onclick="switchOrdersBucket('past')">
+              <span id="orders-seg-past">Historial</span><span class="orders-seg-count" id="orders-count-past" hidden></span>
+            </button>
+          </div>
+          <div class="orders-list" id="orders-list"></div>
+        </section>
 
         <!-- Personal Info -->
         <section class="account-section" id="section-info">
-          <div class="account-card">
+          <div class="account-card" id="profile-card">
             <div class="section-title" id="title-info">Información personal</div>
             <div class="section-sub" id="sub-info">Actualiza tu nombre, correo y teléfono.</div>
-            <div class="form-row">
-              <div class="form-group">
-                <label class="form-label" id="lbl-name">Nombre completo</label>
-                <input class="form-input" id="info-name" type="text" placeholder="Tu nombre">
+            <div class="profile-view" id="profile-view">
+              <div class="profile-row">
+                <div class="profile-label" id="profile-lbl-name">Nombre completo</div>
+                <div class="profile-value-wrap">
+                  <span class="profile-value" id="profile-name">-</span>
+                </div>
               </div>
-              <div class="form-group">
-                <label class="form-label" id="lbl-phone">Teléfono</label>
-                <input class="form-input" id="info-phone" type="tel" placeholder="+52 55 1234 5678">
+              <div class="profile-row">
+                <div class="profile-label" id="profile-lbl-phone">Teléfono</div>
+                <div class="profile-value-wrap">
+                  <span class="profile-value" id="profile-phone">-</span>
+                </div>
+              </div>
+              <div class="profile-row">
+                <div class="profile-label" id="profile-lbl-email">Correo electrónico</div>
+                <div class="profile-value-wrap">
+                  <span class="profile-value" id="profile-email">-</span>
+                  <span class="verified-badge pending" id="profile-email-status">Pendiente</span>
+                </div>
+              </div>
+              <div class="profile-actions">
+                <button class="btn-outline" id="profile-edit-btn" type="button" onclick="enterProfileEditMode()">Modificar</button>
               </div>
             </div>
-            <div class="form-group">
-              <label class="form-label" id="lbl-email">Correo electrónico</label>
-              <input class="form-input" id="info-email" type="email" placeholder="tu@correo.com">
+            <div class="profile-edit" id="profile-edit">
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label" id="lbl-name" for="info-name">Nombre completo</label>
+                  <input class="form-input" id="info-name" type="text" autocomplete="name" placeholder="Tu nombre">
+                </div>
+                <div class="form-group">
+                  <label class="form-label" id="lbl-phone" for="info-phone">Teléfono</label>
+                  <input class="form-input" id="info-phone" type="tel" autocomplete="tel" placeholder="+52 55 1234 5678">
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="form-label" id="lbl-email" for="info-email">Correo electrónico</label>
+                <input class="form-input" id="info-email" type="email" autocomplete="email" placeholder="tu@correo.com">
+              </div>
+              <div class="profile-edit-actions">
+                <button class="btn-save" id="info-save-btn" onclick="saveProfile()">
+                  <span id="info-save-label">Guardar cambios</span>
+                </button>
+                <button class="btn-outline" id="profile-cancel-btn" type="button" onclick="cancelProfileEdit()">Cancelar</button>
+              </div>
             </div>
-            <button class="btn-save" id="info-save-btn" onclick="saveProfile()">
-              <span id="info-save-label">Guardar cambios</span>
-            </button>
-            <div class="success-msg" id="info-success">✓ <span id="info-success-text">Cambios guardados.</span></div>
-            <div class="error-msg" id="info-error"></div>
+            <div class="success-msg" id="info-success" aria-live="polite">✓ <span id="info-success-text">Cambios guardados.</span></div>
+            <div class="error-msg" id="info-error" role="alert"></div>
           </div>
         </section>
 
@@ -154,10 +796,57 @@
           <div class="account-card">
             <div class="section-title" id="title-security">Seguridad</div>
             <div class="section-sub" id="sub-security">Información de acceso a tu cuenta.</div>
-            <div class="info-box" id="security-info">
-              🔐 <span id="security-info-text">Tu cuenta usa inicio de sesión con teléfono o Google. No se requiere contraseña.</span>
+            <div class="security-stack">
+              <div class="info-box" id="security-info">
+                🔐 <span id="security-info-text">Tu cuenta usa inicio de sesión con teléfono o Google. No se requiere contraseña.</span>
+              </div>
+
+              <div class="security-panel" id="security-verification-panel">
+                <div class="security-panel-head">
+                  <div>
+                    <div class="security-panel-title" id="security-2step-title">Verificación en dos pasos</div>
+                    <div class="security-panel-sub" id="security-2step-sub">Confirma teléfono y correo para proteger solicitudes y cambios importantes.</div>
+                  </div>
+                  <span class="security-status" id="security-2step-status">Pendiente</span>
+                </div>
+                <div class="security-rows">
+                  <div class="security-row">
+                    <span class="security-row-icon">1</span>
+                    <div>
+                      <div class="security-row-title" id="security-phone-title">Teléfono verificado</div>
+                      <div class="security-row-sub" id="security-phone-sub">Tu número se confirma con código SMS.</div>
+                    </div>
+                    <span class="security-status" id="security-phone-status">Pendiente</span>
+                  </div>
+                  <div class="security-row">
+                    <span class="security-row-icon">2</span>
+                    <div>
+                      <div class="security-row-title" id="security-email-title">Correo verificado</div>
+                      <div class="security-row-sub" id="security-email-sub">Usaremos este correo para confirmar solicitudes.</div>
+                    </div>
+                    <div class="security-row-action" id="security-email-action-wrap">
+                      <button class="btn-outline" id="security-email-action" onclick="handleSecurityEmailAction()">Verificar correo</button>
+                    </div>
+                  </div>
+                  <div class="security-inline-note" id="security-email-note"></div>
+                  <div class="security-inline-error" id="security-email-error"></div>
+                </div>
+              </div>
+
+              <div class="security-panel" id="security-social-panel">
+                <div class="security-panel-head">
+                  <div>
+                    <div class="security-panel-title" id="security-social-title">Apps sociales conectadas</div>
+                    <div class="security-panel-sub" id="security-social-sub">Administra accesos externos que pueden iniciar sesión en tu cuenta.</div>
+                  </div>
+                </div>
+                <div class="security-rows" id="security-social-list"></div>
+                <div class="security-inline-note" id="security-social-note"></div>
+                <div class="security-inline-error" id="security-social-error"></div>
+              </div>
+
+              <div style="font-size:14px;color:var(--color-text-secondary);line-height:1.6" id="security-provider-info"></div>
             </div>
-            <div style="margin-top:16px;font-size:14px;color:#666;line-height:1.6" id="security-provider-info"></div>
           </div>
         </section>
 
@@ -171,44 +860,25 @@
             <div class="section-sub" id="sub-addresses">Guarda tus domicilios para agilizar tus solicitudes.</div>
             <div class="address-list" id="address-list"></div>
             <div class="add-address-form" id="add-addr-form">
-              <div class="form-row">
-                <div class="form-group">
-                  <label class="form-label" id="lbl-addr-label">Etiqueta (opcional)</label>
-                  <input class="form-input" id="addr-label" type="text" placeholder="Casa, Trabajo...">
-                </div>
-                <div class="form-group">
-                  <label class="form-label" id="lbl-addr-street">Calle y número *</label>
-                  <input class="form-input" id="addr-street" type="text" placeholder="Calle, número ext/int">
-                </div>
-              </div>
-              <div class="form-row">
-                <div class="form-group">
-                  <label class="form-label" id="lbl-addr-city">Ciudad</label>
-                  <input class="form-input" id="addr-city" type="text" placeholder="Ciudad de México">
-                </div>
-                <div class="form-group">
-                  <label class="form-label" id="lbl-addr-state">Estado</label>
-                  <input class="form-input" id="addr-state" type="text" placeholder="CDMX">
-                </div>
-              </div>
-              <div class="form-row">
-                <div class="form-group">
-                  <label class="form-label" id="lbl-addr-postal">Código postal</label>
-                  <input class="form-input" id="addr-postal" type="text" placeholder="05348">
-                </div>
-                <div class="form-group" style="justify-content:flex-end;padding-top:22px">
-                  <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#555;cursor:pointer">
-                    <input type="checkbox" id="addr-default" style="width:15px;height:15px;accent-color:#10b981">
-                    <span id="lbl-addr-default">Predeterminada</span>
-                  </label>
-                </div>
-              </div>
-              <div style="display:flex;gap:10px;margin-top:4px">
+              <div id="acc-addr-fields"></div>
+              <div style="display:flex;gap:10px;margin-top:14px">
                 <button class="btn-save" id="addr-save-btn" onclick="saveNewAddress()"><span id="addr-save-label">Guardar dirección</span></button>
                 <button class="btn-outline" onclick="toggleAddForm()" id="addr-cancel-btn">Cancelar</button>
               </div>
               <div class="error-msg" id="addr-error"></div>
             </div>
+          </div>
+        </section>
+
+        <!-- Favorite Services -->
+        <section class="account-section" id="section-favorites">
+          <div class="account-card">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;gap:12px">
+              <div class="section-title" id="title-favorites">Favoritos</div>
+              <a class="btn-outline" href="/browse.html" id="browse-favorites-btn">Explorar servicios</a>
+            </div>
+            <div class="section-sub" id="sub-favorites">Tu lista de servicios frecuentes para volver a reservar rápido.</div>
+            <div class="favorite-list" id="favorite-list"></div>
           </div>
         </section>
 
@@ -240,6 +910,13 @@
   </div>
 </main>
 
+<!-- Order detail drawer -->
+<div class="order-drawer-overlay" id="order-drawer-overlay" onclick="closeOrderDrawer(event)">
+  <aside class="order-drawer" id="order-drawer" role="dialog" aria-modal="true" aria-label="Order detail" onclick="event.stopPropagation()">
+    <div id="order-drawer-content"></div>
+  </aside>
+</div>
+
 <div id="footer"></div>
 <script src="/shared/shared-footer.js"></script>
 
@@ -251,10 +928,56 @@ const isEs = () => (localStorage.getItem('servi-lang') || 'es') === 'es';
 const TX = {
   es: {
     pageTitle: 'Mi cuenta',
-    navInfo: 'Información personal', navSecurity: 'Seguridad', navAddresses: 'Mis direcciones', navPayments: 'Métodos de pago', navDelete: 'Eliminar cuenta',
+    navOrders: 'Mis pedidos',
+    navInfo: 'Información personal', navSecurity: 'Seguridad', navAddresses: 'Mis direcciones', navFavorites: 'Favoritos', navPayments: 'Métodos de pago', navDelete: 'Eliminar cuenta',
+    titleOrders: 'Mis pedidos', subOrders: 'Da seguimiento a tus solicitudes y revisa tu historial.',
+    ordersNew: 'Nueva solicitud',
+    ordersSegActive: 'Activos', ordersSegPast: 'Historial',
+    ordersLoadError: 'No pudimos cargar tus pedidos.', ordersRetry: 'Reintentar',
+    ordersEmptyActiveTitle: 'No tienes pedidos activos',
+    ordersEmptyActiveText: 'Cuando solicites un servicio podrás darle seguimiento aquí en tiempo real.',
+    ordersEmptyPastTitle: 'Aún no tienes historial',
+    ordersEmptyPastText: 'Tus servicios completados y cancelados aparecerán aquí.',
+    ordersEmptyCta: 'Solicitar un servicio',
+    stRequested: 'Solicitud recibida', stPendingPay: 'Pendiente de pago', stPay3ds: 'Verificación de pago',
+    stCash: 'Pago en efectivo', stScheduled: 'Programado', stAuthorized: 'Autorizado',
+    stCompleted: 'Completado', stCanceled: 'Cancelado', stCanceledFee: 'Cancelado (con tarifa)', stDeclined: 'Rechazado', stRefunded: 'Reembolsado',
+    tlRequested: 'Solicitud recibida', tlMatched: 'Especialista asignado', tlAuthorized: 'Pago autorizado',
+    tlCompleted: 'Servicio completado', tlCanceledTitle: 'Pedido cancelado',
+    drawerTimeline: 'Estado del pedido', drawerService: 'Servicio', drawerSchedule: 'Fecha y hora',
+    drawerAddress: 'Dirección', drawerProvider: 'Especialista', drawerSummary: 'Resumen de pago',
+    asap: 'Lo antes posible', toBeAssigned: 'Por asignar', notProvided: 'No especificada',
+    priceProvider: 'Servicio', priceBooking: 'Tarifa de servicio', priceProcessing: 'Procesamiento',
+    priceVat: 'IVA', priceTotal: 'Total', priceTotalCharged: 'Total cobrado', priceTotalHold: 'Total autorizado',
+    priceEstimate: 'Estimado', priceCash: 'Pago en efectivo al especialista', priceTbd: 'Por confirmar',
+    actReorder: 'Pedir de nuevo', actPay: 'Completar pago', actHelp: '¿Necesitas ayuda?', actClose: 'Cerrar',
+    actEditAddress: 'Editar dirección', actReschedule: 'Reagendar', actCancel: 'Cancelar pedido',
+    actWithdraw: 'Retirar solicitud', actSave: 'Guardar',
+    cancelTitle: '¿Cancelar este pedido?', cancelReqTitle: '¿Retirar esta solicitud?',
+    cancelReqBody: 'Tu solicitud se retirará. Podrás solicitar el servicio de nuevo cuando quieras.',
+    cancelFreeBody: 'No se aplicará ningún cargo. Si tu pago estaba autorizado, se liberará la retención.',
+    cancelFeeBody1: 'Como faltan menos de 24 horas para el servicio, se aplicará una tarifa de',
+    cancelFeeBody2: ' (tarifa de servicio, no reembolsable). Se liberará el resto de la retención.',
+    cancelKeep: 'No, conservar', cancelConfirm: 'Sí, cancelar', cancelPayConfirm: 'Cancelar y pagar tarifa',
+    cancelCaptured: 'Esta orden ya fue cobrada. Contáctanos para solicitar un reembolso.',
+    cancelError: 'No pudimos cancelar el pedido. Intenta de nuevo.',
+    cancelDone: 'Pedido cancelado.', cancelDoneFee: 'Pedido cancelado. Se aplicó la tarifa de cancelación.',
+    addrRequired: 'Ingresa una dirección.', addrSaved: 'Dirección actualizada.',
+    actionError: 'Algo salió mal. Intenta de nuevo.',
+    reschedHint: 'Tu solicitud de cambio será revisada por nuestro equipo antes de confirmarse.',
+    reschedSubmit: 'Enviar solicitud', reschedRequired: 'Elige una nueva fecha y hora.',
+    reschedPast: 'La fecha debe ser en el futuro.',
+    reschedSubmitted: 'Solicitud de cambio enviada. Te confirmaremos pronto.',
+    createdOn: 'Solicitado el',
+    payGenerating: 'Generando enlace…',
+    payNotAvailable: 'Este pedido ya no está disponible para pago en línea. Contáctanos por WhatsApp si necesitas ayuda.',
+    payError: 'No pudimos abrir el pago. Intenta de nuevo.',
     titleInfo: 'Información personal', subInfo: 'Actualiza tu nombre, correo y teléfono.',
     titleSecurity: 'Seguridad', subSecurity: 'Información de acceso a tu cuenta.',
     titleAddresses: 'Mis direcciones', subAddresses: 'Guarda tus domicilios para agilizar tus solicitudes.',
+    titleFavorites: 'Favoritos', subFavorites: 'Tu lista de servicios frecuentes para volver a reservar rápido.',
+    browseFavorites: 'Explorar servicios', favoriteBook: 'Reservar', favoriteRemove: 'Quitar',
+    favoriteEmptyTitle: 'Aún no tienes favoritos', favoriteEmptyText: 'Guarda servicios desde Explorar para crear tu lista de uso frecuente.',
     titlePayments: 'Métodos de pago', subPayments: 'Gestiona tus tarjetas, Apple Pay y Google Pay guardados.',
     addPaymentTitle: 'Agregar método de pago', addPaymentSub: 'Agrega una tarjeta de crédito o débito. Apple Pay y Google Pay se muestran automáticamente si tu dispositivo los soporta.',
     addPaymentBtn: 'Guardar método', expires: 'Vence',
@@ -263,6 +986,38 @@ const TX = {
     lblName: 'Nombre completo', lblEmail: 'Correo electrónico', lblPhone: 'Teléfono',
     securityInfo: 'Tu cuenta usa inicio de sesión con teléfono o Google. No se requiere contraseña.',
     securityProvider: 'Método de acceso:',
+    security2StepTitle: 'Verificación en dos pasos',
+    security2StepSub: 'Confirma teléfono y correo para proteger solicitudes y cambios importantes.',
+    securityComplete: 'Completo',
+    securityPending: 'Pendiente',
+    securityVerified: 'Verificado',
+    securityNotVerified: 'Sin verificar',
+    securityPhoneTitle: 'Teléfono verificado',
+    securityPhoneSub: 'Tu número se confirma con código SMS.',
+    securityEmailTitle: 'Correo verificado',
+    securityEmailSubVerified: 'Tu correo está listo para confirmar solicitudes.',
+    securityEmailSubUnverified: 'Usaremos este correo para confirmar solicitudes.',
+    securityEmailSubMissing: 'Agrega un correo para completar la verificación.',
+    securitySocialTitle: 'Apps sociales conectadas',
+    securitySocialSub: 'Administra accesos externos que pueden iniciar sesión en tu cuenta.',
+    securityGoogleTitle: 'Google',
+    securityGoogleConnected: 'Conectado a tu cuenta SERVI.',
+    securityGoogleDisconnected: 'Conecta Google para iniciar sesión más rápido.',
+    securityConnectGoogle: 'Conectar Google',
+    securityConnectingGoogle: 'Conectando...',
+    securityGoogleConnectedNote: 'Google conectado correctamente.',
+    securityGoogleConflict: 'Ese Google ya está asociado a otra cuenta.',
+    securityGoogleFailed: 'No pudimos conectar Google. Intenta de nuevo.',
+    emailWarnTitle: 'Verifica tu correo',
+    emailWarnText: 'Verifica tu correo para proteger tu cuenta y confirmar solicitudes. Si no ves el enlace, revisa spam o correo no deseado.',
+    emailWarnNoEmail: 'Agrega un correo para proteger tu cuenta y confirmar solicitudes. Si no ves el enlace, revisa spam o correo no deseado.',
+    emailWarnAction: 'Verificar correo',
+    emailWarnAddAction: 'Agregar correo',
+    emailWarnSending: 'Enviando...',
+    emailWarnSent: 'Enlace enviado. Revisa tu correo y también spam o correo no deseado.',
+    emailWarnFailed: 'No pudimos enviar el enlace. Intenta de nuevo.',
+    profileEdit: 'Modificar',
+    profileMissing: 'Sin agregar',
     lblAddrLabel: 'Etiqueta (opcional)', lblAddrStreet: 'Calle y número *', lblAddrCity: 'Ciudad', lblAddrState: 'Estado', lblAddrPostal: 'Código postal', lblAddrDefault: 'Predeterminada',
     saveBtn: 'Guardar cambios', saving: 'Guardando...', saved: 'Cambios guardados.',
     addAddr: '+ Agregar', saveAddr: 'Guardar dirección', cancel: 'Cancelar',
@@ -271,6 +1026,16 @@ const TX = {
     confirmDeleteTitle: 'Eliminar cuenta', confirmDeleteBody: 'Escribe ELIMINAR para confirmar. Esta acción no se puede deshacer.',
     confirmDeletePlaceholder: 'ELIMINAR', confirmDeleteBtn: 'Confirmar eliminación', cancelBtn: 'Cancelar',
     errNoStreet: 'La calle es obligatoria.',
+    addrLocationBtn: 'Permitir acceso a mi ubicación',
+    addrLocating: 'Permite el acceso a tu ubicación para completar tu dirección automáticamente.',
+    addrResolving: 'Buscando tu dirección...',
+    addrUpdated: 'Dirección actualizada.',
+    addrUnsupported: 'El acceso a ubicación no está disponible en este navegador.',
+    addrPermissionDenied: 'No se permitió el acceso a tu ubicación. También puedes escribir tu dirección manualmente.',
+    addrLocationError: 'No pudimos obtener tu ubicación. También puedes escribir tu dirección manualmente.',
+    addrCurrentLocation: 'Ubicación actual',
+    phAddrStateSelect: 'Selecciona un estado',
+    phAddrCitySelect: 'Selecciona una ciudad',
     errConflict: 'Ese correo o teléfono ya está en uso.',
     errPhoneExists: 'Este número de teléfono ya está registrado con otra cuenta.',
     errGeneric: 'Ocurrió un error. Inténtalo de nuevo.',
@@ -279,10 +1044,56 @@ const TX = {
   },
   en: {
     pageTitle: 'My account',
-    navInfo: 'Personal info', navSecurity: 'Security', navAddresses: 'My addresses', navPayments: 'Payment methods', navDelete: 'Delete account',
+    navOrders: 'My orders',
+    navInfo: 'Personal info', navSecurity: 'Security', navAddresses: 'My addresses', navFavorites: 'Favorites', navPayments: 'Payment methods', navDelete: 'Delete account',
+    titleOrders: 'My orders', subOrders: 'Track your requests and browse your history.',
+    ordersNew: 'New request',
+    ordersSegActive: 'Active', ordersSegPast: 'History',
+    ordersLoadError: 'We could not load your orders.', ordersRetry: 'Retry',
+    ordersEmptyActiveTitle: 'No active orders',
+    ordersEmptyActiveText: 'When you request a service, you can track it here in real time.',
+    ordersEmptyPastTitle: 'No history yet',
+    ordersEmptyPastText: 'Your completed and canceled services will show up here.',
+    ordersEmptyCta: 'Request a service',
+    stRequested: 'Request received', stPendingPay: 'Payment pending', stPay3ds: 'Payment verification',
+    stCash: 'Cash payment', stScheduled: 'Scheduled', stAuthorized: 'Authorized',
+    stCompleted: 'Completed', stCanceled: 'Canceled', stCanceledFee: 'Canceled (fee applied)', stDeclined: 'Declined', stRefunded: 'Refunded',
+    tlRequested: 'Request received', tlMatched: 'Specialist assigned', tlAuthorized: 'Payment authorized',
+    tlCompleted: 'Service completed', tlCanceledTitle: 'Order canceled',
+    drawerTimeline: 'Order status', drawerService: 'Service', drawerSchedule: 'Date & time',
+    drawerAddress: 'Address', drawerProvider: 'Specialist', drawerSummary: 'Payment summary',
+    asap: 'As soon as possible', toBeAssigned: 'To be assigned', notProvided: 'Not provided',
+    priceProvider: 'Service', priceBooking: 'Service fee', priceProcessing: 'Processing',
+    priceVat: 'VAT', priceTotal: 'Total', priceTotalCharged: 'Total charged', priceTotalHold: 'Total authorized',
+    priceEstimate: 'Estimate', priceCash: 'Cash payment to specialist', priceTbd: 'To be confirmed',
+    actReorder: 'Order again', actPay: 'Complete payment', actHelp: 'Need help?', actClose: 'Close',
+    actEditAddress: 'Edit address', actReschedule: 'Reschedule', actCancel: 'Cancel order',
+    actWithdraw: 'Withdraw request', actSave: 'Save',
+    cancelTitle: 'Cancel this order?', cancelReqTitle: 'Withdraw this request?',
+    cancelReqBody: 'Your request will be withdrawn. You can request the service again anytime.',
+    cancelFreeBody: 'No charge will apply. If your payment was authorized, the hold will be released.',
+    cancelFeeBody1: 'Since the service is less than 24 hours away, a fee of',
+    cancelFeeBody2: ' (service fee, non-refundable) will apply. The rest of the hold is released.',
+    cancelKeep: 'No, keep it', cancelConfirm: 'Yes, cancel', cancelPayConfirm: 'Cancel & pay fee',
+    cancelCaptured: 'This order was already charged. Contact us to request a refund.',
+    cancelError: 'We could not cancel the order. Please try again.',
+    cancelDone: 'Order canceled.', cancelDoneFee: 'Order canceled. The cancellation fee was applied.',
+    addrRequired: 'Enter an address.', addrSaved: 'Address updated.',
+    actionError: 'Something went wrong. Please try again.',
+    reschedHint: 'Your change request will be reviewed by our team before it is confirmed.',
+    reschedSubmit: 'Send request', reschedRequired: 'Choose a new date and time.',
+    reschedPast: 'The date must be in the future.',
+    reschedSubmitted: 'Change request sent. We will confirm shortly.',
+    createdOn: 'Requested on',
+    payGenerating: 'Generating link…',
+    payNotAvailable: 'This order is no longer available for online payment. Contact us on WhatsApp if you need help.',
+    payError: 'We could not open the payment. Please try again.',
     titleInfo: 'Personal information', subInfo: 'Update your name, email, and phone.',
     titleSecurity: 'Security', subSecurity: 'Your account access information.',
     titleAddresses: 'My addresses', subAddresses: 'Save your addresses to speed up your requests.',
+    titleFavorites: 'Favorites', subFavorites: 'Your frequent service list for quick rebooking.',
+    browseFavorites: 'Browse services', favoriteBook: 'Book', favoriteRemove: 'Remove',
+    favoriteEmptyTitle: 'No favorites yet', favoriteEmptyText: 'Save services from Browse to build your go-to list.',
     titlePayments: 'Payment methods', subPayments: 'Manage your saved cards, Apple Pay, and Google Pay.',
     addPaymentTitle: 'Add payment method', addPaymentSub: 'Add a credit or debit card. Apple Pay and Google Pay appear automatically if your device supports them.',
     addPaymentBtn: 'Save method', expires: 'Expires',
@@ -291,6 +1102,38 @@ const TX = {
     lblName: 'Full name', lblEmail: 'Email', lblPhone: 'Phone',
     securityInfo: 'Your account uses phone or Google sign-in. No password required.',
     securityProvider: 'Sign-in method:',
+    security2StepTitle: 'Two-step verification',
+    security2StepSub: 'Confirm phone and email to protect requests and important changes.',
+    securityComplete: 'Complete',
+    securityPending: 'Pending',
+    securityVerified: 'Verified',
+    securityNotVerified: 'Not verified',
+    securityPhoneTitle: 'Verified phone',
+    securityPhoneSub: 'Your number is confirmed with an SMS code.',
+    securityEmailTitle: 'Verified email',
+    securityEmailSubVerified: 'Your email is ready to confirm requests.',
+    securityEmailSubUnverified: 'We use this email to confirm requests.',
+    securityEmailSubMissing: 'Add an email to complete verification.',
+    securitySocialTitle: 'Connected social apps',
+    securitySocialSub: 'Manage external access that can sign in to your account.',
+    securityGoogleTitle: 'Google',
+    securityGoogleConnected: 'Connected to your SERVI account.',
+    securityGoogleDisconnected: 'Connect Google to sign in faster.',
+    securityConnectGoogle: 'Connect Google',
+    securityConnectingGoogle: 'Connecting...',
+    securityGoogleConnectedNote: 'Google connected successfully.',
+    securityGoogleConflict: 'That Google account is already linked to another account.',
+    securityGoogleFailed: 'We could not connect Google. Try again.',
+    emailWarnTitle: 'Verify your email',
+    emailWarnText: 'Verify your email to protect your account and confirm requests. If you do not see the link, check your spam or junk folder.',
+    emailWarnNoEmail: 'Add an email to protect your account and confirm requests. If you do not see the link, check your spam or junk folder.',
+    emailWarnAction: 'Verify email',
+    emailWarnAddAction: 'Add email',
+    emailWarnSending: 'Sending...',
+    emailWarnSent: 'Link sent. Check your email and your spam or junk folder.',
+    emailWarnFailed: 'We could not send the link. Try again.',
+    profileEdit: 'Modify',
+    profileMissing: 'Not added',
     lblAddrLabel: 'Label (optional)', lblAddrStreet: 'Street and number *', lblAddrCity: 'City', lblAddrState: 'State', lblAddrPostal: 'Postal code', lblAddrDefault: 'Set as default',
     saveBtn: 'Save changes', saving: 'Saving...', saved: 'Changes saved.',
     addAddr: '+ Add', saveAddr: 'Save address', cancel: 'Cancel',
@@ -299,6 +1142,16 @@ const TX = {
     confirmDeleteTitle: 'Delete account', confirmDeleteBody: 'Type DELETE to confirm. This action cannot be undone.',
     confirmDeletePlaceholder: 'DELETE', confirmDeleteBtn: 'Confirm deletion', cancelBtn: 'Cancel',
     errNoStreet: 'Street is required.',
+    addrLocationBtn: 'Allow access to my location',
+    addrLocating: 'Allow access to your location to complete your address automatically.',
+    addrResolving: 'Finding your address...',
+    addrUpdated: 'Address updated.',
+    addrUnsupported: 'Location access is not available in this browser.',
+    addrPermissionDenied: 'Location access was denied. You can still enter your address manually.',
+    addrLocationError: 'Could not get your location. You can still enter your address manually.',
+    addrCurrentLocation: 'Current location',
+    phAddrStateSelect: 'Select a state',
+    phAddrCitySelect: 'Select a city',
     errConflict: 'That email or phone is already in use.',
     errPhoneExists: 'This phone number is already registered to another account.',
     errGeneric: 'An error occurred. Please try again.',
@@ -307,6 +1160,20 @@ const TX = {
   }
 };
 function tr() { return TX[isEs() ? 'es' : 'en']; }
+
+function escapeHtml(str) {
+  return String(str || '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  }[ch]));
+}
+
+// Mexico state/city options, geolocation, and the structured address field set
+// now live in the shared module (window.ServiAddress, /shared/address-form.js),
+// reused by the service.html booking panel.
 
 // ─── Auth guard ───────────────────────────────────────────────────────────────
 function authHeaders() {
@@ -319,22 +1186,24 @@ function guardAuth() {
 }
 
 // ─── Section navigation ───────────────────────────────────────────────────────
-const SECTIONS = ['info', 'security', 'addresses', 'payments', 'delete'];
-let activeSection = 'info';
+const SECTIONS = ['orders', 'info', 'security', 'addresses', 'favorites', 'payments', 'delete'];
+let activeSection = 'orders';
 
 function buildNav() {
   const t = tr();
   const items = [
+    { id: 'orders',    label: t.navOrders,    icon: '🧾', danger: false },
     { id: 'info',      label: t.navInfo,      icon: '👤', danger: false },
     { id: 'security',  label: t.navSecurity,   icon: '🔒', danger: false },
     { id: 'addresses', label: t.navAddresses,  icon: '📍', danger: false },
+    { id: 'favorites', label: t.navFavorites,  icon: '❤️', danger: false },
     { id: 'payments',  label: t.navPayments,   icon: '💳', danger: false },
     { id: 'delete',    label: t.navDelete,     icon: '🗑',  danger: true  },
   ];
   const html = items.map(item => `
     <button class="account-sidebar-item ${item.danger ? 'danger' : ''} ${item.id === activeSection ? 'active' : ''}"
       onclick="switchSection('${item.id}')">
-      <span>${item.icon}</span><span>${item.label}</span>
+      <span class="account-sidebar-icon">${item.icon}</span><span>${item.label}</span>
     </button>
   `).join('');
   document.getElementById('sidebar').innerHTML = html;
@@ -355,20 +1224,166 @@ function switchSection(id) {
     document.getElementById('section-' + s)?.classList.toggle('active', s === id);
   });
   buildNav();
+  if (id === 'orders' && !_ordersLoaded) loadOrders();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 // ─── Pre-fill personal info ───────────────────────────────────────────────────
 let _originalPhone = null;
 let _originalEmail = null;
+let _originalName  = null;
+let _profileEditMode = false;
+let _accountUserBackendConfirmed = false;
+
+function setProfileEditMode(editing) {
+  _profileEditMode = !!editing;
+  const card = document.getElementById('profile-card');
+  if (card) card.classList.toggle('is-editing', _profileEditMode);
+}
+
+function emailVerifiedBadge(label, verified) {
+  if (verified) {
+    return '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><path d="M5 12.5l4.2 4.2L19 7" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>' + escapeHtml(label);
+  }
+  return escapeHtml(label);
+}
+
+function renderProfileView() {
+  const t = tr();
+  const u = window.__user || {};
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+  const setValue = (id, val) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const hasValue = !!String(val || '').trim();
+    el.textContent = hasValue ? val : t.profileMissing;
+    el.classList.toggle('muted', !hasValue);
+  };
+  set('profile-lbl-name', t.lblName);
+  set('profile-lbl-phone', t.lblPhone);
+  set('profile-lbl-email', t.lblEmail);
+  set('profile-edit-btn', t.profileEdit);
+  set('profile-cancel-btn', t.cancel);
+  setValue('profile-name', u.name);
+  setValue('profile-phone', u.phone);
+  setValue('profile-email', u.email);
+
+  const status = document.getElementById('profile-email-status');
+  if (status) {
+    const verified = u.email_verified === true && _accountUserBackendConfirmed;
+    status.className = 'verified-badge' + (verified ? '' : ' pending');
+    status.innerHTML = emailVerifiedBadge(verified ? t.securityVerified : t.securityNotVerified, verified);
+  }
+}
+
+function enterProfileEditMode() {
+  const errEl = document.getElementById('info-error');
+  const sucEl = document.getElementById('info-success');
+  if (errEl) errEl.style.display = 'none';
+  if (sucEl) sucEl.style.display = 'none';
+  fillProfileForm();
+  setProfileEditMode(true);
+  const input = document.getElementById('info-name');
+  if (input) input.focus();
+}
+
+function cancelProfileEdit() {
+  const errEl = document.getElementById('info-error');
+  const sucEl = document.getElementById('info-success');
+  if (errEl) errEl.style.display = 'none';
+  if (sucEl) sucEl.style.display = 'none';
+  fillProfileForm();
+  setProfileEditMode(false);
+}
+
 function fillProfileForm() {
   const u = window.__user;
   if (!u) return;
   _originalPhone = u.phone || '';
   _originalEmail = u.email || '';
+  _originalName  = u.name  || '';
   document.getElementById('info-name').value  = u.name  || '';
   document.getElementById('info-email').value = u.email || '';
   document.getElementById('info-phone').value = u.phone || '';
+  renderProfileView();
+}
+
+function renderEmailWarning(statusText) {
+  const t = tr();
+  const u = window.__user;
+  const banner = document.getElementById('email-verify-warning');
+  const title = document.getElementById('email-warning-title');
+  const text = document.getElementById('email-warning-text');
+  const action = document.getElementById('email-warning-action');
+  if (!banner || !title || !text || !action) return;
+
+  const needsEmail = !!u && !(u.email_verified === true && _accountUserBackendConfirmed);
+  banner.classList.toggle('visible', needsEmail);
+  if (!needsEmail) return;
+
+  const hasEmail = !!(u.email || '').trim();
+  title.textContent = t.emailWarnTitle;
+  text.textContent = statusText || (hasEmail ? t.emailWarnText : t.emailWarnNoEmail);
+  action.textContent = hasEmail ? t.emailWarnAction : t.emailWarnAddAction;
+  action.disabled = false;
+}
+
+async function handleEmailWarningAction() {
+  const t = tr();
+  const u = window.__user;
+  const action = document.getElementById('email-warning-action');
+  if (!u) return;
+  if (!u.email) {
+    switchSection('info');
+    const input = document.getElementById('info-email');
+    if (input) input.focus();
+    return;
+  }
+  if (!window.__sendEmailVerification) return;
+  try {
+    if (action) { action.disabled = true; action.textContent = t.emailWarnSending; }
+    localStorage.setItem('servi_email_verification_mode', '1');
+    localStorage.setItem('servi_email_link_target', u.email);
+    const sent = await window.__sendEmailVerification(u.email);
+    if (sent) {
+      renderEmailWarning(t.emailWarnSent);
+    } else {
+      localStorage.removeItem('servi_email_verification_mode');
+      localStorage.removeItem('servi_email_link_target');
+      renderEmailWarning(t.emailWarnFailed);
+    }
+  } catch (_) {
+    localStorage.removeItem('servi_email_verification_mode');
+    localStorage.removeItem('servi_email_link_target');
+    renderEmailWarning(t.emailWarnFailed);
+  }
+}
+
+async function refreshAccountUser() {
+  try {
+    const res = await fetch(API + '/api/auth/me', { headers: authHeaders() });
+    if (!res.ok) return null;
+    const d = await res.json();
+    if (d.user) {
+      _accountUserBackendConfirmed = true;
+      window.__user = Object.assign(window.__user || {}, d.user);
+      try {
+        const raw = localStorage.getItem('servi_user_session');
+        if (raw) {
+          const sess = JSON.parse(raw);
+          sess.user = Object.assign(sess.user || {}, d.user);
+          localStorage.setItem('servi_user_session', JSON.stringify(sess));
+        }
+      } catch {}
+      fillProfileForm();
+      renderEmailWarning();
+      renderSecurityVerification();
+      renderConnectedSocialApps();
+    }
+    return d.user || null;
+  } catch (_) {
+    return null;
+  }
 }
 
 // ─── Save profile ─────────────────────────────────────────────────────────────
@@ -387,9 +1402,71 @@ async function saveProfile() {
 
   btn.disabled = true; lbl.textContent = t.saving;
   try {
+    const nameChanged  = name  !== (_originalName  || '');
+    const emailChangedReq = email !== (_originalEmail || '');
+    const phoneChanged = phone !== (_originalPhone || '');
+    if (!nameChanged && !emailChangedReq && !phoneChanged) {
+      btn.disabled = false; lbl.textContent = t.saveBtn;
+      fillProfileForm();
+      setProfileEditMode(false);
+      return;
+    }
+    const addingFirstEmail = !_originalEmail && emailChangedReq && !!email;
+    if (addingFirstEmail && !phoneChanged) {
+      if (!email.includes('@')) {
+        errEl.textContent = t.errGeneric;
+        errEl.style.display = 'block';
+        return;
+      }
+
+      if (nameChanged) {
+        const nameRes = await fetch(API + '/api/auth/me', {
+          method: 'PATCH',
+          headers: authHeaders(),
+          body: JSON.stringify({ name })
+        });
+        const nameData = await nameRes.json().catch(() => ({}));
+        if (!nameRes.ok) {
+          errEl.textContent = nameData.message || t.errGeneric;
+          errEl.style.display = 'block';
+          return;
+        }
+        if (window.__user) window.__user.name = nameData.user?.name || name;
+        try {
+          const raw = localStorage.getItem('servi_user_session');
+          if (raw) {
+            const sess = JSON.parse(raw);
+            if (sess.user) sess.user.name = nameData.user?.name || name;
+            localStorage.setItem('servi_user_session', JSON.stringify(sess));
+          }
+        } catch {}
+        _originalName = nameData.user?.name || name;
+        renderProfileView();
+      }
+
+      localStorage.setItem('servi_email_verification_mode', '1');
+      localStorage.setItem('servi_email_link_target', email);
+      const sent = window.__sendEmailVerification
+        ? await window.__sendEmailVerification(email)
+        : false;
+      if (!sent) {
+        localStorage.removeItem('servi_email_verification_mode');
+        localStorage.removeItem('servi_email_link_target');
+        errEl.textContent = t.emailWarnFailed;
+        errEl.style.display = 'block';
+        return;
+      }
+      document.getElementById('info-success-text').textContent = t.emailWarnSent;
+      sucEl.style.display = 'flex';
+      renderEmailWarning(t.emailWarnSent);
+      fillProfileForm();
+      setProfileEditMode(false);
+      setTimeout(() => { sucEl.style.display = 'none'; }, 5000);
+      return;
+    }
+
     let reauthToken = null;
-    const phoneChanged = phone && phone !== (_originalPhone || '');
-    if (phoneChanged) {
+    if (emailChangedReq || phoneChanged) {
       try {
         reauthToken = await reauthenticate();
       } catch (err) {
@@ -402,9 +1479,13 @@ async function saveProfile() {
     }
     const headers = { ...authHeaders() };
     if (reauthToken) headers['X-Firebase-Reauth-Token'] = reauthToken;
+    const body = {};
+    if (nameChanged)     body.name  = name;
+    if (emailChangedReq) body.email = email;
+    if (phoneChanged)    body.phone = phone;
     const res = await fetch(API + '/api/auth/me', {
       method: 'PATCH', headers,
-      body: JSON.stringify({ name: name || undefined, email: email || undefined, phone: phone || undefined })
+      body: JSON.stringify(body)
     });
     const d = await res.json();
     if (!res.ok) {
@@ -414,12 +1495,15 @@ async function saveProfile() {
       errEl.style.display = 'block';
       return;
     }
+    const savedEmailChanged = email && email !== (_originalEmail || '');
     // Update in-memory session
+    _accountUserBackendConfirmed = true;
     if (window.__user) {
       window.__user.name  = d.user.name  || window.__user.name;
       window.__user.email = d.user.email || window.__user.email;
       window.__user.phone = d.user.phone || window.__user.phone;
       window.__user.email_verified = d.user.email_verified;
+      window.__user.phone_verified = d.user.phone_verified;
     }
     try {
       const raw = localStorage.getItem('servi_user_session');
@@ -430,17 +1514,26 @@ async function saveProfile() {
           sess.user.email = d.user.email;
           sess.user.phone = d.user.phone;
           sess.user.email_verified = d.user.email_verified;
+          sess.user.phone_verified = d.user.phone_verified;
         }
         localStorage.setItem('servi_user_session', JSON.stringify(sess));
       }
     } catch {}
     if (window.buildNavbar) window.buildNavbar();
+    _originalName = window.__user?.name || '';
+    _originalEmail = window.__user?.email || '';
+    _originalPhone = window.__user?.phone || '';
+    renderProfileView();
+    renderEmailWarning();
+    renderSecurityVerification();
+    renderConnectedSocialApps();
 
     // If email was changed and is now unverified, prompt user to verify
-    const emailChanged = email && email !== (_originalEmail || '');
-    if (emailChanged && !d.user.email_verified) {
+    if (savedEmailChanged && !d.user.email_verified) {
       document.getElementById('info-success-text').textContent =
-        isEs() ? 'Cambios guardados. Por favor verifica tu nuevo correo.' : 'Changes saved. Please verify your new email.';
+        isEs()
+          ? 'Cambios guardados. Verifica tu nuevo correo. Si no ves el enlace, revisa spam o correo no deseado.'
+          : 'Changes saved. Please verify your new email. If you do not see the link, check your spam or junk folder.';
       sucEl.style.display = 'flex';
       setTimeout(() => { sucEl.style.display = 'none'; }, 5000);
       // Try to send verification email via Firebase
@@ -467,6 +1560,7 @@ async function saveProfile() {
       sucEl.style.display = 'flex';
       setTimeout(() => { sucEl.style.display = 'none'; }, 3000);
     }
+    setProfileEditMode(false);
   } catch {
     errEl.textContent = t.errGeneric;
     errEl.style.display = 'block';
@@ -475,17 +1569,207 @@ async function saveProfile() {
   }
 }
 
-// ─── Security section: show sign-in method info ─────────────────────────────
+// ─── Security section ────────────────────────────────────────────────────────
+function securityStatus(label, ok) {
+  return `<span class="security-status ${ok ? 'ok' : 'warn'}">${escapeHtml(label)}</span>`;
+}
+
+function setSecurityMessage(kind, target, message) {
+  const note = document.getElementById(`security-${target}-note`);
+  const error = document.getElementById(`security-${target}-error`);
+  if (note) { note.textContent = ''; note.classList.remove('visible'); }
+  if (error) { error.textContent = ''; error.classList.remove('visible'); }
+  const el = kind === 'error' ? error : note;
+  if (el && message) {
+    el.textContent = message;
+    el.classList.add('visible');
+  }
+}
+
+function getFirebaseProviderIds() {
+  try {
+    const current = window.firebase?.auth?.().currentUser;
+    return (current?.providerData || []).map(p => p.providerId).filter(Boolean);
+  } catch (_) {
+    return [];
+  }
+}
+
+function renderSecurityVerification() {
+  const t = tr();
+  const u = window.__user || {};
+  const phoneVerified = u.phone_verified === true;
+  const emailVerified = u.email_verified === true;
+  const hasEmail = !!(u.email || '').trim();
+  const complete = phoneVerified && emailVerified;
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+
+  set('security-2step-title', t.security2StepTitle);
+  set('security-2step-sub', t.security2StepSub);
+  set('security-phone-title', t.securityPhoneTitle);
+  set('security-phone-sub', t.securityPhoneSub);
+  set('security-email-title', t.securityEmailTitle);
+  set('security-email-sub', emailVerified ? t.securityEmailSubVerified : (hasEmail ? t.securityEmailSubUnverified : t.securityEmailSubMissing));
+
+  const overall = document.getElementById('security-2step-status');
+  if (overall) {
+    overall.className = `security-status ${complete ? 'ok' : 'warn'}`;
+    overall.textContent = complete ? t.securityComplete : t.securityPending;
+  }
+
+  const phoneStatus = document.getElementById('security-phone-status');
+  if (phoneStatus) {
+    phoneStatus.className = `security-status ${phoneVerified ? 'ok' : 'warn'}`;
+    phoneStatus.textContent = phoneVerified ? t.securityVerified : t.securityNotVerified;
+  }
+
+  const actionWrap = document.getElementById('security-email-action-wrap');
+  if (actionWrap) {
+    if (emailVerified) {
+      actionWrap.innerHTML = securityStatus(t.securityVerified, true);
+    } else {
+      actionWrap.innerHTML = `<button class="btn-outline" id="security-email-action" onclick="handleSecurityEmailAction()">${hasEmail ? t.emailWarnAction : t.emailWarnAddAction}</button>`;
+    }
+  }
+}
+
+function renderConnectedSocialApps() {
+  const t = tr();
+  const list = document.getElementById('security-social-list');
+  if (!list) return;
+  const u = window.__user || {};
+  const providerIds = getFirebaseProviderIds();
+  const authProvider = String(u.auth_provider || '').toLowerCase();
+  const googleConnected = providerIds.includes('google.com') || authProvider === 'google.com' || authProvider === 'google';
+
+  list.innerHTML = `
+    <div class="security-row">
+      <span class="security-row-icon">G</span>
+      <div>
+        <div class="security-row-title">${t.securityGoogleTitle}</div>
+        <div class="security-row-sub">${googleConnected ? t.securityGoogleConnected : t.securityGoogleDisconnected}</div>
+      </div>
+      <div class="security-row-action">
+        ${googleConnected
+          ? securityStatus(t.securityVerified, true)
+          : `<button class="btn-outline" id="connect-google-btn" onclick="connectGoogleAccount()">${t.securityConnectGoogle}</button>`}
+      </div>
+    </div>`;
+}
+
+async function handleSecurityEmailAction() {
+  const t = tr();
+  const u = window.__user;
+  const action = document.getElementById('security-email-action');
+  setSecurityMessage('note', 'email', '');
+  if (!u) return;
+  if (!u.email) {
+    switchSection('info');
+    const input = document.getElementById('info-email');
+    if (input) input.focus();
+    return;
+  }
+  if (!window.__sendEmailVerification) {
+    setSecurityMessage('error', 'email', t.emailWarnFailed);
+    return;
+  }
+  try {
+    if (action) { action.disabled = true; action.textContent = t.emailWarnSending; }
+    localStorage.setItem('servi_email_verification_mode', '1');
+    localStorage.setItem('servi_email_link_target', u.email);
+    const sent = await window.__sendEmailVerification(u.email);
+    if (sent) {
+      setSecurityMessage('note', 'email', t.emailWarnSent);
+      renderEmailWarning(t.emailWarnSent);
+    } else {
+      localStorage.removeItem('servi_email_verification_mode');
+      localStorage.removeItem('servi_email_link_target');
+      setSecurityMessage('error', 'email', t.emailWarnFailed);
+    }
+  } catch (_) {
+    localStorage.removeItem('servi_email_verification_mode');
+    localStorage.removeItem('servi_email_link_target');
+    setSecurityMessage('error', 'email', t.emailWarnFailed);
+  } finally {
+    renderSecurityVerification();
+  }
+}
+
+async function connectGoogleAccount() {
+  const t = tr();
+  const btn = document.getElementById('connect-google-btn');
+  setSecurityMessage('note', 'social', '');
+  try {
+    const firebase = window.firebase;
+    const auth = firebase ? firebase.auth() : null;
+    if (!auth || !auth.currentUser) throw new Error('no_firebase_user');
+    if (btn) { btn.disabled = true; btn.textContent = t.securityConnectingGoogle; }
+
+    const provider = new firebase.auth.GoogleAuthProvider();
+    provider.addScope('email');
+    provider.addScope('profile');
+
+    try {
+      await auth.currentUser.linkWithPopup(provider);
+    } catch (err) {
+      if (err && err.code === 'auth/provider-already-linked') {
+        // Already linked in Firebase; continue syncing SERVI state.
+      } else if (err && err.code === 'auth/credential-already-in-use') {
+        setSecurityMessage('error', 'social', t.securityGoogleConflict);
+        return;
+      } else {
+        throw err;
+      }
+    }
+
+    await auth.currentUser.reload();
+    const current = auth.currentUser;
+    const googleEmail = current.email ? current.email.toLowerCase().trim() : '';
+    if (googleEmail) {
+      const idToken = await current.getIdToken(true);
+      const addRes = await fetch(API + '/api/auth/add-email', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ email: googleEmail, firebase_id_token: idToken })
+      });
+      const addData = await addRes.json().catch(() => ({}));
+      if (!addRes.ok) {
+        try { await current.unlink('google.com'); } catch (_) {}
+        if (addRes.status === 409) setSecurityMessage('error', 'social', t.securityGoogleConflict);
+        else setSecurityMessage('error', 'social', addData.message || t.securityGoogleFailed);
+        return;
+      }
+    }
+
+    await refreshAccountUser();
+    setSecurityMessage('note', 'social', t.securityGoogleConnectedNote);
+  } catch (err) {
+    console.error('[account] Google connect failed:', err);
+    setSecurityMessage('error', 'social', t.securityGoogleFailed);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = t.securityConnectGoogle; }
+    renderConnectedSocialApps();
+    renderSecurityVerification();
+  }
+}
+
 async function initSecuritySection() {
   const t = tr();
   const infoText = document.getElementById('security-info-text');
   const providerInfo = document.getElementById('security-provider-info');
   if (infoText) infoText.textContent = t.securityInfo;
+  renderSecurityVerification();
+  renderConnectedSocialApps();
 
   try {
     const res = await fetch(API + '/api/auth/me', { headers: authHeaders() });
     if (!res.ok) return;
     const d = await res.json();
+    if (d.user) {
+      window.__user = Object.assign(window.__user || {}, d.user);
+      renderSecurityVerification();
+      renderConnectedSocialApps();
+    }
     const provider = d.user?.auth_provider;
     if (providerInfo && provider) {
       const providerLabel = provider === 'google.com' ? 'Google'
@@ -509,6 +1793,9 @@ async function loadAddresses() {
   } catch {}
 }
 
+const ACC_ADDR_PREFIX = 'accaddr';
+let _editingAddressId = null;
+
 function renderAddresses() {
   const t = tr();
   const list = document.getElementById('address-list');
@@ -516,34 +1803,68 @@ function renderAddresses() {
     list.innerHTML = `<p style="font-size:14px;color:#aaa;text-align:center;padding:20px 0">${isEs() ? 'No tienes direcciones guardadas.' : 'No saved addresses yet.'}</p>`;
     return;
   }
-  list.innerHTML = _addresses.map(a => `
+  list.innerHTML = _addresses.map(a => {
+    const detail = (window.ServiAddress && window.ServiAddress.format)
+      ? window.ServiAddress.format(a)
+      : `${a.street}${a.city ? ', ' + a.city : ''}${a.state ? ', ' + a.state : ''}${a.postal_code ? ' ' + a.postal_code : ''}`;
+    return `
     <div class="address-card ${a.is_default ? 'default' : ''}">
       <div style="flex:1">
         <div class="address-label">
-          ${a.label ? `<span>${a.label}</span>` : ''}
+          ${a.label ? `<span>${escapeHtml(a.label)}</span>` : ''}
           ${a.is_default ? `<span class="badge-default">${t.defaultBadge}</span>` : ''}
         </div>
-        <div class="address-detail">${a.street}${a.city ? ', ' + a.city : ''}${a.state ? ', ' + a.state : ''}${a.postal_code ? ' ' + a.postal_code : ''}</div>
+        <div class="address-detail">${escapeHtml(detail)}</div>
       </div>
       <div class="address-actions">
+        <button class="addr-btn default-btn" onclick="editAddress('${a.id}')">${t.editBtn || (isEs() ? 'Editar' : 'Edit')}</button>
         ${!a.is_default ? `<button class="addr-btn default-btn" onclick="setDefaultAddress('${a.id}')">${t.setDefaultBtn}</button>` : ''}
         <button class="addr-btn delete-btn" onclick="deleteAddress('${a.id}')">${t.deleteAddrBtn}</button>
       </div>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
+}
+
+// Render the shared structured field set into the add/edit form container.
+function mountAddressFields(address) {
+  const wrap = document.getElementById('acc-addr-fields');
+  if (!wrap || !window.ServiAddress) return;
+  wrap.innerHTML = window.ServiAddress.fieldsHTML(ACC_ADDR_PREFIX, { showLabel: true, showDefault: true });
+  window.ServiAddress.init(ACC_ADDR_PREFIX, { address: address || null });
+}
+
+function openAddForm(address) {
+  const form = document.getElementById('add-addr-form');
+  _editingAddressId = address && address.id ? address.id : null;
+  mountAddressFields(address);
+  form.classList.add('open');
+  document.getElementById('add-addr-btn').textContent = tr().cancel;
+  document.getElementById('addr-error').style.display = 'none';
+  const titleEl = document.getElementById('addr-save-label');
+  if (titleEl) titleEl.textContent = tr().saveAddr;
+}
+
+function closeAddForm() {
+  const form = document.getElementById('add-addr-form');
+  form.classList.remove('open');
+  _editingAddressId = null;
+  document.getElementById('add-addr-btn').textContent = tr().addAddr;
+  document.getElementById('addr-error').style.display = 'none';
+  const wrap = document.getElementById('acc-addr-fields');
+  if (wrap) wrap.innerHTML = '';
 }
 
 function toggleAddForm() {
   const form = document.getElementById('add-addr-form');
-  const isOpen = form.classList.toggle('open');
-  document.getElementById('add-addr-btn').textContent = isOpen ? tr().cancel : tr().addAddr;
-  if (!isOpen) {
-    ['addr-label','addr-street','addr-city','addr-state','addr-postal'].forEach(id => {
-      const el = document.getElementById(id); if (el) el.value = '';
-    });
-    document.getElementById('addr-default').checked = false;
-    document.getElementById('addr-error').style.display = 'none';
-  }
+  if (form.classList.contains('open')) closeAddForm();
+  else openAddForm(null);
+}
+
+function editAddress(id) {
+  const addr = _addresses.find(a => a.id === id);
+  if (!addr) return;
+  openAddForm(addr);
+  document.getElementById('section-addresses')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 async function saveNewAddress() {
@@ -553,25 +1874,25 @@ async function saveNewAddress() {
   const errEl = document.getElementById('addr-error');
   errEl.style.display = 'none';
 
-  const street = document.getElementById('addr-street').value.trim();
-  if (!street) { errEl.textContent = t.errNoStreet; errEl.style.display = 'block'; return; }
+  if (!window.ServiAddress || !window.ServiAddress.validate(ACC_ADDR_PREFIX)) {
+    errEl.textContent = t.errNoStreet; errEl.style.display = 'block'; return;
+  }
+  const body = window.ServiAddress.collect(ACC_ADDR_PREFIX);
 
   btn.disabled = true; lbl.textContent = t.saving;
   try {
-    const res = await fetch(API + '/api/auth/addresses', {
-      method: 'POST', headers: authHeaders(),
-      body: JSON.stringify({
-        label:       document.getElementById('addr-label').value.trim() || undefined,
-        street,
-        city:        document.getElementById('addr-city').value.trim()  || undefined,
-        state:       document.getElementById('addr-state').value.trim() || undefined,
-        postal_code: document.getElementById('addr-postal').value.trim() || undefined,
-        is_default:  document.getElementById('addr-default').checked,
-      })
+    const editing = _editingAddressId;
+    const res = await fetch(API + '/api/auth/addresses' + (editing ? '/' + editing : ''), {
+      method: editing ? 'PATCH' : 'POST', headers: authHeaders(),
+      body: JSON.stringify(body)
     });
-    if (!res.ok) { const d = await res.json(); errEl.textContent = d.message || t.errGeneric; errEl.style.display = 'block'; return; }
+    if (!res.ok) { const d = await res.json().catch(() => ({})); errEl.textContent = d.message || t.errGeneric; errEl.style.display = 'block'; return; }
+    // PATCH does not touch is_default; apply it separately if it was checked.
+    if (editing && body.is_default) {
+      try { await fetch(API + '/api/auth/addresses/' + editing + '/default', { method: 'PATCH', headers: authHeaders() }); } catch {}
+    }
     await loadAddresses();
-    toggleAddForm();
+    closeAddForm();
   } catch {
     errEl.textContent = t.errGeneric; errEl.style.display = 'block';
   } finally {
@@ -592,6 +1913,628 @@ async function deleteAddress(id) {
     await fetch(API + '/api/auth/addresses/' + id, { method: 'DELETE', headers: authHeaders() });
     await loadAddresses();
   } catch {}
+}
+
+// ─── Favorite Services ───────────────────────────────────────────────────────
+let _favoriteServices = [];
+
+async function loadFavoriteServices() {
+  const list = document.getElementById('favorite-list');
+  if (!list) return;
+  list.innerHTML = `<p style="font-size:14px;color:#aaa;text-align:center;padding:20px 0;grid-column:1/-1">${isEs() ? 'Cargando...' : 'Loading...'}</p>`;
+  try {
+    const res = await fetch(API + '/api/auth/favorites', { headers: authHeaders() });
+    if (!res.ok) throw new Error('load_failed');
+    const d = await res.json();
+    _favoriteServices = d.favorites || [];
+    renderFavoriteServices();
+  } catch {
+    list.innerHTML = `<p style="font-size:14px;color:#aaa;text-align:center;padding:20px 0;grid-column:1/-1">${isEs() ? 'Error al cargar.' : 'Failed to load.'}</p>`;
+  }
+}
+
+function renderFavoriteServices() {
+  const t = tr();
+  const list = document.getElementById('favorite-list');
+  if (!list) return;
+  if (!_favoriteServices.length) {
+    list.innerHTML = `
+      <div class="favorite-empty" style="grid-column:1/-1">
+        <div class="favorite-empty-title">${t.favoriteEmptyTitle}</div>
+        <div class="favorite-empty-text">${t.favoriteEmptyText}</div>
+        <a class="btn-save" href="/browse.html">${t.browseFavorites}</a>
+      </div>`;
+    return;
+  }
+
+  list.innerHTML = _favoriteServices.map(fav => {
+    const category = [fav.category_name, fav.subcategory_name].filter(Boolean).join(' · ');
+    const href = fav.href || `/service.html?category=${encodeURIComponent(fav.category_key || '')}&sub=${encodeURIComponent(fav.subcategory_key || '')}&service=${encodeURIComponent(fav.service_name || '')}`;
+    const image = fav.image_url || '/assets/partnerimage.png';
+    return `
+      <div class="favorite-card">
+        <a class="favorite-media" href="${escapeHtml(href)}" aria-label="${escapeHtml(fav.service_name)}">
+          <img src="${escapeHtml(image)}" alt="${escapeHtml(fav.service_name)}" loading="lazy" onerror="this.onerror=null;this.src='/assets/partnerimage.png'">
+        </a>
+        <div class="favorite-body">
+          <div class="favorite-kicker">${escapeHtml(category || (isEs() ? 'Servicio' : 'Service'))}</div>
+          <div class="favorite-title">${escapeHtml(fav.service_name)}</div>
+          <div class="favorite-actions">
+            <a class="addr-btn default-btn" href="${escapeHtml(href)}">${t.favoriteBook}</a>
+            <button class="addr-btn delete-btn" onclick="deleteFavoriteService('${escapeHtml(fav.id)}')">${t.favoriteRemove}</button>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+async function deleteFavoriteService(id) {
+  if (!confirm(isEs() ? '¿Quitar este servicio de favoritos?' : 'Remove this service from favorites?')) return;
+  try {
+    const res = await fetch(API + '/api/auth/favorites/' + encodeURIComponent(id), { method: 'DELETE', headers: authHeaders() });
+    if (!res.ok) return;
+    _favoriteServices = _favoriteServices.filter(fav => fav.id !== id);
+    renderFavoriteServices();
+  } catch {}
+}
+
+// ─── Orders / history ─────────────────────────────────────────────────────────
+let _orders = [];
+let _ordersBucket = 'active';
+let _ordersLoaded = false;
+let _ordersLoading = false;
+
+const ORDER_CATEGORY_META = {
+  cleaning:  { icon: '🧽', es: 'Limpieza',        en: 'Cleaning',  tint: 'rgba(149,204,213,0.22)' },
+  repair:    { icon: '🔧', es: 'Reparación',      en: 'Repair',    tint: 'rgba(244,182,97,0.20)' },
+  moving:    { icon: '📦', es: 'Mudanza',         en: 'Moving',    tint: 'rgba(146,166,228,0.20)' },
+  wellness:  { icon: '💆', es: 'Bienestar',       en: 'Wellness',  tint: 'rgba(231,158,189,0.20)' },
+  suppliers: { icon: '🛒', es: 'Abastecimiento',  en: 'Supply',    tint: 'rgba(143,206,156,0.20)' },
+  custom:    { icon: '✨', es: 'Personalizado',   en: 'Custom',    tint: 'rgba(196,178,228,0.20)' },
+};
+const ORDER_KNOWN_CATEGORIES = ['cleaning', 'repair', 'moving', 'wellness', 'suppliers', 'custom'];
+const PAYABLE_ORDER_STATUSES = new Set(['Pending', 'New', 'Setup required', 'Setup created', 'Pending (3DS)']);
+
+const ORDER_ICONS = {
+  calendar: '<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16" rx="2.5"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/></svg>',
+  pin: '<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-5.6 7-11a7 7 0 1 0-14 0c0 5.4 7 11 7 11Z"/><circle cx="12" cy="10" r="2.5"/></svg>',
+  user: '<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-3.4 3.1-5.5 7-5.5s7 2.1 7 5.5"/></svg>',
+  doc: '<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 16h6"/></svg>',
+  check: '<svg viewBox="0 0 24 24" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.2 4.2L19 7"/></svg>',
+  cross: '<svg viewBox="0 0 24 24" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7l10 10M17 7L7 17"/></svg>',
+};
+
+function categoryMeta(catKey) {
+  return ORDER_CATEGORY_META[String(catKey || '').toLowerCase()] || ORDER_CATEGORY_META.custom;
+}
+function categoryLabel(catKey) {
+  const m = categoryMeta(catKey);
+  return isEs() ? m.es : m.en;
+}
+
+function parseDateValue(value) {
+  if (!value) return null;
+  const str = String(value);
+  // Date-only strings (YYYY-MM-DD) are anchored to local noon to avoid TZ rollover.
+  const d = new Date(/^\d{4}-\d{2}-\d{2}$/.test(str) ? str + 'T12:00:00' : str);
+  return isNaN(d.getTime()) ? null : d;
+}
+function formatMoney(cents) {
+  if (cents == null || isNaN(cents)) return null;
+  return '$' + (Number(cents) / 100).toLocaleString(isEs() ? 'es-MX' : 'en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }) + ' MXN';
+}
+function formatDateShort(value) {
+  const d = parseDateValue(value);
+  if (!d) return null;
+  return d.toLocaleDateString(isEs() ? 'es-MX' : 'en-US', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+function formatDateTimeLong(value) {
+  const d = parseDateValue(value);
+  if (!d) return null;
+  return d.toLocaleDateString(isEs() ? 'es-MX' : 'en-US', { day: 'numeric', month: 'short', year: 'numeric' })
+    + ' · ' + d.toLocaleTimeString(isEs() ? 'es-MX' : 'en-US', { hour: '2-digit', minute: '2-digit' });
+}
+function formatDateTime(value) {
+  const d = parseDateValue(value);
+  if (!d) return null;
+  return d.toLocaleDateString(isEs() ? 'es-MX' : 'en-US', { day: 'numeric', month: 'short' })
+    + ' · ' + d.toLocaleTimeString(isEs() ? 'es-MX' : 'en-US', { hour: '2-digit', minute: '2-digit' });
+}
+
+// Maps a raw order/request to a customer-facing label, pill class, and how many
+// of the 4 lifecycle steps are complete.
+function orderStatusMeta(item) {
+  const t = tr();
+  if (item.source === 'request') {
+    // A withdrawn intake request becomes 'canceled'; otherwise it's still in the intake step.
+    if (/^cancel/i.test(String(item.status || ''))) return { label: t.stCanceled, cls: 'is-canceled', step: 1, canceled: true };
+    return { label: t.stRequested, cls: 'is-progress', step: 1, canceled: false };
+  }
+  const raw = String(item.status || '').trim();
+  // Compound labels the backend emits (e.g. 'Canceled (late fee)', 'Canceled (expired)',
+  // 'Captured (partial refund)') are matched by prefix so they never fall through to "pending".
+  if (/^captured/i.test(raw))  return { label: t.stCompleted, cls: 'is-done',     step: 4, canceled: false };
+  if (/^refund/i.test(raw))    return { label: t.stRefunded,  cls: 'is-canceled', step: 4, canceled: true };
+  if (/^cancel/i.test(raw)) {
+    const fee = /late fee/i.test(raw);
+    return { label: fee ? t.stCanceledFee : t.stCanceled, cls: 'is-canceled', step: 1, canceled: true };
+  }
+  switch (raw) {
+    case 'Confirmed':                return { label: t.stAuthorized, cls: 'is-authorized', step: 3, canceled: false };
+    case 'Scheduled':                return { label: t.stScheduled,  cls: 'is-progress',   step: 2, canceled: false };
+    case 'Pending Cash':             return { label: t.stCash,       cls: 'is-progress',   step: 2, canceled: false };
+    case 'Pending (3DS)':            return { label: t.stPay3ds,     cls: 'is-pending',    step: 2, canceled: false };
+    case 'Declined':                 return { label: t.stDeclined,   cls: 'is-declined',   step: 1, canceled: true };
+    case 'Expired':                  return { label: t.stCanceled,   cls: 'is-canceled',   step: 1, canceled: true };
+    default:                         return { label: t.stPendingPay, cls: 'is-pending',    step: 2, canceled: false };
+  }
+}
+function orderTitle(item) { return categoryLabel(item.category); }
+function orderIsPayable(item) {
+  if (item.source !== 'order') return false;
+  // Server is the source of truth (price confirmed + payable status). Fall back to the
+  // status set only if an older response omits the flag.
+  if (typeof item.payable === 'boolean') return item.payable;
+  return PAYABLE_ORDER_STATUSES.has(String(item.status || '').trim());
+}
+// Server-computed action policy (cancel/modify/reorder). Falls back to a conservative
+// status-derived guess only if an older response omits it.
+function orderPolicy(item) {
+  if (item.policy && typeof item.policy === 'object') return item.policy;
+  const past = (item.bucket === 'past');
+  return { canCancel: false, cancelTier: 'none', cancelFeeCents: 0, canEditAddress: false, canRequestReschedule: false, canReorder: past && !!item.category, isCaptured: false };
+}
+function orderCanReorder(item) { return !!orderPolicy(item).canReorder && !!item.category; }
+function orderWhenLabel(item) {
+  const t = tr();
+  if (item.isAsap) return t.asap;
+  return (item.serviceDateTime && formatDateTime(item.serviceDateTime))
+    || formatDateShort(item.serviceDate)
+    || formatDateShort(item.createdAt);
+}
+function orderScheduleLabel(item) {
+  const t = tr();
+  if (item.isAsap) return t.asap;
+  if (item.serviceDateTime) { const dt = formatDateTime(item.serviceDateTime); if (dt) return dt; }
+  const d = formatDateShort(item.serviceDate);
+  if (d && item.preferredTime) return d + ' · ' + item.preferredTime;
+  return d || t.notProvided;
+}
+function orderTotalLabel(item) {
+  if (item.source === 'request' || item.cashSelected) return null;
+  const total = item.pricing && item.pricing.total;
+  return total != null ? formatMoney(total) : null;
+}
+
+function buildPayUrl(id, flow, rt) {
+  const q = encodeURIComponent(id);
+  const page = flow === 'book' ? '/book.html' : '/pay.html';
+  // pay.html reads ?order=, book.html reads ?orderId= — send both for compatibility.
+  return page + '?order=' + q + '&orderId=' + q + '&rt=' + encodeURIComponent(rt);
+}
+
+// Mints a fresh payment link server-side (rotates the retry_token so the 2h window
+// restarts) and opens it in a new tab. The blank tab is opened synchronously inside the
+// click so popup blockers treat it as user-initiated; we set its URL once the link is ready.
+let _payInFlight = false;
+async function startOrderPayment(id, flow, btn) {
+  if (_payInFlight) return;
+  _payInFlight = true;
+  const t = tr();
+  const tab = window.open('', '_blank');
+  if (tab) { try { tab.document.write('<!doctype html><meta charset="utf-8"><title>SERVI</title><body style="font-family:system-ui,sans-serif;color:#555;padding:40px">' + escapeHtml(t.payGenerating) + '</body>'); } catch (_) {} }
+  let prevLabel = null;
+  if (btn) { prevLabel = btn.textContent; btn.disabled = true; btn.textContent = t.payGenerating; }
+  const restore = () => { if (btn) { btn.disabled = false; if (prevLabel != null) btn.textContent = prevLabel; } _payInFlight = false; };
+  try {
+    const res = await fetch(API + '/api/auth/orders/' + encodeURIComponent(id) + '/payment-link', {
+      method: 'POST', headers: authHeaders(),
+    });
+    if (res.status === 409) {
+      if (tab) tab.close();
+      alert(t.payNotAvailable);
+      restore();
+      _ordersLoaded = false;
+      loadOrders();
+      return;
+    }
+    if (!res.ok) throw new Error('link_failed');
+    const d = await res.json();
+    const url = buildPayUrl(d.orderId || id, d.flow || flow, d.rt);
+    if (tab) { tab.location.href = url; }
+    else { window.location.href = url; } // popup blocked → same-tab fallback
+    restore();
+  } catch (_) {
+    if (tab) tab.close();
+    alert(t.payError);
+    restore();
+  }
+}
+function reorder(category) {
+  const cat = String(category || '').toLowerCase();
+  window.location.href = ORDER_KNOWN_CATEGORIES.includes(cat)
+    ? '/service.html?category=' + encodeURIComponent(cat)
+    : '/browse.html';
+}
+
+function ordersSkeletonHtml() {
+  const one = `
+    <div class="order-skeleton">
+      <div class="sk sk-icon"></div>
+      <div>
+        <div class="sk sk-line" style="width:42%"></div>
+        <div class="sk sk-line" style="width:68%;margin-top:9px"></div>
+        <div class="sk sk-line" style="width:30%;margin-top:12px;height:10px"></div>
+      </div>
+      <div class="sk sk-line" style="height:22px;border-radius:999px"></div>
+    </div>`;
+  return one + one + one;
+}
+function ordersErrorHtml() {
+  const t = tr();
+  return `
+    <div class="order-empty">
+      <div class="order-empty-emoji">⚠️</div>
+      <div class="order-empty-title">${escapeHtml(t.ordersLoadError)}</div>
+      <button class="btn-save" onclick="loadOrders()">${escapeHtml(t.ordersRetry)}</button>
+    </div>`;
+}
+function ordersEmptyHtml() {
+  const t = tr();
+  const active = _ordersBucket === 'active';
+  return `
+    <div class="order-empty">
+      <div class="order-empty-emoji">${active ? '📋' : '🗂️'}</div>
+      <div class="order-empty-title">${escapeHtml(active ? t.ordersEmptyActiveTitle : t.ordersEmptyPastTitle)}</div>
+      <div class="order-empty-text">${escapeHtml(active ? t.ordersEmptyActiveText : t.ordersEmptyPastText)}</div>
+      ${active ? `<a class="btn-save" href="/browse.html">${escapeHtml(t.ordersEmptyCta)}</a>` : ''}
+    </div>`;
+}
+
+function orderCardHtml(item, idx) {
+  const t = tr();
+  const meta = orderStatusMeta(item);
+  const cat = categoryMeta(item.category);
+  const when = orderWhenLabel(item);
+  const price = orderTotalLabel(item);
+  const metaItems = [];
+  if (when) metaItems.push(`<span class="order-meta-item">${ORDER_ICONS.calendar}<span>${escapeHtml(when)}</span></span>`);
+  if (item.address) metaItems.push(`<span class="order-meta-item">${ORDER_ICONS.pin}<span>${escapeHtml(item.address)}</span></span>`);
+  else if (item.providerName) metaItems.push(`<span class="order-meta-item">${ORDER_ICONS.user}<span>${escapeHtml(item.providerName)}</span></span>`);
+
+  const actions = [];
+  if (orderIsPayable(item)) actions.push(`<button class="order-cta" onclick="event.stopPropagation();startOrderPayment('${escapeHtml(item.id)}','${escapeHtml(item.payFlow || item.kind)}',this)">${escapeHtml(t.actPay)}</button>`);
+  // "Order again" only on closed/past orders (server-authoritative). Cancel/modify live in the drawer.
+  if (orderCanReorder(item)) actions.push(`<button class="addr-btn default-btn" onclick="event.stopPropagation();reorder('${escapeHtml(item.category)}')">${escapeHtml(t.actReorder)}</button>`);
+
+  return `
+    <div class="order-card" tabindex="0" role="button" aria-label="${escapeHtml(orderTitle(item))} — ${escapeHtml(meta.label)}"
+         style="--order-tint:${cat.tint};animation-delay:${Math.min(idx * 55, 440)}ms"
+         onclick="openOrderDrawer('${escapeHtml(item.id)}')"
+         onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openOrderDrawer('${escapeHtml(item.id)}')}">
+      <div class="order-card-top">
+        <div class="order-icon">${cat.icon}</div>
+        <div class="order-main">
+          <div class="order-title">${escapeHtml(orderTitle(item))}</div>
+          ${item.description ? `<div class="order-desc">${escapeHtml(item.description)}</div>` : ''}
+          ${metaItems.length ? `<div class="order-meta">${metaItems.join('')}</div>` : ''}
+        </div>
+        <div class="order-right">
+          <span class="order-status ${meta.cls}">${escapeHtml(meta.label)}</span>
+          ${price ? `<div class="order-price">${escapeHtml(price)}</div>` : ''}
+        </div>
+      </div>
+      ${actions.length ? `<div class="order-actions">${actions.join('')}</div>` : ''}
+    </div>`;
+}
+
+function setOrdersCount(bucket, n) {
+  const el = document.getElementById('orders-count-' + bucket);
+  if (!el) return;
+  el.textContent = n;
+  el.hidden = !n;
+}
+
+async function loadOrders() {
+  if (_ordersLoading) return;
+  _ordersLoading = true;
+  const list = document.getElementById('orders-list');
+  if (list && !_ordersLoaded) list.innerHTML = ordersSkeletonHtml();
+  try {
+    const res = await fetch(API + '/api/auth/orders', { headers: authHeaders() });
+    if (!res.ok) throw new Error('load_failed');
+    const d = await res.json();
+    _orders = Array.isArray(d.orders) ? d.orders : [];
+    _ordersLoaded = true;
+    renderOrders();
+  } catch {
+    if (list) list.innerHTML = ordersErrorHtml();
+  } finally {
+    _ordersLoading = false;
+  }
+}
+
+function renderOrders() {
+  const list = document.getElementById('orders-list');
+  if (!list) return;
+  let active = 0, past = 0;
+  _orders.forEach(o => { (o.bucket === 'past') ? past++ : active++; });
+  setOrdersCount('active', active);
+  setOrdersCount('past', past);
+  const items = _orders.filter(o => (o.bucket === 'past' ? 'past' : 'active') === _ordersBucket);
+  list.innerHTML = items.length ? items.map((it, i) => orderCardHtml(it, i)).join('') : ordersEmptyHtml();
+}
+
+function switchOrdersBucket(bucket) {
+  if (bucket !== 'active' && bucket !== 'past') return;
+  _ordersBucket = bucket;
+  document.querySelectorAll('.orders-seg-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.bucket === bucket));
+  renderOrders();
+}
+
+// ── Detail drawer ──
+function orderTimelineHtml(item) {
+  const t = tr();
+  const meta = orderStatusMeta(item);
+  const labels = [t.tlRequested, t.tlMatched, t.tlAuthorized, t.tlCompleted];
+  const step = (label, cls) => `<div class="otl-step ${cls}"><span class="otl-dot">${ORDER_ICONS.check}</span><div><div class="otl-label">${escapeHtml(label)}</div></div></div>`;
+  let html = '';
+  if (meta.canceled) {
+    for (let i = 0; i < labels.length && i < meta.step; i++) html += step(labels[i], 'done');
+    html += `<div class="otl-step canceled"><span class="otl-dot">${ORDER_ICONS.cross}</span><div><div class="otl-label">${escapeHtml(meta.label)}</div></div></div>`;
+    return html;
+  }
+  for (let i = 0; i < labels.length; i++) {
+    const n = i + 1;
+    html += step(labels[i], n <= meta.step ? 'done' : (n === meta.step + 1 ? 'current' : ''));
+  }
+  return html;
+}
+
+function orderDrawerInfoHtml(item) {
+  const t = tr();
+  const row = (icon, label, value) =>
+    `<div class="drawer-info-row">${icon}<div><div class="drawer-info-label">${escapeHtml(label)}</div><div class="drawer-info-value">${escapeHtml(value)}</div></div></div>`;
+  const rows = [];
+  if (item.description) rows.push(row(ORDER_ICONS.doc, t.drawerService, item.description));
+  rows.push(row(ORDER_ICONS.calendar, t.drawerSchedule, orderScheduleLabel(item)));
+  rows.push(row(ORDER_ICONS.pin, t.drawerAddress, item.address || t.notProvided));
+  if (item.source === 'order') rows.push(row(ORDER_ICONS.user, t.drawerProvider, item.providerName || t.toBeAssigned));
+  return rows.join('');
+}
+
+function orderSummaryHtml(item) {
+  const t = tr();
+  if (item.source === 'request') return '';
+  if (item.cashSelected) {
+    return `<div class="order-receipt"><div class="order-receipt-row total"><span class="lbl">${escapeHtml(t.priceTotal)}</span><span class="val">${escapeHtml(t.priceCash)}</span></div></div>`;
+  }
+  const p = item.pricing || {};
+  const rows = [];
+  const pushRow = (lbl, cents) => { if (cents != null) rows.push(`<div class="order-receipt-row"><span class="lbl">${escapeHtml(lbl)}</span><span class="val">${escapeHtml(formatMoney(cents))}</span></div>`); };
+  pushRow(t.priceProvider, p.providerAmount);
+  pushRow(t.priceBooking, p.bookingFee);
+  pushRow(t.priceProcessing, p.processingFee);
+  pushRow(t.priceVat, p.vat);
+  if (p.total == null && !rows.length) return '';
+  const meta = orderStatusMeta(item);
+  const totalLabel = p.captured ? t.priceTotalCharged : (meta.step >= 3 ? t.priceTotalHold : t.priceTotal);
+  rows.push(`<div class="order-receipt-row total"><span class="lbl">${escapeHtml(totalLabel)}</span><span class="val">${p.total != null ? escapeHtml(formatMoney(p.total)) : escapeHtml(t.priceTbd)}</span></div>`);
+  return `<div class="order-receipt">${rows.join('')}</div>`;
+}
+
+function orderDrawerActionsHtml(item) {
+  const t = tr();
+  const pol = orderPolicy(item);
+  const id = escapeHtml(item.id);
+  const a = [];
+  if (orderIsPayable(item)) a.push(`<button class="btn-save" onclick="startOrderPayment('${id}','${escapeHtml(item.payFlow || item.kind)}',this)">${escapeHtml(t.actPay)}</button>`);
+  if (pol.canEditAddress) a.push(`<button class="btn-outline" onclick="openAddressForm('${id}')">${escapeHtml(t.actEditAddress)}</button>`);
+  if (pol.canRequestReschedule) a.push(`<button class="btn-outline" onclick="openRescheduleForm('${id}')">${escapeHtml(t.actReschedule)}</button>`);
+  if (pol.canCancel) a.push(`<button class="btn-danger-line" onclick="confirmCancelOrder('${id}')">${escapeHtml(item.source === 'request' ? t.actWithdraw : t.actCancel)}</button>`);
+  if (orderCanReorder(item)) a.push(`<button class="btn-outline" onclick="reorder('${escapeHtml(item.category)}')">${escapeHtml(t.actReorder)}</button>`);
+  a.push(`<a class="btn-outline" href="/helpcenter.html">${escapeHtml(t.actHelp)}</a>`);
+  return `<div class="drawer-actions">${a.join('')}</div>`;
+}
+
+// ── Self-service action modals (cancel / edit address / reschedule) ──
+// Lightweight transient toast for action confirmations.
+function showOrderToast(msg) {
+  let el = document.getElementById('order-toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'order-toast';
+    el.style.cssText = 'position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(12px);background:#111;color:#fff;padding:12px 18px;border-radius:12px;font-size:14px;font-weight:600;z-index:10002;box-shadow:0 8px 28px rgba(0,0,0,0.28);opacity:0;transition:opacity .25s ease,transform .25s ease;max-width:88vw;text-align:center';
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  requestAnimationFrame(() => { el.style.opacity = '1'; el.style.transform = 'translateX(-50%) translateY(0)'; });
+  clearTimeout(el._t);
+  el._t = setTimeout(() => { el.style.opacity = '0'; el.style.transform = 'translateX(-50%) translateY(12px)'; }, 3200);
+}
+
+// Builds a body-level modal that stacks above the order drawer (z-index 10000).
+function buildActionModal(innerHtml) {
+  const overlay = document.createElement('div');
+  overlay.className = 'confirm-overlay';
+  overlay.style.zIndex = '10001';
+  overlay.innerHTML = `<div class="confirm-box">${innerHtml}</div>`;
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+  return overlay;
+}
+
+function confirmCancelOrder(id) {
+  const t = tr();
+  const item = _orders.find(o => o.id === id);
+  if (!item) return;
+  const pol = orderPolicy(item);
+  const fee = pol.cancelFeeCents || 0;
+  const isReq = item.source === 'request';
+  let body;
+  if (isReq) body = `<p>${escapeHtml(t.cancelReqBody)}</p>`;
+  else if (fee > 0) body = `<p>${escapeHtml(t.cancelFeeBody1)} <strong>${escapeHtml(formatMoney(fee))}</strong>${escapeHtml(t.cancelFeeBody2)}</p>`;
+  else body = `<p>${escapeHtml(t.cancelFreeBody)}</p>`;
+  const confirmLabel = fee > 0 ? t.cancelPayConfirm : (isReq ? t.actWithdraw : t.cancelConfirm);
+  const overlay = buildActionModal(`
+    <h3>${escapeHtml(isReq ? t.cancelReqTitle : t.cancelTitle)}</h3>
+    ${body}
+    <div id="action-modal-error" style="font-size:13px;color:#c55d49;margin:6px 0 12px;min-height:16px"></div>
+    <div class="confirm-row">
+      <button class="confirm-cancel" onclick="this.closest('.confirm-overlay').remove()">${escapeHtml(t.cancelKeep)}</button>
+      <button class="confirm-ok" onclick="executeCancelOrder('${escapeHtml(id)}',this)">${escapeHtml(confirmLabel)}</button>
+    </div>`);
+  return overlay;
+}
+
+async function executeCancelOrder(id, btn) {
+  const t = tr();
+  const errEl = document.getElementById('action-modal-error');
+  const prev = btn.textContent; btn.disabled = true; btn.textContent = '…';
+  try {
+    const res = await fetch(API + '/api/auth/orders/' + encodeURIComponent(id) + '/cancel', {
+      method: 'POST', headers: authHeaders(), body: JSON.stringify({})
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      if (errEl) errEl.textContent = (res.status === 409 && d.error === 'already_captured') ? t.cancelCaptured : (d.message || t.cancelError);
+      btn.disabled = false; btn.textContent = prev; return;
+    }
+    btn.closest('.confirm-overlay')?.remove();
+    closeOrderDrawer();
+    _ordersLoaded = false; await loadOrders();
+    showOrderToast((d.feeCents > 0) ? t.cancelDoneFee : t.cancelDone);
+  } catch {
+    if (errEl) errEl.textContent = t.cancelError;
+    btn.disabled = false; btn.textContent = prev;
+  }
+}
+
+function openAddressForm(id) {
+  const t = tr();
+  const item = _orders.find(o => o.id === id);
+  if (!item) return;
+  buildActionModal(`
+    <h3>${escapeHtml(t.actEditAddress)}</h3>
+    <input class="form-input" id="action-addr-input" value="${escapeHtml(item.address || '')}" placeholder="${escapeHtml(t.drawerAddress)}" style="margin-bottom:12px;width:100%">
+    <div id="action-modal-error" style="font-size:13px;color:#c55d49;margin:0 0 12px;min-height:16px"></div>
+    <div class="confirm-row">
+      <button class="confirm-cancel" onclick="this.closest('.confirm-overlay').remove()">${escapeHtml(t.cancelBtn)}</button>
+      <button class="confirm-ok" onclick="submitAddress('${escapeHtml(id)}',this)">${escapeHtml(t.actSave)}</button>
+    </div>`);
+  setTimeout(() => document.getElementById('action-addr-input')?.focus(), 30);
+}
+
+async function submitAddress(id, btn) {
+  const t = tr();
+  const errEl = document.getElementById('action-modal-error');
+  const val = String(document.getElementById('action-addr-input')?.value || '').trim();
+  if (!val) { if (errEl) errEl.textContent = t.addrRequired; return; }
+  const prev = btn.textContent; btn.disabled = true; btn.textContent = '…';
+  try {
+    const res = await fetch(API + '/api/auth/orders/' + encodeURIComponent(id) + '/address', {
+      method: 'PATCH', headers: authHeaders(), body: JSON.stringify({ address: val })
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) { if (errEl) errEl.textContent = d.message || t.actionError; btn.disabled = false; btn.textContent = prev; return; }
+    btn.closest('.confirm-overlay')?.remove();
+    closeOrderDrawer();
+    _ordersLoaded = false; await loadOrders();
+    openOrderDrawer(id);
+    showOrderToast(t.addrSaved);
+  } catch {
+    if (errEl) errEl.textContent = t.actionError;
+    btn.disabled = false; btn.textContent = prev;
+  }
+}
+
+function openRescheduleForm(id) {
+  const t = tr();
+  const item = _orders.find(o => o.id === id);
+  if (!item) return;
+  // datetime-local needs a 'YYYY-MM-DDTHH:mm' min of now (local).
+  const now = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  const cur = item.serviceDateTime ? new Date(item.serviceDateTime) : null;
+  const curVal = (cur && !isNaN(cur.getTime())) ? new Date(cur.getTime() - cur.getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '';
+  buildActionModal(`
+    <h3>${escapeHtml(t.actReschedule)}</h3>
+    <p style="font-size:13px;color:#666;margin:0 0 12px">${escapeHtml(t.reschedHint)}</p>
+    <input class="form-input" type="datetime-local" id="action-resched-input" min="${now}" value="${escapeHtml(curVal)}" style="margin-bottom:12px;width:100%">
+    <div id="action-modal-error" style="font-size:13px;color:#c55d49;margin:0 0 12px;min-height:16px"></div>
+    <div class="confirm-row">
+      <button class="confirm-cancel" onclick="this.closest('.confirm-overlay').remove()">${escapeHtml(t.cancelBtn)}</button>
+      <button class="confirm-ok" onclick="submitReschedule('${escapeHtml(id)}',this)">${escapeHtml(t.reschedSubmit)}</button>
+    </div>`);
+}
+
+async function submitReschedule(id, btn) {
+  const t = tr();
+  const errEl = document.getElementById('action-modal-error');
+  const val = String(document.getElementById('action-resched-input')?.value || '').trim();
+  if (!val) { if (errEl) errEl.textContent = t.reschedRequired; return; }
+  const dt = new Date(val);
+  if (isNaN(dt.getTime()) || dt.getTime() < Date.now()) { if (errEl) errEl.textContent = t.reschedPast; return; }
+  const prev = btn.textContent; btn.disabled = true; btn.textContent = '…';
+  try {
+    const res = await fetch(API + '/api/auth/orders/' + encodeURIComponent(id) + '/reschedule-request', {
+      method: 'POST', headers: authHeaders(), body: JSON.stringify({ service_datetime: dt.toISOString() })
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) { if (errEl) errEl.textContent = d.message || t.actionError; btn.disabled = false; btn.textContent = prev; return; }
+    btn.closest('.confirm-overlay')?.remove();
+    showOrderToast(t.reschedSubmitted);
+  } catch {
+    if (errEl) errEl.textContent = t.actionError;
+    btn.disabled = false; btn.textContent = prev;
+  }
+}
+
+function orderDrawerHtml(item) {
+  const t = tr();
+  const cat = categoryMeta(item.category);
+  const meta = orderStatusMeta(item);
+  const code = item.publicCode ? '#' + item.publicCode : '';
+  const created = formatDateTimeLong(item.createdAt);
+  const summary = orderSummaryHtml(item);
+  return `
+    <div class="drawer-hero" style="--order-tint:${cat.tint}">
+      <button class="drawer-close" onclick="closeOrderDrawer()" aria-label="${escapeHtml(t.actClose)}">✕</button>
+      <div class="drawer-hero-icon">${cat.icon}</div>
+      <div class="drawer-hero-title">${escapeHtml(orderTitle(item))}</div>
+      <div class="drawer-hero-code">${code ? escapeHtml(code) + (created ? ' · ' : '') : ''}${created ? escapeHtml(t.createdOn + ' ' + created) : ''}</div>
+      <div class="drawer-hero-status"><span class="order-status ${meta.cls}">${escapeHtml(meta.label)}</span></div>
+    </div>
+    <div class="drawer-section">
+      <div class="drawer-section-title">${escapeHtml(t.drawerTimeline)}</div>
+      <div class="order-timeline">${orderTimelineHtml(item)}</div>
+    </div>
+    <div class="drawer-section">
+      <div class="drawer-section-title">${escapeHtml(t.drawerService)}</div>
+      ${orderDrawerInfoHtml(item)}
+    </div>
+    ${summary ? `<div class="drawer-section"><div class="drawer-section-title">${escapeHtml(t.drawerSummary)}</div>${summary}</div>` : ''}
+    ${orderDrawerActionsHtml(item)}`;
+}
+
+function openOrderDrawer(id) {
+  const item = _orders.find(o => o.id === id);
+  if (!item) return;
+  const content = document.getElementById('order-drawer-content');
+  const overlay = document.getElementById('order-drawer-overlay');
+  if (!content || !overlay) return;
+  content.innerHTML = orderDrawerHtml(item);
+  content.parentElement.scrollTop = 0;
+  overlay.classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+function closeOrderDrawer() {
+  // The panel stops click propagation, so this only fires from the overlay backdrop or the ✕ button.
+  const overlay = document.getElementById('order-drawer-overlay');
+  if (overlay) overlay.classList.remove('open');
+  document.body.style.overflow = '';
 }
 
 // ─── Payment Methods ──────────────────────────────────────────────────────────
@@ -681,22 +2624,41 @@ async function openAddPaymentModal() {
     </div>`;
   document.body.appendChild(overlay);
 
-  if (!_stripe) _stripe = Stripe(window.CONFIG?.STRIPE_PUBLISHABLE_KEY);
-
   const confirmBtn = document.getElementById('pm-confirm-btn');
   const confirmLbl = document.getElementById('pm-confirm-label');
   if (confirmBtn) { confirmBtn.disabled = true; }
 
   try {
+    if (!_stripe) {
+      let pk = window.CONFIG?.STRIPE_PUBLISHABLE_KEY || '';
+      try {
+        const pkResp = await fetch(`${API}/config/stripe`);
+        if (pkResp.ok) {
+          const { pk: fetched } = await pkResp.json();
+          if (fetched) pk = fetched;
+        }
+      } catch (e) {
+        console.warn('[account] Could not fetch dynamic Stripe PK, falling back to config.js');
+      }
+      if (!pk) throw new Error('missing_stripe_pk');
+      _stripe = Stripe(pk);
+    }
+
     const res = await fetch(API + '/api/auth/payment-methods/setup', { method: 'POST', headers: authHeaders() });
     if (!res.ok) throw new Error('setup_failed');
     const d = await res.json();
     _pmSetupSecret = d.clientSecret;
     _pmElements = _stripe.elements({
       clientSecret: _pmSetupSecret,
-      appearance: { theme: 'stripe', variables: { fontFamily: '"DM Sans", sans-serif', borderRadius: '12px', colorPrimary: '#10b981' } }
+      appearance: { theme: 'stripe', variables: { fontFamily: '"Plus Jakarta Sans", sans-serif', borderRadius: '14px', colorPrimary: '#95ccd5' } }
     });
-    const paymentEl = _pmElements.create('payment');
+    const paymentEl = _pmElements.create('payment', {
+      business: { name: 'SERVI' },
+      wallets: {
+        applePay: 'auto',
+        googlePay: 'auto'
+      }
+    });
     // Enable confirm button only once element is fully mounted and ready
     paymentEl.on('ready', function () {
       if (confirmBtn) { confirmBtn.disabled = false; }
@@ -769,7 +2731,7 @@ function showReauthOtpStep(auth, resolve, reject) {
   overlay.innerHTML = `
     <div class="confirm-box">
       <h3>${es ? 'Verifica tu identidad' : 'Verify your identity'}</h3>
-      <p style="font-size:14px;color:#555;margin-bottom:12px">
+      <p style="font-size:14px;color:var(--color-text-secondary);margin-bottom:12px">
         ${es ? 'Te enviaremos un SMS de confirmación a tu número registrado.' : "We'll send a confirmation SMS to your registered phone."}
       </p>
       <div id="reauth-recaptcha-inline" style="margin-bottom:12px"></div>
@@ -778,7 +2740,7 @@ function showReauthOtpStep(auth, resolve, reject) {
       </button>
       <input class="form-input" id="reauth-otp-input" type="text" inputmode="numeric"
         placeholder="${es ? 'Código de 6 dígitos' : '6-digit code'}" style="display:none;margin-bottom:10px">
-      <div id="reauth-error" style="font-size:13px;color:#dc2626;min-height:16px;margin-bottom:8px"></div>
+      <div id="reauth-error" style="font-size:13px;color:#c55d49;min-height:16px;margin-bottom:8px"></div>
       <div class="confirm-row">
         <button class="confirm-cancel" id="reauth-cancel-btn">${es ? 'Cancelar' : 'Cancel'}</button>
         <button class="confirm-ok" id="reauth-confirm-btn" style="display:none">${es ? 'Confirmar' : 'Confirm'}</button>
@@ -842,7 +2804,7 @@ function confirmDeleteAccount() {
       <h3>${t.confirmDeleteTitle}</h3>
       <p>${t.confirmDeleteBody}</p>
       <input class="form-input" id="delete-confirm-input" placeholder="${t.confirmDeletePlaceholder}" style="margin-bottom:12px">
-      <div id="delete-modal-error" style="font-size:13px;color:#dc2626;margin-bottom:12px;min-height:16px"></div>
+      <div id="delete-modal-error" style="font-size:13px;color:#c55d49;margin-bottom:12px;min-height:16px"></div>
       <div class="confirm-row">
         <button class="confirm-cancel" onclick="this.closest('.confirm-overlay').remove()">${t.cancelBtn}</button>
         <button class="confirm-ok" onclick="confirmDeleteAccountStep2(this)">${t.confirmDeleteBtn}</button>
@@ -857,7 +2819,7 @@ function confirmDeleteAccountStep2(btn) {
   const expected = isEs() ? 'ELIMINAR' : 'DELETE';
   const val = document.getElementById('delete-confirm-input')?.value?.trim();
   if (val !== expected) {
-    document.getElementById('delete-confirm-input').style.borderColor = '#dc2626';
+    document.getElementById('delete-confirm-input').style.borderColor = '#c55d49';
     return;
   }
   executeDeleteAccount(btn);
@@ -875,13 +2837,17 @@ async function executeDeleteAccount(btn) {
       headers: authHeaders(),
     });
     if (!res.ok) {
+      let detail = '';
+      try { const body = await res.json(); detail = body?.error || body?.message || ''; } catch {}
+      console.error('[deleteAccount] failed', res.status, detail);
       btn.disabled = false; btn.textContent = t.confirmDeleteBtn;
-      if (errEl) errEl.textContent = t.errDeleteFailed;
+      if (errEl) errEl.textContent = t.errDeleteFailed + (detail ? ' (' + res.status + ': ' + detail + ')' : ' (' + res.status + ')');
       return;
     }
     if (window.logoutUser) await window.logoutUser();
     window.location.replace('/');
-  } catch {
+  } catch (err) {
+    console.error('[deleteAccount] network error', err);
     btn.disabled = false; btn.textContent = t.confirmDeleteBtn;
     if (errEl) errEl.textContent = t.errDeleteFailed;
   }
@@ -893,25 +2859,43 @@ function applyTranslations() {
   document.title = 'SERVI — ' + t.pageTitle;
   const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
   const ph = (id, val) => { const el = document.getElementById(id); if (el) el.placeholder = val; };
+  set('title-orders', t.titleOrders);   set('sub-orders', t.subOrders);
+  set('orders-new-label', t.ordersNew);
+  set('orders-seg-active', t.ordersSegActive); set('orders-seg-past', t.ordersSegPast);
   set('title-info', t.titleInfo);       set('sub-info', t.subInfo);
   set('title-security', t.titleSecurity); set('sub-security', t.subSecurity);
+  set('security-2step-title', t.security2StepTitle); set('security-2step-sub', t.security2StepSub);
+  set('security-phone-title', t.securityPhoneTitle); set('security-phone-sub', t.securityPhoneSub);
+  set('security-email-title', t.securityEmailTitle);
+  set('security-social-title', t.securitySocialTitle); set('security-social-sub', t.securitySocialSub);
   set('title-addresses', t.titleAddresses); set('sub-addresses', t.subAddresses);
+  set('title-favorites', t.titleFavorites); set('sub-favorites', t.subFavorites);
+  set('browse-favorites-btn', t.browseFavorites);
   set('title-payments', t.titlePayments); set('sub-payments', t.subPayments);
   set('add-pm-btn', '+ ' + (isEs() ? 'Agregar' : 'Add'));
   set('title-delete', t.titleDelete);   set('text-delete', t.textDelete);
   set('lbl-name', t.lblName);           set('lbl-email', t.lblEmail);   set('lbl-phone', t.lblPhone);
+  set('profile-lbl-name', t.lblName);   set('profile-lbl-email', t.lblEmail); set('profile-lbl-phone', t.lblPhone);
+  set('profile-edit-btn', t.profileEdit); set('profile-cancel-btn', t.cancel);
   set('security-info-text', t.securityInfo);
-  set('lbl-addr-label', t.lblAddrLabel); set('lbl-addr-street', t.lblAddrStreet);
-  set('lbl-addr-city', t.lblAddrCity);  set('lbl-addr-state', t.lblAddrState);
-  set('lbl-addr-postal', t.lblAddrPostal); set('lbl-addr-default', t.lblAddrDefault);
+  set('email-warning-title', t.emailWarnTitle);
+  set('email-warning-text', t.emailWarnText);
+  set('email-warning-action', window.__user && !window.__user.email ? t.emailWarnAddAction : t.emailWarnAction);
   set('info-save-label', t.saveBtn);
   set('addr-save-label', t.saveAddr);   set('addr-cancel-btn', t.cancel);
   set('add-addr-btn', document.getElementById('add-addr-form')?.classList.contains('open') ? t.cancel : t.addAddr);
   set('delete-btn', t.deleteBtn);
   set('info-success-text', t.saved);
+  renderProfileView();
   ph('info-name', t.phName);
-  ph('addr-label', t.phAddrLabel);      ph('addr-street', t.phAddrStreet);
-  ph('addr-city', t.phAddrCity);        ph('addr-state', t.phAddrState);
+  // The structured address field set (labels, placeholders, dropdowns) is owned
+  // by the shared module and re-rendered with the right language each time the
+  // add/edit form is opened. Re-mount it if it's currently open so a language
+  // switch updates the field labels.
+  if (document.getElementById('add-addr-form')?.classList.contains('open')) {
+    const cur = (window.ServiAddress && window.ServiAddress.collect) ? window.ServiAddress.collect(ACC_ADDR_PREFIX) : null;
+    mountAddressFields(cur);
+  }
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
@@ -959,6 +2943,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Refresh window.__user with authoritative backend data
         const d = await res.json();
         if (d.user) {
+          _accountUserBackendConfirmed = true;
           window.__user = Object.assign(window.__user, d.user);
         }
       }
@@ -968,26 +2953,47 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     fillProfileForm();
+    renderEmailWarning();
     initSecuritySection();
+    loadOrders();
     loadAddresses();
+    loadFavoriteServices();
     loadPaymentMethods();
     buildNav();
 
     // Handle section from URL param (e.g., ?section=security for recovery flow)
     const urlSection = new URLSearchParams(window.location.search).get('section');
-    switchSection(SECTIONS.includes(urlSection) ? urlSection : 'info');
+    switchSection(SECTIONS.includes(urlSection) ? urlSection : 'orders');
   };
   waitForUser(20); // 20 × 100ms = 2s, enough for Firebase to resolve
 
   // Re-apply translations if language changes
   window.addEventListener('langchange', () => {
     applyTranslations();
+    renderProfileView();
+    renderEmailWarning();
+    renderSecurityVerification();
+    renderConnectedSocialApps();
     buildNav();
     renderAddresses();
+    renderFavoriteServices();
+    if (_ordersLoaded) renderOrders();
     // Re-render payment methods list with updated language (data is already cached in DOM)
     const pmList = document.getElementById('pm-list');
     if (pmList && pmList.querySelector('.pm-card')) loadPaymentMethods();
   });
+
+  // Close the order drawer with Escape
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && document.getElementById('order-drawer-overlay')?.classList.contains('open')) {
+      closeOrderDrawer();
+    }
+  });
+
+  window.addEventListener('storage', (event) => {
+    if (event.key === 'servi_email_verified_at') refreshAccountUser();
+  });
+  window.addEventListener('servi-email-verified', refreshAccountUser);
 });
 </script>
 </body>

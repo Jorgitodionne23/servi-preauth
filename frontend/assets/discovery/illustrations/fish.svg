@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" role="img" aria-labelledby="title desc">
+  <title id="title">Fish Market</title>
+  <desc id="desc">Flat service illustration for fish discovery card.</desc>
+  <rect width="1200" height="900" fill="#F5F2E8"/>
+  <circle cx="958" cy="156" r="96" fill="#D88B55" opacity=".2"/>
+  <circle cx="198" cy="742" r="132" fill="#78975D" opacity=".12"/>
+  <path d="M130 705c150 72 291 101 464 85 184-17 286-84 476-52" fill="none" stroke="#463D2E" stroke-width="18" stroke-linecap="round" opacity=".12"/>
+  <g fill="none" stroke="#463D2E" stroke-linecap="round" stroke-linejoin="round">
+    <path stroke-width="28" d="M303 519c128-132 314-169 500-40l117-75v226l-117-75c-186 129-372 92-500-36z" fill="#78975D" opacity=".82"/><path stroke-width="20" d="M394 519c77-58 178-58 303 0M697 479c-18 43-18 82 0 120M831 456v126"/><circle cx="409" cy="497" r="18" fill="#D88B55" stroke="none"/><path stroke-width="20" d="M485 303c49 39 84 86 106 141M485 735c49-39 84-86 106-141"/>
+  </g>
+  <g fill="#D88B55" opacity=".92">
+    <circle cx="214" cy="182" r="16"/>
+    <circle cx="997" cy="697" r="13"/>
+    <path d="M1017 264l19 36 37 18-37 18-19 36-18-36-37-18 37-18z"/>
+  </g>
+</svg>

@@ -46,6 +46,7 @@ export async function initDb() {
       cash_selected BOOLEAN DEFAULT FALSE,
       service_description TEXT,
       service_date TEXT,              -- date-only (YYYY-MM-DD) for >7d rule
+      is_asap BOOLEAN DEFAULT FALSE,
       category TEXT,
       service_datetime TEXT,
       service_address TEXT,
@@ -81,6 +82,8 @@ export async function initDb() {
       ADD COLUMN IF NOT EXISTS service_address TEXT;
     ALTER TABLE all_bookings
       ADD COLUMN IF NOT EXISTS booking_type TEXT;
+    ALTER TABLE all_bookings
+      ADD COLUMN IF NOT EXISTS is_asap BOOLEAN DEFAULT FALSE;
 
     ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS provider_amount INTEGER;
     ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS booking_fee_amount INTEGER;
@@ -99,6 +102,11 @@ export async function initDb() {
     ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS adjustment_reason TEXT;
     ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS retry_token TEXT;
     ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS retry_token_created_at TIMESTAMPTZ;
+
+    -- Customer-initiated cancellation audit (late-cancel fee captured from the hold)
+    ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS cancellation_fee_amount INTEGER;
+    ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS canceled_at TIMESTAMPTZ;
+    ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS canceled_by TEXT;
 
     DO $$
     BEGIN
@@ -260,6 +268,47 @@ export async function initDb() {
     CREATE INDEX IF NOT EXISTS idx_providers_connect_account
       ON providers(connect_account_id);
 
+    -- Sequence for minting prov-XXXXXX provider ids
+    CREATE SEQUENCE IF NOT EXISTS provider_id_seq START 1;
+
+    -- Order-level change requests (reschedule / cancel / address update / inline edit)
+    CREATE TABLE IF NOT EXISTS order_changes (
+      id TEXT PRIMARY KEY,
+      order_id TEXT NOT NULL REFERENCES all_bookings(id) ON DELETE CASCADE,
+      change_type TEXT NOT NULL,
+      requested_by TEXT,
+      original_service_datetime TEXT,
+      original_service_address TEXT,
+      original_status TEXT,
+      requested_service_datetime TEXT,
+      requested_service_address TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      notes TEXT,
+      applied_note TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      processed_at TIMESTAMPTZ
+    );
+    CREATE INDEX IF NOT EXISTS idx_order_changes_order ON order_changes(order_id);
+    CREATE INDEX IF NOT EXISTS idx_order_changes_status ON order_changes(status);
+
+    -- Lightweight Ops Radar alert metadata. Alerts are computed from current order
+    -- state; this table only stores operator handling state such as snoozes.
+    CREATE TABLE IF NOT EXISTS ops_alerts (
+      order_id TEXT NOT NULL REFERENCES all_bookings(id) ON DELETE CASCADE,
+      alert_code TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      snoozed_until TIMESTAMPTZ,
+      last_seen_at TIMESTAMPTZ DEFAULT NOW(),
+      resolved_at TIMESTAMPTZ,
+      admin_note TEXT,
+      PRIMARY KEY (order_id, alert_code)
+    );
+    CREATE INDEX IF NOT EXISTS idx_ops_alerts_snoozed_until
+      ON ops_alerts(snoozed_until)
+      WHERE snoozed_until IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_ops_alerts_status
+      ON ops_alerts(status);
+
     CREATE INDEX IF NOT EXISTS idx_saved_servi_users_latest_pm
       ON saved_servi_users (latest_payment_method_id);
 
@@ -277,6 +326,7 @@ export async function initDb() {
       client_name TEXT NOT NULL,
       client_phone TEXT NOT NULL,
       client_email TEXT,
+      client_request_id TEXT,
       customer_id TEXT,
       status TEXT DEFAULT 'pending',
       converted_order_id TEXT,
@@ -295,6 +345,11 @@ export async function initDb() {
       WHERE customer_id IS NOT NULL;
 
     ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS attachments TEXT;
+    ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS client_request_id TEXT;
+    ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS service_address_details TEXT; -- JSON of structured address
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_service_requests_client_request_id
+      ON service_requests(client_request_id)
+      WHERE client_request_id IS NOT NULL;
 
     -- Incident reports & suggestions (from Help Center forms)
     CREATE TABLE IF NOT EXISTS service_reports (
@@ -339,6 +394,7 @@ export async function initDb() {
 
     ALTER TABLE partner_applications ADD COLUMN IF NOT EXISTS services TEXT;
     ALTER TABLE partner_applications ADD COLUMN IF NOT EXISTS coverage_areas TEXT;
+    ALTER TABLE partner_applications ADD COLUMN IF NOT EXISTS linked_provider_id TEXT;
 
     -- Auth Users (Client login identities)
     CREATE TABLE IF NOT EXISTS auth_users (
@@ -379,6 +435,10 @@ export async function initDb() {
     ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS phone_verified BOOLEAN DEFAULT false;
     ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT false;
     ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS first_identifier_type VARCHAR(10);
+    ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS terms_accepted_at TIMESTAMPTZ;
+    ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS email_skipped_at TIMESTAMPTZ;
+    ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS email_verify_token TEXT;
+    ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS email_verify_token_expires_at TIMESTAMPTZ;
 
     -- Backfill: existing phone-OTP users are phone-verified
     UPDATE auth_users SET phone_verified = true, first_identifier_type = 'phone'
@@ -401,6 +461,94 @@ export async function initDb() {
       is_default BOOLEAN DEFAULT FALSE,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
+
+    -- Detailed / CDMX-aware structured address fields (additive, nullable)
+    ALTER TABLE user_addresses ADD COLUMN IF NOT EXISTS address_type TEXT;        -- house | apartment | office | other
+    ALTER TABLE user_addresses ADD COLUMN IF NOT EXISTS exterior_number TEXT;
+    ALTER TABLE user_addresses ADD COLUMN IF NOT EXISTS interior_number TEXT;     -- depto / unidad / interior
+    ALTER TABLE user_addresses ADD COLUMN IF NOT EXISTS neighborhood TEXT;        -- colonia
+    ALTER TABLE user_addresses ADD COLUMN IF NOT EXISTS municipality TEXT;        -- alcaldía / municipio
+    ALTER TABLE user_addresses ADD COLUMN IF NOT EXISTS between_streets TEXT;     -- entre calles
+    ALTER TABLE user_addresses ADD COLUMN IF NOT EXISTS reference_notes TEXT;     -- referencias para llegar
+    ALTER TABLE user_addresses ADD COLUMN IF NOT EXISTS access_instructions TEXT; -- código de portón, caseta, estacionamiento
+    ALTER TABLE user_addresses ADD COLUMN IF NOT EXISTS contact_name TEXT;        -- quién recibe
+    ALTER TABLE user_addresses ADD COLUMN IF NOT EXISTS contact_phone TEXT;
+
+    CREATE TABLE IF NOT EXISTS user_favorite_services (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+      category_key TEXT NOT NULL,
+      subcategory_key TEXT NOT NULL,
+      service_name TEXT NOT NULL,
+      category_name TEXT,
+      subcategory_name TEXT,
+      image_url TEXT,
+      href TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (user_id, category_key, subcategory_key, service_name)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_user_favorite_services_user_created
+      ON user_favorite_services (user_id, created_at DESC);
+
+    -- Stripe webhook event ledger: dedupes retried deliveries by event.id.
+    -- A row inserted here means "we have started processing this event"; processed_at
+    -- is set when the handler finishes successfully. On hard error mid-handler the row
+    -- is deleted so Stripe's retry can replay safely.
+    CREATE TABLE IF NOT EXISTS stripe_webhook_events (
+      event_id          TEXT PRIMARY KEY,
+      event_type        TEXT NOT NULL,
+      payment_intent_id TEXT,
+      received_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      processed_at      TIMESTAMPTZ
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_stripe_webhook_events_received_at
+      ON stripe_webhook_events (received_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_stripe_webhook_events_pi
+      ON stripe_webhook_events (payment_intent_id)
+      WHERE payment_intent_id IS NOT NULL;
+
+    -- Revoked SERVI session JWTs (logout, account delete, sensitive change).
+    -- Rows can be pruned after expires_at < NOW().
+    CREATE TABLE IF NOT EXISTS revoked_sessions (
+      jti         TEXT PRIMARY KEY,
+      user_id     TEXT,
+      revoked_at  TIMESTAMPTZ DEFAULT NOW(),
+      expires_at  TIMESTAMPTZ NOT NULL,
+      reason      TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_revoked_sessions_expires
+      ON revoked_sessions(expires_at);
+
+    -- Per-identifier OTP / auth attempts for rate-limiting (phone or email).
+    -- Counted in a sliding window; old rows can be pruned periodically.
+    CREATE TABLE IF NOT EXISTS auth_otp_attempts (
+      id          BIGSERIAL PRIMARY KEY,
+      identifier  TEXT NOT NULL,
+      kind        TEXT NOT NULL,         -- 'phone' | 'email' | 'firebase_sync'
+      ip          TEXT,
+      created_at  TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_auth_otp_attempts_id_time
+      ON auth_otp_attempts(identifier, created_at DESC);
+
+    -- Audit log for sensitive auth actions (login, phone change, email change).
+    -- Account deletion is intentionally NOT logged here per product decision.
+    CREATE TABLE IF NOT EXISTS auth_events (
+      id          BIGSERIAL PRIMARY KEY,
+      user_id     TEXT,
+      event_type  TEXT NOT NULL,
+      ip          TEXT,
+      user_agent  TEXT,
+      metadata    JSONB,
+      created_at  TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_auth_events_user
+      ON auth_events(user_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_auth_events_type
+      ON auth_events(event_type, created_at DESC);
 
   `);
 }

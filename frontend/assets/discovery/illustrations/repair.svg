@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" role="img" aria-labelledby="title desc">
+  <title id="title">Toolbox</title>
+  <desc id="desc">Flat service illustration for repair discovery card.</desc>
+  <rect width="1200" height="900" fill="#F2EFE9"/>
+  <circle cx="958" cy="156" r="96" fill="#E09F4F" opacity=".2"/>
+  <circle cx="198" cy="742" r="132" fill="#8E6B4F" opacity=".12"/>
+  <path d="M130 705c150 72 291 101 464 85 184-17 286-84 476-52" fill="none" stroke="#40352D" stroke-width="18" stroke-linecap="round" opacity=".12"/>
+  <g fill="none" stroke="#40352D" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="311" y="362" width="578" height="286" rx="46" fill="#8E6B4F" opacity=".88" stroke-width="20"/><path stroke-width="20" d="M501 362v-60h198v60M311 462h578M567 462v66h66v-66"/><path stroke-width="28" d="M735 277l92 92M811 261l-92 92"/><path stroke-width="20" d="M410 548h92M698 548h92"/><circle cx="600" cy="496" r="18" fill="#E09F4F" stroke="none"/>
+  </g>
+  <g fill="#E09F4F" opacity=".92">
+    <circle cx="214" cy="182" r="16"/>
+    <circle cx="997" cy="697" r="13"/>
+    <path d="M1017 264l19 36 37 18-37 18-19 36-18-36-37-18 37-18z"/>
+  </g>
+</svg>

@@ -6,4 +6,10 @@ docs/pdfs/
 .claude/worktrees/
 .claude/settings.local.json
 test-results/
+tests/playwright-report/
 docs/superpowers/
+.superpowers/
+.firebase-config/
+*.log
+skills-lock.json
+.agents/

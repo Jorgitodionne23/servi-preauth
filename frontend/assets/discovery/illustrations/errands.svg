@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" role="img" aria-labelledby="title desc">
+  <title id="title">Shopping List</title>
+  <desc id="desc">Flat service illustration for errands discovery card.</desc>
+  <rect width="1200" height="900" fill="#EEF3F8"/>
+  <circle cx="958" cy="156" r="96" fill="#E8B45F" opacity=".2"/>
+  <circle cx="198" cy="742" r="132" fill="#527EA3" opacity=".12"/>
+  <path d="M130 705c150 72 291 101 464 85 184-17 286-84 476-52" fill="none" stroke="#30475C" stroke-width="18" stroke-linecap="round" opacity=".12"/>
+  <g fill="none" stroke="#30475C" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="361" y="248" width="374" height="484" rx="38" fill="#527EA3" opacity=".82" stroke-width="28"/><path stroke-width="20" d="M451 388h196M451 492h196M451 596h196M411 388l24 24 45-56M411 492l24 24 45-56M411 596l24 24 45-56M735 443h99l37 196H721"/><circle cx="760" cy="682" r="32" fill="#E8B45F"/><circle cx="852" cy="682" r="32" fill="#E8B45F"/>
+  </g>
+  <g fill="#E8B45F" opacity=".92">
+    <circle cx="214" cy="182" r="16"/>
+    <circle cx="997" cy="697" r="13"/>
+    <path d="M1017 264l19 36 37 18-37 18-19 36-18-36-37-18 37-18z"/>
+  </g>
+</svg>

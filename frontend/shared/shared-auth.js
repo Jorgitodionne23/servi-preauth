@@ -16,6 +16,7 @@
   let recaptchaVerifier = null;
   let confirmationResult = null;
   let firebaseReady = false;
+  let usingAuthEmulator = false;
 
   // ── USL flow state ──────────────────────────────────────────────────────────
   let uslIdentifier = '';            // raw value user typed (E164 phone or email)
@@ -23,9 +24,25 @@
   let uslFirstIdentifierType = '';   // 'phone' | 'email' (what user entered on screen 1)
   let uslCurrentOTPType = '';        // 'phone' | 'email' (which OTP is active)
   let uslIsNew = false;              // true = signup, false = login
+  let uslSignupComplete = false;     // true only while explicitly creating the backend user
+  let uslSuppressAutoSync = false;   // temporarily prevents auth-state sync during provider checks
+  let uslCompletingExisting = false; // true when forcing an incomplete existing profile through required fields
   let uslNewUserData = {};           // accumulates { phone, email, name } for new user
 
+  // ── Email-login routing state (Uber-style) ──────────────────────────────────
+  // When a returning user types their email at the identifier screen, we default
+  // to phone OTP and show only first name + masked phone. These vars capture the
+  // context needed by the OTP screen and the "More options" chooser.
+  let uslLoginViaEmail = false;      // true when user typed email but we're sending phone OTP
+  let uslTypedEmail = '';            // the email the user typed (used for magic-link fallback)
+  let uslAccountFirstName = '';      // first name returned by backend
+  let uslAccountPhoneLast4 = '';     // last 4 digits of phone for masked display
+  let uslAccountEmailVerified = false; // whether email is verified (controls More options visibility)
+
   // ── Constants ───────────────────────────────────────────────────────────────
+  // Firebase Phone Auth controls the real SMS code length. Keep this at 6 unless
+  // the SMS provider is replaced with a custom OTP implementation.
+  const PHONE_OTP_CODE_LENGTH = 6;
   const COUNTRIES = [
     { code: 'MX', dial: '+52', flag: '🇲🇽', label: 'MX +52' },
     { code: 'US', dial: '+1',  flag: '🇺🇸', label: 'US +1'  },
@@ -35,8 +52,72 @@
     { code: 'BR', dial: '+55', flag: '🇧🇷', label: 'BR +55' },
     { code: 'CL', dial: '+56', flag: '🇨🇱', label: 'CL +56' },
     { code: 'PE', dial: '+51', flag: '🇵🇪', label: 'PE +51' },
+    { code: 'UY', dial: '+598', flag: '🇺🇾', label: 'UY +598' },
+    { code: 'PY', dial: '+595', flag: '🇵🇾', label: 'PY +595' },
+    { code: 'BO', dial: '+591', flag: '🇧🇴', label: 'BO +591' },
+    { code: 'EC', dial: '+593', flag: '🇪🇨', label: 'EC +593' },
+    { code: 'VE', dial: '+58', flag: '🇻🇪', label: 'VE +58' },
+    { code: 'CR', dial: '+506', flag: '🇨🇷', label: 'CR +506' },
+    { code: 'GT', dial: '+502', flag: '🇬🇹', label: 'GT +502' },
+    { code: 'HN', dial: '+504', flag: '🇭🇳', label: 'HN +504' },
+    { code: 'SV', dial: '+503', flag: '🇸🇻', label: 'SV +503' },
+    { code: 'NI', dial: '+505', flag: '🇳🇮', label: 'NI +505' },
+    { code: 'PA', dial: '+507', flag: '🇵🇦', label: 'PA +507' },
+    { code: 'DO', dial: '+1', flag: '🇩🇴', label: 'DO +1' },
+    { code: 'PR', dial: '+1', flag: '🇵🇷', label: 'PR +1' },
     { code: 'ES', dial: '+34', flag: '🇪🇸', label: 'ES +34' },
+    { code: 'PT', dial: '+351', flag: '🇵🇹', label: 'PT +351' },
+    { code: 'FR', dial: '+33', flag: '🇫🇷', label: 'FR +33' },
+    { code: 'DE', dial: '+49', flag: '🇩🇪', label: 'DE +49' },
+    { code: 'IT', dial: '+39', flag: '🇮🇹', label: 'IT +39' },
+    { code: 'GB', dial: '+44', flag: '🇬🇧', label: 'GB +44' },
+    { code: 'IE', dial: '+353', flag: '🇮🇪', label: 'IE +353' },
+    { code: 'NL', dial: '+31', flag: '🇳🇱', label: 'NL +31' },
+    { code: 'BE', dial: '+32', flag: '🇧🇪', label: 'BE +32' },
+    { code: 'CH', dial: '+41', flag: '🇨🇭', label: 'CH +41' },
+    { code: 'AT', dial: '+43', flag: '🇦🇹', label: 'AT +43' },
+    { code: 'DK', dial: '+45', flag: '🇩🇰', label: 'DK +45' },
+    { code: 'FI', dial: '+358', flag: '🇫🇮', label: 'FI +358' },
+    { code: 'NO', dial: '+47', flag: '🇳🇴', label: 'NO +47' },
+    { code: 'SE', dial: '+46', flag: '🇸🇪', label: 'SE +46' },
+    { code: 'PL', dial: '+48', flag: '🇵🇱', label: 'PL +48' },
+    { code: 'CZ', dial: '+420', flag: '🇨🇿', label: 'CZ +420' },
+    { code: 'HU', dial: '+36', flag: '🇭🇺', label: 'HU +36' },
+    { code: 'RO', dial: '+40', flag: '🇷🇴', label: 'RO +40' },
+    { code: 'GR', dial: '+30', flag: '🇬🇷', label: 'GR +30' },
+    { code: 'TR', dial: '+90', flag: '🇹🇷', label: 'TR +90' },
+    { code: 'UA', dial: '+380', flag: '🇺🇦', label: 'UA +380' },
+    { code: 'RU', dial: '+7', flag: '🇷🇺', label: 'RU +7' },
+    { code: 'IL', dial: '+972', flag: '🇮🇱', label: 'IL +972' },
+    { code: 'AE', dial: '+971', flag: '🇦🇪', label: 'AE +971' },
+    { code: 'SA', dial: '+966', flag: '🇸🇦', label: 'SA +966' },
+    { code: 'QA', dial: '+974', flag: '🇶🇦', label: 'QA +974' },
+    { code: 'KW', dial: '+965', flag: '🇰🇼', label: 'KW +965' },
+    { code: 'IN', dial: '+91', flag: '🇮🇳', label: 'IN +91' },
+    { code: 'PK', dial: '+92', flag: '🇵🇰', label: 'PK +92' },
+    { code: 'BD', dial: '+880', flag: '🇧🇩', label: 'BD +880' },
+    { code: 'LK', dial: '+94', flag: '🇱🇰', label: 'LK +94' },
+    { code: 'CN', dial: '+86', flag: '🇨🇳', label: 'CN +86' },
+    { code: 'HK', dial: '+852', flag: '🇭🇰', label: 'HK +852' },
+    { code: 'JP', dial: '+81', flag: '🇯🇵', label: 'JP +81' },
+    { code: 'KR', dial: '+82', flag: '🇰🇷', label: 'KR +82' },
+    { code: 'TW', dial: '+886', flag: '🇹🇼', label: 'TW +886' },
+    { code: 'SG', dial: '+65', flag: '🇸🇬', label: 'SG +65' },
+    { code: 'MY', dial: '+60', flag: '🇲🇾', label: 'MY +60' },
+    { code: 'TH', dial: '+66', flag: '🇹🇭', label: 'TH +66' },
+    { code: 'VN', dial: '+84', flag: '🇻🇳', label: 'VN +84' },
+    { code: 'PH', dial: '+63', flag: '🇵🇭', label: 'PH +63' },
+    { code: 'ID', dial: '+62', flag: '🇮🇩', label: 'ID +62' },
+    { code: 'AU', dial: '+61', flag: '🇦🇺', label: 'AU +61' },
+    { code: 'NZ', dial: '+64', flag: '🇳🇿', label: 'NZ +64' },
+    { code: 'ZA', dial: '+27', flag: '🇿🇦', label: 'ZA +27' },
+    { code: 'NG', dial: '+234', flag: '🇳🇬', label: 'NG +234' },
+    { code: 'KE', dial: '+254', flag: '🇰🇪', label: 'KE +254' },
+    { code: 'EG', dial: '+20', flag: '🇪🇬', label: 'EG +20' },
+    { code: 'MA', dial: '+212', flag: '🇲🇦', label: 'MA +212' },
+    { code: 'GH', dial: '+233', flag: '🇬🇭', label: 'GH +233' },
   ];
+  window.__SERVI_COUNTRIES = COUNTRIES.slice();
   let selectedDial = '+52';
 
   const icons = {
@@ -50,12 +131,54 @@
   function lang() { return window.__lang || 'es'; }
   function isEs() { return lang() === 'es'; }
   function API()  { return ((window.CONFIG && window.CONFIG.API_BASE) || '').replace(/\/+$/, ''); }
+  function isSignupFlowLocked() {
+    return !!(
+      uslCompletingExisting ||
+      (uslIsNew && !uslSignupComplete && (
+        uslNewUserData.phone_verified ||
+        uslNewUserData.email_verified ||
+        uslNewUserData.name
+      ))
+    );
+  }
+  function shouldDeferBackendSync() {
+    return uslSuppressAutoSync || (uslIsNew && !uslSignupComplete);
+  }
+  function hasPendingEmailVerificationAction() {
+    return !!localStorage.getItem('servi_email_verification_mode');
+  }
 
   // ── Modal container ──────────────────────────────────────────────────────────
   if (!document.getElementById('auth-modal-global')) {
     const div = document.createElement('div');
     div.id = 'auth-modal-global';
     document.body.appendChild(div);
+  }
+
+  function ensureAuthLoadingStyles() {
+    if (document.getElementById('servi-auth-loading-styles')) return;
+    var style = document.createElement('style');
+    style.id = 'servi-auth-loading-styles';
+    style.textContent =
+      '#auth-modal-global .auth-loading-dots{' +
+        'display:inline-flex;align-items:center;justify-content:center;gap:5px;min-width:38px;height:1em;vertical-align:middle' +
+      '}' +
+      '#auth-modal-global .auth-loading-dot{' +
+        'width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.42;' +
+        'transform:translateY(3px) scale(.78);animation:authDotGesture .9s cubic-bezier(.2,.8,.25,1) infinite' +
+      '}' +
+      '#auth-modal-global .auth-loading-dot:nth-child(2){animation-delay:.12s}' +
+      '#auth-modal-global .auth-loading-dot:nth-child(3){animation-delay:.24s}' +
+      '@keyframes authDotGesture{' +
+        '0%,80%,100%{opacity:.38;transform:translateY(3px) scale(.78)}' +
+        '35%{opacity:1;transform:translateY(-5px) scale(1.12)}' +
+        '55%{opacity:.72;transform:translateY(0) scale(.96)}' +
+      '}' +
+      '@media (prefers-reduced-motion: reduce){' +
+        '#auth-modal-global .auth-loading-dot{animation:authDotFade 1.1s ease-in-out infinite;transform:none}' +
+        '@keyframes authDotFade{0%,80%,100%{opacity:.35}35%{opacity:1}}' +
+      '}';
+    document.head.appendChild(style);
   }
 
   // ── Firebase SDK (dynamic load) ──────────────────────────────────────────────
@@ -77,6 +200,15 @@
       if (!config || !config.apiKey) { console.warn('[SERVI] No Firebase config or API key found'); return false; }
       if (!firebase.apps.length) firebase.initializeApp(config);
       auth = firebase.auth();
+      usingAuthEmulator = !!(
+        (location.hostname === 'localhost' || location.hostname === '127.0.0.1') &&
+        window.CONFIG &&
+        window.CONFIG.USE_FIREBASE_AUTH_EMULATOR !== false
+      );
+      if (usingAuthEmulator) {
+        auth.useEmulator('http://127.0.0.1:9099', { disableWarnings: true });
+        auth.settings.appVerificationDisabledForTesting = true;
+      }
       auth.languageCode = lang();
       firebaseReady = true;
       if (localStorage.getItem('servi_pending_logout')) {
@@ -94,33 +226,71 @@
   // ── Auth state listener ──────────────────────────────────────────────────────
   function onAuthStateChanged(firebaseUser) {
     if (firebaseUser) {
-      window.__user = { id: firebaseUser.uid, email: firebaseUser.email, name: firebaseUser.displayName, phone: firebaseUser.phoneNumber };
       window.__syncError = null;
-      window.__syncPromise = syncWithBackend(firebaseUser);
+      if (shouldDeferBackendSync()) {
+        window.__user = null;
+        window.__syncPromise = null;
+        localStorage.removeItem('servi_user_session');
+      } else {
+        window.__user = { id: firebaseUser.uid, email: firebaseUser.email, name: firebaseUser.displayName, phone: firebaseUser.phoneNumber };
+        window.__syncPromise = syncWithBackend(firebaseUser);
+        // Ghost user (Firebase identity exists but auth_users row was never finished)
+        // → surface the name-collection screen instead of silently sitting on
+        // an unauthenticated navbar. Triggered on cold-start and cross-tab
+        // Firebase sync (e.g. email magic link clicked in another tab).
+        window.__syncPromise.then(function () { maybeAutoResumeGhost(firebaseUser); });
+      }
     } else {
       if (localStorage.getItem('servi_pending_logout')) localStorage.removeItem('servi_pending_logout');
-      window.__user = null;
-      localStorage.removeItem('servi_user_session');
+      var preservingEmailAction = hasPendingEmailVerificationAction() && !!localStorage.getItem('servi_user_session');
+      if (preservingEmailAction) {
+        try {
+          var preservedSession = JSON.parse(localStorage.getItem('servi_user_session') || 'null');
+          window.__user = preservedSession && preservedSession.user ? preservedSession.user : window.__user;
+        } catch (_) {}
+      } else {
+        window.__user = null;
+        localStorage.removeItem('servi_user_session');
+      }
       window.__syncError = null;
       window.__syncPromise = null;
     }
     if (window.buildNavbar) window.buildNavbar();
   }
 
-  async function syncWithBackend(firebaseUser) {
+  async function maybeAutoResumeGhost(firebaseUser) {
+    if (!window.__syncError || window.__syncError.code !== 'signup_incomplete') return;
+    if (uslSuppressAutoSync || uslIsNew || uslCompletingExisting) return;
+    var modalEl = document.getElementById('auth-modal-global');
+    if (modalEl && modalEl.innerHTML.trim() !== '') return;
+    var resumeType = (firebaseUser && firebaseUser.phoneNumber) ? 'phone' : 'email';
+    document.body.style.overflow = 'hidden';
+    await resumeIncompleteSignupIfNeeded(firebaseUser, resumeType);
+  }
+
+  async function syncWithBackend(firebaseUser, options) {
     try {
       var idToken = await firebaseUser.getIdToken(true);
+      // Confirm-Phone login: token carries phone but no email; surface uslTypedEmail so
+      // the backend can verify the resolved phone account's email matches what the user typed.
+      var emailHint = (uslLoginViaEmail && !firebaseUser.email) ? (uslTypedEmail || null) : null;
+      var body = {
+        name:  (uslNewUserData && uslNewUserData.name) || firebaseUser.displayName || null,
+        phone: firebaseUser.phoneNumber || (uslNewUserData && uslNewUserData.phone) || null,
+        email: firebaseUser.email       || (uslNewUserData && uslNewUserData.email) || emailHint || null,
+        phone_verified: uslNewUserData && uslNewUserData.phone_verified != null ? uslNewUserData.phone_verified : (!!firebaseUser.phoneNumber || null),
+        email_verified: uslNewUserData && uslNewUserData.email_verified != null ? uslNewUserData.email_verified : (firebaseUser.emailVerified === true ? true : null),
+        first_identifier_type: uslFirstIdentifierType || null,
+      };
+      if (options && options.signupComplete) {
+        body.signup_complete = true;
+        body.terms_accepted = !!(uslNewUserData && uslNewUserData.terms_accepted);
+        body.email_skipped = !!(uslNewUserData && uslNewUserData.email_skipped);
+      }
       var res = await fetch(API() + '/api/auth/firebase', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + idToken },
-        body: JSON.stringify({
-          name:  firebaseUser.displayName || (uslNewUserData && uslNewUserData.name) || null,
-          phone: firebaseUser.phoneNumber || (uslNewUserData && uslNewUserData.phone) || null,
-          email: firebaseUser.email       || (uslNewUserData && uslNewUserData.email) || null,
-          phone_verified: uslNewUserData && uslNewUserData.phone_verified != null ? uslNewUserData.phone_verified : (!!firebaseUser.phoneNumber || null),
-          email_verified: uslNewUserData && uslNewUserData.email_verified != null ? uslNewUserData.email_verified : (!!firebaseUser.email     || null),
-          first_identifier_type: uslFirstIdentifierType || null,
-        })
+        body: JSON.stringify(body)
       });
       if (res.ok) {
         var data = await res.json();
@@ -141,10 +311,23 @@
           if (window.buildNavbar) window.buildNavbar();
         } else if (res.status === 409 && errData.error === 'phone_exists') {
           window.__syncError = { code: 'phone_exists', message: errData.message };
+        } else if (res.status === 409 && errData.error === 'signup_incomplete') {
+          localStorage.removeItem('servi_user_session');
+          window.__user = null;
+          window.__syncError = { code: 'signup_incomplete', message: errData.message };
+        } else if (res.status === 403 && errData.error === 'email_phone_mismatch') {
+          localStorage.removeItem('servi_user_session');
+          window.__user = null;
+          try { await auth.signOut(); } catch (_) {}
+          window.__syncError = { code: 'email_phone_mismatch', message: errData.message };
         } else {
           window.__syncError = { code: 'backend_sync_failed', status: res.status, message: errData.message };
         }
-        console.error('[SERVI] Backend sync failed:', res.status, errData);
+        if (res.status === 409 && errData.error === 'signup_incomplete') {
+          console.info('[SERVI] Signup continuation needed:', errData.error);
+        } else {
+          console.error('[SERVI] Backend sync failed:', res.status, errData);
+        }
       }
     } catch (err) {
       window.__syncError = { code: 'network_error', message: err.message };
@@ -158,17 +341,119 @@
       var es = isEs();
       var errMsg = window.__syncError.code === 'phone_exists'
         ? (window.__syncError.message || (es ? 'Este número ya está registrado con otra cuenta.' : 'This phone is already registered with another account.'))
+        : window.__syncError.code === 'signup_incomplete'
+          ? (window.__syncError.message || (es ? 'Completa los pasos requeridos para crear tu cuenta.' : 'Complete the required steps to create your account.'))
+        : window.__syncError.code === 'email_phone_mismatch'
+          ? (es ? 'Ese teléfono no coincide con la cuenta de este correo. Intenta de nuevo.' : 'That phone doesn\'t match the account for this email. Try again.')
         : (es ? 'Error al conectar con el servidor. Intenta de nuevo.' : 'Error connecting to server. Please try again.');
       if (auth) { try { await auth.signOut(); } catch (_) {} }
+      // For mismatch, return the user to the Confirm-Phone step so they can re-enter their phone.
+      if (window.__syncError.code === 'email_phone_mismatch' && uslLoginViaEmail) {
+        window.__syncError = null;
+        renderConfirmPhoneScreen();
+        setError(errMsg);
+        return false;
+      }
       setError(errMsg);
       return false;
     }
     return true;
   }
 
+  async function resumeIncompleteSignupIfNeeded(firebaseUser, firstIdentifierType) {
+    if (window.__syncPromise) { try { await window.__syncPromise; } catch (_) {} }
+    if (!window.__syncError || window.__syncError.code !== 'signup_incomplete') return false;
+
+    var resumeType = firstIdentifierType || ((firebaseUser && firebaseUser.phoneNumber) ? 'phone' : 'email');
+    uslIsNew = true;
+    uslSignupComplete = false;
+    uslSuppressAutoSync = true;
+    uslCompletingExisting = false;
+    uslFirstIdentifierType = resumeType;
+    uslIdentifierType = resumeType;
+    uslCurrentOTPType = resumeType;
+
+    uslNewUserData = Object.assign({}, uslNewUserData || {});
+    if (resumeType === 'phone') {
+      uslIdentifier = (firebaseUser && firebaseUser.phoneNumber) || uslIdentifier;
+      uslNewUserData.phone = uslIdentifier;
+      uslNewUserData.phone_verified = true;
+    } else {
+      uslIdentifier = ((firebaseUser && firebaseUser.email) || uslIdentifier || '').toLowerCase();
+      uslNewUserData.email = uslIdentifier;
+      uslNewUserData.email_verified = true;
+      if (firebaseUser && firebaseUser.displayName && !uslNewUserData.name) {
+        uslNewUserData.name = firebaseUser.displayName;
+      }
+    }
+
+    window.__syncError = null;
+    window.__syncPromise = null;
+    window.__user = null;
+    localStorage.removeItem('servi_user_session');
+    renderNameCollectionScreen();
+    return true;
+  }
+
+  async function completeSignupSync() {
+    var firebaseUser = auth && auth.currentUser;
+    if (!firebaseUser) {
+      setError(isEs() ? 'No pudimos confirmar tu sesión. Intenta de nuevo.' : 'We could not confirm your session. Please try again.');
+      return false;
+    }
+    uslSignupComplete = true;
+    uslSuppressAutoSync = false;
+    window.__syncError = null;
+    window.__syncPromise = syncWithBackend(firebaseUser, { signupComplete: true });
+    var ok = await awaitSyncAndCheck();
+    if (!ok) uslSignupComplete = false;
+    return ok;
+  }
+
+  async function waitForFirebaseEmail(email, timeoutMs) {
+    var target = String(email || '').toLowerCase();
+    var deadline = Date.now() + (timeoutMs || 5000);
+    while (Date.now() < deadline) {
+      if (auth && auth.currentUser && String(auth.currentUser.email || '').toLowerCase() === target) {
+        return auth.currentUser;
+      }
+      await new Promise(function (resolve) { setTimeout(resolve, 250); });
+    }
+    return auth && auth.currentUser;
+  }
+
+  function requiresProfileCompletion(user) {
+    return !!(user && !user.name);
+  }
+
+  function startExistingProfileCompletion(user) {
+    uslCompletingExisting = true;
+    uslIsNew = false;
+    uslSignupComplete = true;
+    uslFirstIdentifierType = (user && user.phone) || (auth && auth.currentUser && auth.currentUser.phoneNumber)
+      ? 'phone'
+      : 'email';
+    uslNewUserData = {
+      email: user.email || null,
+      name: user.name || '',
+      phone: user.phone || (auth && auth.currentUser && auth.currentUser.phoneNumber) || null,
+      phone_verified: !!user.phone_verified || !!(auth && auth.currentUser && auth.currentUser.phoneNumber),
+      email_verified: !!user.email_verified,
+    };
+    if (!user.name) {
+      renderNameCollectionScreen();
+    } else if (!user.phone_verified) {
+      renderSecondaryIdentifierScreen();
+    } else {
+      uslCompletingExisting = false;
+      onAuthSuccess();
+    }
+  }
+
   // ── onAuthSuccess: close modal, re-render booking step 3 if in-flight ────────
   function onAuthSuccess() {
-    closeAuthModal();
+    uslCompletingExisting = false;
+    closeAuthModal(true);
     if (window.bookingState && window.bookingState.step === 3 && document.getElementById('booking-panel')) {
       if (window.__user) {
         window.bookingState.clientName  = window.__user.name  || window.bookingState.clientName;
@@ -177,20 +462,26 @@
       }
       if (window.renderBooking) window.renderBooking();
     }
+    window.dispatchEvent(new Event('servi-auth-success'));
   }
 
   // ── Modal shell ──────────────────────────────────────────────────────────────
-  function modalShell(title, showBack, backFn) {
+  function modalShell(title, showBack, backFn, forceShowBack) {
+    ensureAuthLoadingStyles();
+    var locked = isSignupFlowLocked();
+    var renderBack = !!showBack && (!locked || !!forceShowBack);
     return (
-      '<div class="modal-overlay" onclick="closeAuthModal()">' +
+      '<div class="modal-overlay" onclick="window.__authOverlayClick(event)">' +
         '<div class="modal-content" onclick="event.stopPropagation()" style="max-width:420px">' +
           '<div style="padding:32px">' +
             '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">' +
-              (showBack
+              (renderBack
                 ? '<button onclick="' + backFn + '()" style="background:none;border:none;cursor:pointer;padding:4px;display:flex;align-items:center;gap:6px;font-size:14px;color:#666;font-family:\'DM Sans\',sans-serif">' + icons.back + (isEs() ? ' Volver' : ' Back') + '</button>'
                 : '<div></div>') +
               '<h2 class="heading-md" style="margin:0">' + title + '</h2>' +
-              '<button onclick="closeAuthModal()" style="background:none;border:none;cursor:pointer;padding:4px">' + icons.x + '</button>' +
+              (locked
+                ? '<div style="width:28px"></div>'
+                : '<button onclick="window.__authCloseClick()" aria-label="' + (isEs() ? 'Cerrar' : 'Close') + '" style="background:none;border:none;cursor:pointer;padding:4px">' + icons.x + '</button>') +
             '</div>' +
             '<div id="auth-screen-body"></div>' +
           '</div>' +
@@ -210,24 +501,154 @@
   }
 
   function errorBox() {
-    return '<div id="auth-error" style="display:none;font-size:13px;color:#dc2626;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 12px;margin-bottom:12px"></div>';
+    return '<div id="auth-error" role="alert" aria-live="assertive" style="display:none;font-size:13px;color:#dc2626;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 12px;margin-bottom:12px"></div>';
   }
 
+  function loadingDotsMarkup(label) {
+    return '<span class="auth-loading-dots" role="status" aria-label="' + label + '">' +
+      '<span class="auth-loading-dot"></span>' +
+      '<span class="auth-loading-dot"></span>' +
+      '<span class="auth-loading-dot"></span>' +
+    '</span>';
+  }
+
+  function setVerifyOTPButtonLoading(btn, isLoading, es) {
+    if (!btn) return;
+    btn.disabled = !!isLoading;
+    if (isLoading) {
+      btn.innerHTML = loadingDotsMarkup(es ? 'Verificando' : 'Verifying');
+    } else {
+      btn.textContent = es ? 'Verificar' : 'Verify';
+    }
+  }
+
+  window.__authOverlayClick = function (event) {
+    if (event && event.target !== event.currentTarget) return;
+    window.__authCloseClick();
+  };
+
+  window.__authCloseClick = function () {
+    if (isSignupFlowLocked()) {
+      setError(isEs()
+        ? 'Completa estos pasos para terminar el registro.'
+        : 'Complete these steps to finish sign up.');
+      return;
+    }
+    closeAuthModal();
+  };
+
   function infoBanner(text) {
-    return '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 12px;font-size:13px;color:#166534;margin-bottom:16px">' + text + '</div>';
+    return '<div style="background:rgba(149,204,213,0.14);border:1px solid rgba(149,204,213,0.34);border-radius:8px;padding:10px 12px;font-size:13px;color:#4f9fab;margin-bottom:16px">' + text + '</div>';
+  }
+
+  function otpInputMarkup(es) {
+    var boxes = '';
+    for (var i = 0; i < PHONE_OTP_CODE_LENGTH; i++) {
+      boxes += '<div class="auth-otp-box" data-otp-index="' + i + '" ' +
+        'style="height:54px;border:1.5px solid #d9d9d9;border-radius:10px;background:#fff;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:600;color:#0a0a0a;box-sizing:border-box"></div>';
+    }
+    return (
+      '<div id="auth-otp-wrap" role="group" aria-label="' + (es ? 'Código de verificación' : 'Verification code') + '" ' +
+        'style="position:relative;display:grid;grid-template-columns:repeat(' + PHONE_OTP_CODE_LENGTH + ',minmax(0,1fr));gap:8px;margin-bottom:12px;cursor:text">' +
+        boxes +
+        '<input id="auth-otp" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="' + PHONE_OTP_CODE_LENGTH + '" ' +
+          'aria-label="' + (es ? 'Código de ' + PHONE_OTP_CODE_LENGTH + ' dígitos' : PHONE_OTP_CODE_LENGTH + '-digit code') + '" ' +
+          'style="position:absolute;inset:0;width:100%;height:100%;opacity:0;border:0;padding:0;margin:0;cursor:text" />' +
+      '</div>'
+    );
+  }
+
+  function updateOTPBoxes() {
+    var input = document.getElementById('auth-otp');
+    if (!input) return;
+    var value = String(input.value || '').replace(/\D/g, '').slice(0, PHONE_OTP_CODE_LENGTH);
+    if (input.value !== value) input.value = value;
+    var boxes = document.querySelectorAll('.auth-otp-box');
+    var focused = document.activeElement === input;
+    var activeIndex = Math.min(value.length, PHONE_OTP_CODE_LENGTH - 1);
+    boxes.forEach(function (box, index) {
+      box.textContent = value[index] || '';
+      var isActive = focused && index === activeIndex;
+      var isFilled = !!value[index];
+      box.style.borderColor = isActive ? '#0a0a0a' : (isFilled ? '#9ca3af' : '#d9d9d9');
+      box.style.boxShadow = isActive ? '0 0 0 3px rgba(10,10,10,0.08)' : 'none';
+      box.style.background = isFilled ? '#fafafa' : '#fff';
+    });
+  }
+
+  function attachOTPInputHandlers() {
+    var input = document.getElementById('auth-otp');
+    var wrap = document.getElementById('auth-otp-wrap');
+    if (!input || !wrap) return;
+    wrap.addEventListener('click', function () { input.focus(); });
+    input.addEventListener('input', updateOTPBoxes);
+    input.addEventListener('focus', updateOTPBoxes);
+    input.addEventListener('blur', updateOTPBoxes);
+    input.addEventListener('keydown', function (event) {
+      if (event.key === 'Enter') window.__uslVerifyOTP();
+    });
+    updateOTPBoxes();
+  }
+
+  function getOTPCode() {
+    return String((document.getElementById('auth-otp') || {}).value || '').replace(/\D/g, '').slice(0, PHONE_OTP_CODE_LENGTH);
   }
 
   function progressDots(active) {
     // active is 1-indexed (1=screen1, 2=OTP, 3=name, 4=secondary)
     var dots = '';
     for (var i = 1; i <= 4; i++) {
-      var bg = i < active ? '#0a0a0a' : i === active ? '#10b981' : '#e8e8e8';
+      var bg = i < active ? '#0a0a0a' : i === active ? 'var(--color-accent, #95ccd5)' : '#e8e8e8';
       dots += '<div style="flex:1;height:3px;border-radius:2px;background:' + bg + '"></div>';
     }
     return '<div style="display:flex;gap:4px;margin-bottom:20px">' + dots + '</div>';
   }
 
   // ── Country select ───────────────────────────────────────────────────────────
+  function setSelectedDial(dial) {
+    selectedDial = dial || selectedDial;
+    var select = document.getElementById('auth-country-code');
+    if (select && select.value !== selectedDial) select.value = selectedDial;
+  }
+
+  function countryForInternationalDigits(digits) {
+    if (!digits) return null;
+    var sorted = COUNTRIES.slice().sort(function (a, b) { return b.dial.length - a.dial.length; });
+    for (var i = 0; i < sorted.length; i++) {
+      var dialDigits = sorted[i].dial.replace(/\D/g, '');
+      if (digits.indexOf(dialDigits) === 0) return sorted[i];
+    }
+    return null;
+  }
+
+  function detectDialFromPhoneInput(input) {
+    if (!input) return;
+    var raw = String(input.value || '').trim();
+    var explicitInternational = raw.indexOf('+') === 0 || raw.indexOf('00') === 0;
+    if (!explicitInternational) return;
+
+    var digits = raw.replace(/\D/g, '');
+    if (raw.indexOf('00') === 0) digits = digits.replace(/^00/, '');
+    var country = countryForInternationalDigits(digits);
+    if (!country) return;
+
+    setSelectedDial(country.dial);
+    var national = digits.slice(country.dial.replace(/\D/g, '').length);
+    if (national && input.value !== national) input.value = national;
+  }
+
+  function phoneIdentifierFromInput(raw) {
+    raw = String(raw || '').trim();
+    if (raw.indexOf('+') === 0) return '+' + raw.replace(/\D/g, '');
+    if (raw.indexOf('00') === 0) {
+      var intlDigits = raw.replace(/\D/g, '').replace(/^00/, '');
+      var country = countryForInternationalDigits(intlDigits);
+      if (country) setSelectedDial(country.dial);
+      return '+' + intlDigits;
+    }
+    return selectedDial + raw.replace(/\D/g, '');
+  }
+
   function countrySelect(inputId) {
     var opts = COUNTRIES.map(function (c) {
       return '<option value="' + c.dial + '"' + (c.dial === selectedDial ? ' selected' : '') + '>' + c.flag + ' ' + c.label + '</option>';
@@ -240,11 +661,13 @@
     );
   }
 
-  window.__uslSetDial = function (val) { selectedDial = val; };
+  window.__uslSetDial = function (val) { setSelectedDial(val); };
 
   // ── Monitor for email verification in other tab ─────────────────────────────────
   // When user clicks email link in a new tab, that tab verifies and broadcasts.
-  // This monitors for that broadcast and continues the flow in the original modal.
+  // The localStorage flag is a UX trigger ONLY (signals "stop polling, check now") —
+  // we never trust it as proof of verification. Final email_verified state is always
+  // confirmed server-side via GET /api/auth/me before the booking gate opens.
   window.__monitorEmailVerification = function () {
     var startTime = Date.now();
     var timeout = 10 * 60 * 1000; // 10 minutes
@@ -252,67 +675,81 @@
     var onVerificationDetected = null;
     var handled = false; // guard against double-calls across storage/poll/visibility triggers
 
-    function checkVerified() {
+    function checkVerifiedFlag() {
       return !!localStorage.getItem('servi_email_verified_at');
     }
 
-    function continueAfterVerification() {
+    // Authoritative server check — flag alone is never trusted (audit A5).
+    async function confirmEmailVerifiedWithBackend() {
+      try {
+        var sess = JSON.parse(localStorage.getItem('servi_user_session') || 'null');
+        if (!sess || !sess.token) return null;
+        var res = await fetch(API() + '/api/auth/me', {
+          headers: { 'Authorization': 'Bearer ' + sess.token }
+        });
+        if (!res.ok) return null;
+        var data = await res.json();
+        if (data && data.user && data.user.email_verified === true) {
+          return data.user;
+        }
+        return null;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    async function continueAfterVerification() {
       if (handled) return;
       handled = true;
       if (pollInterval) clearInterval(pollInterval);
       if (onVerificationDetected) window.removeEventListener('storage', onVerificationDetected);
       document.removeEventListener('visibilitychange', onVisibilityChange);
 
-      // The original tab already has the email in uslIdentifier — it was set when the user
-      // typed it and never changes. No need for Firebase cross-tab onAuthStateChanged
-      // (unreliable with Firebase v9+ IndexedDB persistence) or servi_user_session.
-      var email = null;
-      if (uslIdentifierType === 'email' && uslIdentifier) {
-        email = uslIdentifier;
-      } else if (window.__user && window.__user.email) {
-        email = window.__user.email;
-      } else {
-        try {
-          var sess = JSON.parse(localStorage.getItem('servi_user_session') || 'null');
-          if (sess && sess.user && sess.user.email) email = sess.user.email;
-        } catch (_) {}
-      }
-
-      if (email) {
-        uslNewUserData.email = email;
+      if (uslIsNew && uslFirstIdentifierType === 'email') {
+        var primaryEmail = uslIdentifier || localStorage.getItem('servi_email_link_target');
+        await waitForFirebaseEmail(primaryEmail, 5000);
+        uslNewUserData.email = primaryEmail;
         uslNewUserData.email_verified = true;
-        if (uslIsNew && uslFirstIdentifierType === 'email') {
-          renderNameCollectionScreen();
-        } else {
-          onAuthSuccess();
-        }
+        renderNameCollectionScreen();
         return;
       }
 
-      // Fallback poll — only reached if email somehow not in scope (edge case)
-      var checkCount = 0;
-      var stateCheckInterval = setInterval(function () {
-        checkCount++;
-        if (checkCount > 150) { clearInterval(stateCheckInterval); return; } // 15 seconds max
+      // Existing-user login that landed on a ghost: the "check email" screen
+      // is currently shown, so onAuthStateChanged's auto-resume will skip
+      // (modal not empty). Resume here directly instead of looping the server
+      // poll until timeout.
+      if (window.__syncPromise) { try { await window.__syncPromise; } catch (_) {} }
+      if (window.__syncError && window.__syncError.code === 'signup_incomplete') {
+        var emailForResume = uslIdentifier || localStorage.getItem('servi_email_link_target');
+        var fbUser = await waitForFirebaseEmail(emailForResume, 5000);
+        if (fbUser) await resumeIncompleteSignupIfNeeded(fbUser, 'email');
+        return;
+      }
 
-        var e = window.__user && window.__user.email;
-        if (!e) {
-          try {
-            var s = JSON.parse(localStorage.getItem('servi_user_session') || 'null');
-            if (s && s.user && s.user.email) { e = s.user.email; if (!window.__user) window.__user = s.user; }
-          } catch (_) {}
-        }
-        if (e) {
-          clearInterval(stateCheckInterval);
-          uslNewUserData.email = e;
-          uslNewUserData.email_verified = true;
-          if (uslIsNew && uslFirstIdentifierType === 'email') {
-            renderNameCollectionScreen();
-          } else {
-            onAuthSuccess();
-          }
-        }
-      }, 100);
+      // Server-authoritative confirmation. If backend hasn't yet processed the
+      // email verification (race), retry briefly before accepting/rejecting.
+      var serverUser = null;
+      for (var attempt = 0; attempt < 6; attempt++) {
+        serverUser = await confirmEmailVerifiedWithBackend();
+        if (serverUser) break;
+        await new Promise(function (r) { setTimeout(r, 500); });
+      }
+
+      if (!serverUser) {
+        // Backend has not confirmed verification — re-arm monitor instead of trusting the flag
+        handled = false;
+        return;
+      }
+
+      var email = serverUser.email;
+      if (!window.__user) window.__user = serverUser;
+      uslNewUserData.email = email;
+      uslNewUserData.email_verified = true;
+      if (uslIsNew && uslFirstIdentifierType === 'email') {
+        renderNameCollectionScreen();
+      } else {
+        onAuthSuccess();
+      }
     }
 
     // Listen for storage events (from other tabs setting servi_email_verified_at)
@@ -326,17 +763,18 @@
     // Listen for page visibility changes (user returns to this tab after closing email-verified tab)
     function onVisibilityChange() {
       if (document.hidden) return;
-      if (checkVerified()) continueAfterVerification();
+      if (checkVerifiedFlag()) continueAfterVerification();
     }
     document.addEventListener('visibilitychange', onVisibilityChange);
 
-    // Polling fallback (in case storage event doesn't fire in some browsers)
+    // Polling fallback (in case storage event doesn't fire in some browsers).
+    // The flag merely triggers a server confirmation — it is not itself proof.
     pollInterval = setInterval(function () {
       if (Date.now() - startTime > timeout) {
         clearInterval(pollInterval);
         return;
       }
-      if (checkVerified()) continueAfterVerification();
+      if (checkVerifiedFlag()) continueAfterVerification();
     }, 500);
 
     // Cleanup on modal close
@@ -345,7 +783,94 @@
       if (pollInterval) clearInterval(pollInterval);
       if (onVerificationDetected) window.removeEventListener('storage', onVerificationDetected);
       document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.__uslManualEmailContinue = null;
       if (originalCloseAuthModal) originalCloseAuthModal();
+    };
+
+    // Manual escape hatch: user taps "Ya verifiqué" — bypasses storage event
+    // (needed when link opens on another device or in a webview that doesn't
+    // share localStorage with the original tab).
+    window.__uslManualEmailContinue = async function () {
+      var btn = document.getElementById('manual-email-continue-btn');
+      var hint = document.getElementById('manual-email-hint');
+
+      if (auth && auth.currentUser && auth.currentUser.email) {
+        if (btn) { btn.disabled = true; btn.textContent = isEs() ? 'Verificando...' : 'Verifying...'; }
+        try {
+          // Force-refresh Firebase user state — the local object may be stale and
+          // not yet reflect the email_verified flag set after the link was clicked.
+          await auth.currentUser.reload();
+          if (auth.currentUser.emailVerified === true) {
+            var idToken = await auth.currentUser.getIdToken(true);
+            var res = await fetch(API() + '/api/auth/firebase', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + idToken },
+              body: JSON.stringify({})
+            });
+            if (res.ok) {
+              var data = await res.json();
+              if (data && data.token) {
+                try {
+                  var sess = JSON.parse(localStorage.getItem('servi_user_session') || 'null') || {};
+                  sess.token = data.token;
+                  if (data.user) sess.user = Object.assign({}, sess.user, data.user);
+                  localStorage.setItem('servi_user_session', JSON.stringify(sess));
+                } catch (_) {}
+              }
+              try { localStorage.setItem('servi_email_verified_at', Date.now().toString()); } catch (_) {}
+              continueAfterVerification();
+            } else {
+              if (btn) { btn.disabled = false; btn.textContent = isEs() ? 'Ya verifiqué mi correo' : 'I verified my email'; }
+              if (hint) {
+                hint.textContent = isEs()
+                  ? 'Hubo un problema al confirmar la verificación. Intenta de nuevo.'
+                  : 'There was a problem confirming verification. Please try again.';
+                hint.style.display = 'block';
+              }
+            }
+          } else {
+            if (btn) { btn.disabled = false; btn.textContent = isEs() ? 'Ya verifiqué mi correo' : 'I verified my email'; }
+            if (hint) {
+              hint.textContent = isEs()
+                ? 'Aún no detectamos la verificación. Abre el enlace en este mismo navegador.'
+                : "We haven't detected the verification yet. Open the link in this browser.";
+              hint.style.display = 'block';
+            }
+          }
+        } catch (err) {
+          if (btn) { btn.disabled = false; btn.textContent = isEs() ? 'Ya verifiqué mi correo' : 'I verified my email'; }
+          if (hint) {
+            hint.textContent = isEs()
+              ? 'Error de red. Verifica tu conexión e intenta de nuevo.'
+              : 'Network error. Check your connection and try again.';
+            hint.style.display = 'block';
+          }
+        }
+        return;
+      }
+
+      // No Firebase user yet — poll until auth state resolves
+      if (btn) { btn.disabled = true; btn.textContent = '...'; }
+      var waited = 0;
+      var waitForAuth = setInterval(function () {
+        waited += 500;
+        if (auth && auth.currentUser && auth.currentUser.email) {
+          clearInterval(waitForAuth);
+          try { localStorage.setItem('servi_email_verified_at', Date.now().toString()); } catch (_) {}
+          continueAfterVerification();
+          return;
+        }
+        if (waited >= 4000) {
+          clearInterval(waitForAuth);
+          if (btn) { btn.disabled = false; btn.textContent = isEs() ? 'Ya verifiqué mi correo' : 'I verified my email'; }
+          if (hint) {
+            hint.textContent = isEs()
+              ? 'Aún no detectamos la verificación. Abre el enlace en este mismo navegador o vuelve a esta pestaña después de hacer clic.'
+              : "We haven't detected the verification yet. Open the link in this browser or return to this tab after clicking it.";
+            hint.style.display = 'block';
+          }
+        }
+      }, 500);
     };
   };
 
@@ -363,7 +888,7 @@
       errorBox() +
       '<div id="usl-input-wrap" style="display:flex;margin-bottom:12px;border:1.5px solid #e8e8e8;border-radius:10px;overflow:hidden">' +
         '<div id="usl-country-wrap">' + countrySelect() + '</div>' +
-        '<input id="auth-identifier" type="tel" inputmode="numeric" ' +
+        '<input id="auth-identifier" type="tel" inputmode="tel" ' +
           'placeholder="' + (es ? 'Teléfono o correo electrónico' : 'Phone number or email') + '" ' +
           'style="flex:1;border:none;padding:12px;font-size:15px;font-family:\'DM Sans\',sans-serif;outline:none" ' +
           'onkeydown="if(event.key===\'Enter\') window.__uslSubmitIdentifier()">' +
@@ -379,8 +904,9 @@
       inp.addEventListener('input', function () {
         var hasLetter = /[a-zA-Z]/.test(inp.value);
         inp.setAttribute('type', hasLetter ? 'email' : 'tel');
-        inp.setAttribute('inputmode', hasLetter ? 'email' : 'numeric');
+        inp.setAttribute('inputmode', hasLetter ? 'email' : 'tel');
         if (countryWrap) countryWrap.style.display = hasLetter ? 'none' : '';
+        if (!hasLetter) detectDialFromPhoneInput(inp);
       });
     }
     ensureFirebase().then(setupRecaptchaInner);
@@ -391,12 +917,17 @@
     if (!raw) { setError(isEs() ? 'Ingresa tu teléfono o correo.' : 'Enter your phone or email.'); return; }
 
     var isEmail = raw.includes('@');
-    var identifier = isEmail ? raw.toLowerCase() : (selectedDial + raw.replace(/\D/g, ''));
+    var identifier = isEmail ? raw.toLowerCase() : phoneIdentifierFromInput(raw);
 
     uslIdentifier = identifier;
     uslIdentifierType = isEmail ? 'email' : 'phone';
     uslFirstIdentifierType = uslIdentifierType;
     uslNewUserData = {};
+    uslLoginViaEmail = false;
+    uslTypedEmail = '';
+    uslAccountFirstName = '';
+    uslAccountPhoneLast4 = '';
+    uslAccountEmailVerified = false;
 
     var btn = document.getElementById('usl-continue-btn');
     if (btn) { btn.disabled = true; btn.textContent = '...'; }
@@ -418,6 +949,18 @@
           setError(isEs() ? 'Esta cuenta usa Google. Usa el botón "Continuar con Google".' : 'This account uses Google. Use the "Continue with Google" button.');
           return;
         }
+
+        // Email-identifier login → ask the user to confirm their full phone, then send OTP.
+        // Backend returns only the last 4 digits (no full phone, no name) to prevent enumeration.
+        if (isEmail && data.phone_last4) {
+          uslLoginViaEmail = true;
+          uslTypedEmail = identifier;
+          uslAccountPhoneLast4 = data.phone_last4 || '';
+          uslAccountEmailVerified = !!data.email_verified;
+          renderConfirmPhoneScreen();
+          return;
+        }
+
         renderOTPScreen(provider === 'email' ? 'email' : 'phone', /* isLogin= */ true);
       } else {
         // New user — go directly to primary OTP
@@ -427,6 +970,54 @@
       if (btn) { btn.disabled = false; btn.textContent = isEs() ? 'Continuar' : 'Continue'; }
       setError(isEs() ? 'Error de conexión. Intenta de nuevo.' : 'Connection error. Try again.');
     }
+  };
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  // Confirm-Phone screen — shown when login starts from an email that matches an
+  // account with a phone. The backend returns only the last 4 digits (no full phone)
+  // to prevent enumeration, so the user re-types their full phone before we trigger
+  // the SMS OTP. Matches the Uber-style "confirm your number" pattern.
+  // ══════════════════════════════════════════════════════════════════════════════
+  function renderConfirmPhoneScreen() {
+    var es = isEs();
+    var title = es ? 'Confirma tu teléfono' : 'Confirm your phone';
+    document.getElementById('auth-modal-global').innerHTML = modalShell(title, true, 'window.__uslBack');
+    var maskedTail = uslAccountPhoneLast4 ? '••••••' + uslAccountPhoneLast4 : '';
+    var hint = es
+      ? 'Encontramos tu cuenta. Termina en <strong>' + maskedTail + '</strong>. Escribe tu teléfono completo para recibir un código.'
+      : 'We found your account ending in <strong>' + maskedTail + '</strong>. Enter your full phone to receive a code.';
+    setScreen(
+      progressDots(2) +
+      '<p style="font-size:15px;font-weight:700;margin-bottom:6px">' +
+        (es ? 'Bienvenido de vuelta' : 'Welcome back') +
+      '</p>' +
+      '<p style="font-size:14px;color:#666;margin-bottom:16px;line-height:1.5">' + hint + '</p>' +
+      errorBox() +
+      '<div style="display:flex;margin-bottom:12px;border:1.5px solid #e8e8e8;border-radius:10px;overflow:hidden">' +
+        countrySelect() +
+        '<input id="confirm-phone-input" type="tel" inputmode="numeric" placeholder="55 1234 5678" ' +
+          'style="flex:1;border:none;padding:12px;font-size:15px;font-family:\'DM Sans\',sans-serif;outline:none" ' +
+          'onkeydown="if(event.key===\'Enter\') window.__uslConfirmPhoneNext()">' +
+      '</div>' +
+      '<button class="btn-primary" onclick="window.__uslConfirmPhoneNext()" id="confirm-phone-btn" style="width:100%;justify-content:center">' +
+        (es ? 'Continuar' : 'Continue') +
+      '</button>'
+    );
+    var el = document.getElementById('confirm-phone-input');
+    if (el) el.focus();
+  }
+
+  window.__uslConfirmPhoneNext = function () {
+    var es = isEs();
+    var digits = ((document.getElementById('confirm-phone-input') || {}).value || '').replace(/\D/g, '');
+    if (!digits) { setError(es ? 'Ingresa tu teléfono.' : 'Enter your phone.'); return; }
+    var candidatePhone = selectedDial + digits;
+    // The Confirm-Phone screen is reached only via uslLoginViaEmail. Keep uslTypedEmail
+    // intact — it's sent to the backend as the cross-check after OTP succeeds.
+    uslIdentifier = candidatePhone;
+    uslIdentifierType = 'phone';
+    setError('');
+    renderOTPScreen('phone', /* isLogin= */ true);
   };
 
   // ══════════════════════════════════════════════════════════════════════════════
@@ -442,14 +1033,41 @@
       ? (es ? 'Verificar teléfono' : 'Verify phone')
       : (es ? 'Verificar correo'   : 'Verify email');
 
-    document.getElementById('auth-modal-global').innerHTML = modalShell(title, true, 'window.__uslBack');
+    // Secondary-phone OTP during email-first signup gets a scoped back that
+    // returns to phone entry without wiping Google/email signup state.
+    var isSecondaryPhoneOTP = isPhone && uslIsNew && uslFirstIdentifierType === 'email';
+    var backFn = isSecondaryPhoneOTP ? 'window.__uslBackToPhoneEntry' : 'window.__uslBack';
+    document.getElementById('auth-modal-global').innerHTML = modalShell(title, true, backFn, isSecondaryPhoneOTP);
 
     if (isPhone) {
+      // Login-via-email path passes through Confirm-Phone, so uslIdentifier is the
+      // user-typed full phone — safe to display directly. Backend never returns the
+      // account's full phone, so there's no longer a masked alternative to switch in.
+      var phoneDisplay = uslIdentifier;
+      var isReturningUser = !!isLogin;
+      var greeting = isReturningUser
+        ? '<p style="font-size:15px;font-weight:700;margin-bottom:6px">' +
+            (es ? 'Bienvenido de vuelta' : 'Welcome back') +
+          '</p>'
+        : '';
+      var bodyCopy = isReturningUser
+        ? (es ? 'Verifica tu identidad con el código SMS enviado a ' : 'Verify your identity with the SMS code sent to ')
+        : (es ? 'Enviaremos un código SMS a ' : 'We\'ll send an SMS code to ');
+      var moreOptionsBtn = (uslLoginViaEmail && uslAccountEmailVerified)
+        ? '<div style="margin-top:12px;text-align:center">' +
+            '<button onclick="window.__uslShowMoreOptions()" id="usl-more-options-btn" ' +
+              'style="background:#f3f4f6;border:none;border-radius:999px;padding:8px 18px;font-size:13px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif;color:#0a0a0a">' +
+              (es ? 'Más opciones' : 'More options') +
+            '</button>' +
+          '</div>'
+        : '';
+
       setScreen(
         progressDots(2) +
-        '<p style="font-size:14px;color:#666;margin-bottom:16px">' +
-          (es ? 'Enviaremos un código SMS a ' : 'We\'ll send an SMS code to ') +
-          '<strong>' + uslIdentifier + '</strong>' +
+        greeting +
+        '<p id="otp-pre-send-msg" style="font-size:14px;color:#666;margin-bottom:16px">' +
+          bodyCopy +
+          '<strong>' + phoneDisplay + '</strong>' +
         '</p>' +
         errorBox() +
         '<div id="recaptcha-container" style="margin-bottom:8px"></div>' +
@@ -458,29 +1076,41 @@
         '</button>' +
         '<div id="otp-entry" style="display:none">' +
           '<p id="otp-sent-msg" style="font-size:14px;color:#666;margin-bottom:12px"></p>' +
-          '<input class="input-field" id="auth-otp" type="text" inputmode="numeric" maxlength="6" ' +
-            'placeholder="' + (es ? 'Código de 6 dígitos' : '6-digit code') + '" ' +
-            'style="text-align:center;font-size:22px;letter-spacing:10px;margin-bottom:12px" ' +
-            'onkeydown="if(event.key===\'Enter\') window.__uslVerifyOTP()">' +
+          otpInputMarkup(es) +
           '<button class="btn-primary" onclick="window.__uslVerifyOTP()" id="verify-otp-btn" style="width:100%;justify-content:center;margin-bottom:8px">' +
             (es ? 'Verificar' : 'Verify') +
           '</button>' +
-          '<button onclick="window.__uslResendOTP()" style="background:none;border:none;font-size:13px;color:#10b981;font-weight:500;cursor:pointer;font-family:\'DM Sans\',sans-serif;width:100%;text-align:center">' +
+          '<button onclick="window.__uslResendOTP()" style="background:none;border:none;font-size:13px;color:var(--color-accent-hover, #74b8c4);font-weight:500;cursor:pointer;font-family:\'DM Sans\',sans-serif;width:100%;text-align:center">' +
             (es ? 'Reenviar código' : 'Resend code') +
           '</button>' +
         '</div>' +
-        (isLogin
+        moreOptionsBtn +
+        (isLogin && !uslLoginViaEmail
           ? '<div style="margin-top:16px;text-align:center"><button onclick="window.__uslStartRecovery()" style="background:none;border:none;font-size:13px;color:#888;cursor:pointer;font-family:\'DM Sans\',sans-serif;text-decoration:underline">' + (es ? '¿No tienes acceso a tu teléfono?' : 'Can\'t access your phone?') + '</button></div>'
           : '')
       );
       ensureFirebase().then(setupRecaptchaInner);
     } else {
       // Email — magic link
+      var emailGreeting = isLogin
+        ? '<p style="font-size:15px;font-weight:700;margin-bottom:6px">' +
+            (es ? 'Bienvenido de vuelta' : 'Welcome back') +
+          '</p>'
+        : '';
+      var emailCopy = isLogin
+        ? (es ? 'Verifica tu identidad con un enlace enviado a ' : 'Verify your identity with a link sent to ')
+        : (es ? 'Te enviaremos un enlace de verificación a ' : 'We\'ll send a verification link to ');
       setScreen(
         progressDots(2) +
+        emailGreeting +
         '<p style="font-size:14px;color:#666;margin-bottom:16px">' +
-          (es ? 'Te enviaremos un enlace de verificación a ' : 'We\'ll send a verification link to ') +
+          emailCopy +
           '<strong>' + uslIdentifier + '</strong>' +
+        '</p>' +
+        '<p style="font-size:12px;color:#8a6d3b;line-height:1.5;margin:-6px 0 16px">' +
+          (es
+            ? 'Si no ves el correo, revisa tu carpeta de spam o correo no deseado.'
+            : 'If you do not see the email, check your spam or junk folder.') +
         '</p>' +
         errorBox() +
         '<button class="btn-primary" onclick="window.__uslSendOTP()" id="send-email-link-btn" style="width:100%;justify-content:center">' +
@@ -503,11 +1133,14 @@
         if (!recaptchaVerifier) setupRecaptchaInner();
         confirmationResult = await auth.signInWithPhoneNumber(uslIdentifier, recaptchaVerifier);
         if (btn) btn.style.display = 'none';
+        var preSendMsg = document.getElementById('otp-pre-send-msg');
+        if (preSendMsg) preSendMsg.style.display = 'none';
         var entry = document.getElementById('otp-entry');
         if (entry) entry.style.display = 'block';
         var sentMsg = document.getElementById('otp-sent-msg');
         if (sentMsg) sentMsg.textContent = (isEs() ? 'Código enviado a ' : 'Code sent to ') + uslIdentifier;
         var otpInput = document.getElementById('auth-otp');
+        attachOTPInputHandlers();
         if (otpInput) otpInput.focus();
       } catch (err) {
         if (btn) { btn.disabled = false; btn.textContent = isEs() ? 'Enviar código SMS' : 'Send SMS code'; }
@@ -539,11 +1172,16 @@
           '<div style="text-align:center;padding:16px 0">' +
             '<div style="font-size:40px;margin-bottom:12px">📧</div>' +
             '<p style="font-size:15px;font-weight:600;margin-bottom:8px">' + (isEs() ? '¡Enlace enviado!' : 'Link sent!') + '</p>' +
-            '<p style="font-size:14px;color:#666;line-height:1.6">' +
+            '<p style="font-size:14px;color:#666;line-height:1.6;margin-bottom:20px">' +
               (isEs()
-                ? 'Revisa <strong>' + uslIdentifier + '</strong> y haz clic en el enlace para continuar.'
-                : 'Check <strong>' + uslIdentifier + '</strong> and click the link to continue.') +
+                ? 'Revisa <strong>' + uslIdentifier + '</strong> y haz clic en el enlace para continuar. Si no lo encuentras, revisa spam o correo no deseado.'
+                : 'Check <strong>' + uslIdentifier + '</strong> and click the link to continue. If you cannot find it, check your spam or junk folder.') +
             '</p>' +
+            '<button id="manual-email-continue-btn" onclick="window.__uslManualEmailContinue && window.__uslManualEmailContinue()" ' +
+              'style="background:#0a0a0a;color:#fff;border:none;border-radius:10px;padding:12px 20px;font-size:14px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif;width:100%">' +
+              (isEs() ? 'Ya verifiqué mi correo' : 'I verified my email') +
+            '</button>' +
+            '<p id="manual-email-hint" style="display:none;font-size:12px;color:#dc2626;line-height:1.5;margin-top:12px"></p>' +
           '</div>'
         );
         // Monitor for email verification completion in other tab
@@ -558,31 +1196,43 @@
   // ── Phone OTP verify ─────────────────────────────────────────────────────────
   // Only called for phone OTP screens. Email verification is handled via handleEmailLinkSignIn.
   window.__uslVerifyOTP = async function () {
-    var code = (document.getElementById('auth-otp') || {}).value.trim();
+    var code = getOTPCode();
     var es = isEs();
-    if (!code || code.length !== 6) { setError(es ? 'Ingresa el código de 6 dígitos.' : 'Enter the 6-digit code.'); return; }
+    if (!code || code.length !== PHONE_OTP_CODE_LENGTH) {
+      setError(es ? 'Ingresa el código de ' + PHONE_OTP_CODE_LENGTH + ' dígitos.' : 'Enter the ' + PHONE_OTP_CODE_LENGTH + '-digit code.');
+      return;
+    }
 
     var btn = document.getElementById('verify-otp-btn');
-    if (btn) { btn.disabled = true; btn.textContent = '...'; }
+    setVerifyOTPButtonLoading(btn, true, es);
     setError('');
 
     try {
-      await confirmationResult.confirm(code);
+      var verifiedCredential = await confirmationResult.confirm(code);
+      var verifiedUser = (verifiedCredential && verifiedCredential.user) || (auth && auth.currentUser);
 
       if (uslIsNew) {
         // Signup: mark phone as verified in flow state, then collect name
         uslNewUserData.phone = uslIdentifier;
         uslNewUserData.phone_verified = true;
-        // Backend sync runs in background via onAuthStateChanged — we wait for it before name PATCH
         renderNameCollectionScreen();
       } else {
         // Login: await sync then close
+        if (!window.__syncPromise && verifiedUser) {
+          window.__syncError = null;
+          window.__syncPromise = syncWithBackend(verifiedUser);
+        }
+        if (await resumeIncompleteSignupIfNeeded(verifiedUser, 'phone')) return;
         var syncOk = await awaitSyncAndCheck();
-        if (!syncOk) { if (btn) { btn.disabled = false; btn.textContent = es ? 'Verificar' : 'Verify'; } return; }
+        if (!syncOk) { setVerifyOTPButtonLoading(btn, false, es); return; }
+        if (requiresProfileCompletion(window.__user)) {
+          startExistingProfileCompletion(window.__user);
+          return;
+        }
         onAuthSuccess();
       }
     } catch (err) {
-      if (btn) { btn.disabled = false; btn.textContent = es ? 'Verificar' : 'Verify'; }
+      setVerifyOTPButtonLoading(btn, false, es);
       setError(firebaseErrorMessage(err.code));
     }
   };
@@ -593,6 +1243,44 @@
     if (btn) { btn.style.display = 'block'; btn.disabled = false; btn.textContent = isEs() ? 'Enviar código SMS' : 'Send SMS code'; }
     if (entry) entry.style.display = 'none';
     setupRecaptchaInner();
+  };
+
+  // ── More options chooser (email-login only) ───────────────────────────────────
+  // Lets a user who started login via email switch to a magic-link instead of SMS.
+  window.__uslShowMoreOptions = function () {
+    if (!uslLoginViaEmail) return;
+    var es = isEs();
+    var phoneDisplay = uslAccountPhoneLast4 ? '••••••' + uslAccountPhoneLast4 : '';
+    setScreen(
+      progressDots(2) +
+      '<p style="font-size:15px;font-weight:600;margin-bottom:14px">' +
+        (es ? 'Elige cómo verificarte' : 'Choose how to verify') +
+      '</p>' +
+      errorBox() +
+      '<button onclick="window.__uslBackToPhoneOTP()" ' +
+        'style="width:100%;padding:14px;border:1.5px solid #e0e0e0;border-radius:12px;background:#fff;font-size:14px;font-weight:500;cursor:pointer;font-family:\'DM Sans\',sans-serif;margin-bottom:10px;text-align:left">' +
+        '<div style="font-weight:600;margin-bottom:2px">' + (es ? 'Código SMS' : 'SMS code') + '</div>' +
+        '<div style="font-size:13px;color:#666">' + phoneDisplay + '</div>' +
+      '</button>' +
+      '<button onclick="window.__uslSwitchToEmailLink()" ' +
+        'style="width:100%;padding:14px;border:1.5px solid #e0e0e0;border-radius:12px;background:#fff;font-size:14px;font-weight:500;cursor:pointer;font-family:\'DM Sans\',sans-serif;text-align:left">' +
+        '<div style="font-weight:600;margin-bottom:2px">' + (es ? 'Enlace por correo' : 'Email link') + '</div>' +
+        '<div style="font-size:13px;color:#666">' + escapeHtml(uslTypedEmail) + '</div>' +
+      '</button>'
+    );
+  };
+
+  window.__uslBackToPhoneOTP = function () {
+    renderOTPScreen('phone', /* isLogin= */ true);
+  };
+
+  window.__uslSwitchToEmailLink = function () {
+    // Switch identifier back to the typed email and send a magic link.
+    uslIdentifier = uslTypedEmail;
+    uslIdentifierType = 'email';
+    renderOTPScreen('email', /* isLogin= */ true);
+    // Auto-trigger the magic-link send for parity with the SMS flow's one-tap feel.
+    setTimeout(function () { if (window.__uslSendOTP) window.__uslSendOTP(); }, 0);
   };
 
   // ══════════════════════════════════════════════════════════════════════════════
@@ -613,15 +1301,15 @@
       '</p>' +
       errorBox() +
       '<div style="display:flex;gap:8px;margin-bottom:12px">' +
-        '<input id="signup-first-name" class="input-field" type="text" placeholder="' + (es ? 'Nombre' : 'First name') + '" style="flex:1">' +
-        '<input id="signup-last-name"  class="input-field" type="text" placeholder="' + (es ? 'Apellido' : 'Last name') + '" style="flex:1">' +
+        '<input id="signup-first-name" class="input-field" type="text" placeholder="' + (es ? 'Nombre' : 'First name') + '" onkeydown="if(event.key===\'Enter\') window.__uslNameNext()" style="flex:1">' +
+        '<input id="signup-last-name"  class="input-field" type="text" placeholder="' + (es ? 'Apellido' : 'Last name') + '" onkeydown="if(event.key===\'Enter\') window.__uslNameNext()" style="flex:1">' +
       '</div>' +
       '<label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;margin-bottom:20px">' +
-        '<input type="checkbox" id="terms-check" style="margin-top:3px;accent-color:#10b981">' +
+        '<input type="checkbox" id="terms-check" style="margin-top:3px;accent-color:var(--color-accent, #95ccd5)">' +
         '<span style="font-size:13px;color:#555;line-height:1.5">' +
           (es
-            ? 'Acepto los <a href="/legal.html" target="_blank" style="color:#10b981;text-decoration:none">Términos de Servicio</a> y la <a href="/legal.html#privacy" target="_blank" style="color:#10b981;text-decoration:none">Política de Privacidad</a>.'
-            : 'I agree to the <a href="/legal.html" target="_blank" style="color:#10b981;text-decoration:none">Terms of Service</a> and <a href="/legal.html#privacy" target="_blank" style="color:#10b981;text-decoration:none">Privacy Policy</a>.') +
+            ? 'Acepto los <a href="/legal.html" target="_blank" style="color:var(--color-accent-hover, #74b8c4);text-decoration:none">Términos de Servicio</a> y la <a href="/legal.html#privacy" target="_blank" style="color:var(--color-accent-hover, #74b8c4);text-decoration:none">Política de Privacidad</a>.'
+            : 'I agree to the <a href="/legal.html" target="_blank" style="color:var(--color-accent-hover, #74b8c4);text-decoration:none">Terms of Service</a> and <a href="/legal.html#privacy" target="_blank" style="color:var(--color-accent-hover, #74b8c4);text-decoration:none">Privacy Policy</a>.') +
         '</span>' +
       '</label>' +
       '<button class="btn-primary" onclick="window.__uslNameNext()" id="name-next-btn" style="width:100%;justify-content:center">' +
@@ -647,31 +1335,44 @@
     setError('');
 
     uslNewUserData.name = firstName + ' ' + lastName;
+    uslNewUserData.terms_accepted = true;
 
-    // Wait for background sync to complete (phone OTP triggers onAuthStateChanged)
-    var syncOk = await awaitSyncAndCheck();
-    if (!syncOk) { if (btn) { btn.disabled = false; btn.textContent = es ? 'Continuar' : 'Continue'; } return; }
-
-    // Persist name via PATCH (sync may have created user without name if displayName was blank)
-    try {
-      var token = getSessionToken();
-      if (token && firstName) {
-        await fetch(API() + '/api/auth/me', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-          body: JSON.stringify({ name: uslNewUserData.name })
-        });
-        if (window.__user) window.__user.name = uslNewUserData.name;
-        var raw = localStorage.getItem('servi_user_session');
-        if (raw) {
-          try {
-            var sess = JSON.parse(raw);
-            sess.user = Object.assign({}, sess.user, { name: uslNewUserData.name });
-            localStorage.setItem('servi_user_session', JSON.stringify(sess));
-          } catch (_) {}
+    if (uslCompletingExisting) {
+      try {
+        var existingToken = getSessionToken();
+        if (existingToken) {
+          var patchRes = await fetch(API() + '/api/auth/me', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + existingToken },
+            body: JSON.stringify({ name: uslNewUserData.name })
+          });
+          if (!patchRes.ok) throw new Error('profile_update_failed');
+          var patchData = await patchRes.json();
+          if (patchData.user) {
+            window.__user = patchData.user;
+            var existingRaw = localStorage.getItem('servi_user_session');
+            if (existingRaw) {
+              try {
+                var existingSess = JSON.parse(existingRaw);
+                existingSess.user = patchData.user;
+                localStorage.setItem('servi_user_session', JSON.stringify(existingSess));
+              } catch (_) {}
+            }
+          }
         }
+      } catch (_) {
+        if (btn) { btn.disabled = false; btn.textContent = es ? 'Continuar' : 'Continue'; }
+        setError(es ? 'No pudimos guardar tu nombre. Intenta de nuevo.' : 'We could not save your name. Try again.');
+        return;
       }
-    } catch (_) {}
+      if (auth && auth.currentUser && auth.currentUser.phoneNumber) {
+        window.__syncError = null;
+        window.__syncPromise = syncWithBackend(auth.currentUser);
+        await awaitSyncAndCheck();
+      }
+      onAuthSuccess();
+      return;
+    }
 
     // For email-first new users: check resolve-identifier-mismatch
     if (uslIsNew && uslFirstIdentifierType === 'email') {
@@ -715,7 +1416,7 @@
           : 'We found an account registered with this phone. To link your email, confirm the account name (starts with <strong>' + escapeHtml(hint) + '</strong>).') +
       '</p>' +
       errorBox() +
-      '<input id="cross-id-name" class="input-field" type="text" placeholder="' + (es ? 'Nombre completo' : 'Full name') + '" style="margin-bottom:12px">' +
+      '<input id="cross-id-name" class="input-field" type="text" placeholder="' + (es ? 'Nombre completo' : 'Full name') + '" onkeydown="if(event.key===\'Enter\') window.__uslCrossIdNameNext()" style="margin-bottom:12px">' +
       '<button class="btn-primary" onclick="window.__uslCrossIdNameNext()" id="cross-id-name-btn" style="width:100%;justify-content:center">' +
         (es ? 'Confirmar' : 'Confirm') +
       '</button>'
@@ -791,8 +1492,12 @@
       progressDots(4) +
       '<p style="font-size:14px;color:#666;margin-bottom:16px;line-height:1.6">' +
         (es
-          ? 'Necesitarás un ' + (collectPhone ? 'teléfono' : 'correo') + ' verificado para confirmar solicitudes de servicio. Puedes omitirlo por ahora.'
-          : 'You\'ll need a verified ' + (collectPhone ? 'phone number' : 'email') + ' to confirm service requests. You can skip for now.') +
+          ? (collectPhone
+              ? 'Necesitas un teléfono verificado para terminar tu registro.'
+              : 'Necesitarás un correo verificado para confirmar solicitudes de servicio. Puedes omitirlo por ahora.')
+          : (collectPhone
+              ? 'You need a verified phone number to finish sign up.'
+              : 'You\'ll need a verified email to confirm service requests. You can skip for now.')) +
       '</p>' +
       errorBox() +
       (collectPhone
@@ -804,22 +1509,51 @@
       '<button class="btn-primary" onclick="window.__uslSecondaryNext()" style="width:100%;justify-content:center;margin-bottom:10px">' +
         (es ? 'Verificar' : 'Verify') +
       '</button>' +
-      '<button onclick="window.__uslSkipSecondary()" style="background:none;border:none;font-size:13px;color:#888;cursor:pointer;font-family:\'DM Sans\',sans-serif;width:100%;text-align:center;padding:8px;text-decoration:underline">' +
-        (es ? 'Omitir por ahora' : 'Skip for now') +
-      '</button>'
+      (collectPhone
+        ? ''
+        : '<button onclick="window.__uslSkipSecondary()" style="background:none;border:none;font-size:13px;color:#888;cursor:pointer;font-family:\'DM Sans\',sans-serif;width:100%;text-align:center;padding:8px;text-decoration:underline">' +
+            (es ? 'Omitir por ahora' : 'Skip for now') +
+          '</button>')
     );
     var el = document.getElementById(collectPhone ? 'secondary-phone' : 'secondary-email');
     if (el) el.focus();
   }
 
-  window.__uslSecondaryNext = function () {
+  window.__uslSecondaryNext = async function () {
     var es = isEs();
     var collectPhone = uslFirstIdentifierType === 'email';
 
     if (collectPhone) {
       var digits = (document.getElementById('secondary-phone') || {}).value.replace(/\D/g, '');
       if (!digits) { setError(es ? 'Ingresa tu teléfono.' : 'Enter your phone.'); return; }
-      uslNewUserData.phone = selectedDial + digits;
+      var candidatePhone = selectedDial + digits;
+      var nextBtn = document.querySelector('button[onclick="window.__uslSecondaryNext()"]');
+      var nextBtnLabel = nextBtn ? nextBtn.textContent : '';
+      if (nextBtn) { nextBtn.disabled = true; nextBtn.textContent = '...'; }
+      setError('');
+      try {
+        var checkRes = await fetch(API() + '/api/auth/check-phone-available', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone: candidatePhone })
+        });
+        if (checkRes.ok) {
+          var checkData = await checkRes.json();
+          if (checkData && checkData.available === false) {
+            if (nextBtn) { nextBtn.disabled = false; nextBtn.textContent = nextBtnLabel || (es ? 'Verificar' : 'Verify'); }
+            setError(es
+              ? 'Este número ya está registrado con otra cuenta. Inicia sesión o usa otro número.'
+              : 'This phone is already registered with another account. Log in or use a different number.');
+            return;
+          }
+        } else {
+          console.warn('[SERVI] check-phone-available non-OK:', checkRes.status);
+        }
+      } catch (err) {
+        console.warn('[SERVI] check-phone-available failed:', err && err.message);
+      }
+      if (nextBtn) { nextBtn.disabled = false; nextBtn.textContent = nextBtnLabel || (es ? 'Verificar' : 'Verify'); }
+      uslNewUserData.phone = candidatePhone;
       uslIdentifier = uslNewUserData.phone;
       uslIdentifierType = 'phone';
       renderOTPScreen('phone', false);
@@ -833,14 +1567,20 @@
     }
   };
 
-  window.__uslSkipSecondary = function () {
+  window.__uslSkipSecondary = async function () {
     var collectPhone = uslFirstIdentifierType === 'email';
+    var btn = document.querySelector('button[onclick="window.__uslSkipSecondary()"]');
     if (collectPhone) {
-      localStorage.setItem('servi_phone_skipped', '1');
+      setError(isEs() ? 'El teléfono es obligatorio para registrarte.' : 'Phone is required to sign up.');
+      return;
     } else {
       localStorage.setItem('servi_email_skipped', '1');
+      uslNewUserData.email_skipped = true;
+      uslNewUserData.email_verified = false;
     }
-    // Signup complete — sync already happened after primary OTP
+    if (btn) { btn.disabled = true; btn.textContent = isEs() ? 'Creando cuenta...' : 'Creating account...'; }
+    var ok = await completeSignupSync();
+    if (!ok) { if (btn) { btn.disabled = false; btn.textContent = isEs() ? 'Omitir por ahora' : 'Skip for now'; } return; }
     onAuthSuccess();
   };
 
@@ -853,14 +1593,17 @@
     var originalVerify = window.__uslVerifyOTP;
     window.__uslVerifyOTP = async function () {
       // If this is the secondary phone OTP in an email-first signup, we want onAuthSuccess after
-      var isSecondaryPhoneOTP = uslIsNew && uslFirstIdentifierType === 'email' && uslCurrentOTPType === 'phone';
+      var isSecondaryPhoneOTP = ((uslIsNew && uslFirstIdentifierType === 'email') || uslCompletingExisting) && uslCurrentOTPType === 'phone';
       if (isSecondaryPhoneOTP) {
         // Let confirmationResult.confirm run, then mark phone verified and finish
-        var code = (document.getElementById('auth-otp') || {}).value.trim();
+        var code = getOTPCode();
         var es = isEs();
-        if (!code || code.length !== 6) { setError(es ? 'Ingresa el código de 6 dígitos.' : 'Enter the 6-digit code.'); return; }
+        if (!code || code.length !== PHONE_OTP_CODE_LENGTH) {
+          setError(es ? 'Ingresa el código de ' + PHONE_OTP_CODE_LENGTH + ' dígitos.' : 'Enter the ' + PHONE_OTP_CODE_LENGTH + '-digit code.');
+          return;
+        }
         var btn = document.getElementById('verify-otp-btn');
-        if (btn) { btn.disabled = true; btn.textContent = '...'; }
+        setVerifyOTPButtonLoading(btn, true, es);
         setError('');
         try {
           // For secondary phone on an email-first account, link the phone credential
@@ -874,21 +1617,42 @@
           }
           uslNewUserData.phone_verified = true;
           localStorage.removeItem('servi_phone_skipped');
-          // Patch phone + phone_verified on the user record
-          var token = getSessionToken();
-          if (token) {
+          if (uslIsNew) {
+            var created = await completeSignupSync();
+            if (!created) {
+              setVerifyOTPButtonLoading(btn, false, es);
+              return;
+            }
+          } else {
+            // Patch phone + phone_verified on an existing incomplete user record.
+            var token = getSessionToken();
+            if (!token) throw new Error('missing_session');
             var fbToken = await (auth.currentUser && auth.currentUser.getIdToken(true));
             if (fbToken) {
-              await fetch(API() + '/api/auth/add-phone', {
+              var addRes = await fetch(API() + '/api/auth/add-phone', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
                 body: JSON.stringify({ phone: uslNewUserData.phone, firebase_id_token: fbToken })
               });
+              if (!addRes.ok) throw new Error('phone_update_failed');
+              var addData = await addRes.json();
+              if (window.__user) {
+                window.__user.phone = addData.phone || uslNewUserData.phone;
+                window.__user.phone_verified = true;
+              }
+              var raw = localStorage.getItem('servi_user_session');
+              if (raw) {
+                try {
+                  var sess = JSON.parse(raw);
+                  sess.user = Object.assign({}, sess.user, { phone: addData.phone || uslNewUserData.phone, phone_verified: true });
+                  localStorage.setItem('servi_user_session', JSON.stringify(sess));
+                } catch (_) {}
+              }
             }
           }
           onAuthSuccess();
         } catch (err) {
-          if (btn) { btn.disabled = false; btn.textContent = es ? 'Verificar' : 'Verify'; }
+          setVerifyOTPButtonLoading(btn, false, es);
           setError(firebaseErrorMessage(err.code));
         }
         return;
@@ -948,8 +1712,8 @@
           '<p style="font-size:15px;font-weight:600;margin-bottom:8px">' + (es ? 'Enlace enviado' : 'Link sent') + '</p>' +
           '<p style="font-size:14px;color:#666;line-height:1.6">' +
             (es
-              ? 'Revisa tu correo y haz clic en el enlace. Después podrás actualizar tu teléfono desde <strong>Mi cuenta</strong>.'
-              : 'Check your email and click the link. You can then update your phone from <strong>My account</strong>.') +
+              ? 'Revisa tu correo y haz clic en el enlace. Si no lo encuentras, revisa spam o correo no deseado. Después podrás actualizar tu teléfono desde <strong>Mi cuenta</strong>.'
+              : 'Check your email and click the link. If you cannot find it, check your spam or junk folder. You can then update your phone from <strong>My account</strong>.') +
           '</p>' +
         '</div>'
       );
@@ -960,25 +1724,207 @@
   };
 
   // ── Back navigation ──────────────────────────────────────────────────────────
+  window.__uslBackToPhoneEntry = function () {
+    // Used from the secondary-phone OTP screen when the user wants to correct
+    // a wrong phone without losing Google/email signup state.
+    uslCurrentOTPType = '';
+    try { if (recaptchaVerifier) { recaptchaVerifier.clear(); recaptchaVerifier = null; } } catch (_) {}
+    confirmationResult = null;
+    uslNewUserData.phone = null;
+    uslNewUserData.phone_verified = false;
+    uslIdentifier = '';
+    renderSecondaryIdentifierScreen();
+  };
+
   window.__uslBack = function () {
+    if (isSignupFlowLocked()) {
+      setError(isEs()
+        ? 'Completa estos pasos para terminar el registro.'
+        : 'Complete these steps to finish sign up.');
+      return;
+    }
     uslNewUserData = {};
     uslCurrentOTPType = '';
+    uslSignupComplete = false;
+    uslSuppressAutoSync = false;
+    uslCompletingExisting = false;
+    uslLoginViaEmail = false;
+    uslTypedEmail = '';
+    uslAccountFirstName = '';
+    uslAccountPhoneLast4 = '';
+    uslAccountEmailVerified = false;
     renderIdentifierScreen();
   };
 
   // ── Send email verification (for account page) ─────────────────────────────────
   window.__sendEmailVerification = async function (email) {
     if (!email) return false;
-    var ok = await ensureFirebase();
-    if (!ok) return false;
     try {
-      await auth.sendSignInLinkToEmail(email.toLowerCase(), { url: window.location.origin + '/email-verified.html', handleCodeInApp: true });
+      var ok = await ensureFirebase();
+      if (!ok) return false;
+      var user = await waitForCurrentFirebaseUser(1500);
+      if (!user) return false;
+      var emailNorm = String(email || '').trim().toLowerCase();
+      if (!emailNorm || !emailNorm.includes('@')) return false;
+      var verificationSettings = {
+        url: window.location.origin + '/email-verified.html',
+        handleCodeInApp: true
+      };
+      var currentEmail = String(user.email || '').trim().toLowerCase();
+      if (!currentEmail) {
+        await auth.sendSignInLinkToEmail(emailNorm, verificationSettings);
+      } else if (currentEmail === emailNorm) {
+        if (user.emailVerified === true) {
+          await syncVerifiedEmailToBackend(emailNorm, { broadcast: true });
+          return true;
+        }
+        if (!user.sendEmailVerification) return false;
+        await user.sendEmailVerification(verificationSettings);
+      } else {
+        if (!user.verifyBeforeUpdateEmail) return false;
+        await user.verifyBeforeUpdateEmail(emailNorm, verificationSettings);
+      }
       return true;
     } catch (err) {
-      console.error('[sendEmailVerification] Firebase error:', err.code, err.message);
+      console.error('[sendEmailVerification] Error:', err);
       return false;
     }
   };
+
+  function updateStoredSessionAfterEmailSync(data, verifiedEmail, firebaseUid) {
+    var emailNorm = String(verifiedEmail || '').trim().toLowerCase();
+    var session = null;
+    try { session = JSON.parse(localStorage.getItem('servi_user_session') || 'null') || {}; } catch (_) { session = {}; }
+    if (data && data.token) session.token = data.token;
+    if (data && data.user) {
+      session.user = data.user;
+    } else {
+      session.user = Object.assign({}, session.user || window.__user || {}, {
+        email: emailNorm || (session.user && session.user.email) || null,
+        email_verified: true,
+        email_skipped_at: null
+      });
+    }
+    if (firebaseUid) session.firebaseUid = firebaseUid;
+    if (session.token || session.user) {
+      localStorage.setItem('servi_user_session', JSON.stringify(session));
+      window.__user = Object.assign({}, window.__user || {}, session.user || {});
+    }
+    return session.user || null;
+  }
+
+  async function syncVerifiedEmailToBackend(email, options) {
+    var ok = await ensureFirebase();
+    if (!ok) return null;
+    var emailNorm = String(email || localStorage.getItem('servi_email_link_target') || '').trim().toLowerCase();
+    var user = (options && options.user) || await waitForCurrentFirebaseUser(3000);
+    if (user) {
+      try { await user.reload(); } catch (_) {}
+      user = auth.currentUser || user;
+    }
+    var sessionToken = window.getSessionToken ? window.getSessionToken() : null;
+    var lastError = null;
+
+    async function syncWithSessionToken(firebaseIdToken, firebaseUid) {
+      if (!sessionToken || !emailNorm) return null;
+      var addRes = await fetch(API() + '/api/auth/add-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + sessionToken },
+        body: JSON.stringify(Object.assign({ email: emailNorm }, firebaseIdToken ? { firebase_id_token: firebaseIdToken } : {}))
+      });
+      var addData = await addRes.json().catch(function () { return {}; });
+      if (addRes.ok) {
+        updateStoredSessionAfterEmailSync(addData, emailNorm, firebaseUid);
+        if (options && options.broadcast) window.__broadcastEmailVerified();
+        if (window.buildNavbar) window.buildNavbar();
+        return addData;
+      }
+      lastError = addData;
+      return null;
+    }
+
+    var idToken = null;
+    if (user) {
+      var firebaseEmail = String(user.email || '').trim().toLowerCase();
+      if (!emailNorm) emailNorm = firebaseEmail;
+      if (emailNorm && firebaseEmail === emailNorm && user.emailVerified === true) {
+        idToken = await user.getIdToken(true);
+        var addData = await syncWithSessionToken(idToken, user.uid);
+        if (addData) return addData;
+
+        var syncRes = await fetch(API() + '/api/auth/firebase', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + idToken },
+          body: JSON.stringify({})
+        });
+        var syncData = await syncRes.json().catch(function () { return {}; });
+        if (syncRes.ok) {
+          updateStoredSessionAfterEmailSync(syncData, emailNorm, user.uid);
+          if (options && options.broadcast) window.__broadcastEmailVerified();
+          if (window.buildNavbar) window.buildNavbar();
+          return syncData;
+        }
+        lastError = syncData;
+      }
+    }
+
+    // If Firebase's hosted action page consumed the code before this custom page
+    // loaded, the client may no longer have a current Firebase user. The backend
+    // can still verify the stored Firebase UID with Admin Auth.
+    var adminVerifiedData = await syncWithSessionToken(null, user && user.uid);
+    if (adminVerifiedData) return adminVerifiedData;
+
+    console.warn('[syncVerifiedEmailToBackend] failed:', lastError || 'missing_verified_firebase_user');
+    return null;
+  }
+  window.__syncVerifiedEmailToBackend = syncVerifiedEmailToBackend;
+
+  function waitForCurrentFirebaseUser(timeoutMs) {
+    if (auth && auth.currentUser) return Promise.resolve(auth.currentUser);
+    return new Promise(function (resolve) {
+      var done = false;
+      var timer = null;
+      var unsubscribe = null;
+      var finish = function (user) {
+        if (done) return;
+        done = true;
+        if (timer) clearTimeout(timer);
+        try { unsubscribe && unsubscribe(); } catch (_) {}
+        resolve(user || (auth && auth.currentUser) || null);
+      };
+      try {
+        unsubscribe = auth.onAuthStateChanged(function (user) { finish(user); });
+      } catch (_) {
+        finish(null);
+        return;
+      }
+      timer = setTimeout(function () { finish(null); }, timeoutMs || 1500);
+    });
+  }
+
+  async function exchangeEmailLinkForIdToken(email, href) {
+    var linkUrl = new URL(href);
+    var oobCode = linkUrl.searchParams.get('oobCode');
+    if (!oobCode) throw new Error('missing_oob_code');
+    var apiKey = (window.CONFIG && window.CONFIG.FIREBASE_CONFIG && window.CONFIG.FIREBASE_CONFIG.apiKey) ||
+      linkUrl.searchParams.get('apiKey') ||
+      'fake-api-key';
+    var base = usingAuthEmulator
+      ? 'http://127.0.0.1:9099/identitytoolkit.googleapis.com/v1'
+      : 'https://identitytoolkit.googleapis.com/v1';
+    var res = await fetch(base + '/accounts:signInWithEmailLink?key=' + encodeURIComponent(apiKey), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: String(email || '').toLowerCase(), oobCode: oobCode })
+    });
+    var data = await res.json().catch(function () { return {}; });
+    if (!res.ok || !data.idToken) {
+      var err = new Error(data.error && data.error.message ? data.error.message : 'email_link_exchange_failed');
+      err.code = 'auth/invalid-action-code';
+      throw err;
+    }
+    return data.idToken;
+  }
 
   // ── Broadcast email verification completion ──────────────────────────────────
   // Broadcast email verification to parent window.
@@ -991,6 +1937,9 @@
     } catch (_) {
       // localStorage not available (private browsing)
     }
+    try {
+      window.dispatchEvent(new Event('servi-email-verified'));
+    } catch (_) {}
     if (window.opener) {
       try {
         window.opener.dispatchEvent(new Event('servi-email-verified'));
@@ -1034,7 +1983,7 @@
     var icon = document.createElement('div');
     icon.innerHTML = '✓';
     icon.style.fontSize = '56px';
-    icon.style.color = '#10b981';
+    icon.style.color = 'var(--color-accent, #95ccd5)';
     icon.style.marginBottom = '24px';
     icon.style.fontWeight = 'bold';
     card.appendChild(icon);
@@ -1147,7 +2096,21 @@
   async function handleEmailLinkSignIn() {
     var ok = await ensureFirebase();
     if (!ok) return;
-    if (!auth.isSignInWithEmailLink(window.location.href)) return;
+    var initialLinkUrl = new URL(window.location.href);
+    var initialMode = initialLinkUrl.searchParams.get('mode');
+    var initialOobCode = initialLinkUrl.searchParams.get('oobCode');
+    var pendingAccountEmailVerification = localStorage.getItem('servi_email_verification_mode');
+    var isAccountActionCode = !!(
+      pendingAccountEmailVerification &&
+      initialOobCode &&
+      (initialMode === 'verifyAndChange' || initialMode === 'verifyAndChangeEmail' || initialMode === 'verifyEmail')
+    );
+    var isAccountActionFallback = !!(
+      pendingAccountEmailVerification &&
+      !initialOobCode &&
+      /\/email-verified\.html$/.test(window.location.pathname)
+    );
+    if (!auth.isSignInWithEmailLink(window.location.href) && !isAccountActionCode && !isAccountActionFallback) return;
 
     // Retrieve the email address from localStorage (saved before the link was sent)
     var email = localStorage.getItem('servi_email_link_target');
@@ -1174,11 +2137,111 @@
     localStorage.removeItem('servi_recovery_mode');
 
     var isEmailVerification = localStorage.getItem('servi_email_verification_mode');
-    localStorage.removeItem('servi_email_verification_mode');
 
     try {
-      // If already signed in with phone, link email rather than sign in fresh
+      var linkUrl = new URL(window.location.href);
+      var mode = linkUrl.searchParams.get('mode');
+      var oobCode = linkUrl.searchParams.get('oobCode');
+      if (isEmailVerification && !oobCode && isAccountActionFallback) {
+        var fallbackSyncData = await syncVerifiedEmailToBackend(email);
+        if (!fallbackSyncData) return;
+        localStorage.removeItem('servi_email_verification_mode');
+        localStorage.removeItem('servi_email_link_target');
+        window.__broadcastEmailVerified();
+        window.__emailLinkProcessingStatus = 'account-email-verified';
+        return;
+      }
+      if (isEmailVerification && oobCode && (mode === 'verifyAndChange' || mode === 'verifyAndChangeEmail' || mode === 'verifyEmail')) {
+        await auth.applyActionCode(oobCode);
+        var accountActionData = await syncVerifiedEmailToBackend(email);
+        if (!accountActionData) throw new Error('account_email_sync_failed');
+        localStorage.removeItem('servi_email_link_target');
+        localStorage.removeItem('servi_email_verification_mode');
+        window.history.replaceState({}, document.title, window.location.pathname);
+        window.__broadcastEmailVerified();
+        if (window.buildNavbar) window.buildNavbar();
+        window.__emailLinkProcessingStatus = 'account-email-verified';
+        // Do NOT redirect this tab. The original account.html tab refreshes itself
+        // via the broadcast (storage / servi-email-verified listeners), so we leave
+        // this verification tab on its success screen for the user to close.
+        return;
+      }
+
+      if (isEmailVerification) {
+        var accountVerifyToken = getSessionToken();
+        var accountEmailToken = null;
+        var accountLinkUser = await waitForCurrentFirebaseUser(1500);
+        if (accountLinkUser) {
+          var accountCredential = firebase.auth.EmailAuthProvider.credentialWithLink(email, window.location.href);
+          await accountLinkUser.linkWithCredential(accountCredential);
+          accountLinkUser = auth.currentUser || accountLinkUser;
+          await accountLinkUser.reload();
+          accountEmailToken = await (auth.currentUser || accountLinkUser).getIdToken(true);
+        } else {
+          accountEmailToken = await exchangeEmailLinkForIdToken(email, window.location.href);
+        }
+        localStorage.removeItem('servi_email_link_target');
+        window.history.replaceState({}, document.title, window.location.pathname);
+
+        if (!accountVerifyToken || !accountEmailToken) throw new Error('missing_account_email_proof');
+        var accountVerifyRes = await fetch(API() + '/api/auth/add-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + accountVerifyToken },
+          body: JSON.stringify({ email: email, firebase_id_token: accountEmailToken })
+        });
+        var accountVerifyData = await accountVerifyRes.json().catch(function () { return {}; });
+        if (!accountVerifyRes.ok) {
+          throw new Error(accountVerifyData.error || 'account_email_sync_failed');
+        }
+        localStorage.removeItem('servi_email_verification_mode');
+        updateStoredSessionAfterEmailSync(accountVerifyData, email, (auth.currentUser || accountLinkUser || {}).uid);
+
+        if (window.__user) {
+          window.__user.email = accountVerifyData.email || email;
+          window.__user.email_verified = true;
+          window.__user.email_skipped_at = null;
+        }
+        var accountRaw = localStorage.getItem('servi_user_session');
+        if (accountRaw) {
+          try {
+            var accountSess = JSON.parse(accountRaw);
+            if (accountSess.user) {
+              accountSess.user.email = accountVerifyData.email || email;
+              accountSess.user.email_verified = true;
+              accountSess.user.email_skipped_at = null;
+            }
+            localStorage.setItem('servi_user_session', JSON.stringify(accountSess));
+          } catch (_) {}
+        }
+        window.__broadcastEmailVerified();
+        if (window.buildNavbar) window.buildNavbar();
+        window.__emailLinkProcessingStatus = 'account-email-verified';
+        // Do NOT redirect this tab — the original account.html tab refreshes via the
+        // broadcast. Fall through to the success screen so the user can close this tab.
+        return;
+      }
+
+      // Give Firebase persistence a moment to restore the existing user before
+      // deciding whether to link the email credential or sign in fresh.
+      if (!auth.currentUser) {
+        await new Promise(function (resolve) {
+          var done = false;
+          var finish = function () {
+            if (done) return;
+            done = true;
+            try { unsubscribe && unsubscribe(); } catch (_) {}
+            resolve();
+          };
+          var unsubscribe = auth.onAuthStateChanged(function () { finish(); });
+          setTimeout(finish, 1500);
+        });
+      }
+      // Account email changes verify a new address for the existing SERVI
+      // session. Keep the Firebase user aligned before sending the proof token
+      // to the backend; otherwise a stale Firebase email can never verify the
+      // newly saved DB email.
       if (auth.currentUser && auth.currentUser.phoneNumber) {
+        // If already signed in with phone, link email rather than sign in fresh
         var credential = firebase.auth.EmailAuthProvider.credentialWithLink(email, window.location.href);
         await auth.currentUser.linkWithCredential(credential);
       } else {
@@ -1190,27 +2253,12 @@
       localStorage.removeItem('servi_email_link_target');
       window.history.replaceState({}, document.title, window.location.pathname);
 
-      if (isEmailVerification) {
-        // Email verification from account page: just update the session and return to account page
-        if (window.__syncPromise) { try { await window.__syncPromise; } catch (_) {} }
-        if (window.__user) window.__user.email_verified = true;
-        var raw = localStorage.getItem('servi_user_session');
-        if (raw) {
-          try {
-            var sess = JSON.parse(raw);
-            if (sess.user) sess.user.email_verified = true;
-            localStorage.setItem('servi_user_session', JSON.stringify(sess));
-          } catch (_) {}
-        }
-        if (window.buildNavbar) window.buildNavbar();
-        window.location.href = '/account.html?section=info';
-        return;
-      }
-
       if (isRecovery) {
-        // Wait for sync then redirect to account security section
+        // Wait for sync, then broadcast so the original tab continues on its own.
+        // Do NOT redirect this verification tab — let it stay on its success screen
+        // so the user can close it and return to where they started.
         if (window.__syncPromise) { try { await window.__syncPromise; } catch (_) {} }
-        window.location.href = '/account.html?section=security';
+        window.__broadcastEmailVerified();
         return;
       }
 
@@ -1218,8 +2266,6 @@
         // Email-first new signup: mark email verified and show success screen
         uslNewUserData.email = email;
         uslNewUserData.email_verified = true;
-        // Wait for auto-sync (onAuthStateChanged fired)
-        if (window.__syncPromise) { try { await window.__syncPromise; } catch (_) {} }
         // Broadcast to any listening modal that email was verified
         window.__broadcastEmailVerified();
         // Show success screen instead of trying to reopen modal on this page
@@ -1250,21 +2296,10 @@
 
         uslNewUserData.email = email;
         uslNewUserData.email_verified = true;
-        if (window.__syncPromise) { try { await window.__syncPromise; } catch (_) {} }
 
-        // Sync verified email with backend via /api/auth/add-email endpoint
-        // This ensures the database is updated before closing the flow
-        var token = getSessionToken();
-        if (token && auth.currentUser) {
-          var fbToken = await auth.currentUser.getIdToken(true);
-          await fetch(API() + '/api/auth/add-email', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-            body: JSON.stringify({ email: email, firebase_id_token: fbToken })
-          });
-          // Clean up the 'email skipped' flag since user has now added email
-          localStorage.removeItem('servi_email_skipped');
-        }
+        var created = await completeSignupSync();
+        if (!created) return;
+        localStorage.removeItem('servi_email_skipped');
 
         // Close the link-processing flow cleanly (normal redirect, no modal resumption)
         // User will be returned to home or account page depending on where link was clicked
@@ -1272,10 +2307,23 @@
       } else {
         // Email login for existing user
         if (window.__syncPromise) { try { await window.__syncPromise; } catch (_) {} }
+        // Ghost user: Firebase email is verified but no auth_users row exists.
+        // Broadcast so any opener tab can route into the resume-signup flow via
+        // its onAuthStateChanged auto-resume; don't call onAuthSuccess (which
+        // would falsely close a modal the user still needs).
+        if (window.__syncError && window.__syncError.code === 'signup_incomplete') {
+          if (window.__broadcastEmailVerified) window.__broadcastEmailVerified();
+          return;
+        }
+        if (requiresProfileCompletion(window.__user)) {
+          startExistingProfileCompletion(window.__user);
+          return;
+        }
         onAuthSuccess();
       }
     } catch (err) {
       console.error('[SERVI] Email link sign-in failed:', err);
+      window.__emailLinkProcessingStatus = 'error';
       if (err.code === 'auth/invalid-action-code') {
         var es = isEs();
         document.getElementById('auth-modal-global').innerHTML = modalShell(es ? 'Enlace inválido' : 'Invalid link', false, '');
@@ -1295,19 +2343,46 @@
   // ══════════════════════════════════════════════════════════════════════════════
   window.handleGoogleAuth = async function () {
     var ok = await ensureFirebase();
-    if (!ok) { alert('Error loading auth. Please refresh the page.'); return; }
+    if (!ok) { setError(isEs() ? 'Error al cargar autenticación. Recarga la página.' : 'Error loading auth. Refresh the page.'); return; }
     var btn = document.getElementById('google-auth-btn');
     if (btn) { btn.disabled = true; btn.style.opacity = '0.6'; }
     try {
       var provider = new firebase.auth.GoogleAuthProvider();
       provider.addScope('email');
       provider.addScope('profile');
+      uslSuppressAutoSync = true;
       uslFirstIdentifierType = 'email'; // Google gives email
-      await auth.signInWithPopup(provider);
+      var googleResult = await auth.signInWithPopup(provider);
+      var googleUser = googleResult.user || auth.currentUser;
+      var googleEmail = googleUser && googleUser.email ? googleUser.email.toLowerCase() : '';
+      uslIdentifier = googleEmail;
+      uslIdentifierType = 'email';
+      uslCurrentOTPType = 'email';
+      uslIsNew = false;
+      uslSignupComplete = false;
+      uslNewUserData = {
+        email: googleEmail,
+        email_verified: true,
+        name: googleUser.displayName || '',
+      };
+      window.__user = { id: googleUser.uid, email: googleUser.email, name: googleUser.displayName, phone: googleUser.phoneNumber };
+      window.__syncError = null;
+      window.__syncPromise = syncWithBackend(googleUser);
+      if (window.__syncPromise) { try { await window.__syncPromise; } catch (_) {} }
+      if (await resumeIncompleteSignupIfNeeded(googleUser, 'email')) {
+        if (btn) { btn.disabled = false; btn.style.opacity = ''; }
+        return;
+      }
       var syncOk = await awaitSyncAndCheck();
       if (!syncOk) { if (btn) { btn.disabled = false; btn.style.opacity = ''; } return; }
+      uslSuppressAutoSync = false;
+      if (requiresProfileCompletion(window.__user)) {
+        startExistingProfileCompletion(window.__user);
+        return;
+      }
       onAuthSuccess();
     } catch (err) {
+      uslSuppressAutoSync = false;
       if (btn) { btn.disabled = false; btn.style.opacity = ''; }
       if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') return;
       console.error('[SERVI] Google auth error:', err);
@@ -1325,16 +2400,46 @@
     try {
       recaptchaVerifier = new firebase.auth.RecaptchaVerifier('recaptcha-widget', {
         size: 'invisible',
-        callback: function () { console.log('[SERVI] reCAPTCHA solved'); },
+        callback: function () {
+          if (!usingAuthEmulator) console.log('[SERVI] reCAPTCHA solved');
+        },
       });
     } catch (e) { console.warn('[SERVI] RecaptchaVerifier error:', e); }
   }
 
   // ── Logout ────────────────────────────────────────────────────────────────────
+  // Revoke server-side, sign out of Firebase, and clear all auth-related localStorage.
+  // The backend revoke is best-effort and runs in parallel with the redirect — even if
+  // the network call fails, the local session is still cleared.
   window.logoutUser = async function () {
+    var sess = null;
+    try { sess = JSON.parse(localStorage.getItem('servi_user_session') || 'null'); } catch (_) {}
+
+    // Fire-and-forget server revocation (don't block UX on it)
+    if (sess && sess.token) {
+      try {
+        fetch(API() + '/api/auth/logout', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + sess.token },
+          keepalive: true
+        }).catch(function () {});
+      } catch (_) {}
+    }
+
     window.__user = null;
     window.__syncPromise = null;
-    localStorage.removeItem('servi_user_session');
+    // Clear every auth-related localStorage key (audit A11 — prevent stale flags)
+    try {
+      localStorage.removeItem('servi_user_session');
+      localStorage.removeItem('servi_email_verified_at');
+      localStorage.removeItem('servi_email_link_target');
+      localStorage.removeItem('servi_email_verification_mode');
+      localStorage.removeItem('servi_usl_state');
+      localStorage.removeItem('servi_recovery_mode');
+      localStorage.removeItem('servi_phone_skipped');
+      localStorage.removeItem('servi_email_skipped');
+    } catch (_) {}
+
     if (auth) {
       try { await auth.signOut(); } catch (e) {}
     } else {
@@ -1362,6 +2467,8 @@
       'auth/invalid-verification-code': es ? 'Código incorrecto.'                            : 'Incorrect code.',
       'auth/code-expired':              es ? 'El código expiró. Solicita uno nuevo.'          : 'Code expired. Request a new one.',
       'auth/captcha-check-failed':      es ? 'Error de verificación. Recarga la página.'     : 'Verification error. Reload the page.',
+      'auth/invalid-app-credential':    es ? 'Error de verificación local. Recarga la página e intenta de nuevo.' : 'Local verification error. Reload and try again.',
+      'auth/missing-app-credential':    es ? 'Error de verificación local. Recarga la página e intenta de nuevo.' : 'Local verification error. Reload and try again.',
       'auth/popup-blocked':             es ? 'El popup fue bloqueado. Permite popups.'        : 'Popup was blocked. Allow popups.',
       'auth/network-request-failed':    es ? 'Error de conexión. Verifica tu internet.'      : 'Connection error. Check your internet.',
       'auth/invalid-action-code':       es ? 'El enlace expiró o ya fue usado.'              : 'The link has expired or already been used.',
@@ -1386,17 +2493,33 @@
     uslFirstIdentifierType = '';
     uslCurrentOTPType = '';
     uslIsNew = false;
+    uslSignupComplete = false;
+    uslSuppressAutoSync = false;
+    uslCompletingExisting = false;
     uslNewUserData = {};
     selectedDial = '+52';
     renderIdentifierScreen();
   };
 
-  window.closeAuthModal = function () {
+  window.closeAuthModal = function (force) {
+    if (!force && isSignupFlowLocked()) {
+      setError(isEs()
+        ? 'Completa estos pasos para terminar el registro.'
+        : 'Complete these steps to finish sign up.');
+      return;
+    }
     document.getElementById('auth-modal-global').innerHTML = '';
     document.body.style.overflow = '';
     if (recaptchaVerifier) { try { recaptchaVerifier.clear(); } catch (e) {} recaptchaVerifier = null; }
     confirmationResult = null;
   };
+
+  // Close the auth modal on Escape (reuses __authCloseClick, which respects the signup lock).
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    var modal = document.getElementById('auth-modal-global');
+    if (modal && modal.innerHTML.trim() !== '') window.__authCloseClick();
+  });
 
   // ── Session expiry toast ──────────────────────────────────────────────────────
   function showSessionExpiredToast() {

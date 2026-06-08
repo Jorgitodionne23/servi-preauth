@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" role="img" aria-labelledby="title desc">
+  <title id="title">Bulb Outlet</title>
+  <desc id="desc">Flat service illustration for electrical discovery card.</desc>
+  <rect width="1200" height="900" fill="#F2EFE9"/>
+  <circle cx="958" cy="156" r="96" fill="#E09F4F" opacity=".2"/>
+  <circle cx="198" cy="742" r="132" fill="#8E6B4F" opacity=".12"/>
+  <path d="M130 705c150 72 291 101 464 85 184-17 286-84 476-52" fill="none" stroke="#40352D" stroke-width="18" stroke-linecap="round" opacity=".12"/>
+  <g fill="none" stroke="#40352D" stroke-linecap="round" stroke-linejoin="round">
+    <path stroke-width="28" d="M473 386c0-76 60-134 127-134s127 58 127 134c0 51-28 88-59 123-24 27-29 55-29 88h-78c0-33-5-61-29-88-31-35-59-72-59-123z" fill="#8E6B4F" opacity=".78"/><path stroke-width="20" d="M552 661h96M566 723h68M600 189v-63M780 264l49-49M420 264l-49-49M842 392h69M289 392h69M318 609h165v132H318zM373 655v40M428 655v40"/><circle cx="600" cy="383" r="34" fill="#E09F4F" stroke="none"/>
+  </g>
+  <g fill="#E09F4F" opacity=".92">
+    <circle cx="214" cy="182" r="16"/>
+    <circle cx="997" cy="697" r="13"/>
+    <path d="M1017 264l19 36 37 18-37 18-19 36-18-36-37-18 37-18z"/>
+  </g>
+</svg>

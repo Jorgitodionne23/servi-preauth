@@ -7,176 +7,272 @@
   <meta name="description" content="Servicios a domicilio sin complicaciones. Limpieza, reparaciones, mantenimiento y más — encuentra al especialista ideal en minutos.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,700;1,9..40,400&family=Syne:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,700;1,9..40,400&family=Syne:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/shared/shared-styles.css">
-  <style>
-    /* Hero decorative gradients */
-    .hero-glow-1 { position:absolute;top:-200px;right:-200px;width:600px;height:600px;border-radius:50%;background:radial-gradient(circle,rgba(16,185,129,0.06) 0%,transparent 70%);pointer-events:none; }
-    .hero-glow-2 { position:absolute;bottom:-100px;left:-100px;width:400px;height:400px;border-radius:50%;background:radial-gradient(circle,rgba(16,185,129,0.04) 0%,transparent 70%);pointer-events:none; }
-    /* App mockup placeholder */
-    .app-mockup {
-      width: 280px; height: 500px; border-radius: 40px; background: #0a0a0a;
-      border: 4px solid #333; position: relative; overflow: hidden;
-      box-shadow: 0 24px 64px rgba(0,0,0,0.15); animation: float 4s ease-in-out infinite;
-    }
-    .app-mockup-inner {
-      position:absolute;inset:8px;border-radius:32px;background:#fafafa;overflow:hidden;
-      display:flex;flex-direction:column;padding:20px 16px;gap:12px;
-    }
-    .app-cat-pill {
-      display:flex;align-items:center;gap:10px;padding:12px 14px;
-      border:1px solid #e8e8e8;border-radius:12px;background:#fff;font-size:12px;
-    }
-    .app-cat-icon { width:28px;height:28px;border-radius:8px;background:#10b981;opacity:0.15;flex-shrink:0; }
-    /* Quote mark */
-    .quote-mark { font-size:32px;color:#10b981;font-family:Georgia,serif;line-height:1;margin-bottom:16px; }
-    /* Author avatar */
-    .author-avatar {
-      width:40px;height:40px;border-radius:50%;
-      background:linear-gradient(135deg,#10b981,#059669);
-      display:flex;align-items:center;justify-content:center;
-      color:#fff;font-size:14px;font-weight:600;flex-shrink:0;
-    }
-  </style>
+  <link rel="stylesheet" href="/shared/landing-theme.css">
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
-<body>
+<body class="landing-page">
 
 <!-- ═══ SHARED COMPONENTS ═══ -->
 <script src="/config.js"></script>
 <script src="/shared/i18n.js"></script>
 <script src="/shared/shared-auth.js"></script>
+<script src="/shared/browse-data.js"></script>
 <div id="navbar"></div>
-<script src="/shared/shared-nav.js"></script>
+<script src="/shared/morphing-nav.js"></script>
 
-<!-- ═══ HERO ═══ -->
-<section style="padding-top:140px;padding-bottom:80px;position:relative;overflow:hidden;background-image:linear-gradient(to bottom,rgba(250,250,250,0) 62%,#fafafa 100%),linear-gradient(135deg,#f0fdf4 0%,#ecfdf5 50%,#fafafa 100%)">
-  <div class="hero-glow-1"></div>
-  <div class="hero-glow-2"></div>
-  <div class="container" style="position:relative">
-    <div style="max-width:720px" class="animate-fadeUp">
-      <h1 class="heading-xl" id="hero-headline">
-        <span data-i18n="hero.headline">Servicios a domicilio.</span><br>
-        <span class="gradient-text" data-i18n="hero.headlineBold">Sin complicaciones.</span>
-      </h1>
-      <p class="text-body" style="max-width:520px;margin:24px 0 40px;font-size:19px" data-i18n="hero.sub">
-        Desde limpieza hasta reparaciones — encuentra al especialista ideal en minutos, no en días.
-      </p>
-      <div class="flex-gap-12">
-        <button class="btn-primary btn-primary--lg" onclick="openBooking()">
-          <span data-i18n="hero.cta">Solicitar servicio</span>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+<!-- ═══ DASHBOARD HERO ═══ -->
+<section class="dash-hero" id="landing-hero">
+  <div class="dash-hero__inner animate-fadeUp">
+
+    <!-- LEFT — Request panel -->
+    <div class="dash-hero__left">
+      <div class="dash-hero__location">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+        <span id="dash-location-label">Santa Fe, CDMX</span>
+        <button class="dash-hero__location-change" id="dash-change-address" type="button" onclick="window._dashShowAddressModal()">Cambiar dirección</button>
+      </div>
+
+      <h1 class="dash-hero__headline" id="dash-headline">Solicita un servicio ahora</h1>
+
+      <div class="dash-hero__textarea-wrap">
+        <textarea
+          class="dash-hero__textarea"
+          id="dash-textarea"
+          rows="4"
+          spellcheck="false"
+          autofocus
+          placeholder="Describe lo que necesitas..."
+          onkeydown="if(event.key==='Enter'&&(event.metaKey||event.ctrlKey)){event.preventDefault();window._dashSubmitText()}"
+        ></textarea>
+        <div class="dash-hero__textarea-bar">
+          <button class="dash-hero__attach-btn" type="button" onclick="window._dashShowAttachMenu()" aria-label="Adjuntar">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          </button>
+          <button class="dash-hero__send-btn" type="button" onclick="window._dashSubmitText()" aria-label="Enviar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <p class="dash-hero__media-label" id="dash-media-label">O envía tu solicitud por:</p>
+      <div class="dash-hero__media-row">
+        <button class="dash-hero__media-btn" type="button" onclick="window._dashShowCameraExplain()" aria-label="Cámara" id="dash-camera-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
+        </button>
+        <button class="dash-hero__media-btn" type="button" onclick="window._dashShowMicExplain()" aria-label="Micrófono" id="dash-mic-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
         </button>
       </div>
     </div>
+
+    <!-- RIGHT — Browse categories -->
+    <div class="dash-hero__right">
+      <h2 class="dash-hero__browse-title" id="dash-browse-title">O explora</h2>
+      <div class="dash-cats-grid" id="dash-cats-grid"></div>
+    </div>
+
+    <section class="dash-popular" aria-labelledby="dash-popular-title">
+      <h3 class="dash-popular__title" id="dash-popular-title">Lo más pedido</h3>
+      <div class="dash-discovery__carousel-wrap">
+        <button class="dash-discovery__arrow dash-discovery__arrow--left" type="button"
+                aria-label="Desplazar a la izquierda"
+                onclick="window._dashScrollPopularCarousel(-1)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+        </button>
+        <div class="dash-popular__carousel" id="dash-popular-carousel" tabindex="0"
+             onscroll="window._dashUpdatePopularArrowState()"
+             onkeydown="window._dashHandlePopularCarouselKey(event)"></div>
+        <button class="dash-discovery__arrow dash-discovery__arrow--right" type="button"
+                aria-label="Desplazar a la derecha"
+                onclick="window._dashScrollPopularCarousel(1)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+        </button>
+      </div>
+    </section>
+
   </div>
 </section>
 
-<!-- ═══ SERVICES ═══ -->
-<section id="services" class="section--sm">
+<!-- ═══ BROWSE DRAWER (subcategory panel) ═══ -->
+<div class="browse-drawer" id="browse-drawer" hidden role="dialog" aria-modal="true">
+  <div class="browse-drawer__scrim" onclick="window._closeBrowseDrawer()"></div>
+  <div class="browse-drawer__panel">
+    <div class="browse-drawer__header">
+      <button class="browse-drawer__back" onclick="window._closeBrowseDrawer()" aria-label="Volver">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+      </button>
+      <span class="browse-drawer__cat-name" id="browse-drawer-title"></span>
+    </div>
+    <div class="browse-drawer__subtitle" id="browse-drawer-subtitle"></div>
+    <ul class="browse-drawer__list" id="browse-drawer-list"></ul>
+  </div>
+</div>
+
+<!-- ═══ MEDIA EXPLANATION MODAL ═══ -->
+<div class="media-explain-overlay" id="media-explain-overlay" hidden role="dialog" aria-modal="true">
+  <div class="media-explain-modal" id="media-explain-modal">
+    <!-- rendered by JS -->
+  </div>
+</div>
+
+<!-- ═══ ADDRESS CHANGE MODAL ═══ -->
+<div class="address-modal-overlay" id="address-modal-overlay" hidden role="dialog" aria-modal="true">
+  <div class="address-modal-panel" id="address-modal-panel">
+    <!-- rendered by JS -->
+  </div>
+</div>
+
+<!-- ═══ HOW IT WORKS (light) ═══ -->
+<section id="how" class="section" style="padding-top:0">
   <div class="container">
-    <h2 class="heading-lg" style="margin-bottom:48px" data-i18n="categories.title">Explora nuestros servicios</h2>
-    <div class="grid-3" id="categories-grid"></div>
+    <h2 class="heading-lg" data-i18n="how.title" style="margin-bottom:56px">Así de fácil</h2>
+    <div id="steps-grid"></div>
   </div>
 </section>
 
-<div class="divider"></div>
-
-<!-- ═══ HOW IT WORKS ═══ -->
-<section id="how" class="section">
-  <div class="container">
-    <h2 class="heading-lg" style="margin-bottom:56px" data-i18n="how.title">Así de fácil</h2>
-    <div class="grid-3" id="steps-grid" style="gap:32px"></div>
-  </div>
-</section>
-
-<div class="divider"></div>
-
-<!-- ═══ WHY SERVI ═══ -->
-<section id="about" class="section">
+<!-- ═══ WHY SERVI (dark) ═══ -->
+<section id="about" class="section section--dark">
   <div class="container">
     <div class="about-layout" style="display:flex;gap:64px;align-items:center">
       <div style="flex:1">
-        <h2 class="heading-lg" style="margin-bottom:24px" data-i18n="about.title">¿Por qué SERVI?</h2>
-        <p class="text-body" style="margin-bottom:16px" data-i18n="about.sub">Hoy puedes pedir comida o un taxi en segundos, pero encontrar un plomero o un electricista sigue siendo lento, informal y desorganizado.</p>
-        <p class="text-body text-bold" data-i18n="about.bold">SERVI gestiona todo el proceso por ti.</p>
+        <h2 class="heading-lg" data-i18n="about.title" style="margin-bottom:24px">¿Por qué SERVI?</h2>
+        <p class="text-body" data-i18n="about.sub" style="margin-bottom:16px">Hoy puedes pedir comida o un taxi en segundos, pero encontrar un plomero o un electricista sigue siendo lento, informal y desorganizado.</p>
+        <p class="text-body text-bold" data-i18n="about.bold" style="color:#fff">SERVI gestiona todo el proceso por ti.</p>
       </div>
-      <div class="stats-grid" style="flex:1;display:grid;grid-template-columns:1fr 1fr;gap:40px" id="stats-grid"></div>
+      <div style="flex:1" id="stats-grid"></div>
     </div>
   </div>
 </section>
 
-<div class="divider"></div>
+<!-- ═══ TESTIMONIALS (light) ═══ -->
+<section id="testimonials" class="section">
+  <div class="container">
+    <h2 class="heading-lg" data-i18n="testimonials.title" style="margin-bottom:48px">Nuestros clientes</h2>
+    <div class="grid-3" id="testimonials-grid" style="gap:20px"></div>
+  </div>
+</section>
 
-<!-- ═══ APP PREVIEW ═══ -->
-<section id="app" class="section">
-  <div class="container" style="text-align:center">
-    <div style="display:inline-block;background:#10b981;color:#fff;padding:6px 16px;border-radius:20px;font-size:13px;font-weight:600;margin-bottom:20px;letter-spacing:0.03em" data-i18n="app.badge">Muy pronto</div>
-    <h2 class="heading-lg" style="margin-bottom:16px" data-i18n="app.title">La app de SERVI</h2>
-    <p class="text-body" style="max-width:480px;margin:0 auto 48px" data-i18n="app.sub">Solicita servicios, da seguimiento y paga — todo desde tu celular.</p>
-    <div style="display:flex;justify-content:center">
-      <div class="app-mockup">
-        <div class="app-mockup-inner">
-          <div style="font-family:'Syne',sans-serif;font-weight:800;font-size:16px;margin-bottom:4px">SERVI<span style="color:#10b981">.</span></div>
-          <div id="app-mockup-cats"></div>
+<!-- ═══ APP — Coming Soon (light) ═══ -->
+<section id="app" class="section app-section">
+  <div class="container">
+    <div class="app-layout">
+      <!-- Copy -->
+      <div class="app-copy">
+        <div class="app-eyebrow">
+          <span class="app-eyebrow__dot"></span>
+          <span data-i18n="app.badge">Muy pronto</span>
+        </div>
+        <h2 class="heading-lg app-copy__title" data-i18n="app.title">La app de SERVI</h2>
+        <p class="app-copy__sub" data-i18n="app.sub">Solicita servicios, da seguimiento y paga — todo desde tu celular.</p>
+        <div class="app-stores">
+          <!-- App Store (static, non-interactive) -->
+          <div class="store-badge" role="img" aria-label="App Store — Próximamente">
+            <span class="store-badge__glyph store-badge__glyph--apple">
+              <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false"><path d="M11.182.008c-.034-.038-1.259.015-2.325 1.172-1.066 1.156-.902 2.482-.878 2.516.024.034 1.52.087 2.475-1.258.955-1.345.762-2.391.728-2.43Zm3.314 11.733c-.048-.096-2.325-1.234-2.113-3.422.212-2.189 1.675-2.789 1.698-2.854.023-.065-.597-.79-1.254-1.157a3.692 3.692 0 0 0-1.563-.434c-.108-.003-.483-.095-1.254.116-.508.139-1.653.589-1.968.607-.316.018-1.256-.522-2.267-.665-.647-.092-1.333.131-1.824.328-.49.196-1.422.754-2.074 2.237-.652 1.482-.311 3.83-.067 4.56.244.73.625 1.924 1.273 2.796.576.984 1.34 1.667 1.659 1.899.319.232 1.219.386 1.843.067.502-.308 1.408-.485 1.766-.472.357.013 1.061.154 1.782.539.571.197 1.111.115 1.652-.105.541-.221 1.324-1.059 2.238-2.758.347-.79.505-1.217.473-1.282Z"/></svg>
+            </span>
+            <span class="store-badge__text">
+              <span class="store-badge__small" data-i18n="app.soonOn">Muy pronto en</span>
+              <span class="store-badge__name">App Store</span>
+            </span>
+          </div>
+          <!-- Google Play (static, non-interactive) -->
+          <div class="store-badge" role="img" aria-label="Google Play — Próximamente">
+            <span class="store-badge__glyph store-badge__glyph--play">
+              <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false"><path d="M14.222 9.374c1.037-.61 1.037-2.137 0-2.748L11.528 5.04 8.32 8l3.207 2.96 2.694-1.586ZM10.627 11.49 7.583 8.68 1.03 14.73c.201 1.029 1.36 1.61 2.303 1.055l7.294-4.295ZM1 13.396V2.603L6.846 8 1 13.396ZM1.03 1.27l6.553 6.05 3.044-2.81L3.333.215C2.39-.341 1.231.24 1.03 1.27Z"/></svg>
+            </span>
+            <span class="store-badge__text">
+              <span class="store-badge__small" data-i18n="app.soonOn">Muy pronto en</span>
+              <span class="store-badge__name">Google Play</span>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- iPhone mockup: future app Browse Dashboard (static, decorative) -->
+      <div class="phone-stage" aria-hidden="true">
+        <div class="phone-mock">
+          <div class="phone-mock__island"></div>
+          <div class="phone-mock__glare"></div>
+          <div class="phone-mock__screen">
+            <div class="phone-status">
+              <span>9:41</span>
+              <span class="phone-status__icons">
+                <svg width="17" height="11" viewBox="0 0 18 12" fill="currentColor"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5" width="3" height="7" rx="1"/><rect x="10" y="2.5" width="3" height="9.5" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/></svg>
+                <svg width="16" height="12" viewBox="0 0 16 12" fill="currentColor"><path d="M8 2.2c2.4 0 4.6.9 6.3 2.4l1.4-1.6C13.6 1.1 10.9 0 8 0S2.4 1.1.3 3l1.4 1.6C3.4 3.1 5.6 2.2 8 2.2z" opacity=".9"/><path d="M8 6c1.3 0 2.5.5 3.4 1.3l1.4-1.5C11.5 4.6 9.8 4 8 4s-3.5.6-4.8 1.8l1.4 1.5C5.5 6.5 6.7 6 8 6z"/><circle cx="8" cy="10" r="1.6"/></svg>
+                <svg width="25" height="12" viewBox="0 0 25 12" fill="none"><rect x="0.5" y="0.5" width="21" height="11" rx="3" stroke="currentColor" opacity=".4"/><rect x="2" y="2" width="16" height="8" rx="1.5" fill="currentColor"/><path d="M23 4v4c.8-.3 1.3-1 1.3-2S23.8 4.3 23 4z" fill="currentColor" opacity=".5"/></svg>
+              </span>
+            </div>
+            <div class="phone-app">
+              <div class="phone-app__head">
+                <img class="phone-app__logo" src="/logo-servi-white.png" alt="SERVI" />
+                <span class="phone-app__loc">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                  <span>Santa Fe, CDMX</span>
+                </span>
+              </div>
+              <div class="phone-search">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+                <span data-i18n="app.phoneSearch">Solicita un servicio</span>
+              </div>
+              <div class="phone-section-label" data-i18n="app.browse">Explora</div>
+              <div class="phone-cats">
+                <div class="phone-cat" style="background-image:url('/assets/discovery/cleaning-category.jpg')"><span class="phone-cat__label" data-i18n="categories.cleaning">Limpieza</span></div>
+                <div class="phone-cat" style="background-image:url('/assets/discovery/repair-category.jpg')"><span class="phone-cat__label" data-i18n="categories.repair">Reparación y Mantenimiento</span></div>
+                <div class="phone-cat" style="background-image:url('/assets/discovery/moving-category.jpg')"><span class="phone-cat__label" data-i18n="categories.moving">Mudanza y Transporte</span></div>
+                <div class="phone-cat" style="background-image:url('/assets/discovery/wellness-category.jpg')"><span class="phone-cat__label" data-i18n="categories.wellness">Bienestar y Cuidado Personal</span></div>
+                <div class="phone-cat phone-cat--wide" style="background-image:url('/assets/discovery/suppliers-category.jpg')"><span class="phone-cat__label" data-i18n="categories.suppliers">Proveedores</span></div>
+              </div>
+            </div>
+            <div class="phone-tabbar">
+              <svg class="phone-tab--active" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 12 0v1"/></svg>
+            </div>
+          </div>
         </div>
       </div>
     </div>
   </div>
 </section>
 
-<div class="divider"></div>
-
-<!-- ═══ TESTIMONIALS ═══ -->
-<section id="testimonials" class="section">
+<!-- ═══ PROVIDERS (dark, full-bleed) ═══ -->
+<section id="providers" class="provider-full">
   <div class="container">
-    <h2 class="heading-lg" style="margin-bottom:48px" data-i18n="testimonials.title">Nuestros clientes</h2>
-    <div class="grid-3" id="testimonials-grid" style="gap:20px"></div>
-  </div>
-</section>
-
-<!-- ═══ PROVIDERS ═══ -->
-<section id="providers" style="padding:40px 0 80px">
-  <div style="max-width:1200px;margin:0 auto">
-    <div class="provider-section">
-      <h2 style="font-family:'Syne',sans-serif;font-size:36px;font-weight:700;letter-spacing:-0.02em;margin-bottom:16px" data-i18n="providers.title">¿Eres proveedor de servicios?</h2>
-      <p style="font-size:17px;color:rgba(255,255,255,0.7);margin-bottom:36px;max-width:480px;line-height:1.6" data-i18n="providers.sub">Ofrece tus servicios con SERVI y haz crecer tu clientela de manera gratuita.</p>
-      <div class="flex-gap-12">
-        <a href="/partners.html" class="btn-white" data-i18n="providers.cta1">Guía para ganar con SERVI</a>
-        <a href="/partners.html#how" class="btn-outline-white" data-i18n="providers.cta2">Aplicar como Partner</a>
+    <div class="provider-layout">
+      <div class="provider-copy">
+        <h2 class="provider-headline" data-i18n="providers.title">¿Eres proveedor de servicios?</h2>
+        <p class="text-body" data-i18n="providers.sub" style="max-width:480px;margin-bottom:36px">Ofrece tus servicios con SERVI y haz crecer tu clientela de manera gratuita.</p>
+        <div class="flex-gap-12">
+          <a href="/partners.html#how" class="btn-accent" data-i18n="providers.cta2">Aplicar como Partner</a>
+          <a href="/partners.html" class="btn-outline-white" data-i18n="providers.cta1">Guía para ganar con SERVI</a>
+        </div>
       </div>
+      <div class="provider-media" aria-hidden="true"></div>
     </div>
   </div>
 </section>
 
-<!-- ═══ CONTACT ═══ -->
-<section id="contact" style="padding:0 0 80px">
+<!-- ═══ CONTACT (light) ═══ -->
+<section id="contact" class="section">
   <div class="container">
-    <h2 class="heading-lg" style="margin-bottom:32px" data-i18n="contact.title">Contacto</h2>
+    <h2 class="heading-lg" data-i18n="contact.title" style="margin-bottom:32px">Contacto</h2>
     <div style="display:flex;flex-direction:column;gap:16px">
-      <div style="display:flex;align-items:center;gap:12px;color:#555;font-size:15px">
+      <div class="contact-item">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
         <span data-i18n="contact.address">Santa Fe, Cuajimalpa de Morelos, Ciudad de México, CDMX.</span>
       </div>
-      <div style="display:flex;align-items:center;gap:12px;color:#555;font-size:15px">
+      <div class="contact-item">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M22 4l-10 8L2 4"/></svg>
         <span>serv.clientserv@gmail.com</span>
       </div>
-      <a href="https://wa.me/525525112588" target="_blank" rel="noopener" style="display:flex;align-items:center;gap:12px;color:#555;font-size:15px;text-decoration:none">
+      <a href="https://wa.me/525525112588" target="_blank" rel="noopener" class="contact-item">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="#25D366"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
         <span data-i18n="contact.whatsapp">WhatsApp</span>
       </a>
     </div>
-  </div>
-</section>
-
-<!-- ═══ FINAL CTA ═══ -->
-<section style="padding:0 0 80px">
-  <div class="container" style="text-align:center">
-    <button class="btn-primary btn-primary--lg" onclick="openBooking()">
-      <span data-i18n="cta.request">Solicita tu servicio</span>
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-    </button>
   </div>
 </section>
 
@@ -186,6 +282,12 @@
 
 <!-- ═══ BOOKING PANEL ═══ -->
 <div id="booking-panel"></div>
+<section id="bk-conversation" class="bk-convo" hidden>
+  <div class="bk-convo__container">
+    <button id="bk-convo-close" class="bk-convo__close" type="button" aria-label="Cerrar">×</button>
+    <div id="bk-convo-stream" class="bk-convo__stream"></div>
+  </div>
+</section>
 
 <!-- ═══ PAGE SCRIPT ═══ -->
 <script src="/config.js"></script>
@@ -202,45 +304,943 @@
   const icons = {
     cleaning: '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v6m0 0l-3-3m3 3l3-3"/><path d="M8 14h8"/><path d="M7 14l-2 8h14l-2-8"/><circle cx="12" cy="11" r="1"/></svg>',
     repair: '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>',
+    moving: '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="6" width="15" height="12" rx="1"/><path d="M16 10h4l3 4v4h-7V10z"/><circle cx="5.5" cy="19.5" r="1.5"/><circle cx="18.5" cy="19.5" r="1.5"/></svg>',
     wellness: '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>',
-    maintenance: '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>',
-    supply: '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4zM3 6h18"/><path d="M16 10a4 4 0 01-8 0"/></svg>',
-    custom: '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>',
+    suppliers: '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4zM3 6h18"/><path d="M16 10a4 4 0 01-8 0"/></svg>',
     arrow: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>',
     back: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>',
     check: '<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg>',
     x: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>',
   };
 
-  const catKeys = ['cleaning', 'repair', 'wellness', 'maintenance', 'supply', 'custom'];
+  const catKeys = ['cleaning', 'repair', 'moving', 'wellness', 'suppliers'];
   const catI18n = {
-    cleaning: { name: 'categories.cleaning', desc: 'categories.cleaningDesc' },
-    repair:   { name: 'categories.repair',   desc: 'categories.repairDesc' },
-    wellness: { name: 'categories.wellness', desc: 'categories.wellnessDesc' },
-    maintenance: { name: 'categories.maintenance', desc: 'categories.maintenanceDesc' },
-    supply:   { name: 'categories.supply',   desc: 'categories.supplyDesc' },
-    custom:   { name: 'categories.custom',   desc: 'categories.customDesc' },
+    cleaning:  { name: 'categories.cleaning',  desc: 'categories.cleaningDesc' },
+    repair:    { name: 'categories.repair',    desc: 'categories.repairDesc' },
+    moving:    { name: 'categories.moving',    desc: 'categories.movingDesc' },
+    wellness:  { name: 'categories.wellness',  desc: 'categories.wellnessDesc' },
+    suppliers: { name: 'categories.suppliers', desc: 'categories.suppliersDesc' },
+  };
+
+  const catEmoji = {
+    cleaning:  '🧹',
+    repair:    '🔧',
+    moving:    '📦',
+    wellness:  '💆',
+    suppliers: '🛒',
   };
 
   function resolve(key) {
     return key.split('.').reduce((o, k) => o?.[k], t());
   }
 
+  function escapeAttr(str) {
+    return String(str || '').replace(/[&<>"']/g, ch => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;',
+    }[ch]));
+  }
+
+  function getLocale() {
+    return (lang() || 'es').toLowerCase().startsWith('es') ? 'es' : 'en';
+  }
+
+  function getLocalizedText(value) {
+    if (!value) return '';
+    if (typeof value === 'string') return value;
+    const locale = getLocale();
+    return value[locale] || value.es || value.en || '';
+  }
+
+  function slugifyServiceLabel(label) {
+    return String(label || '')
+      .toLowerCase()
+      .replace(/&/g, 'and')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+  }
+
+  const popularServices = [
+    { category: 'cleaning', subcategory: 'home-cleaning', serviceIndex: 0 },
+    { category: 'cleaning', subcategory: 'deep-cleaning', serviceIndex: 0 },
+    { category: 'repair', subcategory: 'plumbing', serviceIndex: 0 },
+    { category: 'repair', subcategory: 'electrical', serviceIndex: 0 },
+    { category: 'repair', subcategory: 'handyman', serviceIndex: 0 },
+    { category: 'moving', subcategory: 'moving', serviceIndex: 0 },
+  ];
+
+  function getSubcategoryConfig(catKey, subKey) {
+    return window.browseCategoryData?.[catKey]?.subcategories?.find(sub => sub.key === subKey) || null;
+  }
+
+  function getPopularImage(catKey, subKey, imageServiceName) {
+    const officialImageFolders = {
+      cleaning: 'cleaning/Website_AI_Images_Cleaning',
+      repair: 'repair/Website_AI_Images_Repair',
+      moving: 'moving/Website_AI_Images_Moving',
+      wellness: 'wellness/Website_AI_Images_Wellness',
+      suppliers: 'suppliers/Website_AI_Images_Suppliers',
+    };
+    const folder = officialImageFolders[catKey];
+    const slug = slugifyServiceLabel(imageServiceName);
+    if (folder && slug) return `/assets/discovery/official/${folder}/${slug}.png`;
+    return window.discoverySubcategoryImages?.[catKey]?.[subKey]
+      || window.discoveryFallbackByCategory?.[catKey]
+      || '/assets/partnerimage.png';
+  }
+
+  function getPopularFallback(catKey, subKey) {
+    return window.discoverySubcategoryImages?.[catKey]?.[subKey]
+      || window.discoveryFallbackByCategory?.[catKey]
+      || '/assets/partnerimage.png';
+  }
+
+  // ─── Render AI-style suggestion chips ─────────────────────────
+  function renderChips() {
+    // Suggestion chips removed in dashboard hero redesign — no-op.
+  }
+
+  // ─── Update hero search placeholder ──────────────────────────
+  function updatePlaceholders() {
+    const ta = document.getElementById('dash-textarea');
+    if (ta) ta.placeholder = resolve('dashHero.placeholder') || 'Describe lo que necesitas...';
+  }
+
+  // ─── Address Change Modal ────────────────────────────────────
+  function getDashAddress() {
+    const saved = localStorage.getItem('dash_hero_address');
+    if (saved && saved.trim()) return saved.trim();
+    const label = document.getElementById('dash-location-label');
+    return (label?.textContent || '').trim();
+  }
+
+  function setDashAddress(newAddr) {
+    const label = document.getElementById('dash-location-label');
+    if (label) label.textContent = newAddr;
+
+    const input = document.getElementById('address-input');
+    if (input) input.value = newAddr;
+
+    if (window.bookingState) window.bookingState.address = newAddr;
+
+    const bookingAddressInput = document.getElementById('booking-address');
+    if (bookingAddressInput) bookingAddressInput.value = newAddr;
+
+    const convoAddressInput = document.getElementById('bk-convo-addr');
+    if (convoAddressInput) convoAddressInput.value = newAddr;
+
+    localStorage.setItem('dash_hero_address', newAddr);
+  }
+
+  function setAddressModalStatus(message, tone) {
+    const status = document.getElementById('address-location-status');
+    if (!status) return;
+    status.textContent = message || '';
+    status.dataset.tone = tone || 'neutral';
+  }
+
+  function setAddressLocationBusy(isBusy) {
+    const button = document.getElementById('address-location-btn');
+    if (!button) return;
+    button.disabled = !!isBusy;
+    button.dataset.busy = isBusy ? 'true' : 'false';
+  }
+
+  function setBookingAddressStatus(message, tone) {
+    const status = document.getElementById('booking-address-status');
+    if (!status) return;
+    status.textContent = message || '';
+    status.dataset.tone = tone || 'neutral';
+    status.style.color = tone === 'error'
+      ? '#dc2626'
+      : tone === 'success'
+        ? 'var(--color-accent)'
+        : 'var(--color-text-secondary)';
+  }
+
+  function setBookingAddressBusy(isBusy) {
+    const button = document.getElementById('booking-location-btn');
+    if (!button) return;
+    button.disabled = !!isBusy;
+    button.dataset.busy = isBusy ? 'true' : 'false';
+  }
+
+  function getCurrentPosition() {
+    return new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: true,
+        maximumAge: 300000,
+        timeout: 12000,
+      });
+    });
+  }
+
+  async function reverseGeocodePosition(latitude, longitude) {
+    const langCode = lang() === 'es' ? 'es' : 'en';
+    const url = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}&localityLanguage=${langCode}`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+    try {
+      const res = await fetch(url, { signal: controller.signal });
+      if (!res.ok) return '';
+      const data = await res.json();
+      const rawParts = [
+        data.locality,
+        data.city,
+        data.principalSubdivision,
+        data.countryName,
+      ].filter(Boolean);
+      const parts = rawParts.filter((part, index) => (
+        rawParts.findIndex(candidate => candidate.toLowerCase() === part.toLowerCase()) === index
+      ));
+      return parts.join(', ');
+    } catch (err) {
+      return '';
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  window._dashShowAddressModal = function() {
+    const tr = t();
+    const am = tr.addressModal || {};
+    const overlay = document.getElementById('address-modal-overlay');
+    const panel = document.getElementById('address-modal-panel');
+    if (!overlay || !panel) return;
+
+    const currentAddr = document.getElementById('dash-location-label')?.textContent || 'Santa Fe, CDMX';
+
+    panel.innerHTML = `
+      <div class="address-modal__header">
+        <h2 class="address-modal__title">${am.title || 'Change your address'}</h2>
+        <button class="address-modal__close" type="button" onclick="window._dashCloseAddressModal()">×</button>
+      </div>
+      <p class="address-modal__desc">${am.desc || 'Enter a new location to see services available in that area.'}</p>
+      <button class="address-modal__location-btn" id="address-location-btn" type="button" onclick="window._dashUseCurrentLocation()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 2v3"></path>
+          <path d="M12 19v3"></path>
+          <path d="M2 12h3"></path>
+          <path d="M19 12h3"></path>
+          <circle cx="12" cy="12" r="7"></circle>
+          <circle cx="12" cy="12" r="2"></circle>
+        </svg>
+        <span>${am.locationBtn || 'Use current location'}</span>
+      </button>
+      <p class="address-modal__status" id="address-location-status" aria-live="polite"></p>
+      <div class="address-modal__input-group">
+        <label class="address-modal__label">${am.label || 'Enter address'}</label>
+        <input type="text" class="address-modal__input" id="address-input" placeholder="${am.placeholder || 'City, neighborhood, or address'}" value="${escapeAttr(currentAddr)}">
+      </div>
+      <div class="address-modal__actions">
+        <button class="address-modal__btn address-modal__btn--primary" type="button" onclick="window._dashSaveAddress()">
+          ${am.saveBtn || 'Update location'}
+        </button>
+        <button class="address-modal__btn address-modal__btn--secondary" type="button" onclick="window._dashCloseAddressModal()">
+          ${am.cancelBtn || 'Cancel'}
+        </button>
+      </div>
+    `;
+
+    overlay.removeAttribute('hidden');
+    document.body.style.overflow = 'hidden';
+
+    // Focus input and select all text
+    setTimeout(() => {
+      const input = document.getElementById('address-input');
+      if (input) {
+        input.focus();
+        input.select();
+      }
+    }, 100);
+  };
+
+  window._dashUseCurrentLocation = async function() {
+    const am = t().addressModal || {};
+
+    if (!navigator.geolocation) {
+      setAddressModalStatus(am.unsupported || 'Location access is not available in this browser.', 'error');
+      return;
+    }
+
+    setAddressLocationBusy(true);
+    setAddressModalStatus(am.locating || 'Allow access to your location to update your address automatically.', 'neutral');
+
+    try {
+      const position = await getCurrentPosition();
+      const { latitude, longitude } = position.coords;
+      setAddressModalStatus(am.resolving || 'Finding your address...', 'neutral');
+
+      const address = await reverseGeocodePosition(latitude, longitude);
+      const fallback = `${am.currentLocation || 'Current location'} (${latitude.toFixed(5)}, ${longitude.toFixed(5)})`;
+      setDashAddress(address || fallback);
+      setAddressModalStatus(am.updated || 'Location updated.', 'success');
+      setTimeout(() => window._dashCloseAddressModal(), 650);
+    } catch (err) {
+      const denied = err && err.code === 1;
+      setAddressModalStatus(
+        denied
+          ? (am.permissionDenied || 'Location access was denied. You can still enter your address manually.')
+          : (am.locationError || 'Could not get your location. You can still enter your address manually.'),
+        'error'
+      );
+    } finally {
+      setAddressLocationBusy(false);
+    }
+  };
+
+  window._bookingUseCurrentLocation = async function() {
+    const am = t().addressModal || {};
+
+    if (!navigator.geolocation) {
+      setBookingAddressStatus(am.unsupported || 'Location access is not available in this browser.', 'error');
+      return;
+    }
+
+    setBookingAddressBusy(true);
+    setBookingAddressStatus(am.locating || 'Allow access to your location to update your address automatically.', 'neutral');
+
+    try {
+      const position = await getCurrentPosition();
+      const { latitude, longitude } = position.coords;
+      setBookingAddressStatus(am.resolving || 'Finding your address...', 'neutral');
+
+      const address = await reverseGeocodePosition(latitude, longitude);
+      const fallback = `${am.currentLocation || 'Current location'} (${latitude.toFixed(5)}, ${longitude.toFixed(5)})`;
+      setDashAddress(address || fallback);
+      setBookingAddressStatus(am.updated || 'Location updated.', 'success');
+    } catch (err) {
+      const denied = err && err.code === 1;
+      setBookingAddressStatus(
+        denied
+          ? (am.permissionDenied || 'Location access was denied. You can still enter your address manually.')
+          : (am.locationError || 'Could not get your location. You can still enter your address manually.'),
+        'error'
+      );
+    } finally {
+      setBookingAddressBusy(false);
+    }
+  };
+
+  window._dashCloseAddressModal = function() {
+    const overlay = document.getElementById('address-modal-overlay');
+    if (overlay) overlay.setAttribute('hidden', '');
+    document.body.style.overflow = '';
+  };
+
+  window._dashSaveAddress = function() {
+    const input = document.getElementById('address-input');
+    const newAddr = input?.value.trim();
+    if (!newAddr) return;
+
+    setDashAddress(newAddr);
+    window._dashCloseAddressModal();
+  };
+
+  // Load saved address from localStorage on init
+  function loadSavedAddress() {
+    const saved = getDashAddress();
+    if (saved) {
+      const label = document.getElementById('dash-location-label');
+      if (label) label.textContent = saved;
+    }
+  }
+
   // ─── Render dynamic sections ─────────────────────────────────
   function renderCategories() {
-    const grid = document.getElementById('categories-grid');
+    const grid = document.getElementById('dash-cats-grid');
     if (!grid) return;
-    grid.innerHTML = catKeys.map((key, i) => `
-      <div class="card card--clickable" onclick="openBooking('${key}')" style="animation-delay:${i * 0.08}s">
-        <div style="margin-bottom:16px;color:#10b981">${icons[key]}</div>
-        <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:18px;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between">
-          ${resolve(catI18n[key].name)}
-          <span class="cat-arrow">${icons.arrow}</span>
-        </div>
-        <div class="text-sm" style="color:#888">${resolve(catI18n[key].desc)}</div>
+
+    const tr = t();
+    const dh = tr.dashHero || {};
+
+    window._dashGoToBrowse = function(catKey) {
+      const params = new URLSearchParams();
+      if (catKey) params.set('category', catKey);
+      window.location.href = '/browse.html' + (params.toString() ? ('?' + params.toString()) : '');
+    };
+
+    const cards = catKeys.map(key => `
+      <div class="dash-cat-card" role="button" tabindex="0"
+           onclick="window._dashGoToBrowse('${key}')"
+           onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window._dashGoToBrowse('${key}')}">
+        <span class="dash-cat-card__emoji" aria-hidden="true">${catEmoji[key]}</span>
+        <span class="dash-cat-card__name">${resolve(catI18n[key].name)}</span>
       </div>
     `).join('');
+
+    const customCard = `
+      <div class="dash-cat-card dash-cat-card--custom" role="button" tabindex="0"
+           onclick="openBooking('custom')"
+           onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openBooking('custom')}">
+        <span class="dash-cat-card__name">${dh.cantFind || '¿No encuentras lo que buscas?'}</span>
+        <span class="dash-cat-card__details">
+          ${dh.leaveItToUs || 'Déjalo en nuestras manos'}
+        </span>
+      </div>
+    `;
+
+    grid.innerHTML = cards + customCard;
+
+    // Update static i18n labels in the dashboard hero
+    const locLabel = document.getElementById('dash-location-label');
+    if (locLabel) locLabel.textContent = dh.location || 'Santa Fe, CDMX';
+    const changeBtn = document.getElementById('dash-change-address');
+    if (changeBtn) changeBtn.textContent = dh.changeAddress || 'Cambiar dirección';
+    const headline = document.getElementById('dash-headline');
+    if (headline) headline.textContent = dh.headline || 'Solicita un servicio ahora';
+    const mediaLabel = document.getElementById('dash-media-label');
+    if (mediaLabel) mediaLabel.textContent = dh.mediaLabel || 'O envía tu solicitud por:';
+    const browseTitle = document.getElementById('dash-browse-title');
+    if (browseTitle) browseTitle.textContent = dh.browseTitle || 'O explora';
+    const ta = document.getElementById('dash-textarea');
+    if (ta) ta.placeholder = dh.placeholder || 'Describe lo que necesitas...';
+
+    renderPopularServices();
   }
+
+  function renderPopularServices() {
+    const section = document.querySelector('.dash-popular');
+    const title = document.getElementById('dash-popular-title');
+    const carousel = document.getElementById('dash-popular-carousel');
+    if (!section || !title || !carousel || !window.browseCategoryData) return;
+
+    title.textContent = getLocale() === 'es' ? 'Lo más pedido' : 'Most Popular';
+
+    const cards = popularServices.map(item => {
+      const sub = getSubcategoryConfig(item.category, item.subcategory);
+      const services = sub?.services?.[getLocale()] || sub?.services?.es || sub?.services?.en || [];
+      const englishServices = sub?.services?.en || services;
+      const serviceName = services[item.serviceIndex];
+      const imageServiceName = englishServices[item.serviceIndex] || serviceName;
+      if (!serviceName) return '';
+      const categoryName = resolve(catI18n[item.category].name) || item.category;
+      const subName = getLocalizedText(sub?.label) || categoryName;
+      const params = new URLSearchParams();
+      params.set('category', item.category);
+      params.set('sub', item.subcategory);
+      params.set('service', serviceName);
+      const imageSrc = getPopularImage(item.category, item.subcategory, imageServiceName);
+      const fallbackSrc = getPopularFallback(item.category, item.subcategory);
+      const safeLabel = escapeAttr(serviceName);
+      const safeSub = escapeAttr(subName);
+      return `
+        <a class="dash-discovery__card dash-popular__card" href="/service.html?${params.toString()}" aria-label="${safeLabel}">
+          <span class="dash-discovery__media">
+            <img class="dash-discovery__img"
+                 src="${imageSrc}"
+                 alt="${safeLabel || safeSub}"
+                 loading="lazy"
+                 onerror="this.onerror=null;this.src='${fallbackSrc}'">
+          </span>
+          <span class="dash-discovery__label">${safeLabel}</span>
+        </a>
+      `;
+    }).join('');
+
+    const browseLabel = getLocale() === 'es' ? 'Ver todos los servicios' : 'See all services';
+    const browseHint = getLocale() === 'es' ? 'Explora el catálogo completo' : 'Browse the full catalog';
+    const browseAria = getLocale() === 'es' ? 'Ver el resto de los servicios' : 'See the rest of the services';
+    const browseCard = `
+      <a class="dash-discovery__card dash-popular__card dash-popular__browse-card" href="/browse.html" aria-label="${browseAria}">
+        <span class="dash-popular__browse-media" aria-hidden="true">
+          <span class="dash-popular__browse-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>
+          </span>
+        </span>
+        <span class="dash-popular__browse-copy">
+          <span class="dash-popular__browse-title">${browseLabel}</span>
+          <span class="dash-popular__browse-hint">${browseHint}</span>
+        </span>
+      </a>
+    `;
+
+    carousel.innerHTML = cards + browseCard;
+    window._dashUpdatePopularArrowState();
+  }
+
+  window._dashScrollPopularCarousel = function(dir) {
+    const track = document.getElementById('dash-popular-carousel');
+    if (!track) return;
+    const card = track.querySelector('.dash-popular__card');
+    const styles = window.getComputedStyle(track);
+    const gap = parseFloat(styles.columnGap || styles.gap || '0') || 0;
+    const step = card ? Math.round((card.offsetWidth + gap) * 2) : Math.round(track.clientWidth * 0.9);
+    track.scrollBy({ left: step * (dir < 0 ? -1 : 1), behavior: 'smooth' });
+    window.setTimeout(window._dashUpdatePopularArrowState, 260);
+  };
+
+  window._dashUpdatePopularArrowState = function() {
+    const track = document.getElementById('dash-popular-carousel');
+    if (!track) return;
+    const wrap = track.closest('.dash-discovery__carousel-wrap');
+    if (!wrap) return;
+    const left = wrap.querySelector('.dash-discovery__arrow--left');
+    const right = wrap.querySelector('.dash-discovery__arrow--right');
+    const maxScroll = Math.max(0, track.scrollWidth - track.clientWidth);
+    if (left) left.disabled = track.scrollLeft <= 3;
+    if (right) right.disabled = track.scrollLeft >= maxScroll - 3;
+  };
+
+  window._dashHandlePopularCarouselKey = function(evt) {
+    if (evt.key === 'ArrowRight') {
+      evt.preventDefault();
+      window._dashScrollPopularCarousel(1);
+    } else if (evt.key === 'ArrowLeft') {
+      evt.preventDefault();
+      window._dashScrollPopularCarousel(-1);
+    }
+  };
+
+  // ─── Browse Drawer ────────────────────────────────────────────
+  window._openBrowseDrawer = function(catKey, opts) {
+    const tr = t();
+    const browseStr = tr.browse || {};
+    const catName = resolve(catI18n[catKey].name) || catKey;
+    const subs = (tr.categories && tr.categories[catKey + 'Sub']) || [];
+
+    const drawer = document.getElementById('browse-drawer');
+    const titleEl = document.getElementById('browse-drawer-title');
+    const subtitleEl = document.getElementById('browse-drawer-subtitle');
+    const listEl = document.getElementById('browse-drawer-list');
+
+    if (!drawer) return;
+    const source = opts && opts.source ? opts.source : '';
+    if (source) drawer.setAttribute('data-source', source);
+    else drawer.removeAttribute('data-source');
+    titleEl.textContent = catName;
+    subtitleEl.textContent = browseStr.selectService || 'Selecciona un servicio';
+    listEl.innerHTML = subs.map(sub => `
+      <li>
+        <button class="browse-drawer__item" type="button" onclick="window._browseSelectService('${catKey}', '${encodeURIComponent(sub)}')">
+          <span>${sub}</span>
+          <span class="browse-drawer__item-arrow">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          </span>
+        </button>
+      </li>
+    `).join('');
+
+    drawer.removeAttribute('hidden');
+    document.body.style.overflow = 'hidden';
+  };
+
+  window._closeBrowseDrawer = function() {
+    const drawer = document.getElementById('browse-drawer');
+    if (!drawer) return;
+    drawer.setAttribute('hidden', '');
+    document.body.style.overflow = '';
+  };
+
+  window._browseSelectService = function(catKey, serviceName) {
+    let decodedService = serviceName;
+    try {
+      decodedService = decodeURIComponent(serviceName);
+    } catch (_) {}
+    window._closeBrowseDrawer();
+    setTimeout(() => {
+      window.bookingState = {
+        step: 1,
+        category: catKey,
+        description: decodedService,
+        whenType: 'asap',
+        date: '',
+        time: '',
+        address: getDashAddress(),
+        clientName: window.__user?.name || '',
+        clientPhone: window.__user?.phone || '',
+        clientEmail: window.__user?.email || '',
+        attachments: [],
+        catsExpanded: true,
+      };
+      renderBooking();
+    }, 340);
+  };
+
+  // ─── Attach menu (add image from files/camera/gallery) ────────────────────
+  window._dashShowAttachMenu = function() {
+    const tr = t();
+    const am = tr.attachMenu || {};
+    const overlay = document.getElementById('media-explain-overlay');
+    const modal = document.getElementById('media-explain-modal');
+    if (!overlay || !modal) return;
+
+    modal.innerHTML = `
+      <div class="media-explain-modal__icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 5v14M5 12h14"/>
+        </svg>
+      </div>
+      <h2 class="media-explain-modal__title">${am.title || 'Adjuntar archivos'}</h2>
+      <p class="media-explain-modal__desc">${am.desc || ''}</p>
+      <div class="media-explain-modal__actions">
+        <button class="media-explain-modal__btn media-explain-modal__btn--primary" type="button" onclick="window._dashAttachPhotos('attach')">
+          📷 ${am.photoBtn || 'Foto'}
+        </button>
+        <button class="media-explain-modal__btn media-explain-modal__btn--secondary" type="button" onclick="window._dashAttachFiles()">
+          📁 ${am.filesBtn || 'Archivos'}
+        </button>
+        <button class="media-explain-modal__btn media-explain-modal__btn--cancel" type="button" onclick="window._closeMediaExplain()">
+          ${am.cancel || 'Cancelar'}
+        </button>
+      </div>
+    `;
+
+    overlay.removeAttribute('hidden');
+    document.body.style.overflow = 'hidden';
+  };
+
+  // ─── Show bottom toast with context message before camera/file picker opens ─
+  function _showCameraToast(msg, id) {
+    const existing = document.getElementById(id);
+    if (existing) existing.remove();
+    const toast = document.createElement('div');
+    toast.id = id;
+    toast.style.cssText = `
+      position: fixed;
+      bottom: 40px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.82);
+      color: #fff;
+      padding: 12px 20px;
+      border-radius: 24px;
+      font-family: var(--font-body);
+      font-size: 13px;
+      line-height: 1.45;
+      text-align: center;
+      max-width: 300px;
+      width: calc(100% - 48px);
+      z-index: 9999;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.18s ease;
+    `;
+    toast.textContent = msg;
+    document.body.appendChild(toast);
+    requestAnimationFrame(() => { toast.style.opacity = '1'; });
+    return toast;
+  }
+
+  function _removeCameraToast(id) {
+    const el = document.getElementById(id);
+    if (el) el.remove();
+  }
+
+  // ─── Attach photo (with indicator message) ───────────────────────────────
+  window._dashAttachPhotos = function(mode) {
+    window._closeMediaExplain();
+
+    const tr = t();
+    const msg = mode === 'attach'
+      ? (tr.attachPhotoMsg || 'Add image to your description')
+      : (tr.requestPhotoMsg || 'Request service by taking photos/video. SERVI team will identify your need!');
+
+    const toastId = '_dash-camera-toast';
+    _showCameraToast(msg, toastId);
+
+    const existing = document.getElementById('_dash-attach-input');
+    if (existing) existing.remove();
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.id = '_dash-attach-input';
+    input.style.display = 'none';
+    input.accept = 'image/*';
+    input.multiple = true;
+    if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+      input.setAttribute('capture', 'environment');
+    }
+    input.addEventListener('change', () => {
+      _removeCameraToast(toastId);
+      const files = Array.from(input.files).slice(0, 3);
+      if (files.length === 0) return;
+      Promise.all(files.map(f => uploadAttachment(f))).then(() => {
+        if (!window.bookingState) {
+          window.bookingState = {
+            step: 1, category: null, description: '', whenType: 'asap', date: '', time: '',
+            address: getDashAddress(), clientName: window.__user?.name || '', clientPhone: window.__user?.phone || '',
+            clientEmail: window.__user?.email || '', attachments: [], catsExpanded: true,
+          };
+        }
+        renderBooking();
+      });
+    });
+    input.addEventListener('cancel', () => { _removeCameraToast(toastId); });
+    document.body.appendChild(input);
+    input.click();
+  };
+
+  // ─── Attach files ───────────────────────────────────────────────────────
+  window._dashAttachFiles = function() {
+    window._closeMediaExplain();
+    const existing = document.getElementById('_dash-files-input');
+    if (existing) existing.remove();
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.id = '_dash-files-input';
+    input.style.display = 'none';
+    input.multiple = true;
+    input.addEventListener('change', () => {
+      const files = Array.from(input.files).slice(0, 5);
+      if (files.length === 0) return;
+      Promise.all(files.map(f => uploadAttachment(f))).then(() => {
+        if (!window.bookingState) {
+          window.bookingState = {
+            step: 1, category: null, description: '', whenType: 'asap', date: '', time: '',
+            address: getDashAddress(), clientName: window.__user?.name || '', clientPhone: window.__user?.phone || '',
+            clientEmail: window.__user?.email || '', attachments: [], catsExpanded: true,
+          };
+        }
+        renderBooking();
+      });
+    });
+    document.body.appendChild(input);
+    input.click();
+  };
+
+  // ─── Camera explanation modal (for media-btn, not attach-btn) ──────────────────────────────────
+  window._dashShowCameraExplain = function() {
+    const tr = t();
+    const cx = tr.cameraExplain || {};
+    const overlay = document.getElementById('media-explain-overlay');
+    const modal = document.getElementById('media-explain-modal');
+    if (!overlay || !modal) return;
+
+    modal.innerHTML = `
+      <div class="media-explain-modal__icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/>
+          <circle cx="12" cy="13" r="4"/>
+        </svg>
+      </div>
+      <h2 class="media-explain-modal__title">${cx.title || 'Solicita con foto o video'}</h2>
+      <p class="media-explain-modal__desc">${cx.desc || ''}</p>
+      <div class="media-explain-modal__actions">
+        <button class="media-explain-modal__btn media-explain-modal__btn--primary" type="button" onclick="window._dashTriggerHeroPhotos()">
+          📷 ${cx.photoBtn || 'Tomar fotos (hasta 3)'}
+        </button>
+        <button class="media-explain-modal__btn media-explain-modal__btn--secondary" type="button" onclick="window._dashTriggerHeroVideo()">
+          🎥 ${cx.videoBtn || 'Grabar video (7 seg máx)'}
+        </button>
+        <button class="media-explain-modal__btn media-explain-modal__btn--cancel" type="button" onclick="window._closeMediaExplain()">
+          ${cx.cancel || 'Cancelar'}
+        </button>
+      </div>
+    `;
+
+    overlay.removeAttribute('hidden');
+    document.body.style.overflow = 'hidden';
+  };
+
+  window._closeMediaExplain = function() {
+    const overlay = document.getElementById('media-explain-overlay');
+    if (overlay) overlay.setAttribute('hidden', '');
+    document.body.style.overflow = '';
+  };
+
+  window._dashTriggerHeroPhotos = function() {
+    window._closeMediaExplain();
+    window.bookingState = {
+      step: 1, category: null, description: '', whenType: 'asap', date: '', time: '',
+      address: getDashAddress(), clientName: window.__user?.name || '', clientPhone: window.__user?.phone || '',
+      clientEmail: window.__user?.email || '', attachments: [], catsExpanded: false,
+    };
+
+    const tr = t();
+    const msg = tr.requestPhotoMsg || 'Request service by taking photos/video. SERVI team will identify your need!';
+    const toastId = '_dash-camera-toast-media';
+    _showCameraToast(msg, toastId);
+
+    const existing = document.getElementById('_bk-capture-input');
+    if (existing) existing.remove();
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.id = '_bk-capture-input';
+    input.style.display = 'none';
+    input.accept = 'image/*';
+    input.multiple = true;
+    if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+      input.setAttribute('capture', 'environment');
+    }
+    input.addEventListener('change', () => {
+      _removeCameraToast(toastId);
+      const files = Array.from(input.files).slice(0, 3);
+      if (files.length === 0) return;
+      Promise.all(files.map(f => uploadAttachment(f))).then(() => { renderBooking(); });
+    });
+    input.addEventListener('cancel', () => { _removeCameraToast(toastId); });
+    document.body.appendChild(input);
+    input.click();
+  };
+
+  window._dashTriggerHeroVideo = function() {
+    window._closeMediaExplain();
+    window.bookingState = {
+      step: 1, category: null, description: '', whenType: 'asap', date: '', time: '',
+      address: getDashAddress(), clientName: window.__user?.name || '', clientPhone: window.__user?.phone || '',
+      clientEmail: window.__user?.email || '', attachments: [], catsExpanded: false,
+    };
+
+    const tr = t();
+    const msg = tr.requestPhotoMsg || 'Request service by taking photos/video. SERVI team will identify your need!';
+    const toastId = '_dash-camera-toast-media';
+    _showCameraToast(msg, toastId);
+
+    const existing = document.getElementById('_bk-capture-input');
+    if (existing) existing.remove();
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.id = '_bk-capture-input';
+    input.style.display = 'none';
+    input.accept = 'video/*';
+    if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+      input.setAttribute('capture', 'environment');
+    }
+    input.addEventListener('change', () => {
+      _removeCameraToast(toastId);
+      const file = input.files[0];
+      if (!file) return;
+      const url = URL.createObjectURL(file);
+      const v = document.createElement('video');
+      v.preload = 'metadata';
+      v.onloadedmetadata = () => {
+        URL.revokeObjectURL(url);
+        if (v.duration > 9) {
+          const lang = window.__lang || 'es';
+          alert(lang === 'es' ? 'El video no puede superar 7 segundos.' : 'Video must be 7 seconds or less.');
+          return;
+        }
+        uploadAttachment(file).then(() => renderBooking());
+      };
+      v.onerror = () => { uploadAttachment(file).then(() => renderBooking()); };
+      v.src = url;
+    });
+    input.addEventListener('cancel', () => { _removeCameraToast(toastId); });
+    document.body.appendChild(input);
+    input.click();
+  };
+
+  // ─── Microphone explanation modal ─────────────────────────────
+  window._dashShowMicExplain = function() {
+    const tr = t();
+    const mx = tr.micExplain || {};
+    const overlay = document.getElementById('media-explain-overlay');
+    const modal = document.getElementById('media-explain-modal');
+    if (!overlay || !modal) return;
+
+    modal.innerHTML = `
+      <div class="media-explain-modal__icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/>
+          <path d="M19 10v2a7 7 0 01-14 0v-2"/>
+          <line x1="12" y1="19" x2="12" y2="23"/>
+          <line x1="8" y1="23" x2="16" y2="23"/>
+        </svg>
+      </div>
+      <h2 class="media-explain-modal__title">${mx.title || 'Solicita con tu voz'}</h2>
+      <p class="media-explain-modal__desc">${mx.desc || ''}</p>
+      <div class="media-explain-modal__actions">
+        <button class="media-explain-modal__btn media-explain-modal__btn--primary" type="button" onclick="window._dashStartHeroRecording()">
+          🎙 ${mx.startBtn || 'Iniciar grabación'}
+        </button>
+        <button class="media-explain-modal__btn media-explain-modal__btn--cancel" type="button" onclick="window._closeMediaExplain()">
+          ${mx.cancel || 'Cancelar'}
+        </button>
+      </div>
+    `;
+
+    overlay.removeAttribute('hidden');
+    document.body.style.overflow = 'hidden';
+  };
+
+  window._dashStartHeroRecording = function() {
+    window._closeMediaExplain();
+    window.bookingState = {
+      step: 1, category: null, description: '', whenType: 'asap', date: '', time: '',
+      address: getDashAddress(), clientName: window.__user?.name || '', clientPhone: window.__user?.phone || '',
+      clientEmail: window.__user?.email || '', attachments: [], catsExpanded: false,
+    };
+
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+      window._audioChunks = [];
+      window._audioRecorder = new MediaRecorder(stream);
+      window._audioRecorder.ondataavailable = e => { if (e.data.size > 0) window._audioChunks.push(e.data); };
+      window._audioRecorder.onstop = () => {
+        stream.getTracks().forEach(t => t.stop());
+        const blob = new Blob(window._audioChunks, { type: 'audio/webm' });
+        const file = new File([blob], `audio-${Date.now()}.webm`, { type: 'audio/webm' });
+        uploadAttachment(file).then(() => renderBooking());
+        window._audioRecorder = null;
+        clearInterval(window._audioTimer);
+        window._audioTimer = null;
+      };
+      window._audioRecorder.start();
+      let secs = 0;
+      window._audioTimer = setInterval(() => {
+        secs++;
+        if (secs >= 120) window.stopAudioRecording();
+      }, 1000);
+
+      // Show in-progress recording state in the modal
+      const overlay = document.getElementById('media-explain-overlay');
+      const modal = document.getElementById('media-explain-modal');
+      const lang = window.__lang || 'es';
+      if (overlay && modal) {
+        modal.innerHTML = `
+          <div class="media-explain-modal__icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/>
+              <path d="M19 10v2a7 7 0 01-14 0v-2"/>
+              <line x1="12" y1="19" x2="12" y2="23"/>
+              <line x1="8" y1="23" x2="16" y2="23"/>
+            </svg>
+          </div>
+          <h2 class="media-explain-modal__title" style="color:#dc2626">${lang === 'es' ? '⏺ Grabando...' : '⏺ Recording...'}</h2>
+          <p class="media-explain-modal__desc">${lang === 'es' ? 'Habla claramente. Máximo 2 minutos.' : 'Speak clearly. Maximum 2 minutes.'}</p>
+          <div class="media-explain-modal__actions">
+            <button class="media-explain-modal__btn media-explain-modal__btn--primary" type="button" onclick="window.stopAudioRecording();window._closeMediaExplain()" style="background:#dc2626">
+              ⏹ ${lang === 'es' ? 'Detener grabación' : 'Stop recording'}
+            </button>
+          </div>
+        `;
+        overlay.removeAttribute('hidden');
+        document.body.style.overflow = 'hidden';
+      }
+    }).catch(() => {
+      const lang = window.__lang || 'es';
+      alert(lang === 'es' ? 'No se pudo acceder al micrófono.' : 'Could not access microphone.');
+    });
+  };
+
+  // ─── Dashboard hero textarea submit ───────────────────────────
+  window._dashSubmitText = function() {
+    const ta = document.getElementById('dash-textarea');
+    const text = ta ? ta.value.trim() : '';
+    if (!text) {
+      if (ta) ta.focus();
+      return;
+    }
+    window.bookingState = {
+      step: 2,
+      category: null,
+      description: text,
+      whenType: 'asap',
+      date: '',
+      time: '',
+      address: getDashAddress(),
+      clientName: window.__user?.name || '',
+      clientPhone: window.__user?.phone || '',
+      clientEmail: window.__user?.email || '',
+      attachments: [],
+      catsExpanded: false,
+    };
+    renderBooking();
+    if (ta) ta.value = '';
+  };
 
   function renderSteps() {
     const grid = document.getElementById('steps-grid');
@@ -250,38 +1250,25 @@
       { num: '2', title: resolve('how.s2t'), desc: resolve('how.s2d') },
       { num: '3', title: resolve('how.s3t'), desc: resolve('how.s3d') },
     ];
-    grid.innerHTML = steps.map(s => `
-      <div style="display:flex;gap:20px;align-items:flex-start">
-        <div class="step-num">${s.num}</div>
-        <div>
-          <div class="heading-sm" style="margin-bottom:8px">${s.title}</div>
-          <div class="text-sm">${s.desc}</div>
-        </div>
+    grid.innerHTML = `<div class="landing-steps">${steps.map(s => `
+      <div class="landing-step">
+        <div class="step-num-large">${s.num}</div>
+        <div class="heading-sm" style="margin:16px 0 8px">${s.title}</div>
+        <div class="text-sm">${s.desc}</div>
       </div>
-    `).join('');
+    `).join('')}</div>`;
   }
 
   function renderStats() {
     const grid = document.getElementById('stats-grid');
     if (!grid) return;
     const stats = t().about.stats;
-    grid.innerHTML = stats.map(s => `
-      <div style="text-align:center">
+    grid.innerHTML = `<div class="landing-stats-grid">${stats.map(s => `
+      <div class="landing-stat-cell">
         <div class="stat-num">${s.num}</div>
         <div class="stat-label">${s.label}</div>
       </div>
-    `).join('');
-  }
-
-  function renderAppMockup() {
-    const el = document.getElementById('app-mockup-cats');
-    if (!el) return;
-    el.innerHTML = catKeys.map(key => `
-      <div class="app-cat-pill">
-        <div class="app-cat-icon"></div>
-        <span style="font-weight:500">${resolve(catI18n[key].name)}</span>
-      </div>
-    `).join('');
+    `).join('')}</div>`;
   }
 
   function renderTestimonials() {
@@ -291,9 +1278,9 @@
     grid.innerHTML = items.map(item => `
       <div class="testimonial-card">
         <div class="quote-mark">&ldquo;</div>
-        <p class="text-sm" style="color:#555;margin-bottom:20px">${item.text}</p>
+        <p class="text-sm" style="color:var(--color-text-secondary);margin-bottom:20px">${item.text}</p>
         <div style="display:flex;align-items:center;gap:12px">
-          <div class="author-avatar">${item.author.charAt(0)}</div>
+          <div class="author-avatar" style="width:40px;height:40px;border-radius:50%;background:var(--color-accent);display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:600;flex-shrink:0">${item.author.charAt(0)}</div>
           <div style="font-weight:600;font-size:14px">${item.author}</div>
         </div>
       </div>
@@ -301,23 +1288,23 @@
   }
 
   function renderAll() {
+    renderChips();
+    updatePlaceholders();
     renderCategories();
     renderSteps();
     renderStats();
-    renderAppMockup();
     renderTestimonials();
   }
 
   renderAll();
+  loadSavedAddress();
   window.addEventListener('langchange', renderAll);
-
-  // Auth modal functions moved to shared-auth.js
 
   // ─── Booking Panel ──────────────────────────────────────────
   window.bookingState = {
     step: 1, category: null, description: '', whenType: 'asap', date: '', time: '',
-    address: '', clientName: '', clientPhone: '', clientEmail: '',
-    attachments: [],        // array of { url, mimetype, name }
+    address: getDashAddress(), clientName: '', clientPhone: '', clientEmail: '',
+    attachments: [],
     catsExpanded: false,
   };
 
@@ -354,7 +1341,6 @@
   }
 
   async function handleMediaFile(file, type) {
-    // Duration check for video (client-side, best-effort)
     if (type === 'video' && file.type.startsWith('video/')) {
       try {
         const dur = await getVideoDuration(file);
@@ -362,7 +1348,7 @@
           alert(lang() === 'es' ? `El video no puede superar ${MAX_VIDEO_SECS} segundos.` : `Video must be ${MAX_VIDEO_SECS} seconds or less.`);
           return;
         }
-      } catch (_) { /* skip if can't read duration */ }
+      } catch (_) {}
     }
     uploadAttachment(file);
   }
@@ -494,10 +1480,116 @@
     }
     window.bookingState = {
       step: 1, category: preselectedCategory || null, description: '', whenType: 'asap', date: '', time: '',
-      address: '', clientName: window.__user?.name || '', clientPhone: window.__user?.phone || '',
+      timeMode: 'exact', timePeriod: 'morning', timeRangeStart: '', timeRangeEnd: '',
+      address: getDashAddress(), clientName: window.__user?.name || '', clientPhone: window.__user?.phone || '',
       clientEmail: window.__user?.email || '', attachments: [], catsExpanded: !!preselectedCategory,
     };
     renderBooking();
+  };
+
+  function bookingLocalIsoDate(date) {
+    return [
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, '0'),
+      String(date.getDate()).padStart(2, '0'),
+    ].join('-');
+  }
+
+  function bookingAddDays(days, fromDate) {
+    const d = new Date(fromDate || Date.now());
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() + days);
+    return d;
+  }
+
+  function bookingParsePromptTime(normalizedText) {
+    const meridian = normalizedText.match(/\b(?:at|a las|para las)?\s*(1[0-2]|0?[1-9])(?:\s*[:.]\s*([0-5]\d))?\s*(am|pm)\b/);
+    if (meridian) {
+      let hours = Number(meridian[1]);
+      const mins = meridian[2] || '00';
+      if (meridian[3] === 'pm' && hours < 12) hours += 12;
+      if (meridian[3] === 'am' && hours === 12) hours = 0;
+      return `${String(hours).padStart(2, '0')}:${mins}`;
+    }
+    const twentyFour = normalizedText.match(/\b(?:at|a las|para las)?\s*([01]?\d|2[0-3]):([0-5]\d)\b/);
+    if (twentyFour) return `${String(Number(twentyFour[1])).padStart(2, '0')}:${twentyFour[2]}`;
+    return '';
+  }
+
+  window.__bookingInferSchedule = function bookingInferSchedule(text, now) {
+    const raw = String(text || '').trim();
+    if (!raw) return null;
+    const normalized = raw
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+
+    const explicitIso = normalized.match(/\b(20\d{2})[-/](0?[1-9]|1[0-2])[-/](0?[1-9]|[12]\d|3[01])\b/);
+    let date = null;
+    let label = '';
+
+    if (explicitIso) {
+      date = new Date(Number(explicitIso[1]), Number(explicitIso[2]) - 1, Number(explicitIso[3]));
+      label = bookingLocalIsoDate(date);
+    } else if (/\b(day after tomorrow|pasado manana)\b/.test(normalized)) {
+      date = bookingAddDays(2, now);
+      label = lang() === 'es' ? 'pasado mañana' : 'the day after tomorrow';
+    } else if (/\b(tomorrow|tommorow|manana)\b/.test(normalized)) {
+      date = bookingAddDays(1, now);
+      label = lang() === 'es' ? 'mañana' : 'tomorrow';
+    } else if (/\b(today|hoy)\b/.test(normalized)) {
+      date = bookingAddDays(0, now);
+      label = lang() === 'es' ? 'hoy' : 'today';
+    }
+
+    if (!date || Number.isNaN(date.getTime())) return null;
+    return {
+      date: bookingLocalIsoDate(date),
+      time: bookingParsePromptTime(normalized),
+      label,
+    };
+  };
+
+  window.__bookingApplyScheduleInference = function bookingApplyScheduleInference(text) {
+    const s = window.bookingState;
+    if (!s) return null;
+    const inferred = window.__bookingInferSchedule(text);
+    if (!inferred) {
+      if (s.scheduleInferred) {
+        s.whenType = 'asap';
+        s.date = '';
+        s.time = '';
+        s.timeMode = 'exact';
+        s.timeRangeStart = '';
+        s.timeRangeEnd = '';
+        s.scheduleInferred = false;
+      }
+      return null;
+    }
+    s.whenType = 'schedule';
+    s.date = inferred.date;
+    s.time = inferred.time;
+    s.timeMode = inferred.time ? 'exact' : 'whichever';
+    s.scheduleInferred = true;
+    return inferred;
+  };
+
+  window.bookingHandleDescriptionInput = function bookingHandleDescriptionInput(value) {
+    const s = window.bookingState;
+    if (!s) return;
+    s.description = value;
+    const inferred = window.__bookingApplyScheduleInference(value);
+    const hint = document.getElementById('booking-inference-hint');
+    if (!hint) return;
+    if (inferred) {
+      hint.textContent = lang() === 'es'
+        ? `Detectamos cuándo lo necesitas: ${inferred.label || inferred.date}.`
+        : `Detected when you need it: ${inferred.label || inferred.date}.`;
+      hint.style.display = 'block';
+    } else {
+      hint.textContent = '';
+      hint.style.display = 'none';
+    }
   };
 
   window.closeBooking = function () {
@@ -509,26 +1601,27 @@
   window.renderBooking = function() {
     const tr = t().booking;
     const s = window.bookingState;
+    if (s && !s.address) s.address = getDashAddress();
+    if (s && !s.timeMode) s.timeMode = s.time ? 'exact' : 'whichever';
+    if (s && !s.timePeriod) s.timePeriod = 'morning';
     let content = '';
 
-    // Header
     const stepLabel = ['', '1/3', '2/3', '3/3', ''][s.step] || '';
     const header = `
       <div style="display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid #eee">
-        ${s.step > 1 ? `<button onclick="bookingBack()" style="background:none;border:none;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:15px;font-weight:500;font-family:'DM Sans',sans-serif">${icons.back} ${tr.back}</button>` : '<div></div>'}
+        ${s.step > 1 ? `<button onclick="bookingBack()" style="background:none;border:none;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:15px;font-weight:500;font-family:var(--font-body)">${icons.back} ${tr.back}</button>` : '<div></div>'}
         <div style="text-align:center"><span class="heading-md">${tr.title}</span>${stepLabel ? `<div style="font-size:11px;color:#aaa;margin-top:2px">${stepLabel}</div>` : ''}</div>
         <button onclick="closeBooking()" style="background:none;border:none;cursor:pointer;padding:4px">${icons.x}</button>
       </div>`;
 
     if (s.step === 1) {
-      // ── Custom-first intake ──────────────────────────────────
       const mediaRow = `
         <div style="margin-top:12px">
-          <div style="font-size:12px;color:#aaa;margin-bottom:8px">${lang()==='es'?'Adjunta una foto, video o audio (opcional — solo móvil)':'Attach a photo, video, or audio (optional — mobile only'}</div>
+          <div style="font-size:12px;color:#aaa;margin-bottom:8px">${lang()==='es'?'Adjunta una foto, video o audio (opcional — solo móvil)':'Attach a photo, video, or audio (optional — mobile only)'}</div>
           <div style="display:flex;gap:10px;flex-wrap:wrap">
-            <button onclick="triggerCapture('photo')" style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:8px;border:1px solid #ddd;background:#fafafa;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">📷 ${lang()==='es'?'Foto':'Photo'}</button>
-            <button onclick="triggerCapture('video')" style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:8px;border:1px solid #ddd;background:#fafafa;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">🎥 Video</button>
-            <button id="bk-audio-btn" onclick="startAudioRecording()" style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:8px;border:1px solid #ddd;background:#fafafa;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">🎙 Audio</button>
+            <button onclick="triggerCapture('photo')" style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:8px;border:1px solid #ddd;background:#fafafa;font-size:13px;font-weight:600;cursor:pointer;font-family:var(--font-body)">📷 ${lang()==='es'?'Foto':'Photo'}</button>
+            <button onclick="triggerCapture('video')" style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:8px;border:1px solid #ddd;background:#fafafa;font-size:13px;font-weight:600;cursor:pointer;font-family:var(--font-body)">🎥 Video</button>
+            <button id="bk-audio-btn" onclick="startAudioRecording()" style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:8px;border:1px solid #ddd;background:#fafafa;font-size:13px;font-weight:600;cursor:pointer;font-family:var(--font-body)">🎙 Audio</button>
           </div>
           <div id="bk-attach-status" style="font-size:12px;color:#888;margin-top:6px"></div>
           <div id="bk-previews" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">${s.attachments.map((a,i) => {
@@ -541,7 +1634,7 @@
 
       const catsHtml = catKeys.map(key => `
         <div class="booking-cat ${s.category === key ? 'booking-cat--active' : ''}" onclick="bookingSelectCat('${key}')">
-          <div style="color:#10b981">${icons[key]}</div>
+          <span class="booking-cat__emoji" aria-hidden="true">${catEmoji[key]}</span>
           <div>
             <div style="font-weight:600;font-size:15px">${resolve(catI18n[key].name)}</div>
             <div class="text-xs">${resolve(catI18n[key].desc)}</div>
@@ -551,22 +1644,19 @@
       content = `<div style="padding:24px;display:flex;flex-direction:column;gap:20px">
         <div>
           <label class="text-body text-bold" style="display:block;margin-bottom:8px">${lang()==='es'?'¿Qué necesitas? Descríbelo aquí':'What do you need? Describe it here'}</label>
-          <textarea class="input-field" id="booking-desc" rows="4" placeholder="${lang()==='es'?'Ej: Tengo una fuga de agua en el baño, necesito un plomero lo antes posible...':'E.g. I have a water leak in my bathroom, need a plumber ASAP...'}" oninput="window.bookingState.description=this.value" style="resize:none">${s.description}</textarea>
+          <textarea class="input-field" id="booking-desc" rows="4" placeholder="${lang()==='es'?'Ej: Tengo una fuga de agua en el baño mañana...':'E.g. I need someone to fix my broken door tomorrow...'}" oninput="bookingHandleDescriptionInput(this.value)" style="resize:none">${s.description}</textarea>
+          <div id="booking-inference-hint" class="text-xs" style="display:${s.scheduleInferred && s.date ? 'block' : 'none'};margin-top:8px;color:var(--color-text-secondary)">${s.scheduleInferred && s.date ? (lang()==='es' ? `Detectamos cuándo lo necesitas: ${s.date}.` : `Detected when you need it: ${s.date}.`) : ''}</div>
           ${mediaRow}
         </div>
         <div>
-          <button onclick="window.bookingState.catsExpanded=!window.bookingState.catsExpanded;renderBooking()" style="display:flex;align-items:center;justify-content:space-between;width:100%;background:#f8f8f8;border:1px solid #eee;border-radius:10px;padding:12px 16px;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:600">
-            <span>${lang()==='es'?'¿Sabes qué categoría es? (opcional)':'Know the category? (optional)'}</span>
-            <span style="font-size:18px;transition:transform 0.2s;display:inline-block;transform:rotate(${s.catsExpanded?'180':'0'}deg)">⌄</span>
-          </button>
-          ${s.catsExpanded ? `<div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">${catsHtml}</div>` : ''}
+          <div class="text-xs" style="margin-bottom:10px;color:var(--color-text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em">${lang()==='es'?'Categoría opcional':'Optional category'}</div>
+          <div style="display:flex;flex-direction:column;gap:10px">${catsHtml}</div>
         </div>
         <button class="btn-primary" onclick="bookingStep1Continue()" style="width:100%;justify-content:center">
           ${lang()==='es'?'Continuar':'Continue'} ${icons.arrow}
         </button>
       </div>`;
     } else if (s.step === 2) {
-      // ── When ────────────────────────────────────────────────
       content = `<div style="padding:24px;display:flex;flex-direction:column;gap:24px">
         <div>
           <label class="text-body text-bold" style="display:block;margin-bottom:12px">${tr.when}</label>
@@ -581,28 +1671,36 @@
             </div>
           </div>
           ${s.whenType === 'schedule' ? `
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px">
+            <div style="display:flex;flex-direction:column;gap:12px;margin-top:12px">
               <div>
                 <label class="text-xs" style="display:block;margin-bottom:4px">${tr.date}</label>
                 <input class="input-field" type="date" id="booking-date" value="${s.date}" onchange="window.bookingState.date=this.value">
               </div>
-              <div>
-                <label class="text-xs" style="display:block;margin-bottom:4px">${tr.time}</label>
-                <input class="input-field" type="time" id="booking-time" value="${s.time}" onchange="window.bookingState.time=this.value">
-              </div>
+              ${bookingTimeSelectorHtml(s, tr)}
             </div>
           ` : ''}
         </div>
-        <button class="btn-primary" onclick="window.bookingState.step=3;renderBooking()" style="width:100%;justify-content:center">
+        <button class="btn-primary" onclick="bookingStep2Continue()" style="width:100%;justify-content:center">
           ${tr.where} ${icons.arrow}
         </button>
       </div>`;
     } else if (s.step === 3) {
-      // ── Address + Contact ────────────────────────────────────
       content = `<div style="padding:24px;display:flex;flex-direction:column;gap:24px">
         <div>
           <label class="text-body text-bold" style="display:block;margin-bottom:8px">${tr.where}</label>
-          <input class="input-field" id="booking-address" placeholder="${tr.addressPlaceholder}" value="${s.address}" oninput="window.bookingState.address=this.value">
+          <input class="input-field" id="booking-address" placeholder="${tr.addressPlaceholder}" value="${escapeAttr(s.address)}" oninput="window.bookingState.address=this.value">
+          <button type="button" id="booking-location-btn" onclick="window._bookingUseCurrentLocation()" style="margin-top:10px;width:100%;display:flex;align-items:center;justify-content:center;gap:8px;border:1px solid #ddd;background:#fff;border-radius:8px;padding:10px 12px;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font-body);color:var(--color-text-primary)">
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 2v3"></path>
+              <path d="M12 19v3"></path>
+              <path d="M2 12h3"></path>
+              <path d="M19 12h3"></path>
+              <circle cx="12" cy="12" r="7"></circle>
+              <circle cx="12" cy="12" r="2"></circle>
+            </svg>
+            <span>${(t().addressModal && t().addressModal.locationBtn) || (lang()==='es'?'Usar mi ubicación actual':'Use my current location')}</span>
+          </button>
+          <p class="text-xs" id="booking-address-status" aria-live="polite" style="min-height:18px;margin:6px 0 0;color:var(--color-text-secondary)"></p>
         </div>
         <div>
           <label class="text-body text-bold" style="display:block;margin-bottom:12px">${tr.contactTitle}</label>
@@ -612,17 +1710,16 @@
               <input class="input-field" id="booking-phone" value="${s.clientPhone || ''}" readonly style="opacity:0.6;cursor:not-allowed">
               <p class="text-muted" style="font-size:13px;margin:0">${lang()==='es'?'Información de tu cuenta.':'From your account.'}</p>
             ` : `
-              <p style="font-size:14px;color:#666;margin:0">${lang()==='es'?'Necesitas iniciar sesión para confirmar tu solicitud.':'You need to sign in to confirm your request.'}</p>
+              <p style="font-size:14px;color:var(--color-text-secondary);margin:0">${lang()==='es'?'Necesitas iniciar sesión para confirmar tu solicitud.':'You need to sign in to confirm your request.'}</p>
             `}
           </div>
         </div>
-        ${s.attachments.length ? `<div><div style="font-size:12px;color:#888;margin-bottom:6px">${lang()==='es'?'Archivos adjuntos:':'Attachments:'} ${s.attachments.length}</div><div style="display:flex;gap:8px;flex-wrap:wrap">${s.attachments.map(a => a.mimetype.startsWith('image/') ? `<img src="${a.url}" style="width:48px;height:48px;object-fit:cover;border-radius:6px">` : `<span style="font-size:20px">${a.mimetype.startsWith('video/')? '🎥':'🎙'}</span>`).join('')}</div></div>` : ''}
+        ${s.attachments.length ? `<div><div style="font-size:12px;color:var(--color-text-muted);margin-bottom:6px">${lang()==='es'?'Archivos adjuntos:':'Attachments:'} ${s.attachments.length}</div><div style="display:flex;gap:8px;flex-wrap:wrap">${s.attachments.map(a => a.mimetype.startsWith('image/') ? `<img src="${a.url}" style="width:48px;height:48px;object-fit:cover;border-radius:6px">` : `<span style="font-size:20px">${a.mimetype.startsWith('video/')? '🎥':'🎙'}</span>`).join('')}</div></div>` : ''}
         <button class="btn-primary" onclick="submitBooking()" style="width:100%;justify-content:center" id="booking-submit-btn">
           ${tr.confirm}
         </button>
       </div>`;
     } else if (s.step === 4) {
-      // ── Confirmation ─────────────────────────────────────────
       content = `<div style="padding:48px 24px;text-align:center">
         <div style="margin-bottom:24px">${icons.check}</div>
         <h3 class="heading-md" style="margin-bottom:12px">${tr.confirmed}</h3>
@@ -638,22 +1735,152 @@
   window.bookingStep1Continue = function() {
     const s = window.bookingState;
     s.description = document.getElementById('booking-desc')?.value || s.description;
+    window.__bookingApplyScheduleInference(s.description);
     if (!s.description.trim() && !s.category && !s.attachments.length) {
       alert(lang() === 'es' ? 'Por favor describe lo que necesitas o selecciona una categoría.' : 'Please describe your need or select a category.');
       return;
     }
-    s.step = 2;
+    s.step = s.scheduleInferred && s.date ? 3 : 2;
     renderBooking();
   };
 
   window.bookingSelectCat = function (key) {
     window.bookingState.category = key;
-    window.bookingState.catsExpanded = true;
     renderBooking();
   };
 
   window.bookingSetWhen = function (type) {
     window.bookingState.whenType = type;
+    window.bookingState.scheduleInferred = false;
+    if (type === 'asap') {
+      window.bookingState.date = '';
+      window.bookingState.time = '';
+      window.bookingState.timeMode = 'exact';
+      window.bookingState.timeRangeStart = '';
+      window.bookingState.timeRangeEnd = '';
+    } else if (!window.bookingState.timeMode) {
+      window.bookingState.timeMode = window.bookingState.time ? 'exact' : 'whichever';
+    }
+    renderBooking();
+  };
+
+  function bookingTimePeriodLabel(value) {
+    const es = lang() === 'es';
+    return ({
+      morning: es ? 'Mañana' : 'Morning',
+      afternoon: es ? 'Tarde' : 'Afternoon',
+      evening: es ? 'Noche' : 'Evening',
+    })[value] || value;
+  }
+
+  function bookingTimeModeLabel(value) {
+    const es = lang() === 'es';
+    return ({
+      exact: es ? 'Hora exacta' : 'Exact time',
+      period: es ? 'Mañana/tarde/noche' : 'Morning/afternoon/evening',
+      range: es ? 'Rango de horas' : 'Time range',
+      whichever: es ? 'Cualquier hora' : 'Whichever works',
+    })[value] || value;
+  }
+
+  function bookingPreferredTime(s) {
+    if (!s || s.whenType !== 'schedule') return null;
+    const mode = s.timeMode || (s.time ? 'exact' : 'whichever');
+    if (mode === 'exact') return s.time || null;
+    if (mode === 'period') return bookingTimePeriodLabel(s.timePeriod || 'morning');
+    if (mode === 'range') {
+      return [s.timeRangeStart, s.timeRangeEnd].filter(Boolean).join(' - ') || null;
+    }
+    if (mode === 'whichever') return lang() === 'es' ? 'Cualquier hora' : 'Whichever works';
+    return s.time || null;
+  }
+
+  function bookingScheduleDisplay(s) {
+    return [s?.date, bookingPreferredTime(s)].filter(Boolean).join(' · ');
+  }
+
+  function bookingScheduleIsComplete(s) {
+    if (!s || s.whenType !== 'schedule') return true;
+    if (!s.date) return false;
+    const mode = s.timeMode || (s.time ? 'exact' : 'whichever');
+    if (mode === 'exact') return !!s.time;
+    if (mode === 'range') return !!(s.timeRangeStart && s.timeRangeEnd);
+    return true;
+  }
+
+  function bookingTimeSelectorHtml(s, tr) {
+    const modes = ['exact', 'period', 'range', 'whichever'];
+    const mode = s.timeMode || 'exact';
+    const period = s.timePeriod || 'morning';
+    const modeButtons = modes.map(key => `
+      <button type="button" onclick="bookingSetTimeMode('${key}')" aria-pressed="${mode === key ? 'true' : 'false'}"
+        style="border:1px solid ${mode === key ? 'var(--color-accent)' : '#ddd'};background:${mode === key ? 'rgba(16,185,129,0.1)' : '#fff'};color:${mode === key ? 'var(--color-accent)' : 'var(--color-text-primary)'};border-radius:8px;padding:8px 10px;font-size:12px;font-weight:700;cursor:pointer;font-family:var(--font-body);white-space:nowrap">
+        ${bookingTimeModeLabel(key)}
+      </button>`).join('');
+    const periodButtons = ['morning', 'afternoon', 'evening'].map(key => `
+      <button type="button" onclick="bookingSetTimePeriod('${key}')" aria-pressed="${period === key ? 'true' : 'false'}"
+        style="border:1px solid ${period === key ? 'var(--color-accent)' : '#ddd'};background:${period === key ? 'rgba(16,185,129,0.1)' : '#fff'};color:${period === key ? 'var(--color-accent)' : 'var(--color-text-primary)'};border-radius:8px;padding:8px 10px;font-size:12px;font-weight:700;cursor:pointer;font-family:var(--font-body)">
+        ${bookingTimePeriodLabel(key)}
+      </button>`).join('');
+    return `
+      <div>
+        <label class="text-xs" style="display:block;margin-bottom:6px">${tr.time}</label>
+        <div id="booking-time" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">${modeButtons}</div>
+        ${mode === 'exact' ? `
+          <input class="input-field" type="time" id="booking-time-exact" value="${s.time || ''}" onchange="window.bookingState.time=this.value">
+        ` : ''}
+        ${mode === 'period' ? `
+          <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">${periodButtons}</div>
+        ` : ''}
+        ${mode === 'range' ? `
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <input class="input-field" type="time" id="booking-time-range-start" value="${s.timeRangeStart || ''}" aria-label="${lang()==='es'?'Inicio':'Start'}" onchange="window.bookingState.timeRangeStart=this.value">
+            <input class="input-field" type="time" id="booking-time-range-end" value="${s.timeRangeEnd || ''}" aria-label="${lang()==='es'?'Fin':'End'}" onchange="window.bookingState.timeRangeEnd=this.value">
+          </div>
+        ` : ''}
+        ${mode === 'whichever' ? `
+          <div class="text-xs" style="color:var(--color-text-secondary);padding:10px 12px;border:1px solid #eee;border-radius:8px;background:#fafafa">${lang()==='es'?'Buscaremos la mejor hora disponible para esa fecha.':'We will look for the best available time on that date.'}</div>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  window.bookingSetTimeMode = function (mode) {
+    window.bookingState.timeMode = mode;
+    if (mode !== 'exact') window.bookingState.time = '';
+    if (mode !== 'range') {
+      window.bookingState.timeRangeStart = '';
+      window.bookingState.timeRangeEnd = '';
+    }
+    if (!window.bookingState.timePeriod) window.bookingState.timePeriod = 'morning';
+    renderBooking();
+  };
+
+  window.bookingSetTimePeriod = function (period) {
+    window.bookingState.timePeriod = period;
+    renderBooking();
+  };
+
+  window.bookingStep2Continue = function () {
+    const s = window.bookingState;
+    if (!s) return;
+    const dateInput = document.getElementById('booking-date');
+    const exactInput = document.getElementById('booking-time-exact');
+    const rangeStartInput = document.getElementById('booking-time-range-start');
+    const rangeEndInput = document.getElementById('booking-time-range-end');
+    s.date = dateInput?.value || s.date;
+    if ((s.timeMode || 'exact') === 'exact') s.time = exactInput?.value || s.time;
+    if (s.timeMode === 'range') {
+      s.timeRangeStart = rangeStartInput?.value || s.timeRangeStart;
+      s.timeRangeEnd = rangeEndInput?.value || s.timeRangeEnd;
+    }
+
+    if (!bookingScheduleIsComplete(s)) {
+      alert(lang() === 'es' ? 'Por favor completa la fecha y horario del servicio.' : 'Please complete the service date and time.');
+      return;
+    }
+
+    s.step = 3;
     renderBooking();
   };
 
@@ -661,10 +1888,153 @@
     if (window.bookingState.step > 1) { window.bookingState.step--; renderBooking(); }
   };
 
+  window.__serviJsonAuthHeaders = function () {
+    const headers = { 'Content-Type': 'application/json' };
+    try {
+      const session = JSON.parse(localStorage.getItem('servi_user_session') || 'null');
+      if (session && session.token) headers.Authorization = 'Bearer ' + session.token;
+    } catch (_) {}
+    return headers;
+  };
+
+  window.__serviceRequestErrorMessage = function (error, fallback) {
+    const es = lang() === 'es';
+    if (error === 'email_required') {
+      return es
+        ? 'Verifica tu correo electrónico para confirmar tu solicitud.'
+        : 'Verify your email to confirm your request.';
+    }
+    if (error === 'phone_required') {
+      return es
+        ? 'Verifica tu número de teléfono para confirmar tu solicitud.'
+        : 'Verify your phone number to confirm your request.';
+    }
+    return fallback || (es ? 'Error al enviar. Inténtalo de nuevo.' : 'Submission error. Please try again.');
+  };
+
+  function bookingGateEscapeHtml(str) {
+    return String(str || '').replace(/[&<>"']/g, ch => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[ch]));
+  }
+
+  window.__showServiceRequestEmailGate = function (options) {
+    const opts = options || {};
+    const es = lang() === 'es';
+    const target = opts.target || document.getElementById('booking-content') || document.getElementById('bk-convo-stream');
+    if (!target) return false;
+
+    document.querySelectorAll('.booking-email-gate').forEach((node) => {
+      if (node._cleanup) node._cleanup();
+      node.remove();
+    });
+
+    const currentEmail = String((window.__user && window.__user.email) || '').trim().toLowerCase();
+    const gate = document.createElement('div');
+    gate.className = 'booking-email-gate';
+    gate.style.cssText = 'border:1px solid #ead8b7;background:#fff8ec;border-radius:10px;padding:14px;margin:12px 0;display:flex;flex-direction:column;gap:10px;color:#4a3421';
+    gate.innerHTML = `
+      <div style="font-weight:800;font-size:14px">${es ? 'Verifica tu correo para continuar' : 'Verify your email to continue'}</div>
+      <div style="font-size:13px;line-height:1.45">${es ? 'Ya usaste tu primera solicitud sin correo verificado. Te enviaremos un enlace de verificación y continuaremos la solicitud cuando se confirme.' : 'You already used your first request without a verified email. We will send a verification link and continue the request after it is confirmed.'}</div>
+      ${currentEmail ? `<div style="font-size:13px;font-weight:700">${bookingGateEscapeHtml(currentEmail)}</div>` : `<input class="input-field" id="booking-email-gate-input" type="email" placeholder="${es ? 'correo@email.com' : 'email@example.com'}" style="background:#fff">`}
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button type="button" class="btn-accent" id="booking-email-gate-send">${es ? 'Enviar verificación' : 'Send verification'}</button>
+        <span id="booking-email-gate-status" style="font-size:12px;color:#6f5742"></span>
+      </div>
+    `;
+
+    const appendTarget = opts.target || target;
+    appendTarget.appendChild(gate);
+    try { gate.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (_) {}
+
+    const statusEl = gate.querySelector('#booking-email-gate-status');
+    const sendBtn = gate.querySelector('#booking-email-gate-send');
+    const input = gate.querySelector('#booking-email-gate-input');
+    let cleaned = false;
+
+    async function refreshAuthUser() {
+      const API = (window.CONFIG && window.CONFIG.API_BASE) || '';
+      let session = null;
+      try { session = JSON.parse(localStorage.getItem('servi_user_session') || 'null'); } catch (_) {}
+      const token = session && session.token;
+      if (!token) return null;
+      const res = await fetch(API + '/api/auth/me', { headers: { Authorization: 'Bearer ' + token } });
+      if (!res.ok) return null;
+      const data = await res.json().catch(() => ({}));
+      if (!data.user) return null;
+      window.__user = data.user;
+      try {
+        session.user = data.user;
+        localStorage.setItem('servi_user_session', JSON.stringify(session));
+      } catch (_) {}
+      return data.user;
+    }
+
+    async function retryIfVerified() {
+      const user = await refreshAuthUser();
+      if (!user || user.email_verified !== true) return;
+      cleanup();
+      gate.remove();
+      if (typeof opts.retry === 'function') setTimeout(opts.retry, 50);
+    }
+
+    function onStorage(e) {
+      if (e.key === 'servi_email_verified_at') retryIfVerified();
+    }
+
+    function onVerified() {
+      retryIfVerified();
+    }
+
+    function cleanup() {
+      if (cleaned) return;
+      cleaned = true;
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('servi-email-verified', onVerified);
+    }
+
+    gate._cleanup = cleanup;
+    window.addEventListener('storage', onStorage);
+    window.addEventListener('servi-email-verified', onVerified);
+
+    sendBtn.addEventListener('click', async () => {
+      const email = currentEmail || String((input && input.value) || '').trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        if (statusEl) statusEl.textContent = es ? 'Ingresa un correo válido.' : 'Enter a valid email.';
+        if (input) input.focus();
+        return;
+      }
+      if (!window.__sendEmailVerification) {
+        if (statusEl) statusEl.textContent = es ? 'No se pudo iniciar la verificación.' : 'Could not start verification.';
+        return;
+      }
+      try {
+        sendBtn.disabled = true;
+        if (statusEl) statusEl.textContent = es ? 'Enviando...' : 'Sending...';
+        localStorage.setItem('servi_email_verification_mode', '1');
+        localStorage.setItem('servi_email_link_target', email);
+        const sent = await window.__sendEmailVerification(email);
+        if (!sent) {
+          localStorage.removeItem('servi_email_verification_mode');
+          localStorage.removeItem('servi_email_link_target');
+          sendBtn.disabled = false;
+          if (statusEl) statusEl.textContent = es ? 'No se pudo enviar. Intenta de nuevo.' : 'Could not send. Try again.';
+          return;
+        }
+        if (statusEl) statusEl.textContent = es ? 'Revisa tu correo. Continuaremos cuando se verifique.' : 'Check your email. We will continue after verification.';
+      } catch (_) {
+        localStorage.removeItem('servi_email_verification_mode');
+        localStorage.removeItem('servi_email_link_target');
+        sendBtn.disabled = false;
+        if (statusEl) statusEl.textContent = es ? 'No se pudo enviar. Intenta de nuevo.' : 'Could not send. Try again.';
+      }
+    });
+
+    return true;
+  };
+
   window.submitBooking = function () {
-    // Auth gate: must be logged in to confirm a booking
     if (!window.__user) {
-      // Save any typed values before opening auth modal
       const s = window.bookingState;
       s.address = document.getElementById('booking-address')?.value || s.address;
       window.openAuthModal('login');
@@ -677,6 +2047,13 @@
     s.clientEmail = window.__user.email || s.clientEmail;
     s.address = document.getElementById('booking-address')?.value || s.address;
 
+    if (!bookingScheduleIsComplete(s)) {
+      alert(lang() === 'es' ? 'Por favor completa la fecha y horario del servicio.' : 'Please complete the service date and time.');
+      window.bookingState.step = 2;
+      renderBooking();
+      return;
+    }
+
     if (!s.clientName || !s.clientPhone || !s.address) {
       alert(lang() === 'es' ? 'Por favor completa tu nombre, teléfono y dirección.' : 'Please fill in your name, phone, and address.');
       return;
@@ -688,12 +2065,12 @@
     const API = window.CONFIG?.API_BASE || '';
     fetch(API + '/api/service-requests', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: window.__serviJsonAuthHeaders(),
       body: JSON.stringify({
         category: s.category || 'custom',
         description: s.description,
         preferredDate: s.whenType === 'schedule' ? s.date : null,
-        preferredTime: s.whenType === 'schedule' ? s.time : null,
+        preferredTime: bookingPreferredTime(s),
         isAsap: s.whenType === 'asap',
         serviceAddress: s.address,
         clientName: s.clientName,
@@ -703,17 +2080,599 @@
         attachments: s.attachments.map(a => a.url),
       }),
     })
-    .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then(async r => {
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        const err = new Error(data.message || String(r.status));
+        err.status = r.status;
+        err.body = data;
+        throw err;
+      }
+      return data;
+    })
     .then(() => { window.bookingState.step = 4; renderBooking(); })
     .catch(err => {
       console.error('Booking submit error:', err);
       if (btn) { btn.disabled = false; btn.textContent = t().booking.confirm; }
-      alert(lang() === 'es' ? 'Error al enviar. Inténtalo de nuevo.' : 'Submission error. Please try again.');
+      if (
+        err &&
+        err.body &&
+        err.body.error === 'email_required' &&
+        err.body.requiresEmailVerification &&
+        window.__showServiceRequestEmailGate
+      ) {
+        window.__showServiceRequestEmailGate({
+          target: document.getElementById('booking-content'),
+          retry: () => window.submitBooking()
+        });
+        return;
+      }
+      alert(window.__serviceRequestErrorMessage(err && err.body && err.body.error));
     });
   };
 })();
 
-// Scroll to hash section on load (e.g. arriving from /account.html nav links)
+/* ─── Conversational Booking Flow ──────────────────────────────────────────
+   Inline chat UI that replaces the 4-step modal. Reuses:
+     - window.bookingState (same field names as submitBooking expects)
+     - triggerCapture / startAudioRecording / stopAudioRecording / updateAudioBtn
+     - uploadAttachment (still writes to bookingState.attachments)
+     - openAuthModal (auth gate at contact step)
+   Legacy modal still reachable via window.__legacyBooking=true → openBooking().
+*/
+(function () {
+  const t = () => (window.T ? window.T[window.__lang || 'es'] : {});
+  const tr = () => t().convo || {};
+  const lang = () => window.__lang || 'es';
+
+  // Internal turn log so re-renders after lang change could rebuild if needed.
+  const turns = [];
+  // Conversation step index for control flow.
+  let step = 0;
+  const STEPS = ['desc', 'when', 'where', 'contact', 'review', 'done'];
+
+  function el(html) {
+    const d = document.createElement('div');
+    d.innerHTML = html.trim();
+    return d.firstElementChild;
+  }
+
+  function stream() { return document.getElementById('bk-convo-stream'); }
+
+  function addBot(text, extra) {
+    const s = stream();
+    if (!s) return null;
+    const bubble = el(`<div class="bk-convo__bubble bk-convo__bubble--bot"></div>`);
+    bubble.textContent = text;
+    s.appendChild(bubble);
+    if (extra) s.appendChild(extra);
+    scrollConvo();
+    return bubble;
+  }
+
+  function addUser(text) {
+    const s = stream();
+    if (!s) return;
+    const bubble = el(`<div class="bk-convo__bubble bk-convo__bubble--user"></div>`);
+    bubble.textContent = text;
+    s.appendChild(bubble);
+    scrollConvo();
+    turns.push({ role: 'user', text });
+  }
+
+  function replyChips(chips, onPick) {
+    const wrap = el(`<div class="bk-convo__reply"></div>`);
+    chips.forEach(c => {
+      const b = document.createElement('button');
+      b.className = 'hero-chip';
+      b.type = 'button';
+      b.textContent = c.label;
+      b.addEventListener('click', () => { onPick(c); });
+      wrap.appendChild(b);
+    });
+    return wrap;
+  }
+
+  function scrollConvo() {
+    const c = document.getElementById('bk-conversation');
+    if (!c) return;
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: c.offsetTop - 8, behavior: 'smooth' });
+    });
+  }
+
+  function removeNode(node) { if (node && node.parentNode) node.parentNode.removeChild(node); }
+
+  function formatInferredWhen(inferred) {
+    if (!inferred) return '';
+    return [inferred.label || inferred.date, inferred.time].filter(Boolean).join(' · ');
+  }
+
+  // ─── Step: describe ────────────────────────────────────────────────────
+  function askDescription(seed) {
+    addBot(tr().askDescription || 'Tell me more about what you need.');
+    const row = el(`
+      <div class="bk-convo__input-row">
+        <input type="text" class="bk-convo__input" id="bk-convo-desc" placeholder="${tr().descPlaceholder || ''}" value="${escapeHtml(seed || '')}">
+        <button class="bk-convo__icon-btn" type="button" id="bk-convo-photo" title="${tr().addPhoto || ''}" aria-label="${tr().addPhoto || ''}">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
+        </button>
+        <button class="bk-convo__icon-btn" type="button" id="bk-convo-video" title="${tr().addVideo || 'Video'}" aria-label="${tr().addVideo || 'Video'}">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+        </button>
+        <button class="bk-convo__icon-btn" type="button" id="bk-audio-btn" title="${tr().recordAudio || ''}" aria-label="${tr().recordAudio || ''}">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+        </button>
+        <button class="bk-convo__send" type="button" id="bk-convo-send" aria-label="${tr().send || 'Send'}">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        </button>
+      </div>
+    `);
+    // Preview container lives between row and next bot bubble.
+    const previews = el(`<div class="bk-convo__previews" id="bk-convo-previews" style="display:flex;gap:10px;flex-wrap:wrap"></div>`);
+    stream().appendChild(row);
+    stream().appendChild(previews);
+    const input = row.querySelector('#bk-convo-desc');
+    input.focus();
+
+    row.querySelector('#bk-convo-photo').addEventListener('click', () => window.triggerCapture && window.triggerCapture('photo'));
+    row.querySelector('#bk-convo-video').addEventListener('click', () => window.triggerCapture && window.triggerCapture('video'));
+    // Audio button starts recording; updateAudioBtn (legacy) will toggle its look.
+    row.querySelector('#bk-audio-btn').addEventListener('click', () => window.startAudioRecording && window.startAudioRecording());
+
+    const submit = () => {
+      const val = input.value.trim();
+      if (!val) { input.focus(); return; }
+      window.bookingState.description = val;
+      const inferred = window.__bookingApplyScheduleInference ? window.__bookingApplyScheduleInference(val) : null;
+      removeNode(row);
+      removeNode(previews);
+      addUser(val);
+      reflowPreviews(/* finalized */ true);
+      if (inferred) {
+        const detectedText = tr().detectedWhen || (lang() === 'es' ? 'Detecté la fecha: {when}.' : 'I picked up the date: {when}.');
+        addBot(detectedText.replace('{when}', formatInferredWhen(inferred)));
+        step = 2;
+        askWhere();
+        return;
+      }
+      step = 1;
+      askWhen();
+    };
+    row.querySelector('#bk-convo-send').addEventListener('click', submit);
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); submit(); }
+    });
+  }
+
+  // Called by uploadAttachment(renderAttachmentPreviews) — we render into our own container.
+  function renderConvoAttachments() {
+    const el2 = document.getElementById('bk-convo-previews');
+    if (!el2) return;
+    const atts = (window.bookingState && window.bookingState.attachments) || [];
+    el2.innerHTML = atts.map((a, i) => {
+      const isImage = a.mimetype && a.mimetype.startsWith('image/');
+      const isVideo = a.mimetype && a.mimetype.startsWith('video/');
+      const thumb = isImage
+        ? `<img src="${a.url}" style="width:72px;height:72px;object-fit:cover;border-radius:10px">`
+        : isVideo
+          ? `<div style="width:72px;height:72px;border-radius:10px;background:var(--color-surface);display:flex;align-items:center;justify-content:center"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg></div>`
+          : `<div style="width:72px;height:72px;border-radius:10px;background:var(--color-surface);display:flex;align-items:center;justify-content:center"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/></svg></div>`;
+      return `<div style="position:relative;display:inline-block">${thumb}
+        <button onclick="window._convoRemoveAttachment(${i})" style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;background:var(--color-text);color:#fff;border:none;cursor:pointer;font-size:11px;display:flex;align-items:center;justify-content:center">×</button>
+      </div>`;
+    }).join('');
+  }
+
+  // When the description step moves on, if there were attachments, show them in a fixed bubble.
+  function reflowPreviews(finalize) {
+    if (!finalize) { renderConvoAttachments(); return; }
+    const atts = (window.bookingState && window.bookingState.attachments) || [];
+    if (!atts.length) return;
+    const bubble = el(`<div class="bk-convo__attachment"></div>`);
+    atts.forEach(a => {
+      if (a.mimetype && a.mimetype.startsWith('image/')) {
+        const img = document.createElement('img');
+        img.src = a.url; img.alt = ''; bubble.appendChild(img);
+      } else if (a.mimetype && a.mimetype.startsWith('video/')) {
+        const v = document.createElement('video'); v.src = a.url; v.controls = true; bubble.appendChild(v);
+      } else {
+        const au = document.createElement('audio'); au.src = a.url; au.controls = true; bubble.appendChild(au);
+      }
+    });
+    stream().appendChild(bubble);
+  }
+
+  window._convoRemoveAttachment = function (i) {
+    window.bookingState.attachments.splice(i, 1);
+    renderConvoAttachments();
+  };
+
+  // Intercept renderAttachmentPreviews so existing uploadAttachment keeps working.
+  const _legacyRenderPreviews = window.renderAttachmentPreviews;
+  window.renderAttachmentPreviews = function () {
+    if (document.getElementById('bk-convo-previews')) { renderConvoAttachments(); return; }
+    if (typeof _legacyRenderPreviews === 'function') return _legacyRenderPreviews.apply(this, arguments);
+  };
+
+  // ─── Step: when ────────────────────────────────────────────────────────
+  function askWhen() {
+    addBot(tr().askWhen || 'When do you need it?');
+    const chips = replyChips(
+      [
+        { key: 'asap', label: tr().replyAsap || 'ASAP' },
+        { key: 'schedule', label: tr().replySchedule || 'Schedule' },
+      ],
+      (c) => {
+        removeNode(chips);
+        if (c.key === 'asap') {
+          window.bookingState.whenType = 'asap';
+          window.bookingState.date = '';
+          window.bookingState.time = '';
+          window.bookingState.timeMode = 'exact';
+          window.bookingState.timeRangeStart = '';
+          window.bookingState.timeRangeEnd = '';
+          addUser(tr().userSaysAsap || 'ASAP');
+          step = 2;
+          askWhere();
+        } else {
+          window.bookingState.whenType = 'schedule';
+          askSchedule();
+        }
+      }
+    );
+    stream().appendChild(chips);
+  }
+
+  function askSchedule() {
+    const row = el(`
+      <div class="bk-convo__input-row" style="gap:12px;align-items:stretch;flex-wrap:wrap">
+        <input type="date" class="bk-convo__input" id="bk-convo-date" style="max-width:180px" min="${new Date().toISOString().slice(0,10)}">
+        <select class="bk-convo__input" id="bk-convo-time-mode" style="max-width:220px">
+          <option value="exact">${bookingTimeModeLabel('exact')}</option>
+          <option value="period">${bookingTimeModeLabel('period')}</option>
+          <option value="range">${bookingTimeModeLabel('range')}</option>
+          <option value="whichever">${bookingTimeModeLabel('whichever')}</option>
+        </select>
+        <span id="bk-convo-time-detail" style="display:flex;gap:8px;flex-wrap:wrap"></span>
+        <button class="bk-convo__send" type="button" id="bk-convo-sched-send" aria-label="${tr().send || 'Send'}">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        </button>
+      </div>
+    `);
+    stream().appendChild(row);
+    const d = row.querySelector('#bk-convo-date');
+    const mode = row.querySelector('#bk-convo-time-mode');
+    const detail = row.querySelector('#bk-convo-time-detail');
+    const renderDetail = () => {
+      if (mode.value === 'exact') {
+        detail.innerHTML = `<input type="time" class="bk-convo__input" id="bk-convo-time-exact" style="max-width:140px">`;
+      } else if (mode.value === 'period') {
+        detail.innerHTML = `
+          <select class="bk-convo__input" id="bk-convo-time-period" style="max-width:160px">
+            <option value="morning">${bookingTimePeriodLabel('morning')}</option>
+            <option value="afternoon">${bookingTimePeriodLabel('afternoon')}</option>
+            <option value="evening">${bookingTimePeriodLabel('evening')}</option>
+          </select>`;
+      } else if (mode.value === 'range') {
+        detail.innerHTML = `
+          <input type="time" class="bk-convo__input" id="bk-convo-range-start" style="max-width:120px">
+          <input type="time" class="bk-convo__input" id="bk-convo-range-end" style="max-width:120px">`;
+      } else {
+        detail.innerHTML = `<span class="text-xs" style="align-self:center;color:var(--color-text-secondary)">${lang()==='es'?'Cualquier hora ese día':'Any time that day'}</span>`;
+      }
+    };
+    mode.addEventListener('change', renderDetail);
+    renderDetail();
+    row.querySelector('#bk-convo-sched-send').addEventListener('click', () => {
+      if (!d.value) { d.focus(); return; }
+      window.bookingState.date = d.value;
+      window.bookingState.timeMode = mode.value;
+      window.bookingState.time = '';
+      window.bookingState.timeRangeStart = '';
+      window.bookingState.timeRangeEnd = '';
+      if (mode.value === 'exact') {
+        const exact = row.querySelector('#bk-convo-time-exact');
+        if (!exact.value) { exact.focus(); return; }
+        window.bookingState.time = exact.value;
+      } else if (mode.value === 'period') {
+        window.bookingState.timePeriod = row.querySelector('#bk-convo-time-period').value || 'morning';
+      } else if (mode.value === 'range') {
+        const start = row.querySelector('#bk-convo-range-start');
+        const end = row.querySelector('#bk-convo-range-end');
+        if (!start.value || !end.value) { (start.value ? end : start).focus(); return; }
+        window.bookingState.timeRangeStart = start.value;
+        window.bookingState.timeRangeEnd = end.value;
+      }
+      removeNode(row);
+      addUser(bookingScheduleDisplay(window.bookingState));
+      step = 2;
+      askWhere();
+    });
+  }
+
+  // ─── Step: where ───────────────────────────────────────────────────────
+  function askWhere() {
+    if (!window.bookingState.address) window.bookingState.address = getDashAddress();
+    addBot(tr().askWhere || 'What address?');
+    const row = el(`
+      <div class="bk-convo__input-row">
+        <input type="text" class="bk-convo__input" id="bk-convo-addr" placeholder="${tr().addressPlaceholder || ''}" value="${escapeAttr(window.bookingState.address)}">
+        <button class="bk-convo__send" type="button" id="bk-convo-addr-send" aria-label="${tr().send || 'Send'}">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        </button>
+      </div>
+    `);
+    stream().appendChild(row);
+    const input = row.querySelector('#bk-convo-addr');
+    input.focus();
+    const submit = () => {
+      const v = input.value.trim();
+      if (!v) { input.focus(); return; }
+      window.bookingState.address = v;
+      removeNode(row);
+      addUser(v);
+      step = 3;
+      askContact();
+    };
+    row.querySelector('#bk-convo-addr-send').addEventListener('click', submit);
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); submit(); } });
+  }
+
+  // ─── Step: contact (auth gate or confirm) ──────────────────────────────
+  function askContact() {
+    if (window.__user) {
+      window.bookingState.clientName = window.__user.name || window.bookingState.clientName;
+      window.bookingState.clientPhone = window.__user.phone || window.bookingState.clientPhone;
+      window.bookingState.clientEmail = window.__user.email || window.bookingState.clientEmail;
+      showReview();
+      return;
+    }
+    addBot(tr().authNeeded || 'Log in to send your request.');
+    const btnWrap = el(`<div class="bk-convo__reply"></div>`);
+    const b = document.createElement('button');
+    b.className = 'btn-accent';
+    b.type = 'button';
+    b.textContent = tr().authBtn || 'Log in';
+    b.addEventListener('click', () => {
+      if (!window.openAuthModal) return;
+      // Resume automatically when auth succeeds — shared-auth.js dispatches 'servi-auth-success'.
+      const resume = () => {
+        window.removeEventListener('servi-auth-success', resume);
+        removeNode(btnWrap);
+        setTimeout(askContact, 100);
+      };
+      window.addEventListener('servi-auth-success', resume);
+      window.openAuthModal('login');
+    });
+    btnWrap.appendChild(b);
+    stream().appendChild(btnWrap);
+  }
+
+  // ─── Step: review + confirm ────────────────────────────────────────────
+  function showReview() {
+    addBot(tr().reviewTitle || 'All set. Review your request:');
+    const s = window.bookingState;
+    const whenStr = s.whenType === 'asap'
+      ? (tr().userSaysAsap || 'ASAP')
+      : (bookingScheduleDisplay(s) || (tr().replySchedule || 'Scheduled'));
+    const serviceStr = s.description || '—';
+    const addrStr = s.address || '—';
+    const contactStr = [s.clientName, s.clientPhone].filter(Boolean).join(' · ');
+
+    const summary = el(`
+      <div class="bk-convo__summary">
+        <div class="bk-convo__summary-row"><div class="bk-convo__summary-label">${tr().labelService || 'Service'}</div><div>${escapeHtml(serviceStr)}</div></div>
+        <div class="bk-convo__summary-row"><div class="bk-convo__summary-label">${tr().labelWhen || 'When'}</div><div>${escapeHtml(whenStr)}</div></div>
+        <div class="bk-convo__summary-row"><div class="bk-convo__summary-label">${tr().labelWhere || 'Where'}</div><div>${escapeHtml(addrStr)}</div></div>
+        <div class="bk-convo__summary-row"><div class="bk-convo__summary-label">${tr().labelContact || 'Contact'}</div><div>${escapeHtml(contactStr)}</div></div>
+        <div style="display:flex;justify-content:flex-end;margin-top:8px">
+          <button class="btn-accent" id="bk-convo-confirm">${tr().confirm || 'Confirm'}</button>
+        </div>
+      </div>
+    `);
+    stream().appendChild(summary);
+    summary.querySelector('#bk-convo-confirm').addEventListener('click', () => confirmSubmit(summary));
+  }
+
+  async function confirmSubmit(summaryNode) {
+    const btn = summaryNode.querySelector('#bk-convo-confirm');
+    if (btn) { btn.disabled = true; btn.textContent = tr().submitting || '…'; }
+    const s = window.bookingState;
+    const API = (window.CONFIG && window.CONFIG.API_BASE) || '';
+    try {
+      const res = await fetch(API + '/api/service-requests', {
+        method: 'POST',
+        headers: window.__serviJsonAuthHeaders ? window.__serviJsonAuthHeaders() : { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          category: s.category || 'custom',
+          description: s.description,
+          preferredDate: s.whenType === 'schedule' ? s.date : null,
+          preferredTime: bookingPreferredTime(s),
+          isAsap: s.whenType === 'asap',
+          serviceAddress: s.address,
+          clientName: s.clientName,
+          clientPhone: s.clientPhone,
+          clientEmail: s.clientEmail,
+          lang: lang(),
+          attachments: s.attachments.map(a => a.url),
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        const err = new Error(data.message || ('HTTP ' + res.status));
+        err.status = res.status;
+        err.body = data;
+        throw err;
+      }
+      addBot(tr().success || 'Request sent!');
+      step = 5;
+    } catch (err) {
+      console.error('[convo] submit error:', err);
+      if (btn) { btn.disabled = false; btn.textContent = tr().confirm || 'Confirm'; }
+      if (
+        err &&
+        err.body &&
+        err.body.error === 'email_required' &&
+        err.body.requiresEmailVerification &&
+        window.__showServiceRequestEmailGate
+      ) {
+        window.__showServiceRequestEmailGate({
+          target: stream(),
+          retry: () => confirmSubmit(summaryNode)
+        });
+        return;
+      }
+      const fallback = tr().error || 'Error. Please try again.';
+      addBot(window.__serviceRequestErrorMessage ? window.__serviceRequestErrorMessage(err && err.body && err.body.error, fallback) : fallback);
+    }
+  }
+
+  function escapeHtml(str) {
+    return String(str || '').replace(/[&<>"']/g, ch => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[ch]));
+  }
+
+  // ─── Public entry point ────────────────────────────────────────────────
+  window.openConversation = async function openConversation(seedText, options) {
+    if (window.__legacyBooking) {
+      // Explicit opt-out → old modal.
+      window.openBooking && window.openBooking();
+      if (seedText) setTimeout(() => {
+        window.bookingState.description = seedText;
+        const desc = document.getElementById('booking-desc');
+        if (desc) desc.value = seedText;
+      }, 100);
+      return;
+    }
+
+    // Pre-fill contact from logged-in user if available.
+    if (window.__user && !window.__user.phone) {
+      try {
+        const raw = localStorage.getItem('servi_user_session');
+        const session = raw ? JSON.parse(raw) : {};
+        const API = ((window.CONFIG && window.CONFIG.API_BASE) || '').replace(/\/+$/, '');
+        const r = await fetch(API + '/api/auth/me', { headers: { Authorization: 'Bearer ' + (session.token || '') } });
+        if (r.ok) {
+          const d = await r.json();
+          if (d.user && d.user.phone) {
+            window.__user.phone = d.user.phone;
+            session.user = Object.assign({}, session.user, { phone: d.user.phone });
+            localStorage.setItem('servi_user_session', JSON.stringify(session));
+          }
+        }
+      } catch (_) {}
+    }
+
+    // Reset state.
+    window.bookingState = {
+      step: 1, category: null, description: '', whenType: 'asap', date: '', time: '',
+      timeMode: 'exact', timePeriod: 'morning', timeRangeStart: '', timeRangeEnd: '',
+      address: getDashAddress(),
+      clientName: (window.__user && window.__user.name) || '',
+      clientPhone: (window.__user && window.__user.phone) || '',
+      clientEmail: (window.__user && window.__user.email) || '',
+      attachments: [],
+      catsExpanded: false,
+    };
+    turns.length = 0;
+
+    const section = document.getElementById('bk-conversation');
+    if (!section) return;
+    section.hidden = false;
+    const s = stream();
+    if (s) s.innerHTML = '';
+    step = 0;
+
+    addBot(tr().greeting || 'Hi. Tell me what you need.');
+    const handoff = options || {};
+    const seed = String(seedText || '').trim();
+    if (handoff.skipDescription && seed) {
+      window.bookingState.description = seed;
+      addUser(seed);
+
+      if (handoff.whenType === 'schedule' && handoff.date) {
+        window.bookingState.whenType = 'schedule';
+        window.bookingState.date = handoff.date;
+        window.bookingState.time = handoff.time || '';
+        window.bookingState.timeMode = handoff.time ? 'exact' : 'whichever';
+        addUser([handoff.date, handoff.time].filter(Boolean).join(' · '));
+      } else {
+        window.bookingState.whenType = 'asap';
+        window.bookingState.date = '';
+        window.bookingState.time = '';
+        window.bookingState.timeMode = 'exact';
+        addUser(tr().userSaysAsap || 'ASAP');
+      }
+
+      step = 2;
+      askWhere();
+      return;
+    }
+    askDescription(seedText || '');
+  };
+
+  window.closeConversation = function closeConversation() {
+    window.stopAudioRecording && window.stopAudioRecording();
+    const section = document.getElementById('bk-conversation');
+    if (section) {
+      section.hidden = true;
+      const s = stream();
+      if (s) s.innerHTML = '';
+    }
+    step = 0;
+  };
+
+  // Wire the close button.
+  document.addEventListener('DOMContentLoaded', () => {
+    const close = document.getElementById('bk-convo-close');
+    if (close) close.addEventListener('click', window.closeConversation);
+  });
+  if (document.readyState !== 'loading') {
+    const close = document.getElementById('bk-convo-close');
+    if (close) close.addEventListener('click', window.closeConversation);
+  }
+
+  function maybeAutoOpenFromBrowsePage() {
+    const params = new URLSearchParams(window.location.search);
+    const seededService = params.get('discover_service');
+    if (!seededService) return;
+    const seededCategory = params.get('discover_category');
+    const seededSource = params.get('discover_source');
+    const seededWhen = params.get('discover_when');
+    const seededDate = params.get('discover_date');
+
+    setTimeout(() => {
+      if (window.openConversation) {
+        window.openConversation(seededService, {
+          source: seededSource || '',
+          skipDescription: seededSource === 'header_pill',
+          whenType: seededWhen === 'schedule' && seededDate ? 'schedule' : 'asap',
+          date: seededDate || '',
+        });
+      }
+      if (window.bookingState && seededCategory) window.bookingState.category = seededCategory;
+    }, 80);
+
+    const url = new URL(window.location.href);
+    url.searchParams.delete('discover_service');
+    url.searchParams.delete('discover_category');
+    url.searchParams.delete('discover_source');
+    url.searchParams.delete('discover_when');
+    url.searchParams.delete('discover_date');
+    const next = url.pathname + (url.search ? url.search : '') + url.hash;
+    window.history.replaceState({}, '', next);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', maybeAutoOpenFromBrowsePage);
+  } else {
+    maybeAutoOpenFromBrowsePage();
+  }
+})();
+
+// Scroll to hash section on load
 (function () {
   function scrollToHash() {
     var hash = window.location.hash.replace('#', '');
@@ -733,39 +2692,29 @@
 <!-- ═══ EMAIL VERIFICATION LISTENER ═══ -->
 <script>
   (function() {
-    // Listen for email verification signal from email-verified page
     window.addEventListener('storage', function(e) {
       if (e.key === 'servi_email_verified_at') {
-        // Email was verified in another tab/window, check if modal is open
         handleEmailVerificationSignal();
       }
     });
 
-    // Also set up direct event listener for same-window opener
     window.addEventListener('servi-email-verified', function() {
       handleEmailVerificationSignal();
     });
 
     function handleEmailVerificationSignal() {
-      // Check if auth modal is open and in USL flow
       var modalEl = document.getElementById('auth-modal-global');
       if (!modalEl || !modalEl.innerHTML) return;
 
-      // Check if we're in email-first signup flow
       if (window.uslIsNew && window.uslFirstIdentifierType === 'email' && window.uslNewUserData && window.uslNewUserData.email) {
-        // Modal is open and waiting for name screen after email verification
-        // Automatically advance to name collection screen
         console.log('[SERVI] Email verified, resuming signup in modal');
 
-        // Mark email as verified in local state
         if (window.uslNewUserData) {
           window.uslNewUserData.email_verified = true;
         }
 
-        // Advance modal to name screen
         window.renderIdentifierScreen = window.renderIdentifierScreen || function() {};
 
-        // Show name collection screen
         var es = window.isEs && window.isEs() ? true : (localStorage.getItem('servi_lang') === 'es' || !localStorage.getItem('servi_lang'));
         var title = es ? 'Tu nombre' : 'Your name';
 

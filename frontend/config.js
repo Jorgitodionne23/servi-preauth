@@ -2,8 +2,8 @@
 // to point the UI at the correct backend and Stripe publishable key.
 //
 // HOW ENVIRONMENT SWITCHING WORKS:
-// - Local dev  : placeholders are token strings → rawApi falls back to window.location.origin
-//                (backend serves frontend on the same port), Stripe uses the test key below.
+// - Local/Render: placeholders are token strings → rawApi falls back to window.location.origin
+//                 (backend serves frontend on the same origin), Stripe uses the test key below.
 // - Production : Cloudflare Pages middleware (_middleware.js) replaces __API_BASE__ and
 //                __STRIPE_PK__ with the real values from Cloudflare env vars before serving
 //                this file. Set API_BASE and STRIPE_PUBLISHABLE_KEY in the Cloudflare Pages
@@ -20,16 +20,23 @@
   const localTestPk   = 'pk_test_51QzK6tG7utWo2rQvhFzSBxh59IMDentv5zN7jfKWtf5vkFiGkcuEENhumOpKGjkf33tGqrL3b3o05pp0DDvcJn4r00pQcvaQXR';
 
   const explicit = window.CONFIG || {};
+  const isSameOriginBackend =
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1' ||
+    window.location.hostname === '::1' ||
+    window.location.hostname.endsWith('.onrender.com');
+  const fallbackApi = isSameOriginBackend ? window.location.origin : 'https://servi-preauth.onrender.com';
+
   // If the middleware replaced __API_BASE__ with a real URL, use it.
-  // Otherwise (local dev) fall through to window.location.origin — which equals the
-  // backend URL because Express serves the frontend on the same port.
+  // Otherwise local dev uses the same Express origin, while static deployments
+  // still call the Render backend instead of the Pages host.
   const rawApi =
     explicit.API_BASE ||
     window.CONFIG_API_BASE ||
     window.SERVI_API_BASE ||
     (placeholderApi !== '__API_BASE__' ? placeholderApi : '') ||
     '';
-  const normalizedApi = (rawApi || '').replace(/\/+$/, '') || window.location.origin;
+  const normalizedApi = (rawApi || '').replace(/\/+$/, '') || fallbackApi;
 
   // If the middleware replaced __STRIPE_PK__ with the live key, use it.
   // Otherwise (local dev) use the test publishable key — safe to commit, not a secret.
@@ -83,4 +90,3 @@
     GOOGLE_CLIENT_ID: '315005869570-lb1549n2f20thjsmb43neoun4vf1nc1p.apps.googleusercontent.com'
   };
 })();
-

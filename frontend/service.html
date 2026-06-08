@@ -1,0 +1,1633 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SERVI — Servicio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,700;1,9..40,400&family=Syne:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/shared/shared-styles.css">
+  <link rel="stylesheet" href="/shared/landing-theme.css">
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script src="/shared/browse-data.js"></script>
+  <style>
+    .svc-page {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 132px 24px 80px;
+    }
+    .svc-breadcrumb {
+      font-size: 13px;
+      color: #888;
+      margin-bottom: 24px;
+    }
+    .svc-breadcrumb a {
+      color: #888;
+      text-decoration: none;
+    }
+    .svc-breadcrumb a:hover { text-decoration: underline; }
+    .svc-breadcrumb span { margin: 0 6px; }
+
+    .svc-layout {
+      display: grid;
+      grid-template-columns: 1fr 380px;
+      gap: 48px;
+      align-items: start;
+    }
+
+    .svc-hero-img {
+      width: 100%;
+      height: 420px;
+      object-fit: cover;
+      border-radius: 16px;
+      display: block;
+      background: #f0f0f0;
+    }
+    .svc-title {
+      font-size: 28px;
+      font-weight: 700;
+      margin: 24px 0 4px;
+      line-height: 1.25;
+      font-family: var(--font-heading, 'Syne', sans-serif);
+    }
+    .svc-subcat-label {
+      font-size: 14px;
+      color: #666;
+      margin-bottom: 24px;
+    }
+    .svc-included-section {
+      border-top: 1px solid #e8e8e8;
+      padding-top: 24px;
+      margin-top: 8px;
+    }
+    .svc-included-title {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 10px;
+    }
+    .svc-included-body {
+      font-size: 15px;
+      color: #444;
+      line-height: 1.6;
+    }
+    .svc-other-section {
+      border-top: 1px solid #e8e8e8;
+      padding-top: 24px;
+      margin-top: 32px;
+    }
+    .svc-other-title {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 14px;
+    }
+    .svc-other-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .svc-other-chip {
+      padding: 7px 14px;
+      border: 1.5px solid #e0e0e0;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 500;
+      background: #fafafa;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+      font-family: var(--font-body, 'DM Sans', sans-serif);
+      color: inherit;
+    }
+    .svc-other-chip:hover {
+      border-color: #111;
+      background: #f5f5f5;
+    }
+
+    .svc-sidebar {
+      position: sticky;
+      top: 100px;
+      border: 1.5px solid #e8e8e8;
+      border-radius: 20px;
+      padding: 28px 24px;
+      background: #fff;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.07);
+    }
+    .svc-sidebar__service-name {
+      font-size: 17px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .svc-sidebar__price-label {
+      font-size: 15px;
+      font-weight: 600;
+      color: #111;
+      margin-bottom: 2px;
+    }
+    .svc-sidebar__price-note {
+      font-size: 12px;
+      color: #888;
+      margin-bottom: 20px;
+    }
+    .svc-sidebar__divider {
+      border: none;
+      border-top: 1px solid #efefef;
+      margin: 18px 0;
+    }
+    .svc-sidebar__label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #444;
+      margin-bottom: 8px;
+      display: block;
+    }
+    .svc-when-chips {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 0;
+    }
+    .svc-when-chip {
+      flex: 1;
+      padding: 9px 12px;
+      border: 1.5px solid #e0e0e0;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 500;
+      background: #fafafa;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.15s;
+      font-family: var(--font-body, 'DM Sans', sans-serif);
+      color: inherit;
+    }
+    .svc-when-chip.active {
+      border-color: #111;
+      background: #111;
+      color: #fff;
+    }
+    .svc-schedule-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .svc-schedule-row input {
+      flex: 1;
+      padding: 9px 12px;
+      border: 1.5px solid #e0e0e0;
+      border-radius: 10px;
+      font-size: 13px;
+      font-family: var(--font-body, 'DM Sans', sans-serif);
+      background: #fafafa;
+      color: #111;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .svc-schedule-row input:focus { border-color: #111; background: #fff; }
+
+    .svc-sidebar__input {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1.5px solid #e0e0e0;
+      border-radius: 10px;
+      font-size: 14px;
+      font-family: var(--font-body, 'DM Sans', sans-serif);
+      background: #fafafa;
+      color: #111;
+      outline: none;
+      transition: border-color 0.15s;
+      box-sizing: border-box;
+      resize: none;
+    }
+    .svc-sidebar__input:focus { border-color: #111; background: #fff; }
+    .svc-sidebar__input.error { border-color: #dc2626; }
+    .svc-address-input-wrap {
+      position: relative;
+    }
+    .svc-address-input-wrap .svc-sidebar__input {
+      padding-right: 44px;
+    }
+    .svc-address-location-btn {
+      position: absolute;
+      top: 50%;
+      right: 6px;
+      width: 32px;
+      height: 32px;
+      transform: translateY(-50%);
+      border: none;
+      border-radius: 8px;
+      background: transparent;
+      color: #555;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      transition: background 0.15s, color 0.15s, opacity 0.15s;
+    }
+    .svc-address-location-btn:hover {
+      background: #eee;
+      color: #111;
+    }
+    .svc-address-location-btn:disabled {
+      cursor: default;
+      opacity: 0.5;
+    }
+    .svc-address-location-btn svg {
+      width: 17px;
+      height: 17px;
+      stroke: currentColor;
+    }
+    .svc-address-location-btn[data-busy="true"] svg {
+      animation: svcSpin 1s linear infinite;
+    }
+    @keyframes svcSpin { to { transform: rotate(360deg); } }
+    .svc-error-msg {
+      font-size: 12px;
+      color: #dc2626;
+      margin-top: 4px;
+      display: none;
+    }
+    .svc-error-msg.visible { display: block; }
+
+    /* Saved-address picker (booking panel) */
+    .svc-addr-picker { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+    .svc-addr-opt {
+      display: flex; align-items: flex-start; gap: 10px; padding: 11px 13px;
+      border: 1.5px solid #e2e2e2; border-radius: 12px; cursor: pointer; background: #fff;
+      transition: border-color .15s ease, box-shadow .15s ease;
+    }
+    .svc-addr-opt:hover { border-color: #bbb; }
+    .svc-addr-opt input { margin-top: 3px; width: 16px; height: 16px; accent-color: #111; flex: 0 0 auto; }
+    .svc-addr-opt:has(input:checked) { border-color: #111; box-shadow: 0 0 0 3px rgba(0,0,0,.05); }
+    .svc-addr-opt__body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .svc-addr-opt__title { font-size: 14px; font-weight: 600; color: #111; }
+    .svc-addr-opt__sub { font-size: 12.5px; color: #777; line-height: 1.4; }
+    .svc-addr-opt--new .svc-addr-opt__title { color: #111; }
+    .svc-newaddr { margin-top: 2px; }
+    .svc-addr-save {
+      display: flex; align-items: center; gap: 9px; margin-top: 12px;
+      font-size: 13.5px; color: #444; cursor: pointer;
+    }
+    .svc-addr-save input { width: 16px; height: 16px; accent-color: #111; }
+
+    .svc-email-gate {
+      border: 1.5px solid #ead8b7;
+      background: #fff8ec;
+      border-radius: 12px;
+      padding: 13px;
+      margin-bottom: 14px;
+      color: #4a3421;
+    }
+    .svc-email-gate__title {
+      font-size: 14px;
+      font-weight: 800;
+      margin-bottom: 6px;
+    }
+    .svc-email-gate__body {
+      font-size: 13px;
+      line-height: 1.45;
+      color: #6f5742;
+      margin-bottom: 10px;
+    }
+    .svc-email-gate__email {
+      font-size: 13px;
+      font-weight: 700;
+      margin-bottom: 10px;
+      word-break: break-word;
+    }
+    .svc-email-gate__row {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .svc-email-gate__btn {
+      width: 100%;
+      border: none;
+      border-radius: 10px;
+      background: #111;
+      color: #fff;
+      padding: 10px 12px;
+      font-size: 13px;
+      font-weight: 800;
+      font-family: var(--font-body, 'DM Sans', sans-serif);
+      cursor: pointer;
+    }
+    .svc-email-gate__btn:disabled {
+      opacity: 0.55;
+      cursor: default;
+    }
+    .svc-email-gate__status {
+      min-height: 16px;
+      font-size: 12px;
+      line-height: 1.35;
+      color: #6f5742;
+    }
+
+    .svc-attach-zone {
+      border: 1.5px dashed #d0d0d0;
+      border-radius: 10px;
+      padding: 10px;
+      transition: border-color 0.15s;
+      font-size: 13px;
+      color: #666;
+    }
+    .svc-attach-zone:hover { border-color: #111; }
+    .svc-attach-actions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .svc-attach-action {
+      min-height: 44px;
+      border: 1px solid #e2e2e2;
+      border-radius: 9px;
+      background: #fff;
+      color: #222;
+      cursor: pointer;
+      font-family: var(--font-body, 'DM Sans', sans-serif);
+      font-size: 13px;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      padding: 9px 10px;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .svc-attach-action:hover {
+      border-color: #111;
+      background: #fafafa;
+    }
+    .svc-attach-action span[aria-hidden="true"] {
+      font-size: 16px;
+      line-height: 1;
+    }
+    .svc-previews {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+    .svc-preview-thumb {
+      position: relative;
+      display: inline-block;
+    }
+    .svc-preview-thumb img {
+      width: 56px;
+      height: 56px;
+      object-fit: cover;
+      border-radius: 8px;
+      display: block;
+    }
+    .svc-preview-thumb .svc-preview-remove {
+      position: absolute;
+      top: -6px;
+      right: -6px;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #dc2626;
+      color: #fff;
+      border: none;
+      cursor: pointer;
+      font-size: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+    }
+    .svc-attach-status {
+      font-size: 12px;
+      color: #888;
+      margin-top: 6px;
+    }
+
+    .svc-cta-btn {
+      width: 100%;
+      padding: 14px;
+      background: #111;
+      color: #fff;
+      border: none;
+      border-radius: 12px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: var(--font-body, 'DM Sans', sans-serif);
+      transition: opacity 0.15s;
+      margin-top: 4px;
+    }
+    .svc-cta-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .svc-cta-btn:hover:not(:disabled) { opacity: 0.88; }
+
+    .svc-auth-gate {
+      text-align: center;
+      padding: 8px 0;
+    }
+    .svc-auth-gate p {
+      font-size: 14px;
+      color: #555;
+      margin-bottom: 12px;
+    }
+    .svc-auth-btn {
+      width: 100%;
+      padding: 12px;
+      background: #111;
+      color: #fff;
+      border: none;
+      border-radius: 12px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: var(--font-body, 'DM Sans', sans-serif);
+    }
+
+    .svc-success {
+      text-align: center;
+      padding: 16px 0;
+    }
+    .svc-success__icon {
+      width: 48px;
+      height: 48px;
+      object-fit: contain;
+      display: block;
+      margin: 0 auto 12px;
+    }
+    .svc-success__title {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .svc-success__body {
+      font-size: 14px;
+      color: #555;
+      margin-bottom: 20px;
+    }
+    .svc-success__orders {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 20px;
+      background: #111;
+      color: #fff;
+      border-radius: 12px;
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .svc-not-found {
+      text-align: center;
+      padding: 80px 24px;
+    }
+    .svc-not-found h1 { font-size: 24px; margin-bottom: 12px; }
+    .svc-not-found p { color: #666; font-size: 15px; }
+    .svc-not-found a { color: #111; font-weight: 600; }
+
+    .svc-camera-modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      background: rgba(0, 0, 0, 0.68);
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .svc-camera-modal.visible { display: flex; }
+    .svc-camera-panel {
+      width: min(100%, 420px);
+      background: #fff;
+      border-radius: 18px;
+      padding: 16px;
+      box-shadow: 0 18px 60px rgba(0,0,0,0.24);
+    }
+    .svc-camera-title {
+      font-size: 16px;
+      font-weight: 800;
+      margin-bottom: 12px;
+      font-family: var(--font-heading, 'Syne', sans-serif);
+    }
+    .svc-camera-video {
+      width: 100%;
+      aspect-ratio: 4 / 3;
+      background: #111;
+      border-radius: 12px;
+      object-fit: cover;
+      display: block;
+    }
+    .svc-camera-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 14px;
+    }
+    .svc-camera-actions button {
+      min-height: 44px;
+      border-radius: 11px;
+      border: 1px solid #ddd;
+      background: #fff;
+      color: #111;
+      cursor: pointer;
+      font-family: var(--font-body, 'DM Sans', sans-serif);
+      font-size: 14px;
+      font-weight: 700;
+    }
+    .svc-camera-actions .svc-camera-capture {
+      border-color: #111;
+      background: #111;
+      color: #fff;
+    }
+
+    .svc-mobile-bar {
+      display: none;
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: #fff;
+      border-top: 1px solid #e8e8e8;
+      padding: 12px 20px;
+      z-index: 100;
+    }
+    .svc-mobile-bar button {
+      width: 100%;
+      padding: 14px;
+      background: #111;
+      color: #fff;
+      border: none;
+      border-radius: 12px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: var(--font-body, 'DM Sans', sans-serif);
+    }
+
+    .svc-mobile-form {
+      display: none;
+      border-top: 1px solid #e8e8e8;
+      padding-top: 32px;
+      margin-top: 32px;
+    }
+    .svc-mobile-form .svc-sidebar {
+      position: static;
+      box-shadow: none;
+      border: none;
+      border-radius: 0;
+      padding: 0;
+    }
+
+    @media (max-width: 900px) {
+      .svc-layout {
+        grid-template-columns: 1fr;
+      }
+      .svc-sidebar { display: none; }
+      .svc-mobile-bar { display: block; }
+      .svc-mobile-form { display: block; }
+    }
+    @media (max-width: 600px) {
+      .svc-page { padding: 112px 16px 100px; }
+      .svc-hero-img { height: 240px; }
+      .svc-title { font-size: 22px; }
+      .svc-attach-actions { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body class="landing-page">
+
+<script src="/config.js"></script>
+<script src="/shared/i18n.js"></script>
+<script src="/shared/address-form.js"></script>
+<script src="/shared/shared-auth.js"></script>
+<div id="navbar"></div>
+<script src="/shared/morphing-nav.js"></script>
+
+<main id="svc-main">
+  <!-- Rendered by JS -->
+</main>
+
+<div class="svc-mobile-bar" id="svc-mobile-bar" style="display:none">
+  <button type="button" id="svc-mobile-cta-btn"></button>
+</div>
+
+<div id="footer"></div>
+<script src="/shared/shared-footer.js"></script>
+
+<script>
+(function () {
+  const t = () => window.__t || {};
+  const sp = () => (t().servicePage || {});
+  const lang = () => window.__lang || 'es';
+
+  function esc(str) {
+    return String(str || '').replace(/[&<>"']/g, ch =>
+      ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[ch])
+    );
+  }
+
+  function getLocale() {
+    return lang().startsWith('es') ? 'es' : 'en';
+  }
+
+  function getLocalizedText(value) {
+    if (!value) return '';
+    if (typeof value === 'string') return value;
+    const locale = getLocale();
+    return value[locale] || value.es || value.en || '';
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  const catKey = params.get('category') || '';
+  const subKey = params.get('sub') || '';
+  const serviceName = params.get('service') || '';
+
+  function getCatalogData() {
+    const catData = window.browseCategoryData && window.browseCategoryData[catKey];
+    if (!catData) return null;
+    const subData = catData.subcategories.find(s => s.key === subKey);
+    if (!subData) return null;
+    return { catData, subData };
+  }
+
+  function getSubcategoryImage() {
+    const imgs = window.discoverySubcategoryImages || {};
+    const fallbacks = window.discoveryFallbackByCategory || {};
+    return (imgs[catKey] && imgs[catKey][subKey]) || fallbacks[catKey] || '/assets/partnerimage.png';
+  }
+
+  function getServiceIndex(subData) {
+    const serviceSets = [
+      subData.services && subData.services[getLocale()],
+      subData.services && subData.services.es,
+      subData.services && subData.services.en,
+    ].filter(Array.isArray);
+
+    for (const services of serviceSets) {
+      const index = services.findIndex(sv => sv === serviceName);
+      if (index !== -1) return index;
+    }
+    return -1;
+  }
+
+  function buildUnsplashUrl(photoId) {
+    return `https://images.unsplash.com/${photoId}?w=1200&q=85&auto=format&fit=crop`;
+  }
+
+  function buildLoremFlickrUrl(keywords, lockSeed) {
+    const safe = encodeURIComponent(keywords).replace(/%2C/gi, ',');
+    let lock = 0;
+    for (let i = 0; i < lockSeed.length; i++) lock = ((lock << 5) - lock + lockSeed.charCodeAt(i)) | 0;
+    return `https://loremflickr.com/1200/800/${safe}?lock=${Math.abs(lock)}`;
+  }
+
+  function slugifyServiceLabel(label) {
+    return String(label || '')
+      .toLowerCase()
+      .replace(/&/g, 'and')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+  }
+
+  function getOfficialServiceImage(subData, serviceIndex) {
+    const officialImageFolders = {
+      cleaning: 'cleaning/Website_AI_Images_Cleaning',
+      repair: 'repair/Website_AI_Images_Repair',
+      moving: 'moving/Website_AI_Images_Moving',
+      wellness: 'wellness/Website_AI_Images_Wellness',
+      suppliers: 'suppliers/Website_AI_Images_Suppliers',
+    };
+    const folder = officialImageFolders[catKey];
+    const englishServices = subData.services && subData.services.en;
+    if (!folder || !Array.isArray(englishServices) || !englishServices[serviceIndex]) return '';
+    const slug = slugifyServiceLabel(englishServices[serviceIndex]);
+    return slug ? `/assets/discovery/official/${folder}/${slug}.png` : '';
+  }
+
+  function buildImageFallbackHandler(urls) {
+    const chain = urls.filter(Boolean);
+    if (!chain.length) return 'this.onerror=null;';
+    return chain.reduceRight((next, url) => (
+      `this.onerror=function(){${next}};this.src='${url}';`
+    ), 'this.onerror=null;');
+  }
+
+  function getServiceHeroImage(subData) {
+    const subImage = getSubcategoryImage();
+    const categoryFallback = (window.discoveryFallbackByCategory || {})[catKey] || '/assets/partnerimage.png';
+    const serviceIndex = getServiceIndex(subData);
+    if (serviceIndex === -1) {
+      return { src: subImage, onerror: buildImageFallbackHandler([categoryFallback, '/assets/partnerimage.png']) };
+    }
+
+    const photoId = Array.isArray(subData.serviceImages) ? subData.serviceImages[serviceIndex] : '';
+    const keywords = Array.isArray(subData.serviceKeywords) ? subData.serviceKeywords[serviceIndex] : '';
+    const flickrUrl = keywords ? buildLoremFlickrUrl(keywords, `${catKey}-${subKey}-${serviceIndex}`) : subImage;
+    const legacyPrimarySrc = photoId ? buildUnsplashUrl(photoId) : flickrUrl;
+    const officialSrc = getOfficialServiceImage(subData, serviceIndex);
+    const src = officialSrc || legacyPrimarySrc || subImage;
+    const fallbackUrls = officialSrc
+      ? [legacyPrimarySrc, flickrUrl, subImage, categoryFallback, '/assets/partnerimage.png']
+      : (photoId
+          ? [flickrUrl, subImage, categoryFallback, '/assets/partnerimage.png']
+          : (keywords ? [subImage, categoryFallback, '/assets/partnerimage.png'] : [categoryFallback, '/assets/partnerimage.png']));
+
+    return { src, onerror: buildImageFallbackHandler(fallbackUrls) };
+  }
+
+  function getCategoryLabel() {
+    const cats = t().categories || {};
+    const map = { cleaning: 'cleaning', repair: 'repair', moving: 'moving', wellness: 'wellness', suppliers: 'suppliers' };
+    return cats[map[catKey]] || catKey;
+  }
+
+  function getDetailsPlaceholder() {
+    const s = sp();
+    if (catKey === 'repair') return s.detailsPlaceholderRepair || '';
+    if (catKey === 'cleaning') return s.detailsPlaceholderCleaning || '';
+    if (catKey === 'wellness') return s.detailsPlaceholderWellness || '';
+    return s.detailsPlaceholderDefault || '';
+  }
+
+  function getWhatsIncluded() {
+    const s = sp();
+    if (catKey === 'cleaning') return s.whatsIncludedCleaning || '';
+    if (catKey === 'repair') return s.whatsIncludedRepair || '';
+    if (catKey === 'moving') return s.whatsIncludedMoving || '';
+    if (catKey === 'wellness') return s.whatsIncludedWellness || '';
+    return s.whatsIncludedSuppliers || '';
+  }
+
+  function getAddressModalText() {
+    return t().addressModal || {};
+  }
+
+  function setServiceAddress(value) {
+    const address = String(value || '').trim();
+    ['desk', 'mob'].forEach(prefix => {
+      const input = document.getElementById(`svc-addr-${prefix}`);
+      const err = document.getElementById(`svc-addr-err-${prefix}`);
+      if (input) {
+        input.value = address;
+        input.classList.remove('error');
+      }
+      if (err) err.classList.remove('visible');
+    });
+    if (address) localStorage.setItem('dash_hero_address', address);
+  }
+
+  function setServiceAddressLocationBusy(isBusy) {
+    document.querySelectorAll('.svc-address-location-btn').forEach(button => {
+      button.disabled = !!isBusy;
+      button.dataset.busy = isBusy ? 'true' : 'false';
+    });
+  }
+
+  function getCurrentPosition() {
+    return new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: true,
+        maximumAge: 300000,
+        timeout: 12000,
+      });
+    });
+  }
+
+  async function reverseGeocodePosition(latitude, longitude) {
+    const langCode = lang() === 'es' ? 'es' : 'en';
+    const url = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}&localityLanguage=${langCode}`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+    try {
+      const res = await fetch(url, { signal: controller.signal });
+      if (!res.ok) return '';
+      const data = await res.json();
+      const rawParts = [
+        data.locality,
+        data.city,
+        data.principalSubdivision,
+        data.countryName,
+      ].filter(Boolean);
+      const parts = rawParts.filter((part, index) => (
+        rawParts.findIndex(candidate => candidate.toLowerCase() === part.toLowerCase()) === index
+      ));
+      return parts.join(', ');
+    } catch (_) {
+      return '';
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  async function useCurrentLocationForServiceAddress() {
+    const am = getAddressModalText();
+
+    if (!navigator.geolocation) {
+      alert(am.unsupported || (lang() === 'es' ? 'El acceso a ubicación no está disponible en este navegador.' : 'Location access is not available in this browser.'));
+      return;
+    }
+
+    setServiceAddressLocationBusy(true);
+
+    try {
+      const position = await getCurrentPosition();
+      const { latitude, longitude } = position.coords;
+      const address = await reverseGeocodePosition(latitude, longitude);
+      const fallback = `${am.currentLocation || (lang() === 'es' ? 'Ubicación actual' : 'Current location')} (${latitude.toFixed(5)}, ${longitude.toFixed(5)})`;
+      setServiceAddress(address || fallback);
+    } catch (err) {
+      const denied = err && err.code === 1;
+      alert(denied
+        ? (am.permissionDenied || (lang() === 'es' ? 'No se permitió el acceso a tu ubicación.' : 'Location access was denied.'))
+        : (am.locationError || (lang() === 'es' ? 'No pudimos obtener tu ubicación.' : 'Could not get your location.')));
+    } finally {
+      setServiceAddressLocationBusy(false);
+    }
+  }
+
+  // ─── Saved address book integration (booking picker + save) ──────────────────
+  let _svcSavedAddresses = [];
+  const _svcAddrChoice = { desk: null, mob: null }; // saved address id, or 'new'
+
+  function svcSessionToken() {
+    try { return (JSON.parse(localStorage.getItem('servi_user_session') || 'null') || {}).token || ''; }
+    catch (_) { return ''; }
+  }
+  function svcFieldsPrefix(prefix) { return 'svca_' + prefix; }
+
+  async function loadSavedAddresses() {
+    const token = svcSessionToken();
+    if (!token || !window.__user) return;
+    const API = (window.CONFIG && window.CONFIG.API_BASE) || '';
+    try {
+      const res = await fetch(API + '/api/auth/addresses', { headers: { Authorization: 'Bearer ' + token } });
+      if (!res.ok) return;
+      const d = await res.json();
+      _svcSavedAddresses = d.addresses || [];
+      ['desk', 'mob'].forEach(renderAddressSection);
+    } catch (_) {}
+  }
+
+  function renderAddressSection(prefix) {
+    const host = document.getElementById('svc-addr-section-' + prefix);
+    if (!host || !window.ServiAddress) return;
+    const es = lang() === 'es';
+    const fp = svcFieldsPrefix(prefix);
+    const hasSaved = !!(window.__user && _svcSavedAddresses.length);
+    const saveBox = window.__user
+      ? `<label class="svc-addr-save"><input type="checkbox" id="svc-addr-save-${prefix}"><span>${esc(es ? 'Guardar esta dirección en mi cuenta' : 'Save this address to my account')}</span></label>`
+      : '';
+
+    if (hasSaved) {
+      if (!_svcAddrChoice[prefix]) {
+        const def = _svcSavedAddresses.find(a => a.is_default) || _svcSavedAddresses[0];
+        _svcAddrChoice[prefix] = def ? def.id : 'new';
+      }
+      const opts = _svcSavedAddresses.map(a => {
+        const checked = _svcAddrChoice[prefix] === a.id ? ' checked' : '';
+        const formatted = window.ServiAddress.format(a) || '';
+        const title = a.label ? esc(a.label) : esc((formatted.split(' · ')[0]) || (es ? 'Dirección' : 'Address'));
+        return `<label class="svc-addr-opt"><input type="radio" name="svc-addr-pick-${prefix}" value="${esc(a.id)}"${checked} onchange="window._svcAddrPick('${prefix}', this.value)"><span class="svc-addr-opt__body"><span class="svc-addr-opt__title">${title}${a.is_default ? ` · ${es ? 'Predeterminada' : 'Default'}` : ''}</span><span class="svc-addr-opt__sub">${esc(formatted)}</span></span></label>`;
+      }).join('');
+      const newChecked = _svcAddrChoice[prefix] === 'new' ? ' checked' : '';
+      host.innerHTML =
+        `<div class="svc-addr-picker">${opts}` +
+        `<label class="svc-addr-opt svc-addr-opt--new"><input type="radio" name="svc-addr-pick-${prefix}" value="new"${newChecked} onchange="window._svcAddrPick('${prefix}', this.value)"><span class="svc-addr-opt__body"><span class="svc-addr-opt__title">➕ ${esc(es ? 'Usar otra dirección' : 'Use another address')}</span></span></label></div>` +
+        `<div class="svc-newaddr" id="svc-newaddr-${prefix}" style="${newChecked ? '' : 'display:none'}">${window.ServiAddress.fieldsHTML(fp, { showLabel: true, showDefault: false })}${saveBox}</div>`;
+      window.ServiAddress.init(fp, {});
+    } else {
+      _svcAddrChoice[prefix] = 'new';
+      host.innerHTML = `<div class="svc-newaddr">${window.ServiAddress.fieldsHTML(fp, { showLabel: true, showDefault: false })}${saveBox}</div>`;
+      window.ServiAddress.init(fp, {});
+    }
+  }
+
+  window._svcAddrPick = function(prefix, value) {
+    _svcAddrChoice[prefix] = value;
+    const box = document.getElementById('svc-newaddr-' + prefix);
+    if (box) box.style.display = value === 'new' ? '' : 'none';
+  };
+
+  function saveBookingAddress(details) {
+    const token = svcSessionToken();
+    if (!token) return;
+    const API = (window.CONFIG && window.CONFIG.API_BASE) || '';
+    fetch(API + '/api/auth/addresses', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify(details),
+    }).then(() => { loadSavedAddresses(); }).catch(() => {});
+  }
+
+  const attachments = [];
+  const MAX_ATTACHMENTS = 3;
+  let activeCameraStream = null;
+
+  function renderPreviews() {
+    const html = !attachments.length ? '' : attachments.map((a, i) => {
+      const isImage = a.mimetype && a.mimetype.startsWith('image/');
+      const thumb = isImage
+        ? `<img src="${esc(a.url)}" alt="">`
+        : `<div style="width:56px;height:56px;border-radius:8px;background:#eee;display:flex;align-items:center;justify-content:center;font-size:22px">📎</div>`;
+      return `<div class="svc-preview-thumb">
+        ${thumb}
+        <button class="svc-preview-remove" type="button" onclick="window._svcRemoveAttachment(${i})" aria-label="Eliminar">✕</button>
+      </div>`;
+    }).join('');
+    ['desk', 'mob'].forEach(prefix => {
+      const el = document.getElementById(`svc-previews-${prefix}`);
+      if (el) el.innerHTML = html;
+    });
+  }
+
+  function setAttachStatus(text) {
+    ['desk', 'mob'].forEach(prefix => {
+      const el = document.getElementById(`svc-attach-status-${prefix}`);
+      if (el) el.textContent = text;
+    });
+  }
+
+  window._svcRemoveAttachment = function(i) {
+    attachments.splice(i, 1);
+    renderPreviews();
+  };
+
+  async function uploadFile(file) {
+    if (attachments.length >= MAX_ATTACHMENTS) {
+      setAttachStatus(lang() === 'es' ? 'Máximo 3 fotos.' : 'Maximum 3 photos.');
+      return;
+    }
+    setAttachStatus(lang() === 'es' ? 'Subiendo…' : 'Uploading…');
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      const res = await fetch((window.CONFIG && window.CONFIG.API_BASE || '') + '/api/uploads', {
+        method: 'POST', body: fd,
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.message || d.error || 'Upload error');
+      attachments.push({ url: d.url, mimetype: d.mimetype, name: file.name });
+      setAttachStatus('');
+      renderPreviews();
+    } catch (err) {
+      setAttachStatus('❌ ' + err.message);
+    }
+  }
+
+  function openPhotoInput(prefix, source) {
+    if (attachments.length >= MAX_ATTACHMENTS) {
+      setAttachStatus(lang() === 'es' ? 'Máximo 3 fotos.' : 'Maximum 3 photos.');
+      return;
+    }
+    const id = source === 'camera' ? `svc-camera-input-${prefix}` : `svc-file-input-${prefix}`;
+    const input = document.getElementById(id);
+    if (input) input.click();
+  }
+
+  function stopCameraStream() {
+    if (!activeCameraStream) return;
+    activeCameraStream.getTracks().forEach(track => track.stop());
+    activeCameraStream = null;
+  }
+
+  function closeCameraModal() {
+    stopCameraStream();
+    const modal = document.getElementById('svc-camera-modal');
+    const video = document.getElementById('svc-camera-video');
+    if (video) video.srcObject = null;
+    if (modal) modal.classList.remove('visible');
+  }
+
+  function ensureCameraModal() {
+    let modal = document.getElementById('svc-camera-modal');
+    const s = sp();
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'svc-camera-modal';
+      modal.className = 'svc-camera-modal';
+      modal.setAttribute('role', 'dialog');
+      modal.setAttribute('aria-modal', 'true');
+      document.body.appendChild(modal);
+    }
+    modal.innerHTML = `
+      <div class="svc-camera-panel">
+        <div class="svc-camera-title">${esc(s.cameraTitle || (lang() === 'es' ? 'Tomar foto' : 'Take photo'))}</div>
+        <video class="svc-camera-video" id="svc-camera-video" autoplay playsinline muted></video>
+        <div class="svc-camera-actions">
+          <button type="button" onclick="window._svcCloseCamera()">${esc(s.cameraCancel || (lang() === 'es' ? 'Cancelar' : 'Cancel'))}</button>
+          <button type="button" class="svc-camera-capture" onclick="window._svcCapturePhoto()">${esc(s.cameraCapture || (lang() === 'es' ? 'Usar foto' : 'Use photo'))}</button>
+        </div>
+      </div>
+    `;
+    modal.onclick = event => {
+      if (event.target === modal) closeCameraModal();
+    };
+    return modal;
+  }
+
+  async function openServiceCamera(prefix) {
+    if (attachments.length >= MAX_ATTACHMENTS) {
+      setAttachStatus(lang() === 'es' ? 'Máximo 3 fotos.' : 'Maximum 3 photos.');
+      return;
+    }
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      openPhotoInput(prefix, 'camera');
+      return;
+    }
+
+    const modal = ensureCameraModal();
+    const video = modal.querySelector('#svc-camera-video');
+    modal.classList.add('visible');
+
+    try {
+      activeCameraStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' } },
+        audio: false,
+      });
+      video.srcObject = activeCameraStream;
+      await video.play();
+    } catch (_) {
+      closeCameraModal();
+      setAttachStatus(sp().cameraUnavailable || (lang() === 'es'
+        ? 'No pudimos abrir la cámara. También puedes agregar fotos.'
+        : 'Could not open the camera. You can still add photos.'));
+    }
+  }
+
+  function captureServicePhoto() {
+    const video = document.getElementById('svc-camera-video');
+    if (!video || !video.videoWidth || !video.videoHeight) return;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    canvas.toBlob(blob => {
+      if (!blob) return;
+      const file = new File([blob], `service-photo-${Date.now()}.jpg`, { type: 'image/jpeg' });
+      closeCameraModal();
+      uploadFile(file);
+    }, 'image/jpeg', 0.9);
+  }
+
+  let whenType = 'asap';
+  let serviceSubmitInFlight = false;
+  let serviceSubmitCompleted = false;
+  let serviceEmailGatePending = false;
+  let serviceEmailResumeInFlight = false;
+
+  function createClientRequestId() {
+    if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+      return window.crypto.randomUUID();
+    }
+    return 'svc-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 12);
+  }
+
+  function setServiceCtaState(disabled, text) {
+    document.querySelectorAll('.svc-cta-btn').forEach(btn => {
+      btn.disabled = !!disabled;
+      if (text) btn.textContent = text;
+    });
+  }
+
+  function toggleWhen(type) {
+    whenType = type;
+    document.querySelectorAll('.svc-when-chip').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.when === type);
+    });
+    const schedRows = document.querySelectorAll('.svc-schedule-row');
+    schedRows.forEach(r => { r.style.display = type === 'schedule' ? 'flex' : 'none'; });
+  }
+
+  function validateAndCollect(prefix) {
+    let valid = true;
+    const fp = svcFieldsPrefix(prefix);
+    const addrErr = document.getElementById(`svc-addr-err-${prefix}`);
+    const choice = _svcAddrChoice[prefix];
+
+    let addressString = '';
+    let addressDetails = null;
+    let saveToAccount = false;
+
+    if (choice && choice !== 'new') {
+      const saved = _svcSavedAddresses.find(a => a.id === choice);
+      if (saved) {
+        addressDetails = saved;
+        addressString = window.ServiAddress.format(saved);
+        if (addrErr) addrErr.classList.remove('visible');
+      }
+    }
+    if (!addressDetails) {
+      // New address path — validate the structured field set.
+      if (!window.ServiAddress || !window.ServiAddress.validate(fp)) {
+        if (addrErr) addrErr.classList.add('visible');
+        valid = false;
+      } else {
+        if (addrErr) addrErr.classList.remove('visible');
+        addressDetails = window.ServiAddress.collect(fp);
+        addressString = window.ServiAddress.format(addressDetails);
+        const saveBox = document.getElementById('svc-addr-save-' + prefix);
+        saveToAccount = !!(saveBox && saveBox.checked);
+      }
+    }
+
+    let preferredDate = null, preferredTime = null;
+    if (whenType === 'schedule') {
+      const dateInput = document.getElementById(`svc-date-${prefix}`);
+      const dateErr = document.getElementById(`svc-date-err-${prefix}`);
+      if (dateInput && !dateInput.value) {
+        dateInput.classList.add('error');
+        if (dateErr) dateErr.classList.add('visible');
+        valid = false;
+      } else if (dateInput) {
+        dateInput.classList.remove('error');
+        if (dateErr) dateErr.classList.remove('visible');
+        preferredDate = dateInput.value;
+        const timeInput = document.getElementById(`svc-time-${prefix}`);
+        if (timeInput && timeInput.value) preferredTime = timeInput.value;
+      }
+    }
+
+    if (!valid) return null;
+
+    const detailsInput = document.getElementById(`svc-details-${prefix}`);
+    const extraDetails = detailsInput ? detailsInput.value.trim() : '';
+    const description = serviceName + (extraDetails ? ' — ' + extraDetails : '');
+
+    return {
+      address: addressString,
+      addressDetails,
+      saveToAccount,
+      preferredDate,
+      preferredTime,
+      description,
+    };
+  }
+
+  async function handleSubmit(prefix) {
+    if (serviceSubmitCompleted || serviceSubmitInFlight || serviceEmailGatePending) return;
+    const data = validateAndCollect(prefix);
+    if (!data) return;
+    const payload = {
+      clientRequestId: createClientRequestId(),
+      category: catKey || 'custom',
+      description: data.description,
+      preferredDate: data.preferredDate,
+      preferredTime: data.preferredTime,
+      isAsap: whenType === 'asap',
+      serviceAddress: data.address,
+      serviceAddressDetails: data.addressDetails || undefined,
+      attachments: attachments.map(a => a.url),
+      lang: lang(),
+    };
+    if (!window.__user) {
+      showAuthGate(prefix, () => sendRequest(prefix, payload));
+      return;
+    }
+    if (data.saveToAccount && data.addressDetails) saveBookingAddress(data.addressDetails);
+    sendRequest(prefix, payload);
+  }
+
+  async function sendRequest(prefix, payload) {
+    if (serviceSubmitCompleted || serviceSubmitInFlight) return;
+    serviceSubmitInFlight = true;
+    if (!payload.clientRequestId) payload.clientRequestId = createClientRequestId();
+    setServiceCtaState(true, sp().submitting || 'Enviando…');
+
+    const session = JSON.parse(localStorage.getItem('servi_user_session') || '{}');
+    const token = session.token || '';
+
+    try {
+      const res = await fetch((window.CONFIG && window.CONFIG.API_BASE || '') + '/api/service-requests', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': 'Bearer ' + token } : {}),
+        },
+        body: JSON.stringify({
+          ...payload,
+          clientName: window.__user.name || '',
+          clientPhone: window.__user.phone || '',
+          clientEmail: window.__user.email || '',
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        const err = new Error(data.message || 'HTTP ' + res.status);
+        err.status = res.status;
+        err.body = data;
+        throw err;
+      }
+      serviceSubmitCompleted = true;
+      serviceEmailGatePending = false;
+      showSuccess(prefix);
+    } catch (err) {
+      serviceSubmitInFlight = false;
+      console.error('[service.html] submit error:', err);
+      if (err && err.body && err.body.error === 'email_required') {
+        serviceEmailGatePending = true;
+        setServiceCtaState(true, sp().cta || 'Solicitar servicio');
+        showEmailVerificationGate(prefix, payload);
+        return;
+      }
+      setServiceCtaState(false, sp().cta || 'Solicitar servicio');
+      alert(err && err.message ? err.message : (lang() === 'es' ? 'Error al enviar. Intenta de nuevo.' : 'Submit error. Please try again.'));
+    }
+  }
+
+  function showAuthGate(prefix, onSuccess) {
+    if (!window.openAuthModal) return;
+    const resume = () => {
+      window.removeEventListener('servi-auth-success', resume);
+      setTimeout(() => onSuccess(), 100);
+    };
+    window.addEventListener('servi-auth-success', resume);
+    window.openAuthModal('login');
+  }
+
+  function refreshServiceAuthUser() {
+    const API = (window.CONFIG && window.CONFIG.API_BASE) || '';
+    let session = null;
+    try { session = JSON.parse(localStorage.getItem('servi_user_session') || 'null'); } catch (_) {}
+    const token = session && session.token;
+    if (!token) return Promise.resolve(null);
+    return fetch(API + '/api/auth/me', { headers: { Authorization: 'Bearer ' + token } })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (!data || !data.user) return null;
+        window.__user = data.user;
+        try {
+          session.user = data.user;
+          localStorage.setItem('servi_user_session', JSON.stringify(session));
+        } catch (_) {}
+        return data.user;
+      })
+      .catch(() => null);
+  }
+
+  function showEmailVerificationGate(prefix, payload) {
+    const host = document.getElementById(`svc-email-gate-${prefix}`);
+    if (!host) {
+      alert(lang() === 'es'
+        ? 'Verifica tu correo electrónico para confirmar tu solicitud.'
+        : 'Verify your email to confirm your request.');
+      return;
+    }
+    if (host._cleanup) host._cleanup();
+
+    const es = lang() === 'es';
+    const currentEmail = String((window.__user && window.__user.email) || '').trim().toLowerCase();
+    host.innerHTML = `
+      <div class="svc-email-gate">
+        <div class="svc-email-gate__title">${esc(es ? 'Verifica tu correo para continuar' : 'Verify your email to continue')}</div>
+        <div class="svc-email-gate__body">${esc(es ? 'Ya usaste tu primera solicitud sin correo verificado. Verifica tu correo para poder enviar nuevas solicitudes. Si no ves el enlace, revisa spam o correo no deseado.' : 'You already used your first request without a verified email. Verify your email before sending new requests. If you do not see the link, check your spam or junk folder.')}</div>
+        ${currentEmail
+          ? `<div class="svc-email-gate__email">${esc(currentEmail)}</div>`
+          : `<input class="svc-sidebar__input" id="svc-email-gate-input-${prefix}" type="email" placeholder="${esc(es ? 'correo@email.com' : 'email@example.com')}">`}
+        <div class="svc-email-gate__row">
+          <button type="button" class="svc-email-gate__btn" id="svc-email-gate-btn-${prefix}">${esc(es ? 'Enviar verificación' : 'Send verification')}</button>
+          <div class="svc-email-gate__status" id="svc-email-gate-status-${prefix}" aria-live="polite"></div>
+        </div>
+      </div>
+    `;
+
+    const input = document.getElementById(`svc-email-gate-input-${prefix}`);
+    const button = document.getElementById(`svc-email-gate-btn-${prefix}`);
+    const status = document.getElementById(`svc-email-gate-status-${prefix}`);
+    let cleaned = false;
+
+    function cleanup() {
+      if (cleaned) return;
+      cleaned = true;
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('servi-email-verified', onVerified);
+      if (host._cleanup === cleanup) host._cleanup = null;
+    }
+    host._cleanup = cleanup;
+
+    async function retryIfVerified() {
+      if (serviceEmailResumeInFlight || serviceSubmitCompleted) return;
+      serviceEmailResumeInFlight = true;
+      const user = await refreshServiceAuthUser();
+      if (!user || user.email_verified !== true) {
+        serviceEmailResumeInFlight = false;
+        return;
+      }
+      cleanup();
+      host.innerHTML = '';
+      serviceEmailGatePending = false;
+      await sendRequest(prefix, payload);
+      serviceEmailResumeInFlight = false;
+    }
+
+    function onStorage(event) {
+      if (event.key === 'servi_email_verified_at') retryIfVerified();
+    }
+
+    function onVerified() {
+      retryIfVerified();
+    }
+
+    window.addEventListener('storage', onStorage);
+    window.addEventListener('servi-email-verified', onVerified);
+
+    if (input) input.focus();
+    try { host.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (_) {}
+
+    button.addEventListener('click', async () => {
+      const email = currentEmail || String((input && input.value) || '').trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        if (status) status.textContent = es ? 'Ingresa un correo válido.' : 'Enter a valid email.';
+        if (input) input.focus();
+        return;
+      }
+      if (!window.__sendEmailVerification) {
+        if (status) status.textContent = es ? 'No se pudo iniciar la verificación.' : 'Could not start verification.';
+        return;
+      }
+      try {
+        button.disabled = true;
+        if (status) status.textContent = es ? 'Enviando...' : 'Sending...';
+        localStorage.setItem('servi_email_verification_mode', '1');
+        localStorage.setItem('servi_email_link_target', email);
+        const sent = await window.__sendEmailVerification(email);
+        if (!sent) {
+          localStorage.removeItem('servi_email_verification_mode');
+          localStorage.removeItem('servi_email_link_target');
+          button.disabled = false;
+          if (status) status.textContent = es ? 'No se pudo enviar. Intenta de nuevo.' : 'Could not send. Try again.';
+          return;
+        }
+        if (status) status.textContent = es ? 'Revisa tu correo, incluyendo spam o correo no deseado. Continuaremos cuando se verifique.' : 'Check your email, including spam or junk. We will continue after verification.';
+      } catch (_) {
+        localStorage.removeItem('servi_email_verification_mode');
+        localStorage.removeItem('servi_email_link_target');
+        button.disabled = false;
+        if (status) status.textContent = es ? 'No se pudo enviar. Intenta de nuevo.' : 'Could not send. Try again.';
+      }
+    });
+  }
+
+  function showSuccess(prefix) {
+    const sidebar = document.getElementById(`svc-sidebar-${prefix}`);
+    if (!sidebar) return;
+    sidebar.innerHTML = `
+      <div class="svc-success">
+        <img src="checkmark-green.png" alt="Éxito" class="svc-success__icon" />
+        <div class="svc-success__title">${esc(sp().successTitle || '¡Solicitud enviada!')}</div>
+        <div class="svc-success__body">${esc(sp().successBody || 'Te contactaremos pronto por WhatsApp.')}</div>
+        <a class="svc-success__orders" href="/account.html?section=orders">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h9l5 5v15H6z"/><path d="M14 2v6h6"/><path d="M9 13h6"/><path d="M9 17h4"/></svg>
+          ${esc(sp().successManageOrders || 'Manage Orders')}
+        </a>
+      </div>
+    `;
+    const mobileBar = document.getElementById('svc-mobile-bar');
+    if (mobileBar) mobileBar.style.display = 'none';
+  }
+
+  function buildSidebarContent(prefix) {
+    const s = sp();
+    const savedAddr = localStorage.getItem('dash_hero_address') || '';
+    const today = new Date().toISOString().slice(0, 10);
+
+    return `
+      <div id="svc-sidebar-${prefix}">
+        <div class="svc-sidebar__service-name">${esc(serviceName)}</div>
+        <div class="svc-sidebar__price-label">${esc(s.priceLabel || 'Precio a confirmar')}</div>
+        <div class="svc-sidebar__price-note">${esc(s.priceNote || '')}</div>
+        <hr class="svc-sidebar__divider">
+
+        <span class="svc-sidebar__label">${esc(s.whenLabel || '¿Cuándo lo necesitas?')}</span>
+        <div class="svc-when-chips">
+          <button class="svc-when-chip active" type="button" data-when="asap"
+                  onclick="window._svcToggleWhen('asap')">${esc(s.whenAsap || 'Lo antes posible')}</button>
+          <button class="svc-when-chip" type="button" data-when="schedule"
+                  onclick="window._svcToggleWhen('schedule')">${esc(s.whenSchedule || 'Programar')}</button>
+        </div>
+        <div class="svc-schedule-row" style="display:none">
+          <input type="date" class="svc-sidebar__input" id="svc-date-${prefix}" min="${today}"
+                 placeholder="${esc(s.datePlaceholder || 'Fecha')}">
+          <input type="time" class="svc-sidebar__input" id="svc-time-${prefix}"
+                 placeholder="${esc(s.timePlaceholder || 'Hora (opcional)')}">
+        </div>
+        <div class="svc-error-msg" id="svc-date-err-${prefix}">${esc(s.dateError || 'Por favor selecciona una fecha')}</div>
+
+        <hr class="svc-sidebar__divider">
+        <span class="svc-sidebar__label">${esc(s.addressLabel || 'Dirección del servicio')}</span>
+        <div id="svc-addr-section-${prefix}" class="svc-addr-section"></div>
+        <div class="svc-error-msg" id="svc-addr-err-${prefix}">${esc(s.addressError || 'Por favor ingresa tu dirección')}</div>
+
+        <hr class="svc-sidebar__divider">
+        <span class="svc-sidebar__label">${esc(s.detailsLabel || 'Detalles adicionales (opcional)')}</span>
+        <textarea class="svc-sidebar__input" id="svc-details-${prefix}" rows="3" spellcheck="false"
+                  placeholder="${esc(getDetailsPlaceholder())}"></textarea>
+
+        <hr class="svc-sidebar__divider">
+        <span class="svc-sidebar__label">${esc(s.attachLabel || 'Adjuntar fotos (opcional)')}</span>
+        <div class="svc-attach-zone" id="svc-attach-zone-${prefix}">
+          <div class="svc-attach-actions">
+            <button class="svc-attach-action" type="button" onclick="window._svcOpenPhotoPicker('${prefix}', 'library')">
+              <span aria-hidden="true">🖼️</span>
+              <span>${esc(s.attachAddPhotos || (lang() === 'es' ? 'Agregar fotos' : 'Add photos'))}</span>
+            </button>
+            <button class="svc-attach-action" type="button" onclick="window._svcOpenCamera('${prefix}')">
+              <span aria-hidden="true">📷</span>
+              <span>${esc(s.attachTakePhoto || (lang() === 'es' ? 'Tomar foto' : 'Take photo'))}</span>
+            </button>
+          </div>
+        </div>
+        <input type="file" id="svc-file-input-${prefix}" accept="image/*" multiple
+               style="display:none" onchange="window._svcHandleFileInput(this)">
+        <input type="file" id="svc-camera-input-${prefix}" accept="image/*" capture="environment"
+               style="display:none" onchange="window._svcHandleFileInput(this)">
+        <div class="svc-previews" id="svc-previews-${prefix}"></div>
+        <div class="svc-attach-status" id="svc-attach-status-${prefix}"></div>
+
+        <hr class="svc-sidebar__divider">
+        <div id="svc-email-gate-${prefix}"></div>
+        <button class="svc-cta-btn" type="button" id="svc-cta-btn-${prefix}"
+                onclick="window._svcSubmit('${prefix}')">
+          ${esc(s.cta || 'Solicitar servicio')}
+        </button>
+      </div>
+    `;
+  }
+
+  window._svcToggleWhen = function(type) {
+    toggleWhen(type);
+  };
+
+  window._svcSubmit = function(prefix) {
+    handleSubmit(prefix);
+  };
+
+  window._svcUseCurrentLocation = function() {
+    useCurrentLocationForServiceAddress();
+  };
+
+  window._svcOpenPhotoPicker = function(prefix, source) {
+    openPhotoInput(prefix, source);
+  };
+
+  window._svcOpenCamera = function(prefix) {
+    openServiceCamera(prefix);
+  };
+
+  window._svcCloseCamera = function() {
+    closeCameraModal();
+  };
+
+  window._svcCapturePhoto = function() {
+    captureServicePhoto();
+  };
+
+  window._svcHandleFileInput = function(input) {
+    window._svcHandleFiles(input.files);
+    input.value = '';
+  };
+
+  window._svcHandleFiles = function(files) {
+    const remaining = MAX_ATTACHMENTS - attachments.length;
+    if (remaining <= 0) {
+      setAttachStatus(lang() === 'es' ? 'Máximo 3 fotos.' : 'Maximum 3 photos.');
+      return;
+    }
+    const list = Array.from(files);
+    if (list.length > remaining) {
+      setAttachStatus(lang() === 'es' ? 'Máximo 3 fotos.' : 'Maximum 3 photos.');
+    }
+    list.slice(0, remaining).forEach(f => uploadFile(f));
+  };
+
+  window._svcOpenOtherService = function(otherService) {
+    let decoded = otherService;
+    try { decoded = decodeURIComponent(otherService); } catch (_) {}
+    const p = new URLSearchParams();
+    p.set('category', catKey);
+    p.set('sub', subKey);
+    p.set('service', decoded);
+    window.open('/service.html?' + p.toString(), '_blank');
+  };
+
+  function render() {
+    const main = document.getElementById('svc-main');
+    if (!main) return;
+
+    if (serviceName) document.title = `SERVI — ${serviceName}`;
+
+    const catalog = getCatalogData();
+    const s = sp();
+
+    if (!catalog || !serviceName) {
+      main.innerHTML = `
+        <div class="svc-not-found">
+          <h1>${esc(s.notFound || 'Servicio no encontrado')}</h1>
+          <p>${esc(s.notFoundBody || 'El enlace puede estar incompleto. Vuelve a explorar desde')}
+             <a href="/browse.html">${esc(s.notFoundLink || 'browse.html')}</a>.</p>
+        </div>
+      `;
+      return;
+    }
+
+    const { subData } = catalog;
+    const heroImage = getServiceHeroImage(subData);
+    const subLabel = getLocalizedText(subData.label);
+    const catLabel = getCategoryLabel();
+    const otherServices = (subData.services[getLocale()] || subData.services.es || [])
+      .filter(sv => sv !== serviceName);
+
+    main.innerHTML = `
+      <div class="svc-page">
+        <div class="svc-breadcrumb">
+          <a href="/browse.html">Browse</a>
+          <span>›</span>
+          <a href="/browse.html?category=${esc(catKey)}">${esc(catLabel)}</a>
+          <span>›</span>
+          <span>${esc(subLabel)}</span>
+        </div>
+
+        <div class="svc-layout">
+          <div class="svc-left">
+            <img class="svc-hero-img" src="${esc(heroImage.src)}" alt="${esc(serviceName)}"
+                 onerror="${esc(heroImage.onerror)}">
+            <h1 class="svc-title">${esc(serviceName)}</h1>
+            <div class="svc-subcat-label">${esc(subLabel)} · ${esc(catLabel)}</div>
+
+            <div class="svc-included-section">
+              <div class="svc-included-title">${esc(s.whatsIncluded || '¿Qué incluye?')}</div>
+              <div class="svc-included-body">${esc(getWhatsIncluded())}</div>
+            </div>
+
+            ${otherServices.length ? `
+              <div class="svc-other-section">
+                <div class="svc-other-title">${esc(s.otherServices || 'Otros servicios en esta categoría')}</div>
+                <div class="svc-other-chips">
+                  ${otherServices.map(sv => `
+                    <button class="svc-other-chip" type="button"
+                            onclick="window._svcOpenOtherService('${esc(encodeURIComponent(sv))}')">
+                      ${esc(sv)}
+                    </button>
+                  `).join('')}
+                </div>
+              </div>
+            ` : ''}
+
+            <div class="svc-mobile-form">
+              <div class="svc-sidebar" id="svc-sidebar-wrap-mob">
+                ${buildSidebarContent('mob')}
+              </div>
+            </div>
+          </div>
+
+          <div class="svc-sidebar" id="svc-sidebar-wrap-desk">
+            ${buildSidebarContent('desk')}
+          </div>
+        </div>
+      </div>
+    `;
+
+    const mobileBar = document.getElementById('svc-mobile-bar');
+    const mobileCta = document.getElementById('svc-mobile-cta-btn');
+    if (mobileCta) mobileCta.textContent = s.cta || 'Solicitar servicio';
+    if (mobileBar) {
+      mobileBar.style.display = '';
+      if (mobileCta) {
+        mobileCta.onclick = () => {
+          const mobileForm = document.querySelector('.svc-mobile-form');
+          if (mobileForm) mobileForm.scrollIntoView({ behavior: 'smooth' });
+        };
+      }
+    }
+
+    // Mount the structured address field set into both sidebars, then upgrade to
+    // the saved-address picker once the user's address book has loaded. Firebase
+    // restores the session asynchronously, so poll briefly for window.__user.
+    _svcAddrChoice.desk = null; _svcAddrChoice.mob = null;
+    renderAddressSection('desk');
+    renderAddressSection('mob');
+    svcWaitForUserThenLoad();
+  }
+
+  function svcWaitForUserThenLoad(attempts) {
+    attempts = attempts == null ? 24 : attempts; // ~6s of 250ms polls
+    if (window.__user) { loadSavedAddresses(); return; }
+    if (attempts <= 0) return;
+    setTimeout(() => svcWaitForUserThenLoad(attempts - 1), 250);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', render);
+  } else {
+    render();
+  }
+
+  window.addEventListener('langchange', render);
+  // When auth state resolves after initial paint, pull saved addresses so the
+  // logged-in user sees the picker + "save to account" option.
+  window.addEventListener('servi-auth-success', () => { if (!_svcSavedAddresses.length) loadSavedAddresses(); });
+})();
+</script>
+</body>
+</html>

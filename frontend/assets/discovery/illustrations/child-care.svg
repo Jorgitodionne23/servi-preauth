@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" role="img" aria-labelledby="title desc">
+  <title id="title">Blocks Bottle</title>
+  <desc id="desc">Flat service illustration for child care discovery card.</desc>
+  <rect width="1200" height="900" fill="#F6EEF2"/>
+  <circle cx="958" cy="156" r="96" fill="#8FBF9A" opacity=".2"/>
+  <circle cx="198" cy="742" r="132" fill="#B66E86" opacity=".12"/>
+  <path d="M130 705c150 72 291 101 464 85 184-17 286-84 476-52" fill="none" stroke="#4F3F49" stroke-width="18" stroke-linecap="round" opacity=".12"/>
+  <g fill="none" stroke="#4F3F49" stroke-linecap="round" stroke-linejoin="round">
+    <path stroke-width="28" d="M307 524h181v181H307zM518 524h181v181H518z" fill="#B66E86" opacity=".8"/><path stroke-width="20" d="M352 524v-69h91v69M563 524v-69h91v69M774 352h91v346h-91zM758 333h123M790 288h59M397 606h1M608 606h1M774 456h91"/><circle cx="819" cy="739" r="24" fill="#8FBF9A" stroke="none"/>
+  </g>
+  <g fill="#8FBF9A" opacity=".92">
+    <circle cx="214" cy="182" r="16"/>
+    <circle cx="997" cy="697" r="13"/>
+    <path d="M1017 264l19 36 37 18-37 18-19 36-18-36-37-18 37-18z"/>
+  </g>
+</svg>

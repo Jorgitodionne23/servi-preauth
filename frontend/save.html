@@ -85,7 +85,7 @@
         <p>Accede a tu portal de pagos para ver y administrar tus métodos guardados.</p>
         
         <div style="margin:12px 0;">
-          <input type="tel" id="phone-lookup" placeholder="+52 55 1234 5678" 
+          <input type="tel" id="phone-lookup" inputmode="tel" autocomplete="tel" placeholder="+52 55 1234 5678"
                  style="width:100%; padding:12px; border-radius:6px; border:1px solid #444; background:#222; color:#fff; font-size:14px;">
         </div>
         
@@ -122,7 +122,26 @@
 
   <script type="module">
     const $ = (sel) => document.querySelector(sel);
-    
+
+    // Read SERVI session token (set by shared-auth.js after Firebase login).
+    function getSessionToken() {
+      try {
+        const raw = localStorage.getItem('servi_user_session');
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        return parsed?.token || null;
+      } catch { return null; }
+    }
+    function authHeaders(extra = {}) {
+      const token = getSessionToken();
+      return token ? { ...extra, Authorization: `Bearer ${token}` } : extra;
+    }
+    function unauthorizedAlert() {
+      // Single-line alert keeps the standalone payment-page layout untouched.
+      alert('Inicia sesión para administrar tu método de pago.\n\nVe a Mi Cuenta para iniciar sesión.');
+      location.href = '/account.html';
+    }
+
     // Load Stripe
     const { pk } = await fetch('/config/stripe').then(r=>r.json());
     if (!pk) { alert('Stripe no configurado'); throw new Error('pk'); }
@@ -132,34 +151,32 @@
     let setupClientSecret = null;
 
     // === Existing Customer: Access Billing Portal ===
+    // The session token is the identity proof; the phone field is no longer
+    // consulted. Backend ignores any client-supplied phone/customerId.
     $('#btn-portal').onclick = async () => {
-      const phone = $('#phone-lookup').value.trim();
-      if (!phone) {
-        alert('Ingresa tu número de teléfono.');
-        return;
-      }
+      if (!getSessionToken()) { unauthorizedAlert(); return; }
 
       $('#btn-portal').disabled = true;
       $('#spinner').style.display = 'block';
 
       try {
-        // Search for customer by phone
-        const normalized = normalizePhone(phone);
-        const searchResp = await fetch(`/customer-lookup?phone=${encodeURIComponent(normalized)}`);
-        
+        const searchResp = await fetch('/customer-lookup', { headers: authHeaders() });
+        if (searchResp.status === 401) { unauthorizedAlert(); return; }
+        if (searchResp.status === 404) {
+          alert('Aún no tienes un método de pago guardado. Usa "Continuar" para registrar uno.');
+          return;
+        }
         if (!searchResp.ok) {
-          alert('No encontramos una cuenta con ese teléfono. Verifica el número o crea una cuenta nueva.');
+          alert('No se pudo buscar tu cuenta. Intenta de nuevo.');
           return;
         }
 
-        const { customerId } = await searchResp.json();
-        
-        // Get billing portal session
         const portalResp = await fetch('/billing-portal-standalone', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ customerId, returnUrl: location.href })
+          headers: authHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ returnUrl: location.href })
         });
+        if (portalResp.status === 401) { unauthorizedAlert(); return; }
 
         const { url } = await portalResp.json();
         if (url) {
@@ -182,16 +199,17 @@
         alert('Debes autorizar guardar tu método de pago.');
         return;
       }
+      if (!getSessionToken()) { unauthorizedAlert(); return; }
 
       $('#btn-start-setup').disabled = true;
       $('#spinner').style.display = 'block';
 
       try {
-        // Create a standalone SetupIntent (no order)
         const resp = await fetch('/create-standalone-setup', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' }
+          headers: authHeaders({ 'Content-Type': 'application/json' })
         });
+        if (resp.status === 401) { unauthorizedAlert(); return; }
 
         const { client_secret } = await resp.json();
         if (!client_secret) {
