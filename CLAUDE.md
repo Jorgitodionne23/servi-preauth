@@ -145,7 +145,7 @@ This is NOT a simple payment form. It's a complete **admin-driven order manageme
 
 - **Runtime:** Node.js with ES modules (`.mjs` extensions only)
 - **Framework:** Express 5
-- **Entry point:** `backend/index.mjs` — ALL routes and business logic in one file (~6,000 lines)
+- **Entry point:** `backend/index.mjs` — ALL routes and business logic in one file (~7,700 lines)
 - **Database:** `backend/db.pg.mjs` — Pool connection + full schema (`CREATE TABLE IF NOT EXISTS`). See this file for authoritative table definitions.
 - **Pricing:** `backend/pricing.mjs` — Dynamic fee calculation (alpha curve for booking fees, Stripe processing fees with VAT)
 - **TLS guard:** `ALLOW_INSECURE_DB_TLS=true` throws at startup if `NODE_ENV=production`
@@ -175,11 +175,11 @@ See `backend/db.pg.mjs` for the full schema. Key tables: `all_bookings`, `consen
 #### Shared Components (`frontend/shared/`)
 
 - `shared-styles.css` — Global design system (brand colors, components, animations)
-- `landing-theme.css` — Extended CSS for landing/marketing pages (~79KB)
-- `shared-auth.js` — Firebase auth flow (phone OTP, email magic link, Google OAuth, cross-identifier recovery — ~1,775 lines)
+- `landing-theme.css` — Extended CSS for landing/marketing pages (~92KB)
+- `shared-auth.js` — Firebase auth flow (phone OTP, email magic link, Google OAuth, cross-identifier recovery — ~2,550 lines)
 - `shared-nav.js` — Navigation bar (language toggle, auth state, user menu dropdown, mobile hamburger)
 - `shared-footer.js` — 4-column footer component
-- `morphing-nav.js` — Animated navbar variant used on landing page (~998 lines)
+- `morphing-nav.js` — Animated navbar variant used on landing page (~1,094 lines)
 - `i18n.js` — Full Spanish/English translation system
 - `browse-data.js` — Service category/provider data for browse and service pages
 
@@ -248,7 +248,7 @@ See `backend/db.pg.mjs` for the full schema. Key tables: `all_bookings`, `consen
 - `FRONTEND_BASE_URL` — Cloudflare Pages URL (used to build payment links)
 - `SHEETS_WEBHOOK_URL` — Google Apps Script exec URL
 - `FIREBASE_SERVICE_ACCOUNT_JSON` — Firebase Admin SDK credentials (backend auth verification)
-- `JWT_SECRET` — Custom session token secret (falls back to `STRIPE_WEBHOOK_SECRET`)
+- `JWT_SECRET` — Custom session token secret. Required in production: backend throws at startup if missing when `NODE_ENV=production`. Locally it falls back to a dev-only string so a missing `.env` doesn't crash development.
 - `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`, `R2_PUBLIC_URL` — Cloudflare R2 file uploads
 - `CORS_ALLOWLIST` — Additional allowed origins
 - `NODE_ENV` — `production` on Render
