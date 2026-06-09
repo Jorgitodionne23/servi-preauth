@@ -161,9 +161,10 @@
       '.servi-addr .sa-input.sa-err{border-color:#e5484d;box-shadow:0 0 0 3px rgba(229,72,77,.12)}' +
       '.servi-addr textarea.sa-input{resize:vertical;min-height:60px;line-height:1.45}' +
       '.servi-addr .sa-type{display:flex;gap:8px;flex-wrap:wrap}' +
-      '.servi-addr .sa-type label{flex:1 1 0;min-width:78px;display:flex;align-items:center;justify-content:center;gap:6px;' +
+      '.servi-addr .sa-type label{flex:1 1 112px;min-width:0;display:flex;align-items:center;justify-content:center;gap:6px;' +
         'border:1.5px solid #e2e2e2;border-radius:12px;padding:10px 8px;font-size:13.5px;font-weight:600;' +
-        'color:#555;cursor:pointer;background:#fff;transition:all .15s ease;text-align:center}' +
+        'color:#555;cursor:pointer;background:#fff;transition:all .15s ease;text-align:center;' +
+        'line-height:1.2;white-space:normal;overflow-wrap:anywhere}' +
       '.servi-addr .sa-type label:hover{border-color:#bbb}' +
       '.servi-addr .sa-type input{position:absolute;opacity:0;pointer-events:none}' +
       '.servi-addr .sa-type input:checked + label,.servi-addr .sa-type label.sa-on{' +
@@ -213,7 +214,7 @@
     ];
     var typeHTML = typeOpts.map(function (o, i) {
       var id = p + '_type_' + o[0];
-      return '<span style="position:relative;flex:1 1 0;min-width:78px">' +
+      return '<span style="position:relative;flex:1 1 112px;min-width:0">' +
         '<input type="radio" name="' + p + '_type" id="' + id + '" value="' + o[0] + '"' + (i === 0 ? ' checked' : '') + '>' +
         '<label for="' + id + '"><span aria-hidden="true">' + o[2] + '</span>' + esc(o[1]) + '</label></span>';
     }).join('');

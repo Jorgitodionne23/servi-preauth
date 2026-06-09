@@ -859,7 +859,12 @@
       if (scrollTarget) {
         closeDrawer();
         setTimeout(() => {
-          document.getElementById(scrollTarget)?.scrollIntoView({ behavior: 'smooth' });
+          if (scrollTarget === 'landing-hero') {
+            window.history.replaceState({}, '', window.location.pathname + window.location.search);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          } else {
+            document.getElementById(scrollTarget)?.scrollIntoView({ behavior: 'smooth' });
+          }
         }, 60);
         return;
       }
@@ -871,7 +876,12 @@
     if (headerLink) {
       const tgt = headerLink.getAttribute('data-scroll');
       e.preventDefault();
-      document.getElementById(tgt)?.scrollIntoView({ behavior: 'smooth' });
+      if (tgt === 'landing-hero') {
+        window.history.replaceState({}, '', window.location.pathname + window.location.search);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } else {
+        document.getElementById(tgt)?.scrollIntoView({ behavior: 'smooth' });
+      }
       return;
     }
 

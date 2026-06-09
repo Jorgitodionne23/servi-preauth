@@ -10,6 +10,17 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,700;1,9..40,400&family=Syne:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/shared/shared-styles.css">
   <link rel="stylesheet" href="/shared/landing-theme.css">
+  <script>
+    (function () {
+      if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+      if (!window.location.hash || window.location.hash === '#landing-hero') {
+        window.scrollTo(0, 0);
+        window.addEventListener('load', function () {
+          requestAnimationFrame(function () { window.scrollTo(0, 0); });
+        }, { once: true });
+      }
+    })();
+  </script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body class="landing-page">
@@ -63,18 +74,26 @@
       <div class="dash-hero__media-row">
         <button class="dash-hero__media-btn" type="button" onclick="window._dashShowCameraExplain()" aria-label="Cámara" id="dash-camera-btn">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
+          <span class="dash-hero__media-txt">
+            <span class="dash-hero__media-title" id="dash-camera-title">Agregar fotos</span>
+            <span class="dash-hero__media-sub" id="dash-camera-sub">Toma o sube</span>
+          </span>
         </button>
         <button class="dash-hero__media-btn" type="button" onclick="window._dashShowMicExplain()" aria-label="Micrófono" id="dash-mic-btn">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+          <span class="dash-hero__media-txt">
+            <span class="dash-hero__media-title" id="dash-mic-title">Nota de voz</span>
+            <span class="dash-hero__media-sub" id="dash-mic-sub">Dilo en voz alta</span>
+          </span>
         </button>
         <button class="dash-hero__media-btn" type="button" onclick="window._dashShowVideoExplain()" aria-label="Video" id="dash-video-btn">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+          <span class="dash-hero__media-txt">
+            <span class="dash-hero__media-title" id="dash-video-title">Grabar un video</span>
+            <span class="dash-hero__media-sub" id="dash-video-sub">Muestra el problema</span>
+          </span>
         </button>
       </div>
-      <button class="dash-hero__tour-btn" type="button" onclick="window._serviTourStart && window._serviTourStart({ force: true })" id="dash-tour-btn">
-        <span class="dash-hero__tour-dot" aria-hidden="true"></span>
-        <span id="dash-tour-label">Ver guía rápida</span>
-      </button>
     </div>
 
     <!-- RIGHT — Browse categories -->
@@ -110,17 +129,13 @@
   <div class="servi-tour__scrim" aria-hidden="true"></div>
   <div class="servi-tour__card" id="servi-tour-card">
     <button class="servi-tour__close" type="button" id="servi-tour-close" aria-label="Cerrar guía">×</button>
-    <div class="servi-tour__kicker" id="servi-tour-kicker">1 / 3</div>
+    <div class="servi-tour__kicker" id="servi-tour-kicker">1 / 4</div>
     <h2 class="servi-tour__title" id="servi-tour-title"></h2>
     <p class="servi-tour__body" id="servi-tour-body"></p>
     <div class="servi-tour__example" id="servi-tour-example-wrap" hidden>
       <button class="servi-tour__example-btn" type="button" id="servi-tour-example"></button>
     </div>
-    <div class="servi-tour__rail" aria-hidden="true">
-      <span class="servi-tour__rail-dot"></span>
-      <span class="servi-tour__rail-dot"></span>
-      <span class="servi-tour__rail-dot"></span>
-    </div>
+    <div class="servi-tour__rail" aria-hidden="true"></div>
     <div class="servi-tour__actions">
       <button class="servi-tour__back" type="button" id="servi-tour-back">Atrás</button>
       <button class="servi-tour__next" type="button" id="servi-tour-next">Siguiente</button>
@@ -803,6 +818,23 @@
     if (headline) headline.textContent = dh.headline || 'Solicita un servicio ahora';
     const mediaLabel = document.getElementById('dash-media-label');
     if (mediaLabel) mediaLabel.textContent = dh.mediaLabel || 'O envía tu solicitud por:';
+    const sr = tr.smartRequest || {};
+    const setText = (id, value) => {
+      const el = document.getElementById(id);
+      if (el && value) el.textContent = value;
+    };
+    setText('dash-camera-title', sr.modePhotos || 'Agregar fotos');
+    setText('dash-camera-sub', sr.modePhotosSub || 'Toma o sube');
+    setText('dash-mic-title', sr.modeVoice || 'Nota de voz');
+    setText('dash-mic-sub', sr.modeVoiceSub || 'Dilo en voz alta');
+    setText('dash-video-title', sr.modeVideo || 'Grabar un video');
+    setText('dash-video-sub', sr.modeVideoSub || 'Muestra el problema');
+    const cameraBtn = document.getElementById('dash-camera-btn');
+    if (cameraBtn && sr.modePhotos) cameraBtn.setAttribute('aria-label', sr.modePhotos);
+    const micBtn = document.getElementById('dash-mic-btn');
+    if (micBtn && sr.modeVoice) micBtn.setAttribute('aria-label', sr.modeVoice);
+    const videoBtn = document.getElementById('dash-video-btn');
+    if (videoBtn && sr.modeVideo) videoBtn.setAttribute('aria-label', sr.modeVideo);
     const browseTitle = document.getElementById('dash-browse-title');
     if (browseTitle) browseTitle.textContent = dh.browseTitle || 'O explora';
     updatePlaceholders();
@@ -1249,24 +1281,31 @@
         back: 'Atrás',
         next: 'Siguiente',
         end: 'Terminar',
-        progress: current => `${current} / 3`,
+        progress: (current, total) => `${current} / ${total}`,
         steps: [
+          {
+            title: 'Tres formas de pedir un servicio',
+            body: '',
+            preferredPlacement: 'center',
+          },
           {
             selector: '.dash-hero__textarea-wrap',
             title: 'Dinos qué necesitas',
-            body: 'Escribe como si mandaras un mensaje: qué pasó, dónde es y cuándo te queda bien. Si está claro, SERVI lo convierte en una solicitud lista para cotizar.',
+            body: 'Escribe qué necesitas, dónde es y cuándo te queda bien. SERVI AI analiza los detalles para entender el trabajo y preparar mejor tu solicitud.',
             exampleLabel: 'Usar ejemplo: fuga debajo del lavabo hoy por la tarde',
             exampleText: 'Necesito arreglar una fuga debajo del lavabo. Estoy en Santa Fe y me queda bien hoy por la tarde.',
           },
           {
             selector: '.dash-hero__media-row',
-            title: 'Fotos o voz si es más rápido',
-            body: 'Toca cámara para mostrar el problema o micrófono para explicarlo hablando. Los detalles visuales ayudan a elegir al especialista correcto desde el inicio.',
+            preferredPlacement: 'top',
+            title: 'O envía foto, video o audio',
+            body: 'Toca cámara, video o micrófono. SERVI AI revisa lo que envíes para identificar el problema y orientar la solicitud al servicio correcto.',
           },
           {
             selector: '.dash-cats-grid',
+            preferredPlacement: 'left',
             title: 'También puedes explorar',
-            body: 'Si prefieres buscar por categoría, entra por aquí. Elige limpieza, reparación, mudanza, bienestar o proveedores y encuentra el servicio exacto sin tener que describirlo desde cero.',
+            body: 'Elige una categoría si prefieres buscar el servicio exacto.',
           },
         ],
       };
@@ -1278,24 +1317,31 @@
       back: 'Back',
       next: 'Next',
       end: 'End tour',
-      progress: current => `${current} / 3`,
+      progress: (current, total) => `${current} / ${total}`,
       steps: [
+        {
+          title: 'Three ways to request a service',
+          body: '',
+          preferredPlacement: 'center',
+        },
         {
           selector: '.dash-hero__textarea-wrap',
           title: 'Tell us what you need',
-          body: 'Write it like a message: what happened, where it is, and when you are available. SERVI turns clear details into a request ready for quotes.',
+          body: 'Write what you need, where it is, and when you are available. SERVI AI reviews the details to understand the job and prepare a clearer request.',
           exampleLabel: 'Use example: leak under the sink this afternoon',
           exampleText: 'I need a leak under the sink repaired. I am in Santa Fe and today afternoon works for me.',
         },
         {
           selector: '.dash-hero__media-row',
-          title: 'Photos or voice if faster',
-          body: 'Tap camera to show the issue or microphone to explain it out loud. Visual details help match the right specialist from the start.',
+          preferredPlacement: 'top',
+          title: 'Or send a photo, video, or audio',
+          body: 'Tap camera, video, or microphone. SERVI AI reviews what you send to identify the issue and route the request to the right service.',
         },
         {
           selector: '.dash-cats-grid',
+          preferredPlacement: 'left',
           title: 'You can also browse',
-          body: 'If you would rather search by category, start here. Pick cleaning, repair, moving, wellness, or suppliers and find the exact service without describing it from scratch.',
+          body: 'Pick a category if you prefer to find the exact service.',
         },
       ],
     };
@@ -1336,11 +1382,15 @@
 
   function positionTourCard() {
     tourPositionFrame = null;
-    if (!tourActive || !tourTarget) return;
+    if (!tourActive) return;
 
     const tour = document.getElementById('servi-tour');
     const card = document.getElementById('servi-tour-card');
     if (!tour || !card) return;
+    if (!tourTarget) {
+      positionTourIntroCard(tour, card);
+      return;
+    }
 
     const rect = tourTarget.getBoundingClientRect();
     const cardRect = card.getBoundingClientRect();
@@ -1350,27 +1400,73 @@
     const centerY = rect.top + rect.height / 2;
     const maxLeft = Math.max(margin, window.innerWidth - cardRect.width - margin);
     let left = centerX - cardRect.width / 2;
-    left = Math.min(Math.max(margin, left), maxLeft);
 
     const spaceBelow = window.innerHeight - rect.bottom;
     const spaceAbove = rect.top;
     let placement = 'bottom';
     let top = rect.bottom + gap;
+    const currentStep = getTourCopy().steps[tourIndex];
+    const preferredPlacement = currentStep?.preferredPlacement;
+    const canPlaceAbove = spaceAbove >= cardRect.height + gap + margin;
+    const canPlaceBelow = spaceBelow >= cardRect.height + gap + margin;
+    const canPlaceLeft = rect.left >= cardRect.width + gap + margin;
+    const canPlaceRight = window.innerWidth - rect.right >= cardRect.width + gap + margin;
 
-    if (spaceBelow < cardRect.height + gap + margin && spaceAbove > spaceBelow) {
+    if (preferredPlacement === 'left' && canPlaceLeft) {
+      placement = 'left';
+      left = rect.left - cardRect.width - gap;
+      top = centerY - cardRect.height / 2;
+    } else if (preferredPlacement === 'right' && canPlaceRight) {
+      placement = 'right';
+      left = rect.right + gap;
+      top = centerY - cardRect.height / 2;
+    } else if (preferredPlacement === 'top' && canPlaceAbove) {
+      placement = 'top';
+      top = rect.top - cardRect.height - gap;
+    } else if (preferredPlacement === 'bottom' && canPlaceBelow) {
+      placement = 'bottom';
+      top = rect.bottom + gap;
+    } else if (!canPlaceBelow && spaceAbove > spaceBelow) {
       placement = 'top';
       top = rect.top - cardRect.height - gap;
     }
 
+    left = Math.min(Math.max(margin, left), maxLeft);
     top = Math.min(Math.max(margin, top), Math.max(margin, window.innerHeight - cardRect.height - margin));
     const pointerLeft = Math.min(Math.max(28, centerX - left), cardRect.width - 28);
+    const pointerTop = Math.min(Math.max(28, centerY - top), cardRect.height - 28);
 
     tour.dataset.placement = placement;
     tour.style.setProperty('--tour-card-left', `${left}px`);
     tour.style.setProperty('--tour-card-top', `${top}px`);
     tour.style.setProperty('--tour-pointer-left', `${pointerLeft}px`);
+    tour.style.setProperty('--tour-pointer-top', `${pointerTop}px`);
     tour.style.setProperty('--tour-x', `${Math.round((centerX / window.innerWidth) * 100)}%`);
     tour.style.setProperty('--tour-y', `${Math.round((centerY / window.innerHeight) * 100)}%`);
+  }
+
+  function positionTourIntroCard(tour, card) {
+    const hero = document.querySelector('.dash-hero');
+    const cardRect = card.getBoundingClientRect();
+    const margin = window.innerWidth <= 520 ? 16 : 24;
+    const heroRect = hero?.getBoundingClientRect();
+    const heroTop = heroRect ? Math.max(margin, heroRect.top + 132) : Math.max(margin, window.innerHeight * 0.22);
+    const left = Math.min(
+      Math.max(margin, (window.innerWidth - cardRect.width) / 2),
+      Math.max(margin, window.innerWidth - cardRect.width - margin)
+    );
+    const top = Math.min(
+      Math.max(margin, heroTop),
+      Math.max(margin, window.innerHeight - cardRect.height - margin)
+    );
+
+    tour.dataset.placement = 'center';
+    tour.style.setProperty('--tour-card-left', `${left}px`);
+    tour.style.setProperty('--tour-card-top', `${top}px`);
+    tour.style.setProperty('--tour-pointer-left', '50%');
+    tour.style.setProperty('--tour-pointer-top', '50%');
+    tour.style.setProperty('--tour-x', '50%');
+    tour.style.setProperty('--tour-y', '32%');
   }
 
   function renderTourStep() {
@@ -1386,10 +1482,11 @@
     const next = document.getElementById('servi-tour-next');
     const exampleWrap = document.getElementById('servi-tour-example-wrap');
     const example = document.getElementById('servi-tour-example');
-    if (!tour || !title || !body || !kicker || !close || !back || !next || !exampleWrap || !example) return;
+    const rail = tour?.querySelector('.servi-tour__rail');
+    if (!tour || !title || !body || !kicker || !close || !back || !next || !exampleWrap || !example || !rail) return;
 
-    const target = document.querySelector(step.selector);
-    if (!target) {
+    const target = step.selector ? document.querySelector(step.selector) : null;
+    if (step.selector && !target) {
       window._serviTourClose && window._serviTourClose(true);
       return;
     }
@@ -1397,8 +1494,9 @@
     tour.dataset.step = String(tourIndex);
     setTourTarget(target);
     title.textContent = step.title;
-    body.textContent = step.body;
-    kicker.textContent = copy.progress(tourIndex + 1);
+    body.textContent = step.body || '';
+    body.hidden = !step.body;
+    kicker.textContent = copy.progress(tourIndex + 1, steps.length);
     close.setAttribute('aria-label', copy.close);
     back.textContent = copy.back;
     next.textContent = tourIndex === steps.length - 1 ? copy.end : copy.next;
@@ -1419,15 +1517,17 @@
       example.onclick = null;
     }
 
-    document.querySelectorAll('.servi-tour__rail-dot').forEach((dot, index) => {
+    rail.innerHTML = steps.map(() => '<span class="servi-tour__rail-dot"></span>').join('');
+    rail.querySelectorAll('.servi-tour__rail-dot').forEach((dot, index) => {
       dot.dataset.active = index === tourIndex ? 'true' : 'false';
     });
 
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    target.scrollIntoView({
+    const scrollTarget = target || document.querySelector('.dash-hero');
+    scrollTarget?.scrollIntoView({
       behavior: prefersReducedMotion ? 'auto' : 'smooth',
-      block: 'center',
-      inline: 'center',
+      block: target ? 'nearest' : 'start',
+      inline: 'nearest',
     });
 
     scheduleTourPosition();
@@ -1556,13 +1656,25 @@
       { num: '2', title: resolve('how.s2t'), desc: resolve('how.s2d') },
       { num: '3', title: resolve('how.s3t'), desc: resolve('how.s3d') },
     ];
-    grid.innerHTML = `<div class="landing-steps">${steps.map(s => `
+    grid.innerHTML = `
+      <div class="landing-steps">${steps.map(s => `
       <div class="landing-step">
         <div class="step-num-large">${s.num}</div>
         <div class="heading-sm" style="margin:16px 0 8px">${s.title}</div>
         <div class="text-sm">${s.desc}</div>
       </div>
-    `).join('')}</div>`;
+    `).join('')}</div>
+      <div class="how-tour-action">
+        <button class="dash-hero__tour-btn" type="button" onclick="window._serviTourStart && window._serviTourStart({ force: true })" id="dash-tour-btn">
+          <span class="dash-hero__tour-dot" aria-hidden="true">
+            <svg viewBox="0 0 18 18" fill="none" aria-hidden="true">
+              <path d="M7 5.5v7l5-3.5-5-3.5Z" fill="currentColor"/>
+            </svg>
+          </span>
+          <span id="dash-tour-label">${getTourCopy().replay}</span>
+        </button>
+      </div>
+    `;
   }
 
   function renderStats() {
@@ -1645,6 +1757,10 @@
 (function () {
   function scrollToHash() {
     var hash = window.location.hash.replace('#', '');
+    if (hash === 'landing-hero') {
+      window.scrollTo({ top: 0, behavior: 'auto' });
+      return;
+    }
     if (hash) {
       var el = document.getElementById(hash);
       if (el) el.scrollIntoView({ behavior: 'smooth' });
