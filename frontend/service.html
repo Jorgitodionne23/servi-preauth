@@ -667,6 +667,16 @@
     return -1;
   }
 
+  function getLocalizedServiceName(subData) {
+    const serviceIndex = getServiceIndex(subData);
+    if (serviceIndex === -1) return serviceName;
+    const localizedServices = subData.services && subData.services[getLocale()];
+    const fallbackServices = subData.services && (subData.services.es || subData.services.en);
+    return (localizedServices && localizedServices[serviceIndex])
+      || (fallbackServices && fallbackServices[serviceIndex])
+      || serviceName;
+  }
+
   function buildUnsplashUrl(photoId) {
     return `https://images.unsplash.com/${photoId}?w=1200&q=85&auto=format&fit=crop`;
   }
@@ -1153,7 +1163,9 @@
 
     const detailsInput = document.getElementById(`svc-details-${prefix}`);
     const extraDetails = detailsInput ? detailsInput.value.trim() : '';
-    const description = serviceName + (extraDetails ? ' — ' + extraDetails : '');
+    const catalog = getCatalogData();
+    const currentServiceName = catalog ? getLocalizedServiceName(catalog.subData) : serviceName;
+    const description = currentServiceName + (extraDetails ? ' — ' + extraDetails : '');
 
     return {
       address: addressString,
@@ -1387,14 +1399,14 @@
     if (mobileBar) mobileBar.style.display = 'none';
   }
 
-  function buildSidebarContent(prefix) {
+  function buildSidebarContent(prefix, displayServiceName) {
     const s = sp();
     const savedAddr = localStorage.getItem('dash_hero_address') || '';
     const today = new Date().toISOString().slice(0, 10);
 
     return `
       <div id="svc-sidebar-${prefix}">
-        <div class="svc-sidebar__service-name">${esc(serviceName)}</div>
+        <div class="svc-sidebar__service-name">${esc(displayServiceName || serviceName)}</div>
         <div class="svc-sidebar__price-label">${esc(s.priceLabel || 'Precio a confirmar')}</div>
         <div class="svc-sidebar__price-note">${esc(s.priceNote || '')}</div>
         <hr class="svc-sidebar__divider">
@@ -1515,8 +1527,6 @@
     const main = document.getElementById('svc-main');
     if (!main) return;
 
-    if (serviceName) document.title = `SERVI — ${serviceName}`;
-
     const catalog = getCatalogData();
     const s = sp();
 
@@ -1532,11 +1542,14 @@
     }
 
     const { subData } = catalog;
+    const serviceIndex = getServiceIndex(subData);
+    const displayServiceName = getLocalizedServiceName(subData);
+    if (displayServiceName) document.title = `SERVI — ${displayServiceName}`;
     const heroImage = getServiceHeroImage(subData);
     const subLabel = getLocalizedText(subData.label);
     const catLabel = getCategoryLabel();
     const otherServices = (subData.services[getLocale()] || subData.services.es || [])
-      .filter(sv => sv !== serviceName);
+      .filter((_, index) => index !== serviceIndex);
 
     main.innerHTML = `
       <div class="svc-page">
@@ -1550,9 +1563,9 @@
 
         <div class="svc-layout">
           <div class="svc-left">
-            <img class="svc-hero-img" src="${esc(heroImage.src)}" alt="${esc(serviceName)}"
+            <img class="svc-hero-img" src="${esc(heroImage.src)}" alt="${esc(displayServiceName)}"
                  onerror="${esc(heroImage.onerror)}">
-            <h1 class="svc-title">${esc(serviceName)}</h1>
+            <h1 class="svc-title">${esc(displayServiceName)}</h1>
             <div class="svc-subcat-label">${esc(subLabel)} · ${esc(catLabel)}</div>
 
             <div class="svc-included-section">
@@ -1576,13 +1589,13 @@
 
             <div class="svc-mobile-form">
               <div class="svc-sidebar" id="svc-sidebar-wrap-mob">
-                ${buildSidebarContent('mob')}
+                ${buildSidebarContent('mob', displayServiceName)}
               </div>
             </div>
           </div>
 
           <div class="svc-sidebar" id="svc-sidebar-wrap-desk">
-            ${buildSidebarContent('desk')}
+            ${buildSidebarContent('desk', displayServiceName)}
           </div>
         </div>
       </div>

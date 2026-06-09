@@ -37,6 +37,8 @@
       typeOffice: 'Oficina', typeOther: 'Otro',
       labelLabel: 'Etiqueta (opcional)', labelPh: 'Casa, Trabajo, Mamá…',
       street: 'Calle', streetPh: 'Av. Vasco de Quiroga',
+      streetAddress: 'Dirección', streetAddressPh: 'Av. Vasco de Quiroga 3800',
+      unitOptional: 'Apto, suite, torre, etc. (opcional)', unitOptionalPh: 'Torre B-402',
       ext: 'No. exterior', extPh: '3800', int: 'No. interior / depto', intPh: 'Torre B-402',
       neighborhood: 'Colonia', neighborhoodPh: 'Santa Fe',
       municipality: 'Alcaldía / municipio', municipalityPh: 'Cuajimalpa de Morelos',
@@ -63,6 +65,8 @@
       typeOffice: 'Office', typeOther: 'Other',
       labelLabel: 'Label (optional)', labelPh: 'Home, Work, Mom’s…',
       street: 'Street', streetPh: 'Av. Vasco de Quiroga',
+      streetAddress: 'Street address', streetAddressPh: '3800 Av. Vasco de Quiroga',
+      unitOptional: 'Apt, suite, tower, etc.', unitOptionalPh: 'Tower B-402',
       ext: 'Exterior no.', extPh: '3800', int: 'Interior / unit no.', intPh: 'Tower B-402',
       neighborhood: 'Neighborhood', neighborhoodPh: 'Santa Fe',
       municipality: 'Borough / municipality', municipalityPh: 'Cuajimalpa de Morelos',
@@ -240,13 +244,17 @@
       html += fld(p + '_label', x.labelLabel, input(p + '_label', x.labelPh));
     }
 
-    // Street + ext
+    // Street + ext/unit
     html += '<div class="sa-row"><div class="sa-field" style="grid-column:1 / -1">' +
-      '<label class="sa-label" for="' + p + '_street">' + esc(x.street) + ' *</label>' +
-      input(p + '_street', x.streetPh, ' autocomplete="address-line1"') + '</div></div>';
-    html += '<div class="sa-row">' +
-      fld(p + '_ext', x.ext, input(p + '_ext', x.extPh, ' inputmode="numeric"')) +
-      fld(p + '_int', x.int, input(p + '_int', x.intPh)) + '</div>';
+      '<label class="sa-label" for="' + p + '_street">' + esc(compact ? x.streetAddress : x.street) + ' *</label>' +
+      input(p + '_street', compact ? x.streetAddressPh : x.streetPh, ' autocomplete="address-line1"') + '</div></div>';
+    if (compact) {
+      html += fld(p + '_int', x.unitOptional, input(p + '_int', x.unitOptionalPh, ' autocomplete="address-line2"'));
+    } else {
+      html += '<div class="sa-row">' +
+        fld(p + '_ext', x.ext, input(p + '_ext', x.extPh, ' inputmode="numeric"')) +
+        fld(p + '_int', x.int, input(p + '_int', x.intPh)) + '</div>';
+    }
 
     if (compact) {
       // Colonia + CP (compact drops municipality + state/city dropdowns)
