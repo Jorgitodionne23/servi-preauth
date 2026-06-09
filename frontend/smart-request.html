@@ -50,6 +50,12 @@
     if (mode) opts.mode = mode;
     if (text) opts.text = text;
 
+    // Inline-capture handoff from the index.html hero (media / attachments).
+    try {
+      var raw = sessionStorage.getItem('sr_handoff');
+      if (raw) { sessionStorage.removeItem('sr_handoff'); Object.assign(opts, JSON.parse(raw)); }
+    } catch (_) {}
+
     function openFromUrl() {
       window.openSmartRequest && window.openSmartRequest(opts);
     }

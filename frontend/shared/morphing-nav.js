@@ -101,6 +101,7 @@
     close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>',
     camera: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>',
     mic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>',
+    video: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>',
     arrow: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>',
     chevron: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>',
     user: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
@@ -403,8 +404,9 @@
           <input type="text" class="spp-input" id="spp-describe-input"
             placeholder="${t.header.pillDescribe || 'Describe what you need'}"
             autocomplete="off">
-          <button type="button" class="spp-icon-btn" data-action="spp-camera" aria-label="Camera">${ICON.camera}</button>
-          <button type="button" class="spp-icon-btn" data-action="spp-mic" aria-label="Mic">${ICON.mic}</button>
+          <button type="button" class="spp-icon-btn spp-camera" data-action="spp-camera" aria-label="Camera">${ICON.camera}</button>
+          <button type="button" class="spp-icon-btn spp-mic" data-action="spp-mic" aria-label="Mic">${ICON.mic}</button>
+          <button type="button" class="spp-icon-btn spp-video" data-action="spp-video" aria-label="Video">${ICON.video}</button>
           <button type="button" class="spp-submit-btn" data-action="spp-submit" aria-label="Submit">${ICON.arrow}</button>
         </div>
         ${suggestions.length ? `
@@ -700,6 +702,41 @@
     });
   }
 
+  function releaseSearchPillFocus() {
+    const popover = document.getElementById('search-pill-popover');
+    const active = document.activeElement;
+    if (popover && active && popover.contains(active) && typeof active.blur === 'function') {
+      active.blur();
+    }
+  }
+
+  function openSearchPillMedia(mode) {
+    releaseSearchPillFocus();
+    closeSegment();
+
+    requestAnimationFrame(() => {
+      if (typeof window.openSmartRequest === 'function') {
+        window.openSmartRequest({ mode });
+        return;
+      }
+
+      const dashboardOpeners = {
+        photos: window._dashShowCameraExplain,
+        voice: window._dashShowMicExplain,
+        video: window._dashShowVideoExplain,
+      };
+      if (typeof dashboardOpeners[mode] === 'function') {
+        dashboardOpeners[mode]();
+        return;
+      }
+
+      const url = new URL('/smart-request.html', window.location.origin);
+      url.searchParams.set('mode', mode);
+      url.searchParams.set('return', window.location.pathname + window.location.search + window.location.hash);
+      window.location.href = url.toString();
+    });
+  }
+
   function confirmSearchPillWhen() {
     const text = getSearchPillDescription();
     if (!text) {
@@ -718,7 +755,17 @@
       return;
     }
     closeSegment();
-    routeToBookingIntake(text);
+    // Route to smart-request.html with the description text
+    const url = new URL('/smart-request.html', window.location.origin);
+    if (text) url.searchParams.set('text', text);
+    if (state.whenChoice === 'date' && state.whenDate) {
+      url.searchParams.set('when', 'schedule');
+      url.searchParams.set('date', state.whenDate);
+    } else {
+      url.searchParams.set('when', 'asap');
+    }
+    url.searchParams.set('return', window.location.pathname + window.location.search + window.location.hash);
+    window.location.href = url.toString();
   }
 
   function advanceSearchPillDescribe() {
@@ -851,13 +898,15 @@
         return;
       }
       if (action === 'spp-camera') {
-        closeSegment();
-        window._dashShowCameraExplain && window._dashShowCameraExplain();
+        openSearchPillMedia('photos');
         return;
       }
       if (action === 'spp-mic') {
-        closeSegment();
-        window._dashShowMicExplain && window._dashShowMicExplain();
+        openSearchPillMedia('voice');
+        return;
+      }
+      if (action === 'spp-video') {
+        openSearchPillMedia('video');
         return;
       }
       if (action === 'spp-when-asap') {

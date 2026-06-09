@@ -42,7 +42,6 @@
           id="dash-textarea"
           rows="4"
           spellcheck="false"
-          autofocus
           placeholder="Describe lo que necesitas..."
           onkeydown="if(event.key==='Enter'&&(event.metaKey||event.ctrlKey)){event.preventDefault();window._dashSubmitText()}"
         ></textarea>
@@ -54,7 +53,11 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
           </button>
         </div>
+        <div class="dash-atts" id="dash-atts" hidden></div>
       </div>
+
+      <!-- Inline media capture (mic / video / photos) — rendered by the hero capture engine -->
+      <div class="dash-capture" id="dash-capture" hidden></div>
 
       <p class="dash-hero__media-label" id="dash-media-label">O envía tu solicitud por:</p>
       <div class="dash-hero__media-row">
@@ -64,7 +67,14 @@
         <button class="dash-hero__media-btn" type="button" onclick="window._dashShowMicExplain()" aria-label="Micrófono" id="dash-mic-btn">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
         </button>
+        <button class="dash-hero__media-btn" type="button" onclick="window._dashShowVideoExplain()" aria-label="Video" id="dash-video-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+        </button>
       </div>
+      <button class="dash-hero__tour-btn" type="button" onclick="window._serviTourStart && window._serviTourStart({ force: true })" id="dash-tour-btn">
+        <span class="dash-hero__tour-dot" aria-hidden="true"></span>
+        <span id="dash-tour-label">Ver guía rápida</span>
+      </button>
     </div>
 
     <!-- RIGHT — Browse categories -->
@@ -94,6 +104,29 @@
 
   </div>
 </section>
+
+<!-- ═══ FIRST VISIT TOUR ═══ -->
+<div class="servi-tour" id="servi-tour" hidden role="dialog" aria-modal="false" aria-labelledby="servi-tour-title">
+  <div class="servi-tour__scrim" aria-hidden="true"></div>
+  <div class="servi-tour__card" id="servi-tour-card">
+    <button class="servi-tour__close" type="button" id="servi-tour-close" aria-label="Cerrar guía">×</button>
+    <div class="servi-tour__kicker" id="servi-tour-kicker">1 / 3</div>
+    <h2 class="servi-tour__title" id="servi-tour-title"></h2>
+    <p class="servi-tour__body" id="servi-tour-body"></p>
+    <div class="servi-tour__example" id="servi-tour-example-wrap" hidden>
+      <button class="servi-tour__example-btn" type="button" id="servi-tour-example"></button>
+    </div>
+    <div class="servi-tour__rail" aria-hidden="true">
+      <span class="servi-tour__rail-dot"></span>
+      <span class="servi-tour__rail-dot"></span>
+      <span class="servi-tour__rail-dot"></span>
+    </div>
+    <div class="servi-tour__actions">
+      <button class="servi-tour__back" type="button" id="servi-tour-back">Atrás</button>
+      <button class="servi-tour__next" type="button" id="servi-tour-next">Siguiente</button>
+    </div>
+  </div>
+</div>
 
 <!-- ═══ BROWSE DRAWER (subcategory panel) ═══ -->
 <div class="browse-drawer" id="browse-drawer" hidden role="dialog" aria-modal="true">
@@ -401,9 +434,88 @@
   }
 
   // ─── Update hero search placeholder ──────────────────────────
-  function updatePlaceholders() {
+  const dashPlaceholderFallbacks = {
+    es: [
+      'Necesito una limpieza profunda para un departamento de 2 recámaras...',
+      'Tengo una fuga en la cocina y necesito un plomero hoy...',
+      'Quiero montar una TV de 55 pulgadas en la sala...',
+      'Necesito mover un sofá grande este fin de semana...',
+      'Busco masaje a domicilio para dos personas...',
+    ],
+    en: [
+      'Deep clean for a 2-bedroom apartment this Saturday...',
+      'My kitchen sink is leaking and I need a plumber today...',
+      'Mount a 55-inch TV on the living room wall...',
+      'Move a large sofa this weekend...',
+      'At-home massage for two people...',
+    ],
+  };
+  let dashPlaceholderTimer = null;
+  let dashPlaceholderIndex = 0;
+  let dashPlaceholderBound = false;
+
+  function getDashPlaceholderExamples() {
+    const dh = t().dashHero || {};
+    const examples = Array.isArray(dh.placeholderExamples) ? dh.placeholderExamples.filter(Boolean) : [];
+    if (examples.length) return examples;
+    return dashPlaceholderFallbacks[getLocale()] || dashPlaceholderFallbacks.es;
+  }
+
+  function stopDashPlaceholderRotation() {
+    if (!dashPlaceholderTimer) return;
+    clearInterval(dashPlaceholderTimer);
+    dashPlaceholderTimer = null;
+  }
+
+  function setDashPlaceholderExample(ta, examples) {
+    if (!ta || document.activeElement === ta || ta.value.trim()) {
+      if (ta) ta.placeholder = '';
+      return;
+    }
+    ta.placeholder = examples[dashPlaceholderIndex % examples.length] || '';
+  }
+
+  function startDashPlaceholderRotation() {
     const ta = document.getElementById('dash-textarea');
-    if (ta) ta.placeholder = resolve('dashHero.placeholder') || 'Describe lo que necesitas...';
+    if (!ta) return;
+    const examples = getDashPlaceholderExamples();
+    stopDashPlaceholderRotation();
+    setDashPlaceholderExample(ta, examples);
+    if (document.activeElement === ta || ta.value.trim() || examples.length < 2) return;
+    dashPlaceholderTimer = setInterval(() => {
+      if (document.activeElement === ta || ta.value.trim()) {
+        stopDashPlaceholderRotation();
+        ta.placeholder = '';
+        return;
+      }
+      dashPlaceholderIndex = (dashPlaceholderIndex + 1) % examples.length;
+      setDashPlaceholderExample(ta, examples);
+    }, 2800);
+  }
+
+  function bindDashPlaceholderRotation() {
+    if (dashPlaceholderBound) return;
+    const ta = document.getElementById('dash-textarea');
+    if (!ta) return;
+    dashPlaceholderBound = true;
+    ta.addEventListener('focus', () => {
+      stopDashPlaceholderRotation();
+      ta.placeholder = '';
+    });
+    ta.addEventListener('input', () => {
+      if (ta.value.trim()) {
+        stopDashPlaceholderRotation();
+        ta.placeholder = '';
+      }
+    });
+    ta.addEventListener('blur', () => {
+      if (!ta.value.trim()) startDashPlaceholderRotation();
+    });
+  }
+
+  function updatePlaceholders() {
+    bindDashPlaceholderRotation();
+    startDashPlaceholderRotation();
   }
 
   // ─── Address Change Modal ────────────────────────────────────
@@ -693,8 +805,9 @@
     if (mediaLabel) mediaLabel.textContent = dh.mediaLabel || 'O envía tu solicitud por:';
     const browseTitle = document.getElementById('dash-browse-title');
     if (browseTitle) browseTitle.textContent = dh.browseTitle || 'O explora';
-    const ta = document.getElementById('dash-textarea');
-    if (ta) ta.placeholder = dh.placeholder || 'Describe lo que necesitas...';
+    updatePlaceholders();
+    const tourLabel = document.getElementById('dash-tour-label');
+    if (tourLabel) tourLabel.textContent = getTourCopy().replay;
 
     renderPopularServices();
   }
@@ -843,64 +956,597 @@
     }, 340);
   };
 
-  // ─── Attach menu (add image from files/camera/gallery) ────────────────────
-  window._dashShowAttachMenu = function() { window.openSmartRequest && window.openSmartRequest({ mode: 'photos' }); };
+  // ════════════════════════════════════════════════════════════════════════
+  //  INLINE SMART-REQUEST CAPTURE (mic / video / photos / attach)
+  //  Mirrors smart-request.html's sr-compose, but runs directly in the hero.
+  //  Capture happens here; we only navigate to /smart-request.html once the
+  //  user finishes — landing straight on the review (build/sr-stage) screen,
+  //  carrying the captured media across via sessionStorage['sr_handoff'].
+  // ════════════════════════════════════════════════════════════════════════
+  (function () {
+    const isEs = () => (window.__lang !== 'en');
+    const capEl  = () => document.getElementById('dash-capture');
+    const attsEl = () => document.getElementById('dash-atts');
+    const composeEls = () => [
+      document.querySelector('.dash-hero__textarea-wrap'),
+      document.getElementById('dash-media-label'),
+      document.querySelector('.dash-hero__media-row'),
+      document.getElementById('dash-tour-btn'),
+    ];
 
-  // ─── Show bottom toast with context message before camera/file picker opens ─
-  function _showCameraToast(msg, id) {
-    const existing = document.getElementById(id);
-    if (existing) existing.remove();
-    const toast = document.createElement('div');
-    toast.id = id;
-    toast.style.cssText = `
-      position: fixed;
-      bottom: 40px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: rgba(0,0,0,0.82);
-      color: #fff;
-      padding: 12px 20px;
-      border-radius: 24px;
-      font-family: var(--font-body);
-      font-size: 13px;
-      line-height: 1.45;
-      text-align: center;
-      max-width: 300px;
-      width: calc(100% - 48px);
-      z-index: 9999;
-      pointer-events: none;
-      opacity: 0;
-      transition: opacity 0.18s ease;
-    `;
-    toast.textContent = msg;
-    document.body.appendChild(toast);
-    requestAnimationFrame(() => { toast.style.opacity = '1'; });
-    return toast;
+    let dashAtts = [];   // photos attached to a TEXT request  [{url,uploading}]
+    let dashMedia = [];  // captured media for the active mode
+    let dashRec = null;  // recorder transient {phase,elapsed,t0,timer}
+    let capMode = null;  // 'voice' | 'video' | 'photos'
+
+    function fmtTime(s) { const m = Math.floor(s / 60), sec = Math.floor(s % 60); return m + ':' + String(sec).padStart(2, '0'); }
+    function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+    function bars() { return Array(28).fill('<span></span>').join(''); }
+    function staticBars() { let o = ''; for (let i = 0; i < 28; i++) o += '<span style="transform:scaleY(' + (0.2 + Math.abs(Math.sin(i * 0.9)) * 0.8).toFixed(2) + ')"></span>'; return o; }
+
+    // ── icons ──
+    const IC = {
+      mic:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>',
+      stop:  '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>',
+      play:  '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>',
+      cam:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>',
+      video: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>',
+      back:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>',
+      x:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>',
+      plus:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>',
+      upload:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>',
+      arrow: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>',
+    };
+
+    // ── file picker + upload (mirrors sr-app.js) ──
+    function pickFiles(accept, multiple, capture, cb) {
+      const inp = document.createElement('input');
+      inp.type = 'file'; inp.accept = accept; if (multiple) inp.multiple = true; if (capture) inp.capture = capture;
+      inp.style.display = 'none'; document.body.appendChild(inp);
+      inp.addEventListener('change', () => { cb(Array.from(inp.files || [])); inp.remove(); });
+      inp.click();
+    }
+    function uploadAttachment(file) {
+      const API = (window.CONFIG && window.CONFIG.API_BASE) || '';
+      const fd = new FormData(); fd.append('file', file);
+      return fetch(API + '/api/uploads', { method: 'POST', body: fd })
+        .then(r => { if (!r.ok) throw new Error('upload-' + r.status); return r.json(); });
+    }
+
+    // ── waveform animation (real mic if available, else simulated) ──
+    let waveRAF = null, waveStream = null;
+    function startWave(id) {
+      const wrap = document.getElementById(id); if (!wrap) return;
+      const wb = wrap.querySelectorAll('span');
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+          waveStream = stream;
+          const ctx = new (window.AudioContext || window.webkitAudioContext)();
+          const src = ctx.createMediaStreamSource(stream);
+          const an = ctx.createAnalyser(); an.fftSize = 64; src.connect(an);
+          const data = new Uint8Array(an.frequencyBinCount);
+          (function loop() { an.getByteFrequencyData(data); for (let i = 0; i < wb.length; i++) { const v = data[Math.floor(i / wb.length * data.length)] / 255; wb[i].style.transform = 'scaleY(' + Math.max(0.12, v) + ')'; } waveRAF = requestAnimationFrame(loop); })();
+        }).catch(() => fakeWave(wb));
+      } else { fakeWave(wb); }
+    }
+    function fakeWave(wb) { (function loop() { for (let i = 0; i < wb.length; i++) wb[i].style.transform = 'scaleY(' + (0.15 + Math.random() * 0.85).toFixed(2) + ')'; waveRAF = requestAnimationFrame(() => setTimeout(loop, 90)); })(); }
+    function stopWave() { if (waveRAF) cancelAnimationFrame(waveRAF); waveRAF = null; if (waveStream) { waveStream.getTracks().forEach(t => t.stop()); waveStream = null; } }
+
+    // ── open / close the inline capture surface ──
+    function openCapture(mode) {
+      capMode = mode; dashMedia = []; dashRec = null;
+      composeEls().forEach(el => { if (el) el.hidden = true; });
+      const c = capEl(); if (c) c.hidden = false;
+      renderCapture();
+    }
+    function closeCapture() {
+      stopWave(); if (dashRec && dashRec.timer) clearInterval(dashRec.timer);
+      dashRec = null; dashMedia = []; capMode = null;
+      const c = capEl(); if (c) { c.hidden = true; c.innerHTML = ''; }
+      composeEls().forEach(el => { if (el) el.hidden = false; });
+    }
+
+    // ── handoff → review screen on /smart-request.html ──
+    function goToReview(payload) {
+      try { sessionStorage.setItem('sr_handoff', JSON.stringify(payload)); } catch (_) {}
+      const url = new URL('/smart-request.html', window.location.origin);
+      url.searchParams.set('return', window.location.pathname + window.location.search + window.location.hash);
+      window.location.href = url.toString();
+    }
+    function cleanMedia(it) { const o = { kind: it.kind }; if (it.url) o.url = it.url; if (it.dur) o.dur = it.dur; if (it.name) o.name = it.name; if (it.sample) o.sample = true; return o; }
+
+    // ── render the active capture panel ──
+    function backBar() { return '<button type="button" class="dash-cap__back" data-cap="back">' + IC.back + (isEs() ? 'Volver' : 'Back') + '</button>'; }
+    function renderCapture() {
+      const c = capEl(); if (!c) return;
+      c.innerHTML = capMode === 'voice' ? voicePanel() : capMode === 'video' ? videoPanel() : photosPanel();
+    }
+
+    function voicePanel() {
+      const r = dashRec || { phase: 'idle', elapsed: 0 };
+      if (r.phase === 'done') {
+        return backBar() +
+          '<div class="dash-cap__voice-done"><span class="dash-cap__play">' + IC.play + '</span>' +
+          '<div class="dash-wave dash-wave--static">' + staticBars() + '</div>' +
+          '<span class="dash-cap__dur">' + fmtTime(r.elapsed) + '</span></div>' +
+          '<div class="dash-cap__actions">' +
+            '<button type="button" class="dash-cap__btn dash-cap__btn--ghost" data-cap="voice-reset">' + IC.mic + (isEs() ? 'Repetir' : 'Re-record') + '</button>' +
+            '<button type="button" class="dash-cap__btn dash-cap__btn--accent" data-cap="voice-use">' + (isEs() ? 'Usar grabación' : 'Use recording') + IC.arrow + '</button>' +
+          '</div>';
+      }
+      const rec = r.phase === 'recording';
+      return backBar() +
+        '<div class="dash-cap__voice">' +
+          '<button type="button" class="dash-mic' + (rec ? ' rec' : '') + '" data-cap="mic-toggle" aria-label="' + (rec ? 'Stop' : 'Record') + '">' + (rec ? IC.stop : IC.mic) + '</button>' +
+          (rec ? '<div class="dash-wave" id="dash-wave">' + bars() + '</div>' : '<div class="dash-wave dash-wave--idle">' + bars() + '</div>') +
+          '<div class="dash-cap__meta">' + (rec
+            ? '<span class="dash-cap__time"><i class="dash-cap__dot"></i><span id="dash-rec-elapsed">' + fmtTime(r.elapsed) + '</span> / ' + fmtTime(60) + '</span>'
+            : '<span class="dash-cap__hint">' + (isEs() ? 'Toca para grabar (máx 1:00)' : 'Tap to record (max 1:00)') + '</span>') + '</div>' +
+        '</div>';
+    }
+
+    function videoPanel() {
+      if (dashRec && dashRec.phase === 'vidrec') {
+        return backBar() + '<div class="dash-cap__video-rec">' +
+          '<span class="dash-cap__time dash-cap__time--lg"><i class="dash-cap__dot"></i><span id="dash-rec-elapsed">' + fmtTime(dashRec.elapsed) + '</span> / ' + fmtTime(90) + '</span>' +
+          '<p class="dash-cap__hint">' + (isEs() ? 'Graba el problema' : 'Film the problem') + '</p>' +
+          '<div class="dash-cap__actions"><button type="button" class="dash-cap__btn dash-cap__btn--accent" data-cap="vid-stop">' + IC.stop + (isEs() ? 'Detener' : 'Stop') + '</button></div></div>';
+      }
+      if (dashMedia.length) {
+        const it = dashMedia[0];
+        return backBar() +
+          '<div class="dash-cap__media-chip' + (it.uploading ? ' uploading' : '') + '">' + IC.video +
+            '<span>' + (it.name ? esc(it.name) : (isEs() ? 'Video listo' : 'Video ready')) + (it.dur ? ' · ' + fmtTime(it.dur) : '') + '</span>' +
+            '<button type="button" class="dash-cap__chip-x" data-cap="media-clear">' + IC.x + '</button></div>' +
+          '<div class="dash-cap__actions"><button type="button" class="dash-cap__btn dash-cap__btn--accent" data-cap="media-use">' + (isEs() ? 'Continuar' : 'Continue') + IC.arrow + '</button></div>';
+      }
+      return backBar() + '<div class="dash-cap__drop"><div class="dash-cap__drop-ic">' + IC.video + '</div>' +
+        '<p class="dash-cap__drop-title">' + (isEs() ? 'Sube o graba un video' : 'Upload or record a video') + '</p>' +
+        '<div class="dash-cap__drop-btns">' +
+          '<button type="button" class="dash-cap__btn dash-cap__btn--secondary" data-cap="vid-upload">' + IC.upload + (isEs() ? 'Subir video' : 'Upload video') + '</button>' +
+          '<button type="button" class="dash-cap__btn dash-cap__btn--secondary" data-cap="vid-record">' + IC.video + (isEs() ? 'Grabar' : 'Record') + '</button></div></div>';
+    }
+
+    function photosPanel() {
+      if (dashMedia.length) {
+        const thumbs = dashMedia.map((it, i) =>
+          '<div class="dash-thumb' + (it.uploading ? ' uploading' : '') + '">' + (it.url ? '<img src="' + it.url + '" alt="">' : IC.cam) +
+          '<button type="button" class="dash-thumb__x" data-cap="media-remove:' + i + '">' + IC.x + '</button></div>').join('');
+        const add = dashMedia.length < 5 ? '<button type="button" class="dash-thumb dash-thumb--add" data-cap="photos-add">' + IC.plus + '</button>' : '';
+        return backBar() + '<div class="dash-thumbs">' + thumbs + add + '</div>' +
+          '<div class="dash-cap__actions"><button type="button" class="dash-cap__btn dash-cap__btn--accent" data-cap="media-use">' +
+          (isEs() ? 'Continuar (' + dashMedia.length + ')' : 'Continue (' + dashMedia.length + ')') + IC.arrow + '</button></div>';
+      }
+      return backBar() + '<div class="dash-cap__drop"><div class="dash-cap__drop-ic">' + IC.cam + '</div>' +
+        '<p class="dash-cap__drop-title">' + (isEs() ? 'Agrega fotos del problema' : 'Add photos of the problem') + '</p>' +
+        '<div class="dash-cap__drop-btns"><button type="button" class="dash-cap__btn dash-cap__btn--secondary" data-cap="photos-add">' + IC.upload + (isEs() ? 'Elegir fotos' : 'Choose photos') + '</button></div></div>';
+    }
+
+    // ── recorders ──
+    function startVoice() {
+      dashRec = { phase: 'recording', elapsed: 0, t0: Date.now() };
+      renderCapture();
+      dashRec.timer = setInterval(() => {
+        dashRec.elapsed = (Date.now() - dashRec.t0) / 1000;
+        const el = document.getElementById('dash-rec-elapsed'); if (el) el.textContent = fmtTime(dashRec.elapsed);
+        if (dashRec.elapsed >= 60) finishVoice();
+      }, 100);
+      startWave('dash-wave');
+    }
+    function finishVoice() { if (!dashRec) return; clearInterval(dashRec.timer); stopWave(); dashRec.phase = 'done'; renderCapture(); }
+    function startVid() {
+      dashRec = { phase: 'vidrec', elapsed: 0, t0: Date.now() };
+      renderCapture();
+      dashRec.timer = setInterval(() => {
+        dashRec.elapsed = (Date.now() - dashRec.t0) / 1000;
+        const el = document.getElementById('dash-rec-elapsed'); if (el) el.textContent = fmtTime(dashRec.elapsed);
+        if (dashRec.elapsed >= 90) stopVid();
+      }, 100);
+    }
+    function stopVid() { if (!dashRec) return; clearInterval(dashRec.timer); const d = Math.max(1, Math.round(dashRec.elapsed)); dashRec = null; dashMedia = [{ kind: 'video', sample: true, dur: d }]; renderCapture(); }
+
+    // ── pickers ──
+    function pickPhotos() {
+      pickFiles('image/*', true, 'environment', files => {
+        files.slice(0, 5 - dashMedia.length).forEach(f => {
+          const item = { kind: 'photo', url: URL.createObjectURL(f), uploading: true };
+          dashMedia.push(item);
+          uploadAttachment(f).then(d => { item.url = d.url; item.uploading = false; renderCapture(); })
+            .catch(() => { const i = dashMedia.indexOf(item); if (i > -1) dashMedia.splice(i, 1); renderCapture(); });
+        });
+        dashMedia = dashMedia.slice(0, 5); renderCapture();
+      });
+    }
+    function pickVideo() {
+      pickFiles('video/*', false, null, files => {
+        if (!files.length) return;
+        const f = files[0];
+        const item = { kind: 'video', url: URL.createObjectURL(f), name: f.name, uploading: true };
+        dashMedia = [item]; renderCapture();
+        uploadAttachment(f).then(d => { item.url = d.url; item.uploading = false; renderCapture(); })
+          .catch(() => { item.uploading = false; renderCapture(); });
+      });
+    }
+
+    // ── text-request attachments (attach button) ──
+    function renderAtts() {
+      const el = attsEl(); if (!el) return;
+      if (!dashAtts.length) { el.hidden = true; el.innerHTML = ''; return; }
+      el.hidden = false;
+      el.innerHTML = dashAtts.map((a, i) =>
+        '<div class="dash-att' + (a.uploading ? ' uploading' : '') + '">' + (a.url ? '<img src="' + a.url + '" alt="">' : IC.cam) +
+        '<button type="button" class="dash-att__x" data-att-remove="' + i + '">' + IC.x + '</button></div>').join('');
+    }
+
+    // ── click delegation for capture + attach controls ──
+    document.addEventListener('click', e => {
+      const rm = e.target.closest('[data-att-remove]');
+      if (rm) { dashAtts.splice(+rm.getAttribute('data-att-remove'), 1); renderAtts(); return; }
+      const t = e.target.closest('[data-cap]'); if (!t) return;
+      const parts = t.getAttribute('data-cap').split(':'), cmd = parts[0], arg = parts[1];
+      switch (cmd) {
+        case 'back': closeCapture(); break;
+        case 'mic-toggle': (dashRec && dashRec.phase === 'recording') ? finishVoice() : startVoice(); break;
+        case 'voice-reset': dashRec = null; renderCapture(); break;
+        case 'voice-use': goToReview({ mode: 'voice', media: [{ kind: 'voice', duration: dashRec ? dashRec.elapsed : 0 }] }); break;
+        case 'photos-add': pickPhotos(); break;
+        case 'media-remove': dashMedia.splice(+arg, 1); renderCapture(); break;
+        case 'media-clear': dashMedia = []; renderCapture(); break;
+        case 'media-use':
+          if (dashMedia.some(m => m.uploading)) return; // wait for uploads to finish
+          goToReview({ mode: capMode, media: dashMedia.map(cleanMedia) });
+          break;
+        case 'vid-upload': pickVideo(); break;
+        case 'vid-record': startVid(); break;
+        case 'vid-stop': stopVid(); break;
+      }
+    });
+
+    // ════════════════════════════ HERO ENTRY POINTS ════════════════════════
+    // Attach files to the typed description (stays on index.html).
+    window._dashShowAttachMenu = function () {
+      pickFiles('image/*', true, 'environment', files => {
+        files.slice(0, 4 - dashAtts.length).forEach(f => {
+          const item = { url: URL.createObjectURL(f), uploading: true };
+          dashAtts.push(item);
+          uploadAttachment(f).then(d => { item.url = d.url; item.uploading = false; renderAtts(); })
+            .catch(() => { const i = dashAtts.indexOf(item); if (i > -1) dashAtts.splice(i, 1); renderAtts(); });
+        });
+        dashAtts = dashAtts.slice(0, 4); renderAtts();
+      });
+    };
+
+    // Inline media capture entry points (mic / camera / video buttons).
+    window._dashShowCameraExplain = function () { openCapture('photos'); };
+    window._dashShowMicExplain   = function () { openCapture('voice'); };
+    window._dashShowVideoExplain = function () { openCapture('video'); };
+
+    // Send the typed request → review screen, carrying any attached files.
+    window._dashSubmitText = function () {
+      const ta = document.getElementById('dash-textarea');
+      const text = ta ? ta.value.trim() : '';
+      if (!text) { if (ta) ta.focus(); return; }
+      const payload = { mode: 'text', text };
+      const atts = dashAtts.map(a => ({ url: a.url })).filter(a => a.url);
+      if (atts.length) payload.atts = atts;
+      goToReview(payload);
+    };
+  })();
+
+  // ─── First visit tour ─────────────────────────────────────────
+  const tourStorageKey = 'servi_index_tour_seen_v1';
+  let tourIndex = 0;
+  let tourActive = false;
+  let tourTarget = null;
+  let tourLastFocus = null;
+  let tourPositionFrame = null;
+
+  function getTourCopy() {
+    if (getLocale() === 'es') {
+      return {
+        replay: 'Ver guía rápida',
+        close: 'Cerrar guía',
+        back: 'Atrás',
+        next: 'Siguiente',
+        end: 'Terminar',
+        progress: current => `${current} / 3`,
+        steps: [
+          {
+            selector: '.dash-hero__textarea-wrap',
+            title: 'Dinos qué necesitas',
+            body: 'Escribe como si mandaras un mensaje: qué pasó, dónde es y cuándo te queda bien. Si está claro, SERVI lo convierte en una solicitud lista para cotizar.',
+            exampleLabel: 'Usar ejemplo: fuga debajo del lavabo hoy por la tarde',
+            exampleText: 'Necesito arreglar una fuga debajo del lavabo. Estoy en Santa Fe y me queda bien hoy por la tarde.',
+          },
+          {
+            selector: '.dash-hero__media-row',
+            title: 'Fotos o voz si es más rápido',
+            body: 'Toca cámara para mostrar el problema o micrófono para explicarlo hablando. Los detalles visuales ayudan a elegir al especialista correcto desde el inicio.',
+          },
+          {
+            selector: '.dash-cats-grid',
+            title: 'También puedes explorar',
+            body: 'Si prefieres buscar por categoría, entra por aquí. Elige limpieza, reparación, mudanza, bienestar o proveedores y encuentra el servicio exacto sin tener que describirlo desde cero.',
+          },
+        ],
+      };
+    }
+
+    return {
+      replay: 'Quick tour',
+      close: 'Close guide',
+      back: 'Back',
+      next: 'Next',
+      end: 'End tour',
+      progress: current => `${current} / 3`,
+      steps: [
+        {
+          selector: '.dash-hero__textarea-wrap',
+          title: 'Tell us what you need',
+          body: 'Write it like a message: what happened, where it is, and when you are available. SERVI turns clear details into a request ready for quotes.',
+          exampleLabel: 'Use example: leak under the sink this afternoon',
+          exampleText: 'I need a leak under the sink repaired. I am in Santa Fe and today afternoon works for me.',
+        },
+        {
+          selector: '.dash-hero__media-row',
+          title: 'Photos or voice if faster',
+          body: 'Tap camera to show the issue or microphone to explain it out loud. Visual details help match the right specialist from the start.',
+        },
+        {
+          selector: '.dash-cats-grid',
+          title: 'You can also browse',
+          body: 'If you would rather search by category, start here. Pick cleaning, repair, moving, wellness, or suppliers and find the exact service without describing it from scratch.',
+        },
+      ],
+    };
   }
 
-  function _removeCameraToast(id) {
-    const el = document.getElementById(id);
-    if (el) el.remove();
+  function canUseStorage() {
+    try {
+      const key = '__servi_storage_probe__';
+      localStorage.setItem(key, '1');
+      localStorage.removeItem(key);
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
-  // ─── Smart Request media entry points ─────────────────────────
-  window._dashAttachPhotos = function() { window.openSmartRequest && window.openSmartRequest({ mode: 'photos' }); };
-  window._dashAttachFiles = function() { window.openSmartRequest && window.openSmartRequest({ mode: 'photos' }); };
-  window._dashShowCameraExplain = function() { window.openSmartRequest && window.openSmartRequest({ mode: 'photos' }); };
-  window._dashShowMicExplain = function() { window.openSmartRequest && window.openSmartRequest({ mode: 'voice' }); };
-  window._closeMediaExplain = function() { document.body.style.overflow = ''; };
-  window._dashTriggerHeroPhotos = function() { window.openSmartRequest && window.openSmartRequest({ mode: 'photos' }); };
-  window._dashTriggerHeroVideo = function() { window.openSmartRequest && window.openSmartRequest({ mode: 'video' }); };
-  window._dashStartHeroRecording = function() { window.openSmartRequest && window.openSmartRequest({ mode: 'voice' }); };
+  const hasLocalStorage = canUseStorage();
 
-  // ─── Dashboard hero textarea submit ───────────────────────────
-  window._dashSubmitText = function() {
-    const ta = document.getElementById('dash-textarea');
-    const text = ta ? ta.value.trim() : '';
-    if (!text) { if (ta) ta.focus(); return; }
-    window.openSmartRequest && window.openSmartRequest({ text });
-    if (ta) ta.value = '';
+  function hasSeenTour() {
+    return hasLocalStorage && localStorage.getItem(tourStorageKey) === 'true';
+  }
+
+  function markTourSeen() {
+    if (hasLocalStorage) localStorage.setItem(tourStorageKey, 'true');
+  }
+
+  function setTourTarget(nextTarget) {
+    if (tourTarget) tourTarget.classList.remove('servi-tour-target');
+    tourTarget = nextTarget || null;
+    if (tourTarget) tourTarget.classList.add('servi-tour-target');
+  }
+
+  function scheduleTourPosition() {
+    if (!tourActive) return;
+    if (tourPositionFrame) cancelAnimationFrame(tourPositionFrame);
+    tourPositionFrame = requestAnimationFrame(positionTourCard);
+  }
+
+  function positionTourCard() {
+    tourPositionFrame = null;
+    if (!tourActive || !tourTarget) return;
+
+    const tour = document.getElementById('servi-tour');
+    const card = document.getElementById('servi-tour-card');
+    if (!tour || !card) return;
+
+    const rect = tourTarget.getBoundingClientRect();
+    const cardRect = card.getBoundingClientRect();
+    const margin = window.innerWidth <= 520 ? 16 : 24;
+    const gap = window.innerWidth <= 520 ? 22 : 28;
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    const maxLeft = Math.max(margin, window.innerWidth - cardRect.width - margin);
+    let left = centerX - cardRect.width / 2;
+    left = Math.min(Math.max(margin, left), maxLeft);
+
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const spaceAbove = rect.top;
+    let placement = 'bottom';
+    let top = rect.bottom + gap;
+
+    if (spaceBelow < cardRect.height + gap + margin && spaceAbove > spaceBelow) {
+      placement = 'top';
+      top = rect.top - cardRect.height - gap;
+    }
+
+    top = Math.min(Math.max(margin, top), Math.max(margin, window.innerHeight - cardRect.height - margin));
+    const pointerLeft = Math.min(Math.max(28, centerX - left), cardRect.width - 28);
+
+    tour.dataset.placement = placement;
+    tour.style.setProperty('--tour-card-left', `${left}px`);
+    tour.style.setProperty('--tour-card-top', `${top}px`);
+    tour.style.setProperty('--tour-pointer-left', `${pointerLeft}px`);
+    tour.style.setProperty('--tour-x', `${Math.round((centerX / window.innerWidth) * 100)}%`);
+    tour.style.setProperty('--tour-y', `${Math.round((centerY / window.innerHeight) * 100)}%`);
+  }
+
+  function renderTourStep() {
+    const copy = getTourCopy();
+    const steps = copy.steps;
+    const step = steps[tourIndex];
+    const tour = document.getElementById('servi-tour');
+    const title = document.getElementById('servi-tour-title');
+    const body = document.getElementById('servi-tour-body');
+    const kicker = document.getElementById('servi-tour-kicker');
+    const close = document.getElementById('servi-tour-close');
+    const back = document.getElementById('servi-tour-back');
+    const next = document.getElementById('servi-tour-next');
+    const exampleWrap = document.getElementById('servi-tour-example-wrap');
+    const example = document.getElementById('servi-tour-example');
+    if (!tour || !title || !body || !kicker || !close || !back || !next || !exampleWrap || !example) return;
+
+    const target = document.querySelector(step.selector);
+    if (!target) {
+      window._serviTourClose && window._serviTourClose(true);
+      return;
+    }
+
+    tour.dataset.step = String(tourIndex);
+    setTourTarget(target);
+    title.textContent = step.title;
+    body.textContent = step.body;
+    kicker.textContent = copy.progress(tourIndex + 1);
+    close.setAttribute('aria-label', copy.close);
+    back.textContent = copy.back;
+    next.textContent = tourIndex === steps.length - 1 ? copy.end : copy.next;
+    back.hidden = tourIndex === 0;
+
+    if (step.exampleText) {
+      exampleWrap.hidden = false;
+      example.textContent = step.exampleLabel;
+      example.onclick = function () {
+        const textarea = document.getElementById('dash-textarea');
+        if (!textarea) return;
+        textarea.value = step.exampleText;
+        textarea.focus({ preventScroll: true });
+        textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+      };
+    } else {
+      exampleWrap.hidden = true;
+      example.onclick = null;
+    }
+
+    document.querySelectorAll('.servi-tour__rail-dot').forEach((dot, index) => {
+      dot.dataset.active = index === tourIndex ? 'true' : 'false';
+    });
+
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    target.scrollIntoView({
+      behavior: prefersReducedMotion ? 'auto' : 'smooth',
+      block: 'center',
+      inline: 'center',
+    });
+
+    scheduleTourPosition();
+    setTimeout(scheduleTourPosition, prefersReducedMotion ? 40 : 360);
+  }
+
+  function bindTourEvents() {
+    const tour = document.getElementById('servi-tour');
+    const close = document.getElementById('servi-tour-close');
+    const back = document.getElementById('servi-tour-back');
+    const next = document.getElementById('servi-tour-next');
+    const scrim = tour?.querySelector('.servi-tour__scrim');
+    if (!tour || !close || !back || !next || !scrim || tour.dataset.bound === 'true') return;
+
+    tour.dataset.bound = 'true';
+    close.addEventListener('click', () => window._serviTourClose(true));
+    scrim.addEventListener('click', () => window._serviTourClose(true));
+    back.addEventListener('click', () => {
+      tourIndex = Math.max(0, tourIndex - 1);
+      renderTourStep();
+    });
+    next.addEventListener('click', () => {
+      const lastIndex = getTourCopy().steps.length - 1;
+      if (tourIndex >= lastIndex) {
+        window._serviTourClose(true);
+        return;
+      }
+      tourIndex += 1;
+      renderTourStep();
+    });
+    document.addEventListener('keydown', function (event) {
+      if (!tourActive) return;
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        window._serviTourClose(true);
+      }
+      if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        next.click();
+      }
+      if (event.key === 'ArrowLeft' && tourIndex > 0) {
+        event.preventDefault();
+        back.click();
+      }
+    });
+  }
+
+  function addTourViewportListeners() {
+    window.addEventListener('resize', scheduleTourPosition);
+    window.addEventListener('scroll', scheduleTourPosition, { passive: true });
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', scheduleTourPosition);
+      window.visualViewport.addEventListener('scroll', scheduleTourPosition);
+    }
+  }
+
+  function removeTourViewportListeners() {
+    window.removeEventListener('resize', scheduleTourPosition);
+    window.removeEventListener('scroll', scheduleTourPosition);
+    if (window.visualViewport) {
+      window.visualViewport.removeEventListener('resize', scheduleTourPosition);
+      window.visualViewport.removeEventListener('scroll', scheduleTourPosition);
+    }
+  }
+
+  window._serviTourStart = function(options) {
+    const opts = options || {};
+    if (tourActive) return;
+    if (!opts.force && hasSeenTour()) return;
+
+    const tour = document.getElementById('servi-tour');
+    const title = document.getElementById('servi-tour-title');
+    if (!tour || !title) return;
+
+    bindTourEvents();
+    tourLastFocus = document.activeElement;
+    tourIndex = 0;
+    tourActive = true;
+    tour.removeAttribute('hidden');
+    addTourViewportListeners();
+    renderTourStep();
+
+    requestAnimationFrame(() => {
+      tour.dataset.active = 'true';
+      title.focus?.({ preventScroll: true });
+    });
   };
+
+  window._serviTourClose = function(markSeen) {
+    const tour = document.getElementById('servi-tour');
+    if (!tour || !tourActive) return;
+
+    if (markSeen) markTourSeen();
+    tourActive = false;
+    tour.dataset.active = 'false';
+    removeTourViewportListeners();
+    setTourTarget(null);
+    if (tourPositionFrame) cancelAnimationFrame(tourPositionFrame);
+    tourPositionFrame = null;
+
+    setTimeout(() => {
+      if (tour.dataset.active !== 'true') tour.setAttribute('hidden', '');
+    }, 260);
+
+    if (tourLastFocus && typeof tourLastFocus.focus === 'function') {
+      setTimeout(() => tourLastFocus.focus({ preventScroll: true }), 40);
+    }
+  };
+
+  function maybeStartFirstVisitTour() {
+    if (hasSeenTour()) return;
+    if (window.location.hash) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('discover_service')) return;
+    setTimeout(() => {
+      if (!document.getElementById('servi-tour') || hasSeenTour()) return;
+      window._serviTourStart && window._serviTourStart();
+    }, 850);
+  }
 
   function renderSteps() {
     const grid = document.getElementById('steps-grid');
@@ -958,6 +1604,7 @@
 
   renderAll();
   loadSavedAddress();
+  maybeStartFirstVisitTour();
   window.addEventListener('langchange', renderAll);
 
   // ─── Smart Request booking compatibility shims ─────────────────

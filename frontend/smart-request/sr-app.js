@@ -681,8 +681,16 @@
     var ov = document.getElementById('sr-overlay'); if (ov) ov.hidden = false;
     document.body.classList.add('sr-open');
     reset();
-    if (opts.mode && opts.mode !== 'text') { switchMode(opts.mode); }
-    else if (opts.text) { S.text = String(opts.text); render(); runAnalyze('text', String(opts.text).trim()); }
+    if (opts.media && opts.media.length) {            // inline-capture handoff → straight to review
+      S.mode = opts.mode || 'photos';
+      S.media = opts.media;
+      runAnalyze(S.mode);
+    } else if (opts.mode && opts.mode !== 'text') { switchMode(opts.mode); }
+    else if (opts.text) {
+      S.text = String(opts.text);
+      if (opts.atts && opts.atts.length) S.atts = opts.atts;  // carry attachments through to submit
+      render(); runAnalyze('text', String(opts.text).trim());
+    }
   };
   window.closeSmartRequest = function () {
     stopWave(); if (S.rec && S.rec.timer) clearInterval(S.rec.timer);
