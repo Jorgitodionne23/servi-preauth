@@ -21,6 +21,9 @@
   // ── Natural-language date inference → real date ──────────────────────────
   const DAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
   function inferDate(text) {
+    if (window.ServiHeuristic && typeof window.ServiHeuristic.inferDate === 'function') {
+      return window.ServiHeuristic.inferDate(text);
+    }
     const t = norm(text);
     const today = new Date();
     const mk = (d) => {
@@ -47,6 +50,9 @@
   }
 
   function inferUrgency(text) {
+    if (window.ServiHeuristic && typeof window.ServiHeuristic.inferUrgency === 'function') {
+      return window.ServiHeuristic.inferUrgency(text);
+    }
     const t = norm(text);
     if (/\b(asap|urgent|urgently|emergency|right now|immediately|today|tonight|now|flooding|flooded|burst|leaking everywhere|locked out)\b/.test(t)) return 'asap';
     if (inferDate(t) || /\b(schedule|next week|on (mon|tue|wed|thu|fri|sat|sun)|tomorrow|weekend|at \d)\b/.test(t)) return 'scheduled';
@@ -89,6 +95,15 @@
   }
 
   function heuristic(text) {
+    if (window.ServiHeuristic && typeof window.ServiHeuristic.parse === 'function') {
+      return window.ServiHeuristic.parse(text, {
+        catalog: CAT(),
+        signals: window.SERVI_HEURISTIC_SIGNALS || {},
+        followups: window.SERVI_FOLLOWUPS || {},
+        genericFollowups: window.SERVI_GENERIC_FOLLOWUPS || [],
+        lang: (window.__lang === 'en') ? 'en' : 'es',
+      });
+    }
     const m = heuristicMatch(text);
     const urgency = inferUrgency(text);
     const dateInfo = urgency === 'scheduled' ? inferDate(text) : null;

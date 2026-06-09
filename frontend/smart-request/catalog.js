@@ -116,6 +116,294 @@ window.SERVI_CATALOG = {
   },
 };
 
+/* Bilingual signals for deterministic fallback matching.
+   Keep labels/services English-canonical above; these terms only influence scoring. */
+window.SERVI_HEURISTIC_SIGNALS = {
+  'home-cleaning': {
+    terms: ['limpieza', 'limpiar', 'aseo', 'casa', 'departamento', 'depa', 'cocina', 'baño', 'bano', 'recamara', 'sala', 'aspirar', 'sacudir', 'muchacha', 'personal de limpieza'],
+    services: [
+      { index: 0, terms: ['limpieza semanal', 'departamento', 'depa'] },
+      { index: 1, terms: ['cocina', 'estufa', 'parrilla'] },
+      { index: 2, terms: ['baño', 'bano', 'wc', 'regadera'] },
+      { index: 3, terms: ['aspirar', 'sacudir', 'recamaras', 'sala'] },
+      { index: 4, terms: ['visitas', 'invitados', 'antes de recibir'] },
+    ],
+    negative: ['tuberia', 'fuga', 'mudanza', 'terapia'],
+  },
+  'deep-cleaning': {
+    terms: ['deep clean', 'deep cleaning', 'limpieza profunda', 'profunda', 'a fondo', 'desincrustar', 'sarro', 'moho', 'cochambre', 'horno', 'refrigerador', 'refri', 'closet', 'alacena', 'post fiesta', 'despues de fiesta'],
+    services: [
+      { index: 0, terms: ['post fiesta', 'despues de fiesta', 'evento', 'party'] },
+      { index: 1, terms: ['horno', 'refrigerador', 'refri'] },
+      { index: 2, terms: ['sarro', 'grout', 'juntas', 'azulejo'] },
+      { index: 3, terms: ['closet', 'alacena', 'despensa'] },
+      { index: 4, terms: ['toda la casa', 'estacional', 'temporada'] },
+    ],
+    negative: ['lavabo tapado', 'fuga', 'llaves'],
+  },
+  'dry-cleaning': {
+    terms: ['tintoreria', 'tintorería', 'lavanderia', 'lavandería', 'ropa', 'traje', 'saco', 'vestido', 'mancha', 'edredon', 'edredón', 'cobija', 'cortina', 'planchado'],
+    services: [
+      { index: 0, terms: ['traje', 'saco', 'blazer'] },
+      { index: 1, terms: ['vestido', 'mancha', 'desmanchar'] },
+      { index: 2, terms: ['edredon', 'cobija', 'comforter'] },
+      { index: 3, terms: ['cortina', 'blancos'] },
+      { index: 4, terms: ['recoleccion', 'recoger ropa', 'entrega'] },
+    ],
+  },
+  gardening: {
+    terms: ['jardin', 'jardín', 'jardinero', 'pasto', 'cesped', 'césped', 'podar', 'poda', 'arbusto', 'riego', 'hojas', 'patio', 'plantas'],
+    services: [
+      { index: 0, terms: ['cortar pasto', 'corte de pasto', 'cesped'] },
+      { index: 1, terms: ['mantenimiento jardin', 'plantas'] },
+      { index: 2, terms: ['poda', 'arbustos', 'setos'] },
+      { index: 3, terms: ['riego', 'aspersor', 'irrigacion'] },
+      { index: 4, terms: ['hojas', 'limpieza exterior'] },
+    ],
+  },
+  plumbing: {
+    terms: ['plomero', 'plomeria', 'plomería', 'lavabo', 'fregadero', 'tarja', 'drenaje', 'destape', 'tapado', 'tapada', 'wc', 'inodoro', 'escusado', 'fuga', 'gotea', 'gotera', 'llave de agua', 'mezcladora', 'tuberia', 'tubería', 'boiler', 'calentador', 'presion de agua', 'presión de agua', 'inundacion', 'inundación'],
+    services: [
+      { index: 0, terms: ['lavabo tapado', 'fregadero tapado', 'tarja tapada', 'drenaje tapado', 'destape'] },
+      { index: 1, terms: ['fuga wc', 'fuga inodoro', 'fuga escusado', 'toilet leak'] },
+      { index: 2, terms: ['cambio de llave', 'mezcladora', 'faucet', 'tap'] },
+      { index: 3, terms: ['boiler', 'calentador', 'water heater'] },
+      { index: 4, terms: ['fuga tuberia', 'tuberia rota', 'pipe leak'] },
+      { index: 5, terms: ['baja presion', 'presion de agua'] },
+    ],
+    negative: ['luz', 'lampara', 'apagador', 'enchufe', 'cerradura', 'llaves adentro'],
+  },
+  electrical: {
+    terms: ['electricista', 'electricidad', 'electrico', 'eléctrico', 'luz', 'lampara', 'lámpara', 'luminaria', 'contacto', 'enchufe', 'apagador', 'interruptor', 'breaker', 'pastilla', 'corto', 'circuito', 'ventilador de techo', 'cableado', 'chispa'],
+    services: [
+      { index: 0, terms: ['instalar lampara', 'luminaria', 'foco', 'light fixture'] },
+      { index: 1, terms: ['contacto', 'enchufe', 'apagador', 'switch', 'outlet'] },
+      { index: 2, terms: ['corto', 'breaker', 'pastilla', 'se bota'] },
+      { index: 3, terms: ['ventilador de techo', 'ceiling fan'] },
+      { index: 4, terms: ['cableado', 'wiring'] },
+    ],
+    negative: ['fuga de agua', 'lavabo', 'tarja', 'llaves perdidas'],
+  },
+  carpentry: {
+    terms: ['carpintero', 'carpinteria', 'carpintería', 'madera', 'repisas', 'repisa', 'closet', 'clóset', 'gabinete', 'puerta', 'mueble', 'zoclo', 'moldura'],
+    services: [
+      { index: 0, terms: ['repisa', 'repisas', 'estante a medida'] },
+      { index: 1, terms: ['puerta closet', 'gabinete'] },
+      { index: 2, terms: ['ajustar puerta', 'puerta interior'] },
+      { index: 3, terms: ['mueble de madera', 'wood furniture'] },
+      { index: 4, terms: ['zoclo', 'moldura', 'baseboard'] },
+    ],
+  },
+  locksmith: {
+    terms: ['cerrajero', 'cerrajeria', 'cerrajería', 'cerradura', 'chapa', 'llave', 'llaves', 'encerrado', 'encerrada', 'me quede afuera', 'me quedé afuera', 'llaves adentro', 'abrir puerta', 'duplicado', 'copia de llave'],
+    services: [
+      { index: 0, terms: ['llaves adentro', 'me quede afuera', 'abrir puerta', 'locked out', 'home lockout'] },
+      { index: 1, terms: ['auto', 'coche', 'carro', 'car lockout'] },
+      { index: 2, terms: ['duplicado', 'copia de llave', 'key copy'] },
+      { index: 3, terms: ['cerradura inteligente', 'smart lock'] },
+      { index: 4, terms: ['cerradura atorada', 'chapa atorada'] },
+    ],
+    negative: ['llave de agua', 'mezcladora', 'faucet'],
+  },
+  handyman: {
+    terms: ['handyman', 'todologo', 'todólogo', 'montar', 'colgar', 'instalar', 'pared', 'muro', 'tele', 'television', 'televisión', 'tv', 'resanar', 'hoyo', 'grieta', 'cortinero', 'persiana', 'silicon', 'silicón', 'cuadro', 'espejo'],
+    services: [
+      { index: 0, terms: ['montar tv', 'tele en la pared', 'television en pared', 'tv wall'] },
+      { index: 1, terms: ['resanar', 'hoyo', 'grieta', 'patch wall'] },
+      { index: 2, terms: ['cortinero', 'persiana', 'curtain rod', 'blind'] },
+      { index: 3, terms: ['silicon', 'silicón', 'caulk'] },
+      { index: 4, terms: ['colgar cuadro', 'colgar espejo', 'marco'] },
+    ],
+    negative: ['cableado', 'boiler', 'mudanza'],
+  },
+  'assembly-installation': {
+    terms: ['armar', 'ensamblar', 'ensamble', 'montaje', 'instalacion', 'instalación', 'cama', 'base de cama', 'escritorio', 'librero', 'estanteria', 'estantería', 'lavadora', 'secadora', 'ikea', 'mueble para armar'],
+    services: [
+      { index: 0, terms: ['armar cama', 'base de cama', 'bed frame'] },
+      { index: 1, terms: ['escritorio', 'librero', 'bookcase'] },
+      { index: 2, terms: ['estanteria modular', 'shelving'] },
+      { index: 3, terms: ['conectar lavadora', 'secadora', 'washer', 'dryer'] },
+      { index: 4, terms: ['ikea', 'flat pack', 'mueble para armar'] },
+    ],
+  },
+  tailoring: {
+    terms: ['sastre', 'sastreria', 'sastrería', 'costura', 'coser', 'dobladillo', 'bastilla', 'pantalon', 'pantalón', 'vestido', 'falda', 'cierre', 'zipper', 'ajuste de ropa'],
+    services: [
+      { index: 0, terms: ['dobladillo', 'bastilla', 'pantalon'] },
+      { index: 1, terms: ['vestido', 'falda', 'alteracion'] },
+      { index: 2, terms: ['cierre', 'zipper'] },
+      { index: 3, terms: ['saco', 'traje', 'blazer'] },
+      { index: 4, terms: ['cortina', 'mantel'] },
+    ],
+  },
+  moving: {
+    terms: ['mudanza', 'mudar', 'mudarnos', 'mover casa', 'cajas', 'empacar', 'camioneta', 'cargar', 'descargar', 'nuevo hogar', 'flete'],
+    services: [
+      { index: 0, terms: ['mudanza departamento', 'mudanza ciudad'] },
+      { index: 1, terms: ['empacar', 'cajas', 'packing'] },
+      { index: 2, terms: ['cargar', 'descargar', 'camioneta', 'truck'] },
+      { index: 3, terms: ['instalarse', 'nuevo hogar', 'move in'] },
+    ],
+  },
+  'large-items': {
+    terms: ['objeto grande', 'mueble grande', 'sofa', 'sofá', 'sillon', 'sillón', 'colchon', 'colchón', 'base de cama', 'refrigerador', 'refri', 'lavadora', 'comedor', 'mesa grande', 'pesado'],
+    services: [
+      { index: 0, terms: ['sofa', 'sofá', 'sillon'] },
+      { index: 1, terms: ['colchon', 'base de cama'] },
+      { index: 2, terms: ['refrigerador', 'refri', 'lavadora'] },
+      { index: 3, terms: ['comedor', 'mesa grande'] },
+    ],
+  },
+  errands: {
+    terms: ['mandado', 'mandados', 'super', 'súper', 'despensa', 'farmacia', 'recoger', 'llevar', 'entregar', 'documentos', 'llaves', 'devolucion', 'devolución', 'cambio en tienda'],
+    services: [
+      { index: 0, terms: ['super', 'súper', 'despensa', 'groceries'] },
+      { index: 1, terms: ['farmacia', 'medicinas', 'pharmacy'] },
+      { index: 2, terms: ['documentos', 'llaves', 'drop off'] },
+      { index: 3, terms: ['devolucion', 'cambio', 'returns'] },
+    ],
+  },
+  deliveries: {
+    terms: ['entrega', 'entregar', 'envio', 'envío', 'paquete', 'mensajeria', 'mensajería', 'flores', 'regalo', 'mismo dia', 'mismo día', 'ruta'],
+    services: [
+      { index: 0, terms: ['express', 'mismo dia', 'same day'] },
+      { index: 1, terms: ['compra grande', 'tienda'] },
+      { index: 2, terms: ['catering', 'charolas', 'tray'] },
+      { index: 3, terms: ['flores', 'regalo', 'gift'] },
+      { index: 4, terms: ['ruta', 'recurrente'] },
+    ],
+  },
+  massage: {
+    terms: ['masaje', 'masajista', 'relajante', 'descontracturante', 'espalda', 'pareja', 'muscular', 'estres', 'estrés', 'spa'],
+    services: [
+      { index: 0, terms: ['relajante', 'domicilio'] },
+      { index: 1, terms: ['descontracturante', 'espalda', 'tension'] },
+      { index: 2, terms: ['pareja', 'dos personas'] },
+      { index: 3, terms: ['recuperacion muscular', 'muscular'] },
+      { index: 4, terms: ['viaje', 'estres'] },
+    ],
+  },
+  therapist: {
+    terms: ['terapia', 'terapeuta', 'psicologo', 'psicólogo', 'ansiedad', 'estres', 'estrés', 'pareja', 'duelo', 'adolescente', 'salud mental'],
+    services: [
+      { index: 0, terms: ['individual', 'en linea', 'online'] },
+      { index: 1, terms: ['ansiedad', 'estres'] },
+      { index: 2, terms: ['pareja'] },
+      { index: 3, terms: ['duelo', 'transicion'] },
+      { index: 4, terms: ['adolescente', 'teen'] },
+    ],
+  },
+  'personal-trainer': {
+    terms: ['entrenador', 'personal trainer', 'ejercicio', 'rutina', 'fuerza', 'bajar de peso', 'movilidad', 'estiramiento', 'fitness', 'acondicionamiento'],
+    services: [
+      { index: 0, terms: ['fuerza', 'casa'] },
+      { index: 1, terms: ['bajar de peso', 'weight loss'] },
+      { index: 2, terms: ['movilidad', 'estiramiento'] },
+      { index: 3, terms: ['principiante'] },
+      { index: 4, terms: ['bajo impacto'] },
+    ],
+  },
+  'pet-care': {
+    terms: ['mascota', 'perro', 'gato', 'pasear', 'paseo', 'pet sitting', 'cuidar mascota', 'baño mascota', 'cepillado', 'alimento', 'croquetas', 'medicamento mascota'],
+    services: [
+      { index: 0, terms: ['paseo', 'pasear perro', 'dog walking'] },
+      { index: 1, terms: ['pet sitting', 'viaje', 'cuidar'] },
+      { index: 2, terms: ['baño', 'cepillado', 'grooming'] },
+      { index: 3, terms: ['alimento', 'agua', 'feed'] },
+      { index: 4, terms: ['medicamento', 'medicina mascota'] },
+    ],
+  },
+  'child-care': {
+    terms: ['niñera', 'ninera', 'cuidado infantil', 'niños', 'ninos', 'bebé', 'bebe', 'infante', 'escuela', 'recoger niños', 'date night'],
+    services: [
+      { index: 0, terms: ['despues de escuela', 'after school'] },
+      { index: 1, terms: ['noche', 'salida', 'date night'] },
+      { index: 2, terms: ['recoger niños', 'escuela'] },
+      { index: 3, terms: ['fin de semana'] },
+      { index: 4, terms: ['bebe', 'infante'] },
+    ],
+  },
+  'elder-assistance': {
+    terms: ['adulto mayor', 'mayor', 'anciano', 'abuelito', 'abuelita', 'compañia', 'compañía', 'cuidador', 'medicamentos', 'consulta medica', 'movilidad'],
+    services: [
+      { index: 0, terms: ['compañia', 'visita'] },
+      { index: 1, terms: ['recordatorio medicamento', 'medicamentos'] },
+      { index: 2, terms: ['consulta medica', 'doctor'] },
+      { index: 3, terms: ['preparar alimentos', 'comida'] },
+      { index: 4, terms: ['caminar', 'movilidad'] },
+    ],
+  },
+  'artisan-bread': {
+    terms: ['pan', 'panaderia', 'panadería', 'masa madre', 'brioche', 'pan dulce', 'bollos', 'panecillos', 'suscripcion de pan'],
+    services: [
+      { index: 0, terms: ['masa madre', 'sourdough'] },
+      { index: 1, terms: ['brioche', 'pan dulce', 'pastry'] },
+      { index: 2, terms: ['brunch', 'desayuno'] },
+      { index: 3, terms: ['bollos', 'panecillos'] },
+      { index: 4, terms: ['suscripcion', 'semanal'] },
+    ],
+  },
+  'fresh-dairy': {
+    terms: ['lacteos', 'lácteos', 'leche', 'yogurt', 'queso', 'mantequilla', 'crema', 'sin lactosa'],
+    services: [
+      { index: 0, terms: ['leche', 'yogurt'] },
+      { index: 1, terms: ['tabla de quesos', 'queso'] },
+      { index: 2, terms: ['mantequilla', 'crema'] },
+      { index: 3, terms: ['sin lactosa'] },
+      { index: 4, terms: ['desayuno'] },
+    ],
+  },
+  pharmacy: {
+    terms: ['farmacia', 'receta', 'medicina', 'medicamento', 'botiquin', 'botiquín', 'primeros auxilios', 'articulos bebe', 'artículos bebé'],
+    services: [
+      { index: 0, terms: ['receta', 'prescription'] },
+      { index: 1, terms: ['sin receta', 'over the counter'] },
+      { index: 2, terms: ['botiquin', 'primeros auxilios'] },
+      { index: 3, terms: ['bebe', 'baby care'] },
+    ],
+  },
+  catering: {
+    terms: ['catering', 'charolas', 'comida oficina', 'brunch', 'bocadillos', 'evento', 'coctel', 'cóctel', 'buffet', 'box lunch'],
+    services: [
+      { index: 0, terms: ['oficina', 'lunch trays'] },
+      { index: 1, terms: ['brunch'] },
+      { index: 2, terms: ['bocadillos', 'coctel'] },
+      { index: 3, terms: ['buffet', 'familia'] },
+      { index: 4, terms: ['box lunch', 'equipo'] },
+    ],
+  },
+  'organic-butcher': {
+    terms: ['carniceria', 'carnicería', 'carne', 'cortes', 'asado', 'pollo', 'carne molida', 'hamburguesa', 'huesos', 'caldo', 'steak'],
+    services: [
+      { index: 0, terms: ['asado', 'steak'] },
+      { index: 1, terms: ['pollo'] },
+      { index: 2, terms: ['carne molida', 'hamburguesa'] },
+      { index: 3, terms: ['cortes especiales'] },
+      { index: 4, terms: ['huesos', 'caldo'] },
+    ],
+  },
+  fish: {
+    terms: ['pescaderia', 'pescadería', 'pescado', 'mariscos', 'salmon', 'salmón', 'camaron', 'camarón', 'atun', 'atún', 'sushi'],
+    services: [
+      { index: 0, terms: ['salmon', 'filete'] },
+      { index: 1, terms: ['camaron'] },
+      { index: 2, terms: ['atun', 'sushi'] },
+      { index: 3, terms: ['paquete familiar', 'mariscos'] },
+      { index: 4, terms: ['pescado entero'] },
+    ],
+  },
+  'organic-vegetables': {
+    terms: ['verduras', 'vegetales', 'organico', 'orgánico', 'frutas', 'produce', 'lechuga', 'ensalada', 'temporada', 'jugos', 'smoothies', 'canasta'],
+    services: [
+      { index: 0, terms: ['caja semanal', 'organicas'] },
+      { index: 1, terms: ['hojas', 'ensalada'] },
+      { index: 2, terms: ['temporada', 'cocinar'] },
+      { index: 3, terms: ['jugos', 'smoothies'] },
+      { index: 4, terms: ['canasta', 'frutas'] },
+    ],
+  },
+};
+
 /* Canned follow-up questions per subcategory — used by the heuristic engine
    (and as a safety net for the AI engine). Each: { q, key, chips? } */
 window.SERVI_FOLLOWUPS = {
