@@ -1555,7 +1555,7 @@
         (es ? 'Verificar' : 'Verify') +
       '</button>' +
       (collectPhone
-        ? '<button onclick="window.__uslLoginWithSecondaryPhone()" id="secondary-phone-login-btn" style="background:none;border:none;font-size:13px;color:#666;cursor:pointer;font-family:\'DM Sans\',sans-serif;width:100%;text-align:center;padding:8px;text-decoration:underline">' +
+        ? '<button onclick="window.__uslLoginWithSecondaryPhone()" id="secondary-phone-login-btn" style="display:none;background:none;border:none;font-size:13px;color:#666;cursor:pointer;font-family:\'DM Sans\',sans-serif;width:100%;text-align:center;padding:8px;text-decoration:underline">' +
             (es ? '¿Este teléfono ya tiene cuenta? Inicia sesión' : 'Phone already has an account? Log in') +
           '</button>'
         : '<button onclick="window.__uslSkipSecondary()" style="background:none;border:none;font-size:13px;color:#888;cursor:pointer;font-family:\'DM Sans\',sans-serif;width:100%;text-align:center;padding:8px;text-decoration:underline">' +
@@ -1576,6 +1576,8 @@
       var candidatePhone = selectedDial + digits;
       var nextBtn = document.querySelector('button[onclick="window.__uslSecondaryNext()"]');
       var nextBtnLabel = nextBtn ? nextBtn.textContent : '';
+      var loginBtn = document.getElementById('secondary-phone-login-btn');
+      if (loginBtn) loginBtn.style.display = 'none';
       if (nextBtn) { nextBtn.disabled = true; nextBtn.textContent = '...'; }
       setError('');
       try {
@@ -1588,6 +1590,7 @@
           var checkData = await checkRes.json();
           if (checkData && checkData.available === false) {
             if (nextBtn) { nextBtn.disabled = false; nextBtn.textContent = nextBtnLabel || (es ? 'Verificar' : 'Verify'); }
+            if (loginBtn) loginBtn.style.display = 'block';
             setError(es
               ? 'Este número ya está registrado con otra cuenta. Inicia sesión o usa otro número.'
               : 'This phone is already registered with another account. Log in or use a different number.');
