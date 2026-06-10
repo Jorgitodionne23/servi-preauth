@@ -217,12 +217,50 @@
     } catch (e) { window.__user = null; }
   }
 
+  // ─── Session-expired notice ──
+  // restoreSession() sets window.__sessionExpired when a session is cleared because its token
+  // expired and could not be refreshed. Surface a one-time bilingual notice so the user isn't
+  // silently logged out (previously the flag was set but never read anywhere).
+  let sessionExpiredNoticeShown = false;
+  function showSessionExpiredNotice() {
+    if (sessionExpiredNoticeShown || document.getElementById('servi-session-expired-toast')) return;
+    if (!document.body) return;
+    sessionExpiredNoticeShown = true;
+    const es = window.__lang === 'es';
+    const toast = document.createElement('div');
+    toast.id = 'servi-session-expired-toast';
+    toast.setAttribute('role', 'status');
+    toast.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:99999;display:flex;align-items:center;gap:14px;max-width:calc(100vw - 32px);background:#fff;color:#1a1a1a;border:1px solid #e8e8e8;border-radius:14px;box-shadow:0 8px 30px rgba(0,0,0,0.16);padding:14px 16px;font-family:\'DM Sans\',-apple-system,sans-serif;font-size:14px;font-weight:500';
+    const text = document.createElement('span');
+    text.textContent = es ? 'Tu sesión expiró. Inicia sesión de nuevo.' : 'Your session expired. Please sign in again.';
+    const signInBtn = document.createElement('button');
+    signInBtn.textContent = es ? 'Iniciar sesión' : 'Sign in';
+    signInBtn.style.cssText = 'background:#000;color:#fff;border:none;border-radius:10px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap';
+    const closeBtn = document.createElement('button');
+    closeBtn.setAttribute('aria-label', es ? 'Cerrar' : 'Dismiss');
+    closeBtn.textContent = '×';
+    closeBtn.style.cssText = 'background:none;border:none;color:#999;font-size:20px;line-height:1;cursor:pointer;padding:0 2px';
+    function removeToast() {
+      window.__sessionExpired = false;
+      const t = document.getElementById('servi-session-expired-toast');
+      if (t && t.parentNode) t.parentNode.removeChild(t);
+    }
+    signInBtn.onclick = function () { removeToast(); if (window.openAuthModal) window.openAuthModal('login'); };
+    closeBtn.onclick = removeToast;
+    toast.appendChild(text);
+    toast.appendChild(signInBtn);
+    toast.appendChild(closeBtn);
+    document.body.appendChild(toast);
+    setTimeout(removeToast, 9000);
+  }
+
   // Expose globally so i18n can re-render
   window.buildNavbar = function () {
     restoreSession();
     const el = document.getElementById('navbar');
     if (el) el.innerHTML = buildNav();
     if (el) el.style.visibility = 'visible';
+    if (window.__sessionExpired) showSessionExpiredNotice();
   };
 
   // ─── User menu dropdown toggle + click-outside ──

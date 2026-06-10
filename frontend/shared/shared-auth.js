@@ -605,7 +605,13 @@
     input.addEventListener('focus', updateOTPBoxes);
     input.addEventListener('blur', updateOTPBoxes);
     input.addEventListener('keydown', function (event) {
-      if (event.key === 'Enter') window.__uslVerifyOTP();
+      if (event.key !== 'Enter') return;
+      // The verify button is disabled synchronously while a verification is in flight, so
+      // honoring its disabled state here stops a rapid second Enter from re-entering
+      // confirmationResult.confirm() / linkWithCredential() and double-submitting the code.
+      var vbtn = document.getElementById('verify-otp-btn');
+      if (vbtn && vbtn.disabled) return;
+      window.__uslVerifyOTP();
     });
     updateOTPBoxes();
   }
@@ -1847,6 +1853,15 @@
           return;
         }
         var btn = document.getElementById('verify-otp-btn');
+        // confirmationResult (and its verificationId) is set when the SMS is sent. If it's
+        // missing/stale — the user sat on this screen, the send never completed, or Firebase
+        // state was reset — recover to the "send code" state with a clear message instead of
+        // throwing an opaque TypeError that surfaces as the generic "An error occurred".
+        if (!confirmationResult || !confirmationResult.verificationId) {
+          setError(es ? 'Tu código expiró. Solicita uno nuevo.' : 'Your code expired. Request a new one.');
+          if (typeof window.__uslResendOTP === 'function') window.__uslResendOTP();
+          return;
+        }
         setVerifyOTPButtonLoading(btn, true, es);
         setError('');
         try {
@@ -2719,6 +2734,12 @@
       'auth/network-request-failed':    es ? 'Error de conexión. Verifica tu internet.'      : 'Connection error. Check your internet.',
       'auth/invalid-action-code':       es ? 'El enlace expiró o ya fue usado.'              : 'The link has expired or already been used.',
       'auth/credential-already-in-use': es ? 'Este identificador ya está asociado a otra cuenta.' : 'This identifier is already linked to another account.',
+      'auth/account-exists-with-different-credential': es ? 'Ya existe una cuenta con este correo. Inicia sesión con tu método original.' : 'An account already exists with this email. Sign in with your original method.',
+      'auth/email-already-in-use':      es ? 'Este correo ya está registrado.'                   : 'This email is already registered.',
+      'auth/invalid-email':             es ? 'Correo electrónico inválido.'                      : 'Invalid email address.',
+      'auth/user-disabled':             es ? 'Esta cuenta fue deshabilitada. Contáctanos.'       : 'This account has been disabled. Please contact us.',
+      'auth/operation-not-allowed':     es ? 'Este método de acceso no está disponible por ahora.' : 'This sign-in method is not available right now.',
+      'auth/requires-recent-login':     es ? 'Por seguridad, vuelve a iniciar sesión e intenta de nuevo.' : 'For your security, sign in again and retry.',
     };
     return map[code] || (es ? 'Ocurrió un error. Intenta de nuevo.' : 'An error occurred. Please try again.');
   }

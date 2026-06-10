@@ -3135,7 +3135,19 @@ app.post('/tasks/preauth-due', adminRateLimit, requireAdminAuth, async (req, res
       }
     }
 
-    res.json({ ok: true, processed: results.length, results });
+    // Opportunistic housekeeping on the existing hourly trigger: prune session-revocation
+    // rows whose underlying JWTs have already expired (the token is dead, so the tombstone
+    // is no longer needed). Keeps revoked_sessions from growing unbounded. Best-effort.
+    let revokedPruned = 0;
+    try {
+      const pruneRes = await pool.query('DELETE FROM revoked_sessions WHERE expires_at < NOW()');
+      revokedPruned = pruneRes.rowCount || 0;
+      if (revokedPruned) console.log('[preauth-due] pruned expired revoked_sessions rows:', revokedPruned);
+    } catch (pruneErr) {
+      console.warn('[preauth-due] revoked_sessions prune failed (non-blocking):', pruneErr?.message || pruneErr);
+    }
+
+    res.json({ ok: true, processed: results.length, results, revokedPruned });
   } catch (e) {
     console.error('preauth-due error:', e);
     res.status(500).json({ ok: false, error: e.message || 'internal' });
@@ -5120,7 +5132,8 @@ app.post('/api/service-requests', publicFormLimit, async (req, res) => {
 
     const authHeader = req.headers.authorization || '';
     const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
-    const userPayload = token ? verifySessionToken(token) : null;
+    // Async verifier so a revoked/logged-out session can't submit a booking with an old JWT.
+    const userPayload = token ? await verifySessionTokenAsync(token) : null;
     let effectiveCustomerId = customerId || null;
     if (userPayload?.user_id) effectiveCustomerId = userPayload.user_id;
 
@@ -6108,39 +6121,53 @@ app.delete('/api/auth/me', publicFormLimit, async (req, res) => {
   const payload = await requireUserAuth(req, res);
   if (!payload) return;
   const userId = payload.user_id;
+  // Delete the user's rows atomically so a mid-sequence failure can't orphan addresses /
+  // saved_servi_users or leave a half-deleted account.
+  const client = await pool.connect();
+  let firebaseUid = null;
   try {
-    const { rows } = await pool.query('SELECT firebase_uid, stripe_customer_id FROM auth_users WHERE id = $1', [userId]);
+    await client.query('BEGIN');
+    const { rows } = await client.query('SELECT firebase_uid, stripe_customer_id FROM auth_users WHERE id = $1 FOR UPDATE', [userId]);
     if (!rows.length) {
+      await client.query('ROLLBACK');
       console.warn('[DELETE /api/auth/me] user row not found for id:', userId);
       return res.status(404).json({ error: 'user_not_found' });
     }
-    const firebaseUid = rows[0]?.firebase_uid;
+    firebaseUid = rows[0]?.firebase_uid || null;
     const stripeCustomerId = rows[0]?.stripe_customer_id;
 
-    await pool.query('DELETE FROM user_addresses WHERE user_id = $1', [userId]);
+    await client.query('DELETE FROM user_addresses WHERE user_id = $1', [userId]);
     if (stripeCustomerId) {
-      await pool.query('DELETE FROM saved_servi_users WHERE customer_id = $1', [stripeCustomerId]);
+      await client.query('DELETE FROM saved_servi_users WHERE customer_id = $1', [stripeCustomerId]);
     }
-    const delRes = await pool.query('DELETE FROM auth_users WHERE id = $1', [userId]);
+    const delRes = await client.query('DELETE FROM auth_users WHERE id = $1', [userId]);
+    await client.query('COMMIT');
     console.log('[DELETE /api/auth/me] deleted user row, rowCount=', delRes.rowCount, 'userId=', userId);
-
-    // A6: revoke this session's JWT so it can't be replayed before natural expiry
-    await revokeSessionJti(payload.jti, userId, 'account_delete');
-
-    if (firebaseUid) {
-      try {
-        await firebaseAdmin.auth().deleteUser(firebaseUid);
-        console.log('[DELETE /api/auth/me] Firebase user deleted:', firebaseUid);
-      } catch (fbErr) {
-        console.warn('[DELETE /api/auth/me] Firebase user deletion failed (non-blocking):', fbErr.code || fbErr.message);
-      }
-    }
-
-    return res.json({ ok: true });
   } catch (err) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    // Log the full Postgres detail server-side; never echo err.code/detail to the client.
     console.error('[DELETE /api/auth/me] error code=', err.code, 'detail=', err.detail, 'message=', err.message);
-    return res.status(500).json({ error: 'internal_error', code: err.code || null, detail: err.detail || null });
+    return res.status(500).json({ error: 'internal_error' });
+  } finally {
+    client.release();
   }
+
+  // Post-commit cleanup — best-effort, must not resurrect or fail the now-deleted account.
+  // A6: revoke this session's JWT so it can't be replayed before natural expiry.
+  try {
+    await revokeSessionJti(payload.jti, userId, 'account_delete');
+  } catch (revErr) {
+    console.warn('[DELETE /api/auth/me] session revoke failed (non-blocking):', revErr.message);
+  }
+  if (firebaseUid) {
+    try {
+      await firebaseAdmin.auth().deleteUser(firebaseUid);
+      console.log('[DELETE /api/auth/me] Firebase user deleted:', firebaseUid);
+    } catch (fbErr) {
+      console.warn('[DELETE /api/auth/me] Firebase user deletion failed (non-blocking):', fbErr.code || fbErr.message);
+    }
+  }
+  return res.json({ ok: true });
 });
 
 // POST /api/auth/logout — revoke the current SERVI session JWT server-side.

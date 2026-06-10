@@ -79,7 +79,7 @@ After confirmation: "¡Solicitud enviada! Te contactaremos pronto por WhatsApp."
 - Signup collects: phone or email (primary) → name → secondary identifier (optional)
 - **Dual-auth model:** Firebase handles user identity on the frontend (phone OTP, email magic link, Google OAuth). The frontend posts the Firebase ID token to `POST /api/auth/firebase`; the backend verifies it via the Firebase Admin SDK and issues its own **custom HS256 session JWT (24-hour TTL)**. Clients send that JWT as `Authorization: Bearer …` for all `/api/auth/*` and other user-scoped routes.
 - Session refresh + revocation: `POST /api/auth/refresh` rotates a near-expired JWT (new `jti`); logout, account deletion, and password/phone changes write to the `revoked_sessions` table so old tokens fail server-side immediately.
-- Booking gate enforces both `email_verified=true` + `phone_verified=true`
+- Booking gate: `phone_verified=true` is always required. `email_verified=true` is required for returning users (those with prior service activity); a brand-new user who skipped email at signup may place their **first** order with phone-only, then must verify email for subsequent orders. Enforced in `POST /api/service-requests` (`backend/index.mjs`)
 - Cross-identifier recovery merges orphaned phone-only accounts when email is added
 
 ### SERVI Match
