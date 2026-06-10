@@ -454,6 +454,21 @@ export async function initDb() {
     ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS email_verify_token TEXT;
     ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS email_verify_token_expires_at TIMESTAMPTZ;
 
+    CREATE TABLE IF NOT EXISTS auth_email_link_flows (
+      id TEXT PRIMARY KEY,
+      email TEXT NOT NULL,
+      poll_token_hash TEXT NOT NULL,
+      session_token TEXT,
+      user_payload JSONB,
+      firebase_uid TEXT,
+      completed_at TIMESTAMPTZ,
+      expires_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS auth_email_link_flows_expires_idx
+      ON auth_email_link_flows(expires_at);
+
     -- Backfill: existing phone-OTP users are phone-verified
     UPDATE auth_users SET phone_verified = true, first_identifier_type = 'phone'
     WHERE phone IS NOT NULL AND firebase_uid IS NOT NULL AND phone_verified = false;

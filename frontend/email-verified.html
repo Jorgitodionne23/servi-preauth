@@ -324,6 +324,20 @@
       try { await window.__syncPromise; } catch (_) {}
     }
 
+    if (window.__emailLinkProcessingStatus === 'missing-email' || window.__emailLinkProcessingStatus === 'error') {
+      window.__renderEmailVerifiedScreen({ loading: false, es: es, canClose: !!window.opener });
+      var errorMsgEl = document.getElementById('verification-message');
+      if (errorMsgEl) {
+        errorMsgEl.textContent = es ? 'No pudimos confirmar este enlace. Solicita un nuevo enlace e intenta de nuevo.' : 'We could not confirm this link. Request a new link and try again.';
+        errorMsgEl.style.color = '#c55d49';
+      }
+      var errorTitleEl = document.getElementById('verification-title');
+      if (errorTitleEl) {
+        errorTitleEl.textContent = es ? 'Verificación pendiente' : 'Verification pending';
+      }
+      return;
+    }
+
     var pendingAccountEmailAction = localStorage.getItem('servi_email_verification_mode');
     if (isAccountEmailAction || pendingAccountEmailAction) {
       if (window.__emailLinkProcessingStatus === 'account-email-verified') {

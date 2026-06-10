@@ -683,6 +683,104 @@
 
   window.__uslSetDial = function (val) { setSelectedDial(val); };
 
+  function getEmailLinkTargetFromUrl() {
+    try {
+      var params = new URLSearchParams(window.location.search || '');
+      var direct = params.get('email') || params.get('email_hint');
+      if (direct) return direct.toLowerCase().trim();
+      var continueUrl = params.get('continueUrl');
+      if (continueUrl) {
+        var nested = new URL(continueUrl);
+        var nestedEmail = nested.searchParams.get('email') || nested.searchParams.get('email_hint');
+        if (nestedEmail) return nestedEmail.toLowerCase().trim();
+      }
+    } catch (_) {}
+    return '';
+  }
+
+  function getEmailLinkFlowIdFromUrl() {
+    try {
+      var params = new URLSearchParams(window.location.search || '');
+      var direct = params.get('flow_id');
+      if (direct) return direct;
+      var continueUrl = params.get('continueUrl');
+      if (continueUrl) {
+        var nested = new URL(continueUrl);
+        return nested.searchParams.get('flow_id') || '';
+      }
+    } catch (_) {}
+    return '';
+  }
+
+  async function startEmailLinkFlow(email) {
+    var res = await fetch(API() + '/api/auth/email-link-flow/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email })
+    });
+    var data = await res.json().catch(function () { return {}; });
+    if (!res.ok || !data.flow_id || !data.poll_token) {
+      var err = new Error(data.error || 'email_link_flow_start_failed');
+      err.code = data.error || 'email_link_flow_start_failed';
+      throw err;
+    }
+    return data;
+  }
+
+  function saveEmailLinkFlow(flow) {
+    if (!flow || !flow.flow_id || !flow.poll_token) return;
+    try {
+      localStorage.setItem('servi_email_link_flow', JSON.stringify({
+        flow_id: flow.flow_id,
+        poll_token: flow.poll_token,
+        expires_at: flow.expires_at || null
+      }));
+    } catch (_) {}
+  }
+
+  function loadEmailLinkFlow() {
+    try { return JSON.parse(localStorage.getItem('servi_email_link_flow') || 'null'); } catch (_) { return null; }
+  }
+
+  async function completeEmailLinkFlowIfPresent() {
+    var flowId = getEmailLinkFlowIdFromUrl();
+    if (!flowId || !auth || !auth.currentUser) return false;
+    var idToken = await auth.currentUser.getIdToken(true);
+    var res = await fetch(API() + '/api/auth/email-link-flow/complete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + idToken },
+      body: JSON.stringify({ flow_id: flowId })
+    });
+    return res.ok;
+  }
+
+  async function pollEmailLinkFlow(flow) {
+    if (!flow || !flow.flow_id || !flow.poll_token) return null;
+    var res = await fetch(API() + '/api/auth/email-link-flow/poll', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ flow_id: flow.flow_id, poll_token: flow.poll_token })
+    });
+    if (res.status === 404) {
+      try { localStorage.removeItem('servi_email_link_flow'); } catch (_) {}
+      return null;
+    }
+    if (!res.ok) return null;
+    return res.json().catch(function () { return null; });
+  }
+
+  function acceptEmailLinkFlowSession(data) {
+    if (!data || !data.token || !data.user) return false;
+    window.__user = data.user;
+    try {
+      localStorage.setItem('servi_user_session', JSON.stringify({ token: data.token, user: data.user }));
+      localStorage.setItem('servi_email_verified_at', Date.now().toString());
+      localStorage.removeItem('servi_email_link_flow');
+    } catch (_) {}
+    if (window.buildNavbar) window.buildNavbar();
+    return true;
+  }
+
   // ── Monitor for email verification in other tab ─────────────────────────────────
   // When user clicks email link in a new tab, that tab verifies and broadcasts.
   // The localStorage flag is a UX trigger ONLY (signals "stop polling, check now") —
@@ -694,6 +792,7 @@
     var pollInterval = null;
     var onVerificationDetected = null;
     var handled = false; // guard against double-calls across storage/poll/visibility triggers
+    var flowPollBusy = false;
 
     function checkVerifiedFlag() {
       return !!localStorage.getItem('servi_email_verified_at');
@@ -772,6 +871,25 @@
       }
     }
 
+    async function continueAfterEmailLinkFlow() {
+      if (handled || flowPollBusy) return;
+      var flow = loadEmailLinkFlow();
+      if (!flow) return;
+      flowPollBusy = true;
+      try {
+        var data = await pollEmailLinkFlow(flow);
+        if (data && data.completed && acceptEmailLinkFlowSession(data)) {
+          handled = true;
+          if (pollInterval) clearInterval(pollInterval);
+          if (onVerificationDetected) window.removeEventListener('storage', onVerificationDetected);
+          document.removeEventListener('visibilitychange', onVisibilityChange);
+          onAuthSuccess();
+        }
+      } finally {
+        flowPollBusy = false;
+      }
+    }
+
     // Listen for storage events (from other tabs setting servi_email_verified_at)
     onVerificationDetected = function (e) {
       if (e.key === 'servi_email_verified_at') {
@@ -784,6 +902,7 @@
     function onVisibilityChange() {
       if (document.hidden) return;
       if (checkVerifiedFlag()) continueAfterVerification();
+      continueAfterEmailLinkFlow();
     }
     document.addEventListener('visibilitychange', onVisibilityChange);
 
@@ -795,16 +914,17 @@
         return;
       }
       if (checkVerifiedFlag()) continueAfterVerification();
-    }, 500);
+      continueAfterEmailLinkFlow();
+    }, 1000);
 
     // Cleanup on modal close
     var originalCloseAuthModal = window.closeAuthModal;
-    window.closeAuthModal = function () {
+    window.closeAuthModal = function (force) {
       if (pollInterval) clearInterval(pollInterval);
       if (onVerificationDetected) window.removeEventListener('storage', onVerificationDetected);
       document.removeEventListener('visibilitychange', onVisibilityChange);
       window.__uslManualEmailContinue = null;
-      if (originalCloseAuthModal) originalCloseAuthModal();
+      if (originalCloseAuthModal) originalCloseAuthModal(force);
     };
 
     // Manual escape hatch: user taps "Ya verifiqué" — bypasses storage event
@@ -814,8 +934,14 @@
       var btn = document.getElementById('manual-email-continue-btn');
       var hint = document.getElementById('manual-email-hint');
 
+      if (btn) { btn.disabled = true; btn.textContent = isEs() ? 'Verificando...' : 'Verifying...'; }
+      var flowData = await pollEmailLinkFlow(loadEmailLinkFlow());
+      if (flowData && flowData.completed && acceptEmailLinkFlowSession(flowData)) {
+        onAuthSuccess();
+        return;
+      }
+
       if (auth && auth.currentUser && auth.currentUser.email) {
-        if (btn) { btn.disabled = true; btn.textContent = isEs() ? 'Verificando...' : 'Verifying...'; }
         try {
           // Force-refresh Firebase user state — the local object may be stale and
           // not yet reflect the email_verified flag set after the link was clicked.
@@ -870,7 +996,6 @@
       }
 
       // No Firebase user yet — poll until auth state resolves
-      if (btn) { btn.disabled = true; btn.textContent = '...'; }
       var waited = 0;
       var waitForAuth = setInterval(function () {
         waited += 500;
@@ -1178,6 +1303,15 @@
       try {
         // Normalize email: lowercase for Firebase consistency
         var emailNorm = uslIdentifier.toLowerCase();
+        var linkFlow = null;
+        if (!uslIsNew && uslIdentifierType === 'email') {
+          linkFlow = await startEmailLinkFlow(emailNorm);
+          saveEmailLinkFlow(linkFlow);
+        }
+        var emailLinkUrl = window.location.origin + '/email-verified.html?email=' + encodeURIComponent(emailNorm);
+        if (linkFlow && linkFlow.flow_id) {
+          emailLinkUrl += '&flow_id=' + encodeURIComponent(linkFlow.flow_id);
+        }
         // Persist USL state so handleEmailLinkSignIn can restore after redirect
         localStorage.setItem('servi_email_link_target', emailNorm);
         localStorage.setItem('servi_usl_state', JSON.stringify({
@@ -1187,7 +1321,7 @@
           isNew: uslIsNew,
           newUserData: uslNewUserData,
         }));
-        await auth.sendSignInLinkToEmail(emailNorm, { url: window.location.origin + '/email-verified.html', handleCodeInApp: true });
+        await auth.sendSignInLinkToEmail(emailNorm, { url: emailLinkUrl, handleCodeInApp: true });
         setScreen(
           '<div style="text-align:center;padding:16px 0">' +
             '<div style="font-size:40px;margin-bottom:12px">📧</div>' +
@@ -1195,7 +1329,7 @@
             '<p style="font-size:14px;color:#666;line-height:1.6;margin-bottom:20px">' +
               (isEs()
                 ? 'Revisa <strong>' + uslIdentifier + '</strong> y haz clic en el enlace para continuar. Si no lo encuentras, revisa spam o correo no deseado.'
-                : 'Check <strong>' + uslIdentifier + '</strong> and click the link to continue. If you cannot find it, check your spam or junk folder.') +
+                : 'Verify link sent to <strong>' + uslIdentifier + '</strong>. <strong>Check your spam folder.</strong>') +
             '</p>' +
             '<button id="manual-email-continue-btn" onclick="window.__uslManualEmailContinue && window.__uslManualEmailContinue()" ' +
               'style="background:#0a0a0a;color:#fff;border:none;border-radius:10px;padding:12px 20px;font-size:14px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif;width:100%">' +
@@ -2222,13 +2356,13 @@
     );
     if (!auth.isSignInWithEmailLink(window.location.href) && !isAccountActionCode && !isAccountActionFallback) return;
 
-    // Retrieve the email address from localStorage (saved before the link was sent)
-    var email = localStorage.getItem('servi_email_link_target');
-    // Fallback: if no stored email (e.g., user opened link in a different browser/device),
-    // prompt for email address. This ensures email link verification works in edge cases.
+    // Retrieve the email address from localStorage (same browser) or from the
+    // link context (different browser/device). Do not prompt: clicking the link
+    // should be the only confirmation step.
+    var email = localStorage.getItem('servi_email_link_target') || getEmailLinkTargetFromUrl();
     if (!email) {
-      email = prompt(isEs() ? 'Confirma tu correo electrónico:' : 'Confirm your email address:');
-      if (!email) return;
+      window.__emailLinkProcessingStatus = 'missing-email';
+      return;
     }
 
     // Restore USL state from before the redirect
@@ -2357,6 +2491,7 @@
       } else {
         await auth.signInWithEmailLink(email, window.location.href);
       }
+      try { await completeEmailLinkFlowIfPresent(); } catch (_) {}
 
       // Clear the email link target from localStorage to prevent re-verification on subsequent page loads.
       // Also clean up the browser history so the URL no longer shows the verification code.

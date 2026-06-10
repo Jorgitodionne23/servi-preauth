@@ -393,7 +393,8 @@
     0 0 18px 2px rgba(149,204,213,0.10);
 }
 .site-header[data-state="browse-expanded"] .site-header__pill {
-  min-width: 460px;
+  width: clamp(560px, 54vw, 620px);
+  min-width: 560px;
   height: 62px;
   border-color: rgba(149,204,213,0.44);
   background:
@@ -422,10 +423,31 @@
   font-weight: 620;
 }
 @media (min-width: 901px) {
+  /* Browse-expanded sections: the icon + label read as ONE centered group.
+     Plain flex (not a phantom-column grid) keeps the magnifier glued to its
+     text and centers the pair; gap + padding are identical across all three
+     sections so the dividers fall on even whitespace. */
   .site-header[data-page="browse"][data-state="browse-expanded"] .search-pill__segment--describe {
-    flex: 0 0 56%;
+    flex: 0 0 52%;
     min-width: 0;
+    display: inline-flex;
+    align-items: center;
     justify-content: center;
+    gap: 8px;
+    padding: 0 16px;
+  }
+  /* The describe textarea is just a readonly placeholder in this resting state,
+     so let it shrink to its text instead of filling the section — that keeps the
+     icon hugging the label. It only stretches/grows once active (the
+     scrolled-expanded compose box), which is a different state. */
+  .site-header[data-page="browse"][data-state="browse-expanded"] .search-pill__segment--describe .search-pill__input {
+    flex: 0 1 auto;
+    /* A <textarea> sizes off its `cols`, not the placeholder, so set an explicit
+       width that fits the (longer) Spanish placeholder without clipping. Keeps
+       the field hugging its text so the icon + label stay one centered group. */
+    width: 12.75em;
+    max-width: 100%;
+    text-align: center;
   }
   .site-header[data-state="scrolled-expanded"] .search-pill__segment--describe {
     flex: 0 0 56%;
@@ -451,10 +473,22 @@
   .site-header[data-page="browse"][data-state="browse-expanded"] .search-pill__segment--voice,
   .site-header[data-state="scrolled-expanded"] .search-pill__segment--camera,
   .site-header[data-state="scrolled-expanded"] .search-pill__segment--voice {
-    flex: 1 1 22%;
+    flex: 1 1 24%;
     min-width: 0;
   }
-  .site-header[data-page="browse"][data-state="browse-expanded"] .search-pill__segment--describe .search-pill__icon,
+  .site-header[data-page="browse"][data-state="browse-expanded"] .search-pill__segment--camera,
+  .site-header[data-page="browse"][data-state="browse-expanded"] .search-pill__segment--voice {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 0 16px;
+  }
+  .site-header[data-page="browse"][data-state="browse-expanded"] .search-pill__icon {
+    width: 18px;
+    height: 18px;
+    flex: 0 0 18px;
+  }
   .site-header[data-state="scrolled-expanded"] .search-pill__segment--describe .search-pill__icon {
     width: 20px;
     height: 20px;
@@ -578,9 +612,21 @@
 .search-pill__icon {
   width: 18px; height: 18px;
   display: inline-flex; align-items: center; justify-content: center;
+  flex: 0 0 18px;
   color: var(--color-accent);
+  line-height: 0;
 }
-.search-pill__icon svg { width: 100%; height: 100%; }
+.search-pill__icon svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.search-pill__label--method {
+  min-width: 0;
+  line-height: 1;
+  text-align: center;
+}
 /* #spp-describe-input is a <textarea>: it reads as a single-line label in the
    collapsed pill, then becomes a downward-growing compose box when active. */
 .search-pill__input {
@@ -693,11 +739,6 @@
 .site-header[data-state="scrolled-expanded"] .search-pill__segment[data-active="true"]:hover {
   background: transparent;
 }
-.site-header[data-state="scrolled-expanded"] .search-pill__segment--camera[data-active="true"],
-.site-header[data-state="scrolled-expanded"] .search-pill__segment--voice[data-active="true"] {
-  color: var(--color-accent);
-}
-
 /* The sliding active card + its popover read as ONE box: continuous side
    shadows (card top, popover bottom) and a 1px overlap with no border between
    them (card has no bottom border, popover no top border). */
@@ -732,11 +773,17 @@
 }
 .site-header[data-state="scrolled-expanded"] .search-pill__active-card { display: block; }
 .search-pill__active-card[data-show="true"] { opacity: 1; }
+.search-pill__active-card[data-segment="camera"],
+.search-pill__active-card[data-segment="voice"] {
+  background: var(--color-surface);
+  border-color: transparent;
+  box-shadow: none;
+}
 /* Snap (no glide) while welded to the segment during the open morph. */
 .search-pill__active-card.spp--instant { transition: opacity 160ms ease; }
 
-/* Camera/Voice use the whole pill as the welded popover surface; this smaller
-   inset capsule marks the selected method without narrowing the media panel. */
+/* Camera/Voice keep the grey deselected tray while this white capsule slides
+   between methods, similar to Airbnb's selected section treatment. */
 .search-pill__method-focus {
   position: absolute;
   box-sizing: border-box;
@@ -745,10 +792,13 @@
   width: var(--method-focus-w, 0);
   height: calc(100% - 14px);
   transform: translateX(var(--method-focus-x, 0));
-  border: 1px solid rgba(149,204,213,0.28);
+  border: 1px solid rgba(216,216,216,0.72);
   border-radius: 999px;
-  background: rgba(149,204,213,0.13);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.72);
+  background: #fff;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.92),
+    0 5px 14px -8px rgba(31,42,45,0.28),
+    0 14px 24px -20px rgba(31,42,45,0.34);
   opacity: 0;
   pointer-events: none;
   display: none;
@@ -1917,6 +1967,7 @@
   .search-pill__icon {
     width: 15px;
     height: 15px;
+    flex-basis: 15px;
   }
   .search-pill__label {
     overflow: hidden;

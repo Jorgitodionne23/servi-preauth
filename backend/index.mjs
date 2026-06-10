@@ -198,6 +198,25 @@ async function logAuthEvent(req, userId, eventType, metadata) {
   }
 }
 
+function hashEmailLinkPollToken(token) {
+  return createHash('sha256').update(String(token || ''), 'utf8').digest('hex');
+}
+
+function publicUserPayload(user) {
+  if (!user) return null;
+  return {
+    id: user.id,
+    email: user.email || null,
+    name: user.name || null,
+    phone: user.phone || null,
+    auth_provider: user.auth_provider || null,
+    phone_verified: !!user.phone_verified,
+    email_verified: !!user.email_verified,
+    terms_accepted_at: user.terms_accepted_at || null,
+    email_skipped_at: user.email_skipped_at || null,
+  };
+}
+
 // Per-identifier rate limiter using auth_otp_attempts. Returns true if allowed,
 // false if the identifier has exceeded `limit` attempts within `windowMs`.
 async function checkAndRecordIdentifierAttempt(identifier, kind, ip, limit, windowMs) {
@@ -895,6 +914,15 @@ const adminRateLimit = rateLimit({
 const publicFormLimit = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 30,               // stricter than admin — public forms
+  skip: () => process.env.NODE_ENV === 'test' || process.env.DISABLE_RATE_LIMITS === '1',
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'too_many_requests' },
+});
+
+const emailLinkPollLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 300,
   skip: () => process.env.NODE_ENV === 'test' || process.env.DISABLE_RATE_LIMITS === '1',
   standardHeaders: true,
   legacyHeaders: false,
@@ -5341,6 +5369,155 @@ app.post('/api/auth/check-identifier', publicFormLimit, async (req, res) => {
     return res.json(response);
   } catch (err) {
     console.error('[POST /api/auth/check-identifier]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// POST /api/auth/email-link-flow/start — start cross-device email-link login handoff.
+// The email link carries only flow_id; the polling token stays in the originating browser.
+app.post('/api/auth/email-link-flow/start', publicFormLimit, async (req, res) => {
+  try {
+    const emailNorm = normalizeEmail(req.body?.email || '');
+    if (!emailNorm) return res.status(400).json({ error: 'invalid_email' });
+
+    const ip = (req.headers['x-forwarded-for'] || req.ip || '').toString().split(',')[0].trim() || null;
+    const allowed = await checkAndRecordIdentifierAttempt(emailNorm, 'email_link_flow', ip, 10, 60 * 60 * 1000);
+    if (!allowed) return res.status(429).json({ error: 'rate_limited' });
+
+    const { rows } = await pool.query(
+      'SELECT id, email_verified FROM auth_users WHERE email = $1 LIMIT 1',
+      [emailNorm]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'account_not_found' });
+    if (rows[0].email_verified !== true) return res.status(409).json({ error: 'email_not_verified' });
+
+    const flowId = randomUUID();
+    const pollToken = randomBytes(32).toString('base64url');
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+    await pool.query('DELETE FROM auth_email_link_flows WHERE expires_at < NOW()');
+    await pool.query(
+      `INSERT INTO auth_email_link_flows (id, email, poll_token_hash, expires_at)
+       VALUES ($1, $2, $3, $4)`,
+      [flowId, emailNorm, hashEmailLinkPollToken(pollToken), expiresAt]
+    );
+
+    return res.json({ flow_id: flowId, poll_token: pollToken, expires_at: expiresAt.toISOString() });
+  } catch (err) {
+    console.error('[POST /api/auth/email-link-flow/start]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// POST /api/auth/email-link-flow/complete — called by the browser/device that opened
+// the Firebase email link after Firebase verifies the link and issues an ID token.
+app.post('/api/auth/email-link-flow/complete', publicFormLimit, async (req, res) => {
+  try {
+    const flowId = String(req.body?.flow_id || '').trim();
+    const authHeader = req.headers.authorization || '';
+    const idToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+    if (!flowId || !idToken) return res.status(400).json({ error: 'missing_fields' });
+
+    let decoded;
+    try {
+      decoded = await verifyFirebaseIdToken(idToken, true);
+    } catch (verifyErr) {
+      return res.status(401).json({ error: 'invalid_token' });
+    }
+    const emailNorm = normalizeEmail(decoded.email || '');
+    if (!emailNorm || decoded.email_verified !== true) {
+      return res.status(400).json({ error: 'email_not_verified' });
+    }
+
+    const { rows: flowRows } = await pool.query(
+      `SELECT id, email FROM auth_email_link_flows
+       WHERE id = $1 AND expires_at > NOW()
+       LIMIT 1`,
+      [flowId]
+    );
+    const flow = flowRows[0];
+    if (!flow) return res.status(404).json({ error: 'flow_not_found' });
+    if (normalizeEmail(flow.email) !== emailNorm) {
+      return res.status(403).json({ error: 'email_mismatch' });
+    }
+
+    let { rows: userRows } = await pool.query(
+      'SELECT * FROM auth_users WHERE email = $1 LIMIT 1',
+      [emailNorm]
+    );
+    let user = userRows[0];
+    if (!user) return res.status(404).json({ error: 'account_not_found' });
+
+    await pool.query(
+      `UPDATE auth_users
+       SET firebase_uid = $1, auth_provider = $2, email_verified = true,
+           email_skipped_at = NULL, last_login = NOW()
+       WHERE id = $3`,
+      [decoded.uid, decoded.firebase?.sign_in_provider || 'email', user.id]
+    );
+    ({ rows: userRows } = await pool.query(
+      'SELECT id, email, name, phone, auth_provider, phone_verified, email_verified, terms_accepted_at, email_skipped_at FROM auth_users WHERE id = $1',
+      [user.id]
+    ));
+    user = userRows[0];
+
+    const sessionUser = publicUserPayload(user);
+    const sessionToken = signSessionToken({
+      user_id: user.id,
+      email: user.email,
+      name: user.name || null,
+      phone: user.phone || null,
+    });
+
+    await pool.query(
+      `UPDATE auth_email_link_flows
+       SET session_token = $1, user_payload = $2, firebase_uid = $3, completed_at = NOW()
+       WHERE id = $4`,
+      [sessionToken, JSON.stringify(sessionUser), decoded.uid, flowId]
+    );
+    logAuthEvent(req, user.id, 'login', {
+      provider: 'email_link_handoff',
+      email_verified: true,
+      phone_verified: !!user.phone_verified,
+    });
+
+    return res.json({ completed: true });
+  } catch (err) {
+    console.error('[POST /api/auth/email-link-flow/complete]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// POST /api/auth/email-link-flow/poll — original browser polls with its private token
+// and receives the SERVI session once the email link was completed on any device.
+app.post('/api/auth/email-link-flow/poll', emailLinkPollLimit, async (req, res) => {
+  try {
+    const flowId = String(req.body?.flow_id || '').trim();
+    const pollToken = String(req.body?.poll_token || '');
+    if (!flowId || !pollToken) return res.status(400).json({ error: 'missing_fields' });
+
+    const { rows } = await pool.query(
+      `SELECT poll_token_hash, session_token, user_payload, completed_at
+       FROM auth_email_link_flows
+       WHERE id = $1 AND expires_at > NOW()
+       LIMIT 1`,
+      [flowId]
+    );
+    const flow = rows[0];
+    if (!flow) return res.status(404).json({ error: 'flow_not_found' });
+    if (flow.poll_token_hash !== hashEmailLinkPollToken(pollToken)) {
+      return res.status(403).json({ error: 'invalid_poll_token' });
+    }
+    if (!flow.completed_at || !flow.session_token || !flow.user_payload) {
+      return res.json({ completed: false });
+    }
+
+    return res.json({
+      completed: true,
+      token: flow.session_token,
+      user: flow.user_payload,
+    });
+  } catch (err) {
+    console.error('[POST /api/auth/email-link-flow/poll]', err);
     return res.status(500).json({ error: 'internal_error' });
   }
 });

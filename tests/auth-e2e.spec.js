@@ -31,6 +31,7 @@ const phones = {
   deleteUser: `5622${PHONE_SUFFIX}`,
   addressUser: `5632${PHONE_SUFFIX}`,
   servicePageGate: `5642${PHONE_SUFFIX}`,
+  emailLinkHandoff: `5652${PHONE_SUFFIX}`,
 };
 
 function e164(localPhone) {
@@ -548,6 +549,49 @@ test('email-first signup, full verification', async ({ page }) => {
     u.email_verified === true
   );
   expect(user.phone).toBe(e164(phones.emailFullSecondary));
+});
+
+test('existing email-link login completes when verified in another browser context', async ({ browser, page }) => {
+  const loginEmail = email('email-link-handoff');
+  await phoneFirstSignup(page, {
+    phone: phones.emailLinkHandoff,
+    secondaryEmail: loginEmail,
+    first: 'LinkHandoff',
+  });
+
+  await clearBrowser(page);
+  await openAuth(page);
+  await enterIdentifier(page, loginEmail);
+  await page.waitForSelector('#confirm-phone-input');
+  await page.fill('#confirm-phone-input', phones.emailLinkHandoff);
+  await page.click('#confirm-phone-btn');
+  await page.waitForSelector('#usl-more-options-btn');
+  await page.click('#usl-more-options-btn');
+  await page.waitForSelector('button[onclick="window.__uslSwitchToEmailLink()"]');
+  await page.click('button[onclick="window.__uslSwitchToEmailLink()"]');
+
+  let link = null;
+  await expect.poll(async () => {
+    link = await latestEmailLink(loginEmail).catch(() => null);
+    return link;
+  }, { timeout: 10_000 }).not.toBeNull();
+
+  const phoneContext = await browser.newContext();
+  const verifier = await phoneContext.newPage();
+  let prompted = false;
+  verifier.on('dialog', async (dialog) => {
+    prompted = true;
+    await dialog.dismiss();
+  });
+  await verifier.goto(link);
+  await verifier.waitForLoadState('networkidle');
+  await expect(verifier.locator('#verification-title')).toContainText(/verificado|verified/i);
+  expect(prompted).toBe(false);
+  await phoneContext.close();
+
+  const session = await waitForSession(page);
+  expect(session.user.email).toBe(loginEmail);
+  expect(session.user.email_verified).toBe(true);
 });
 
 test('email-first signup requires verified phone before creating session', async ({ page }) => {
