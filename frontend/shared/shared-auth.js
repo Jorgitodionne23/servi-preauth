@@ -1320,9 +1320,6 @@
     setScreen(
       progressDots(3) +
       infoBanner(verifiedLabel) +
-      '<p style="font-size:14px;color:#666;margin-bottom:16px">' +
-        (es ? 'Lo usamos para personalizar tus solicitudes de servicio.' : 'We use this to personalize your service requests.') +
-      '</p>' +
       errorBox() +
       '<div style="display:flex;gap:8px;margin-bottom:12px">' +
         '<input id="signup-first-name" class="input-field" type="text" value="' + firstNameValue + '" placeholder="' + (es ? 'Nombre' : 'First name') + '" onkeydown="if(event.key===\'Enter\') window.__uslNameNext()" style="flex:1">' +
