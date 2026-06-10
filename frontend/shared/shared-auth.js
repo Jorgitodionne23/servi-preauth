@@ -147,6 +147,26 @@
   function hasPendingEmailVerificationAction() {
     return !!localStorage.getItem('servi_email_verification_mode');
   }
+  function resetUslFlowState() {
+    uslIdentifier = '';
+    uslIdentifierType = '';
+    uslFirstIdentifierType = '';
+    uslCurrentOTPType = '';
+    uslIsNew = false;
+    uslSignupComplete = false;
+    uslSuppressAutoSync = false;
+    uslCompletingExisting = false;
+    uslNewUserData = {};
+    uslLoginViaEmail = false;
+    uslTypedEmail = '';
+    uslAccountFirstName = '';
+    uslAccountPhoneLast4 = '';
+    uslAccountEmailVerified = false;
+    window.__syncError = null;
+    window.__syncPromise = null;
+    window.__user = null;
+    localStorage.removeItem('servi_user_session');
+  }
 
   // ── Modal container ──────────────────────────────────────────────────────────
   if (!document.getElementById('auth-modal-global')) {
@@ -1291,6 +1311,10 @@
     var verifiedLabel = uslCurrentOTPType === 'phone'
       ? (es ? '✓ Teléfono verificado' : '✓ Phone verified')
       : (es ? '✓ Correo verificado'   : '✓ Email verified');
+    var canStartOver = isSignupFlowLocked();
+    var nameParts = String((uslNewUserData && uslNewUserData.name) || '').trim().split(/\s+/);
+    var firstNameValue = nameParts.length ? escapeHtml(nameParts.shift()) : '';
+    var lastNameValue = nameParts.length ? escapeHtml(nameParts.join(' ')) : '';
 
     document.getElementById('auth-modal-global').innerHTML = modalShell(es ? 'Tu nombre' : 'Your name', false, '');
     setScreen(
@@ -1301,8 +1325,8 @@
       '</p>' +
       errorBox() +
       '<div style="display:flex;gap:8px;margin-bottom:12px">' +
-        '<input id="signup-first-name" class="input-field" type="text" placeholder="' + (es ? 'Nombre' : 'First name') + '" onkeydown="if(event.key===\'Enter\') window.__uslNameNext()" style="flex:1">' +
-        '<input id="signup-last-name"  class="input-field" type="text" placeholder="' + (es ? 'Apellido' : 'Last name') + '" onkeydown="if(event.key===\'Enter\') window.__uslNameNext()" style="flex:1">' +
+        '<input id="signup-first-name" class="input-field" type="text" value="' + firstNameValue + '" placeholder="' + (es ? 'Nombre' : 'First name') + '" onkeydown="if(event.key===\'Enter\') window.__uslNameNext()" style="flex:1">' +
+        '<input id="signup-last-name"  class="input-field" type="text" value="' + lastNameValue + '" placeholder="' + (es ? 'Apellido' : 'Last name') + '" onkeydown="if(event.key===\'Enter\') window.__uslNameNext()" style="flex:1">' +
       '</div>' +
       '<label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;margin-bottom:20px">' +
         '<input type="checkbox" id="terms-check" style="margin-top:3px;accent-color:var(--color-accent, #95ccd5)">' +
@@ -1314,11 +1338,35 @@
       '</label>' +
       '<button class="btn-primary" onclick="window.__uslNameNext()" id="name-next-btn" style="width:100%;justify-content:center">' +
         (es ? 'Continuar' : 'Continue') +
-      '</button>'
+      '</button>' +
+      (canStartOver
+        ? '<button type="button" onclick="window.__uslStartOverFromLockedSignup()" id="auth-start-over-btn" style="width:100%;margin-top:10px;padding:12px;border:0;background:transparent;color:#666;font-size:14px;font-weight:500;cursor:pointer;font-family:\'DM Sans\',sans-serif">' +
+            (es ? 'Usar otra cuenta' : 'Use another account') +
+          '</button>'
+        : '')
     );
     var f = document.getElementById('signup-first-name');
     if (f) f.focus();
   }
+
+  window.__uslStartOverFromLockedSignup = async function () {
+    var es = isEs();
+    var btn = document.getElementById('auth-start-over-btn');
+    if (btn) { btn.disabled = true; btn.textContent = es ? 'Saliendo...' : 'Signing out...'; }
+    uslSuppressAutoSync = true;
+    window.__syncError = null;
+    window.__syncPromise = null;
+    localStorage.removeItem('servi_user_session');
+    try {
+      if (auth && auth.currentUser) await auth.signOut();
+    } catch (err) {
+      console.warn('[SERVI] Could not sign out while restarting signup:', err && err.message);
+    }
+    resetUslFlowState();
+    selectedDial = '+52';
+    document.body.style.overflow = 'hidden';
+    renderIdentifierScreen();
+  };
 
   window.__uslNameNext = async function () {
     var firstName = (document.getElementById('signup-first-name') || {}).value.trim();
@@ -2350,6 +2398,7 @@
       var provider = new firebase.auth.GoogleAuthProvider();
       provider.addScope('email');
       provider.addScope('profile');
+      provider.setCustomParameters({ prompt: 'select_account' });
       uslSuppressAutoSync = true;
       uslFirstIdentifierType = 'email'; // Google gives email
       var googleResult = await auth.signInWithPopup(provider);
