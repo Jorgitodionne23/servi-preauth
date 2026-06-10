@@ -413,8 +413,9 @@
   flex: 1 1 auto;
   min-width: 0;
 }
-.site-header[data-state="scrolled"] .search-pill__segment--when {
-  flex: 0 0 98px;
+.site-header[data-state="scrolled"] .search-pill__segment--camera,
+.site-header[data-state="scrolled"] .search-pill__segment--voice {
+  flex: 0 0 96px;
 }
 .site-header[data-state="browse-expanded"] .search-pill__segment {
   font-size: 15px;
@@ -422,12 +423,12 @@
 }
 @media (min-width: 901px) {
   .site-header[data-page="browse"][data-state="browse-expanded"] .search-pill__segment--describe {
-    flex: 0 0 63%;
+    flex: 0 0 56%;
     min-width: 0;
     justify-content: center;
   }
   .site-header[data-state="scrolled-expanded"] .search-pill__segment--describe {
-    flex: 0 0 63%;
+    flex: 0 0 56%;
     min-width: 0;
     justify-content: center;
   }
@@ -446,12 +447,11 @@
     margin-top: 1px;
     flex-shrink: 0;
   }
-  .site-header[data-page="browse"][data-state="browse-expanded"] .search-pill__segment--when {
-    flex: 1 1 37%;
-    min-width: 0;
-  }
-  .site-header[data-state="scrolled-expanded"] .search-pill__segment--when {
-    flex: 1 1 37%;
+  .site-header[data-page="browse"][data-state="browse-expanded"] .search-pill__segment--camera,
+  .site-header[data-page="browse"][data-state="browse-expanded"] .search-pill__segment--voice,
+  .site-header[data-state="scrolled-expanded"] .search-pill__segment--camera,
+  .site-header[data-state="scrolled-expanded"] .search-pill__segment--voice {
+    flex: 1 1 22%;
     min-width: 0;
   }
   .site-header[data-page="browse"][data-state="browse-expanded"] .search-pill__segment--describe .search-pill__icon,
@@ -463,6 +463,12 @@
 .site-header[data-state="scrolled-expanded"] .search-pill__segment {
   font-size: 15px;
   font-weight: 620;
+}
+/* Expanded pill: drop the per-segment icons so labels gain breathing room and
+   the segments spread further apart. Icons stay visible in the collapsed
+   "scrolled" state (see rules above). */
+.site-header[data-state="scrolled-expanded"] .search-pill__icon {
+  display: none;
 }
 
 /* Expanded state: pill grows, turns gray, allows shadow overflow */
@@ -600,6 +606,9 @@
   color: currentColor;
   opacity: 1;
 }
+.search-pill__input:not(:placeholder-shown) {
+  color: var(--color-accent);
+}
 .search-pill__input:read-only {
   pointer-events: none;
 }
@@ -684,6 +693,10 @@
 .site-header[data-state="scrolled-expanded"] .search-pill__segment[data-active="true"]:hover {
   background: transparent;
 }
+.site-header[data-state="scrolled-expanded"] .search-pill__segment--camera[data-active="true"],
+.site-header[data-state="scrolled-expanded"] .search-pill__segment--voice[data-active="true"] {
+  color: var(--color-accent);
+}
 
 /* The sliding active card + its popover read as ONE box: continuous side
    shadows (card top, popover bottom) and a 1px overlap with no border between
@@ -721,6 +734,40 @@
 .search-pill__active-card[data-show="true"] { opacity: 1; }
 /* Snap (no glide) while welded to the segment during the open morph. */
 .search-pill__active-card.spp--instant { transition: opacity 160ms ease; }
+
+/* Camera/Voice use the whole pill as the welded popover surface; this smaller
+   inset capsule marks the selected method without narrowing the media panel. */
+.search-pill__method-focus {
+  position: absolute;
+  box-sizing: border-box;
+  top: 7px;
+  left: 0;
+  width: var(--method-focus-w, 0);
+  height: calc(100% - 14px);
+  transform: translateX(var(--method-focus-x, 0));
+  border: 1px solid rgba(149,204,213,0.28);
+  border-radius: 999px;
+  background: rgba(149,204,213,0.13);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.72);
+  opacity: 0;
+  pointer-events: none;
+  display: none;
+  z-index: 4;
+  will-change: transform, width, opacity;
+  transition:
+    transform 300ms cubic-bezier(0.22, 1, 0.36, 1),
+    width 300ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 160ms ease;
+}
+.site-header[data-state="scrolled-expanded"] .search-pill__method-focus {
+  display: block;
+}
+.search-pill__method-focus[data-show="true"] {
+  opacity: 1;
+}
+.search-pill__method-focus.spp--instant {
+  transition: opacity 160ms ease;
+}
 
 /* ─── Unfolding search popover ─────────────────────────────────────────── */
 /* The panel drops flush beneath the active segment and is sized to that
@@ -791,17 +838,12 @@
   padding: 10px 14px 12px;
 }
 
-/* Toolbar — "+" on the left, capture group + submit on the right */
+/* Toolbar — "+" attach on the left, submit on the right */
 .spp-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-}
-.spp-tool-group {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
 }
 .spp-tool {
   width: 34px; height: 34px;
@@ -826,12 +868,6 @@
   border-color: var(--color-accent);
   background: var(--color-surface);
 }
-.spp-tool-sep {
-  width: 1px; height: 16px;
-  background: rgba(216,216,216,0.85);
-  margin: 0 2px;
-  flex-shrink: 0;
-}
 .spp-submit-btn {
   width: 36px; height: 36px;
   margin-left: 6px;
@@ -848,97 +884,55 @@
 .spp-submit-btn:active { transform: scale(0.94); }
 .spp-submit-btn svg { width: 16px; height: 16px; }
 
-/* ── When surface — compact vertical stack (matches narrow segment) ─────── */
-.spp-panel--when { padding: 10px 10px 12px; }
-.spp-when-opts {
+/* ── Camera method — Photos / Video chooser, then the shared capture surface
+   (reuses the global .dash-cap__* styles inside the same panel). ─────────── */
+.spp-panel--camera { padding: 12px 14px 14px; }
+.spp-panel--voice { padding: 12px 14px 14px; }
+.spp-cam-choose__q {
+  margin: 0 0 10px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-align: center;
+}
+.spp-cam-choices {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.spp-cam-choice {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-}
-.spp-when-opt {
-  display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 9px 10px;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px 10px;
   border: 1.5px solid var(--color-border);
-  border-radius: 10px;
+  border-radius: 12px;
   background: #fff;
   font-family: var(--font-body);
   font-size: 13.5px;
-  line-height: 1.2;
+  font-weight: 600;
   color: var(--color-text);
   cursor: pointer;
-  transition: border-color var(--duration-fast), background var(--duration-fast), box-shadow var(--duration-fast);
-  width: 100%;
-  text-align: left;
+  transition: border-color var(--duration-fast), background var(--duration-fast),
+              box-shadow var(--duration-fast), transform var(--duration-fast);
 }
-.spp-when-opt:hover,
-.spp-when-opt[data-selected="true"] {
+.spp-cam-choice:hover {
   border-color: var(--color-accent);
   background: rgba(149,204,213,0.08);
   box-shadow: 0 0 0 3px rgba(149,204,213,0.14);
+  transform: translateY(-1px);
 }
-.spp-when-opt-icon {
-  width: 16px; height: 16px;
+.spp-cam-choice:active { transform: translateY(0); }
+.spp-cam-choice__ic {
+  width: 26px; height: 26px;
   color: var(--color-accent);
   flex-shrink: 0;
   display: inline-flex; align-items: center; justify-content: center;
 }
-.spp-when-opt-icon svg { width: 100%; height: 100%; }
-.spp-date-input {
-  display: block;
-  padding: 8px 10px;
-  border: 1.5px solid var(--color-border);
-  border-radius: 10px;
-  font-family: var(--font-body);
-  font-size: 13.5px;
-  line-height: 1.2;
-  color: var(--color-text);
-  background: #fff;
-  outline: none;
-  box-sizing: border-box;
-  transition: border-color var(--duration-fast), box-shadow var(--duration-fast);
-  cursor: pointer;
-  width: 100%;
-}
-.spp-date-input:focus {
-  border-color: var(--color-accent);
-  box-shadow: 0 0 0 3px rgba(149,204,213,0.18);
-}
-.spp-date-input[hidden] { display: none; }
-
-/* When panel footer — full-width confirm */
-.spp-when-footer {
-  display: flex;
-  padding-top: 8px;
-}
-.spp-when-confirm-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  width: 100%;
-  min-height: 46px;
-  padding: 13px 18px;
-  background: var(--color-text);
-  color: #fff;
-  border: none;
-  border-radius: 999px;
-  font-family: var(--font-body);
-  font-size: 15px;
-  line-height: 1.2;
-  font-weight: 620;
-  cursor: pointer;
-  transition: background var(--duration-fast), transform var(--duration-fast);
-}
-.spp-when-confirm-btn:hover {
-  background: #222;
-  transform: translateY(-1px);
-}
-.spp-when-confirm-btn:active { transform: translateY(0); }
-.spp-when-confirm-btn svg {
-  width: 16px; height: 16px;
-}
+.spp-cam-choice__ic svg { width: 100%; height: 100%; }
 
 /* Hamburger */
 .site-header__right {
@@ -1881,15 +1875,22 @@
     padding: 0 10px;
   }
   .search-pill__segment--describe {
-    flex: 1 1 55%;
+    flex: 1 1 auto;
   }
-  .search-pill__segment--when {
-    flex: 0 1 45%;
-    min-width: 92px;
-    padding: 0 10px;
+  /* The two media methods collapse to compact icon-only buttons on mobile so the
+     describe field keeps room; their labels are hidden (the icons carry meaning,
+     and each has an aria-label). */
+  .search-pill__segment--camera,
+  .search-pill__segment--voice {
+    flex: 0 0 44px;
+    min-width: 0;
+    padding: 0;
     overflow: hidden;
+    justify-content: center;
   }
-  .site-header[data-state="scrolled"] .search-pill__segment--when {
+  .search-pill__label--method { display: none; }
+  .site-header[data-state="scrolled"] .search-pill__segment--camera,
+  .site-header[data-state="scrolled"] .search-pill__segment--voice {
     flex: 0 0 0;
     min-width: 0;
     max-width: 0;
@@ -4019,7 +4020,6 @@
   .phone-mock__screen { border-radius: 34px; }
   /* Responsive: compact tools on small screens */
   .spp-toolbar { gap: 4px; }
-  .spp-tool-group { gap: 0; }
   .spp-tool {
     width: 32px;
     height: 32px;

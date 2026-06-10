@@ -719,7 +719,7 @@
               <div class="section-title" id="title-orders">Mis pedidos</div>
               <div class="section-sub" id="sub-orders" style="margin-bottom:0">Da seguimiento a tus solicitudes y revisa tu historial.</div>
             </div>
-            <a class="btn-outline orders-new-btn" href="/browse.html" id="orders-new-btn">
+            <a class="btn-outline orders-new-btn" href="/smart-request.html" id="orders-new-btn">
               <span class="orders-new-plus" aria-hidden="true">+</span>
               <span class="orders-new-label" id="orders-new-label">Nueva solicitud</span>
             </a>
@@ -2190,7 +2190,7 @@ function ordersEmptyHtml() {
       <div class="order-empty-emoji">${active ? '📋' : '🗂️'}</div>
       <div class="order-empty-title">${escapeHtml(active ? t.ordersEmptyActiveTitle : t.ordersEmptyPastTitle)}</div>
       <div class="order-empty-text">${escapeHtml(active ? t.ordersEmptyActiveText : t.ordersEmptyPastText)}</div>
-      ${active ? `<a class="btn-save" href="/browse.html">${escapeHtml(t.ordersEmptyCta)}</a>` : ''}
+      ${active ? `<a class="btn-save" href="/smart-request.html">${escapeHtml(t.ordersEmptyCta)}</a>` : ''}
     </div>`;
 }
 
