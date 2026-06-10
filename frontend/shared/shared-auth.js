@@ -1555,7 +1555,9 @@
         (es ? 'Verificar' : 'Verify') +
       '</button>' +
       (collectPhone
-        ? ''
+        ? '<button onclick="window.__uslLoginWithSecondaryPhone()" id="secondary-phone-login-btn" style="background:none;border:none;font-size:13px;color:#666;cursor:pointer;font-family:\'DM Sans\',sans-serif;width:100%;text-align:center;padding:8px;text-decoration:underline">' +
+            (es ? '¿Este teléfono ya tiene cuenta? Inicia sesión' : 'Phone already has an account? Log in') +
+          '</button>'
         : '<button onclick="window.__uslSkipSecondary()" style="background:none;border:none;font-size:13px;color:#888;cursor:pointer;font-family:\'DM Sans\',sans-serif;width:100%;text-align:center;padding:8px;text-decoration:underline">' +
             (es ? 'Omitir por ahora' : 'Skip for now') +
           '</button>')
@@ -1609,6 +1611,66 @@
       uslIdentifier = email;
       uslIdentifierType = 'email';
       renderOTPScreen('email', false);
+    }
+  };
+
+  window.__uslLoginWithSecondaryPhone = async function () {
+    var es = isEs();
+    var rawPhone = ((document.getElementById('secondary-phone') || {}).value || '').trim();
+    var candidatePhone = phoneIdentifierFromInput(rawPhone);
+    var btn = document.getElementById('secondary-phone-login-btn');
+    var btnLabel = btn ? btn.textContent : '';
+
+    if (!rawPhone || candidatePhone.replace(/\D/g, '').length < 8) {
+      setError(es ? 'Ingresa el teléfono para iniciar sesión.' : 'Enter the phone number to log in.');
+      return;
+    }
+
+    if (btn) { btn.disabled = true; btn.textContent = '...'; }
+    setError('');
+
+    try {
+      var res = await fetch(API() + '/api/auth/check-identifier', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier: candidatePhone })
+      });
+      var data = await res.json();
+
+      if (!res.ok) throw new Error('check_identifier_failed');
+      if (!data.exists) {
+        if (btn) { btn.disabled = false; btn.textContent = btnLabel || (es ? '¿Este teléfono ya tiene cuenta? Inicia sesión' : 'Phone already has an account? Log in'); }
+        setError(es
+          ? 'Este teléfono no tiene cuenta todavía. Usa Verificar para continuar el registro.'
+          : 'This phone is not registered yet. Use Verify to continue sign up.');
+        return;
+      }
+      if (data.provider === 'google') {
+        if (btn) { btn.disabled = false; btn.textContent = btnLabel || (es ? '¿Este teléfono ya tiene cuenta? Inicia sesión' : 'Phone already has an account? Log in'); }
+        setError(es
+          ? 'Esta cuenta usa Google. Vuelve al inicio de sesión y continúa con Google.'
+          : 'This account uses Google. Return to sign in and continue with Google.');
+        return;
+      }
+
+      uslIdentifier = candidatePhone;
+      uslIdentifierType = 'phone';
+      uslFirstIdentifierType = 'phone';
+      uslCurrentOTPType = '';
+      uslIsNew = false;
+      uslSignupComplete = false;
+      uslSuppressAutoSync = false;
+      uslCompletingExisting = false;
+      uslNewUserData = {};
+      uslLoginViaEmail = false;
+      uslTypedEmail = '';
+      uslAccountFirstName = '';
+      uslAccountPhoneLast4 = '';
+      uslAccountEmailVerified = false;
+      renderOTPScreen('phone', /* isLogin= */ true);
+    } catch (err) {
+      if (btn) { btn.disabled = false; btn.textContent = btnLabel || (es ? '¿Este teléfono ya tiene cuenta? Inicia sesión' : 'Phone already has an account? Log in'); }
+      setError(es ? 'Error de conexión. Intenta de nuevo.' : 'Connection error. Try again.');
     }
   };
 
