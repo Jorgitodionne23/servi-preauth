@@ -33,6 +33,7 @@
     answers: {},
     when: 'asap', date: '', time: '', dateLabel: '',
     address: DEFAULT_ADDR,
+    addressDetails: null,
     // recorder transients
     rec: null,
   };
@@ -73,6 +74,22 @@
     if (key === 'video') return tr(kind === 'sub' ? 'modeVideoSub' : 'modeVideo');
     if (key === 'photos') return tr(kind === 'sub' ? 'modePhotosSub' : 'modePhotos');
     return tr(kind === 'sub' ? 'modeVoiceSub' : 'modeVoice');
+  }
+  var SR_ADDR_PREFIX = 'sr_addr';
+  function addressFallbackDetails() {
+    return S.addressDetails || { address_type: 'house', street: S.address || defaultAddress() };
+  }
+  function syncAddressFromFields() {
+    if (!window.ServiAddress || !document.getElementById(SR_ADDR_PREFIX + '_root')) return;
+    S.addressDetails = window.ServiAddress.collect(SR_ADDR_PREFIX);
+    S.address = window.ServiAddress.format(S.addressDetails) || S.addressDetails.street || '';
+    var submitBtn = document.getElementById('sr-submit');
+    if (submitBtn) submitBtn.disabled = !(S.address.trim() && (S.when === 'asap' || S.date));
+  }
+  function mountAddressFields() {
+    if (S.phase !== 'build' || !window.ServiAddress || !document.getElementById(SR_ADDR_PREFIX + '_root')) return;
+    window.ServiAddress.init(SR_ADDR_PREFIX, {});
+    window.ServiAddress.fill(SR_ADDR_PREFIX, addressFallbackDetails());
   }
 
   // ════════════════════════════ COMPOSE ════════════════════════════════════
@@ -241,8 +258,10 @@
         '<input type="date" class="sr-input" id="sr-date" min="' + todayMin + '" value="' + esc(S.date) + '">' +
         '<input type="time" class="sr-input" id="sr-time" value="' + esc(S.time) + '"></div>' : '') +
       '<div class="sr-where"><label class="sr-where__label">' + I.pin(15) + esc(tr('serviceAddress')) + '</label>' +
-        '<div class="sr-where__row"><input class="sr-input" id="sr-addr" placeholder="' + esc(tr('addressPlaceholder')) + '" value="' + esc(S.address) + '">' +
-        '<button type="button" class="sr-loc" data-action="use-loc" aria-label="Use current location">' + I.pin(16) + '</button></div></div>' +
+        (window.ServiAddress
+          ? '<div class="sr-where__row sr-where__row--structured">' + window.ServiAddress.fieldsHTML(SR_ADDR_PREFIX, { compact: true, showDefault: false }) + '</div>'
+          : '<div class="sr-where__row"><input class="sr-input" id="sr-addr" placeholder="' + esc(tr('addressPlaceholder')) + '" value="' + esc(S.address) + '">' +
+            '<button type="button" class="sr-loc" data-action="use-loc" aria-label="Use current location">' + I.pin(16) + '</button></div>') + '</div>' +
       '</div>';
   }
 
@@ -340,6 +359,7 @@
     if (!root) return;
     var body = S.phase === 'compose' ? composeHTML() : S.phase === 'build' ? buildHTML() : successHTML();
     root.innerHTML = topbarHTML() + '<main class="sr-main">' + body + '</main>';
+    mountAddressFields();
     if (S.phase === 'compose' && S.mode === 'text') {
       var ta = document.getElementById('sr-ta');
       if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
@@ -481,12 +501,29 @@
     inp.addEventListener('change', function () { cb(Array.from(inp.files || [])); inp.remove(); });
     inp.click();
   }
+  function shouldOpenNativeVideoCapture() {
+    return window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+  }
 
   function uploadAttachment(file) {
     var API = (window.CONFIG && window.CONFIG.API_BASE) || '';
     var fd = new FormData(); fd.append('file', file);
     return fetch(API + '/api/uploads', { method: 'POST', body: fd })
       .then(function (r) { if (!r.ok) throw new Error('upload-' + r.status); return r.json(); });
+  }
+
+  function addVideoFile(file) {
+    if (!file) return;
+    var item = { kind: 'video', url: URL.createObjectURL(file), name: file.name, uploading: true };
+    S.media = [item]; render();
+    uploadAttachment(file).then(function (d) { item.url = d.url; item.uploading = false; render(); })
+      .catch(function () { item.uploading = false; render(); });
+  }
+
+  function pickVideo(capture) {
+    pickFiles('video/*', false, capture ? 'environment' : null, function (files) {
+      addVideoFile(files[0]);
+    });
   }
 
   // ── production-shaped payload for POST /api/service-requests ──
@@ -502,6 +539,7 @@
       preferredTime: S.when === 'schedule' ? (S.time || null) : null,
       isAsap: S.when === 'asap',
       serviceAddress: S.address,
+      serviceAddressDetails: S.addressDetails || undefined,
       clientName: (window.__user && window.__user.name) || '',
       clientPhone: (window.__user && window.__user.phone) || '',
       clientEmail: (window.__user && window.__user.email) || '',
@@ -520,6 +558,10 @@
   }
 
   function submit() {
+    if (window.ServiAddress && document.getElementById(SR_ADDR_PREFIX + '_root')) {
+      if (!window.ServiAddress.validate(SR_ADDR_PREFIX)) return;
+      syncAddressFromFields();
+    }
     if (!window.__user) {
       if (typeof window.openAuthModal === 'function') {
         var resume = function () { window.removeEventListener('servi-auth-success', resume); setTimeout(submit, 100); };
@@ -575,7 +617,7 @@
     stopWave(); if (S.rec && S.rec.timer) clearInterval(S.rec.timer);
     S.phase = 'compose'; S.mode = 'text'; S.text = ''; S.atts = []; S.media = []; S.rec = null; S._reqId = null; S.submittedId = null;
     S.thinking = false; S.req = { emoji: '✨', categoryLabel: 'Custom request' }; S.answers = {};
-    S.when = 'asap'; S.date = ''; S.time = ''; S.dateLabel = ''; S.address = defaultAddress();
+    S.when = 'asap'; S.date = ''; S.time = ''; S.dateLabel = ''; S.address = defaultAddress(); S.addressDetails = null;
     render();
   }
 
@@ -596,7 +638,10 @@
     var parts = a.split(':'), cmd = parts[0], arg = parts[1];
 
     switch (cmd) {
-      case 'mode': switchMode(arg); break;
+      case 'mode':
+        switchMode(arg);
+        if (arg === 'video' && shouldOpenNativeVideoCapture()) pickVideo(true);
+        break;
       case 'send-text': submitText(); break;
       case 'attach-photos': pickFiles('image/*', true, 'environment', function (files) {
         files.slice(0, 4 - S.atts.length).forEach(function (f) {
@@ -620,17 +665,22 @@
                 .catch(function () { var i = S.media.indexOf(item); if (i > -1) S.media.splice(i, 1); render(); });
             });
             S.media = S.media.slice(0, 5);
-          } else { S.media = [{ kind: 'video', url: URL.createObjectURL(files[0]), name: files[0] && files[0].name }]; }
+          } else { addVideoFile(files[0]); return; }
           render();
         }); break;
-      case 'media-record': startVid(); break;
+      case 'media-record': pickVideo(true); break;
       case 'media-sample': if (S.mode === 'photos') S.media = S.media.concat([{ kind: 'photo', sample: true }]).slice(0, 5); else S.media = [{ kind: 'video', sample: true, dur: 12 }]; render(); break;
       case 'media-remove': S.media.splice(+arg, 1); render(); break;
-      case 'media-use': runAnalyze(S.mode); break;
+      case 'media-use': if (S.media.some(function (m) { return m.uploading; })) return; runAnalyze(S.mode); break;
       case 'vid-stop': stopVid(); break;
       case 'open-picker': openPicker(); break;
       case 'when': S.when = arg; if (arg === 'asap') { S.date = ''; S.time = ''; } render(); break;
       case 'use-loc': {
+        if (window.ServiAddress && document.getElementById(SR_ADDR_PREFIX + '_root')) {
+          window.ServiAddress.geolocate(SR_ADDR_PREFIX);
+          setTimeout(syncAddressFromFields, 1200);
+          break;
+        }
         var locBtn = document.querySelector('.sr-loc'); if (locBtn) locBtn.classList.add('busy');
         if (!navigator.geolocation) { if (locBtn) locBtn.classList.remove('busy'); break; }
         navigator.geolocation.getCurrentPosition(function (pos) {
@@ -661,6 +711,7 @@
   document.addEventListener('input', function (e) {
     if (e.target.id === 'sr-ta') { S.text = e.target.value; var send = document.querySelector('[data-action="send-text"]'); if (send) { send.disabled = !S.text.trim(); send.classList.toggle('sr-iconbtn--accent', !!S.text.trim()); send.classList.toggle('sr-iconbtn--solid', !S.text.trim()); } var box = document.getElementById('sr-box'); }
     else if (e.target.id === 'sr-addr') { S.address = e.target.value; }
+    else if (e.target.closest && e.target.closest('#' + SR_ADDR_PREFIX + '_root')) { syncAddressFromFields(); }
     else if (e.target.id === 'sr-date') { S.date = e.target.value; var s = document.getElementById('sr-submit'); if (s) s.disabled = !(S.address.trim() && (S.when === 'asap' || S.date)); }
     else if (e.target.id === 'sr-time') { S.time = e.target.value; }
     else if (e.target.hasAttribute && e.target.hasAttribute('data-fup')) { S.answers[e.target.getAttribute('data-fup')] = e.target.value; }

@@ -1038,6 +1038,9 @@
       inp.addEventListener('change', () => { cb(Array.from(inp.files || [])); inp.remove(); });
       inp.click();
     }
+    function shouldOpenNativeVideoCapture() {
+      return window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+    }
     function uploadAttachment(file) {
       const API = (window.CONFIG && window.CONFIG.API_BASE) || '';
       const fd = new FormData(); fd.append('file', file);
@@ -1189,8 +1192,8 @@
         dashMedia = dashMedia.slice(0, 5); renderCapture();
       });
     }
-    function pickVideo() {
-      pickFiles('video/*', false, null, files => {
+    function pickVideo(capture) {
+      pickFiles('video/*', false, capture ? 'environment' : null, files => {
         if (!files.length) return;
         const f = files[0];
         const item = { kind: 'video', url: URL.createObjectURL(f), name: f.name, uploading: true };
@@ -1228,8 +1231,8 @@
           if (dashMedia.some(m => m.uploading)) return; // wait for uploads to finish
           goToReview({ mode: capMode, media: dashMedia.map(cleanMedia) });
           break;
-        case 'vid-upload': pickVideo(); break;
-        case 'vid-record': startVid(); break;
+        case 'vid-upload': pickVideo(false); break;
+        case 'vid-record': pickVideo(true); break;
         case 'vid-stop': stopVid(); break;
       }
     });
@@ -1251,7 +1254,10 @@
     // Inline media capture entry points (mic / camera / video buttons).
     window._dashShowCameraExplain = function () { openCapture('photos'); };
     window._dashShowMicExplain   = function () { openCapture('voice'); };
-    window._dashShowVideoExplain = function () { openCapture('video'); };
+    window._dashShowVideoExplain = function () {
+      openCapture('video');
+      if (shouldOpenNativeVideoCapture()) pickVideo(true);
+    };
 
     // Send the typed request → review screen, carrying any attached files.
     window._dashSubmitText = function () {

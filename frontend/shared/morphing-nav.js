@@ -109,6 +109,10 @@
     globe: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15 15 0 010 20M12 2a15 15 0 000 20"/></svg>',
     calendar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
     zap: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>',
+    stop: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>',
+    play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>',
+    upload: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>',
+    back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>',
   };
 
   // ─── Account icon (shown beside hamburger when logged in) ──────────────
@@ -230,10 +234,16 @@
 
         ${isSmartRequestPage ? '' : `<div class="site-header__center">
           <div class="site-header__pill" role="search" aria-label="${t.header.pillDescribe || 'Search'}">
-            <button type="button" class="search-pill__segment search-pill__segment--describe" data-segment="describe" aria-label="${t.header.pillDescribe || 'Describe'}">
+            <!-- Sliding "active card" highlight — glides + morphs between segments
+                 (in scrolled-expanded) so the active surface and its popover move
+                 as one. Geometry is published as CSS vars from JS. -->
+            <div class="search-pill__active-card" aria-hidden="true"></div>
+            <label class="search-pill__segment search-pill__segment--describe" data-segment="describe" aria-label="${t.header.pillDescribe || 'Describe'}">
               <span class="search-pill__icon">${ICON.search}</span>
-              <span class="search-pill__label">${t.header.pillDescribe || 'Describe what you need'}</span>
-            </button>
+              <textarea class="search-pill__label search-pill__input" id="spp-describe-input"
+                placeholder="${t.header.pillDescribe || 'Describe what you need'}" autocomplete="off"
+                spellcheck="false" rows="1" readonly></textarea>
+            </label>
             <span class="search-pill__divider" aria-hidden="true"></span>
             <button type="button" class="search-pill__segment search-pill__segment--when" data-segment="when" aria-label="${t.header.pillWhen || 'When'}">
               <span class="search-pill__label search-pill__label--when" id="pill-when-label">${t.header.pillWhen || 'When'}</span>
@@ -395,28 +405,192 @@
     `;
   }
 
+  // The describe panel is either the supporting toolbar OR — once a media tool
+  // is tapped — an in-place capture surface (photos / voice / video). Both render
+  // inside the same popover so the pill never navigates away to capture.
   function buildDescribePanel() {
-    const t = window.__t;
-    const suggestions = t.heroSuggestions || [];
+    return `<div class="spp-panel spp-panel--describe" data-panel="describe">${_describeInner()}</div>`;
+  }
+
+  function _describeInner() {
+    if (state.capMode) return _capturePanel();
+    const lang = window.__lang || 'es';
+    const attachLabel = lang === 'es' ? 'Adjuntar archivo' : 'Attach a file';
     return `
-      <div class="spp-panel" data-panel="describe">
-        <div class="spp-input-row">
-          <input type="text" class="spp-input" id="spp-describe-input"
-            placeholder="${t.header.pillDescribe || 'Describe what you need'}"
-            autocomplete="off">
-          <button type="button" class="spp-icon-btn spp-camera" data-action="spp-camera" aria-label="Camera">${ICON.camera}</button>
-          <button type="button" class="spp-icon-btn spp-mic" data-action="spp-mic" aria-label="Mic">${ICON.mic}</button>
-          <button type="button" class="spp-icon-btn spp-video" data-action="spp-video" aria-label="Video">${ICON.video}</button>
-          <button type="button" class="spp-submit-btn" data-action="spp-submit" aria-label="Submit">${ICON.arrow}</button>
+      <div class="spp-toolbar">
+        <button type="button" class="spp-tool spp-tool--add" data-action="spp-attach" aria-label="${attachLabel}">${ICON.plus}</button>
+        <div class="spp-tool-group">
+          <button type="button" class="spp-tool" data-action="spp-camera" aria-label="${lang === 'es' ? 'Cámara' : 'Camera'}">${ICON.camera}</button>
+          <span class="spp-tool-sep" aria-hidden="true"></span>
+          <button type="button" class="spp-tool" data-action="spp-mic" aria-label="${lang === 'es' ? 'Micrófono' : 'Mic'}">${ICON.mic}</button>
+          <span class="spp-tool-sep" aria-hidden="true"></span>
+          <button type="button" class="spp-tool" data-action="spp-video" aria-label="${lang === 'es' ? 'Video' : 'Video'}">${ICON.video}</button>
+          <button type="button" class="spp-submit-btn" data-action="spp-submit" aria-label="${lang === 'es' ? 'Enviar' : 'Submit'}">${ICON.arrow}</button>
         </div>
-        ${suggestions.length ? `
-          <div class="spp-suggestions-label">${t.hero2.suggestionsLabel || 'Try asking'}</div>
-          <ul class="spp-suggestions">
-            ${suggestions.slice(0, 4).map(s => `<li><button type="button" class="spp-suggestion" data-suggestion="${s.replace(/"/g,'&quot;')}">${s}</button></li>`).join('')}
-          </ul>
-        ` : ''}
       </div>
     `;
+  }
+
+  // ─── In-pill media capture ──────────────────────────────────────────────
+  // Mirrors the homepage hero's capture engine, but renders into the popover
+  // (which is part of the pill) so the user can take photos / record voice /
+  // record video without leaving the page. The captured media is handed to the
+  // Smart Request review screen only on "Continue/Use" — never to open a tool.
+  const _isEs = () => (window.__lang !== 'en');
+  function _capFmt(s) { const m = Math.floor(s / 60), sec = Math.floor(s % 60); return m + ':' + String(sec).padStart(2, '0'); }
+  function _capEsc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+  function _capBars() { return Array(28).fill('<span></span>').join(''); }
+  function _capStaticBars() { let o = ''; for (let i = 0; i < 28; i++) o += '<span style="transform:scaleY(' + (0.2 + Math.abs(Math.sin(i * 0.9)) * 0.8).toFixed(2) + ')"></span>'; return o; }
+
+  function _capPickFiles(accept, multiple, capture, cb) {
+    const inp = document.createElement('input');
+    inp.type = 'file'; inp.accept = accept; if (multiple) inp.multiple = true; if (capture) inp.capture = capture;
+    inp.style.display = 'none'; document.body.appendChild(inp);
+    inp.addEventListener('change', () => { cb(Array.from(inp.files || [])); inp.remove(); });
+    inp.click();
+  }
+  function _capShouldNativeVideo() { return window.matchMedia && window.matchMedia('(pointer: coarse)').matches; }
+  function _capUpload(file) {
+    const API = ((window.CONFIG && window.CONFIG.API_BASE) || '').replace(/\/+$/, '');
+    const fd = new FormData(); fd.append('file', file);
+    return fetch(API + '/api/uploads', { method: 'POST', body: fd })
+      .then(r => { if (!r.ok) throw new Error('upload-' + r.status); return r.json(); });
+  }
+
+  // Waveform — real mic if the user grants it, else a simulated animation.
+  function _capStartWave(id) {
+    const wrap = document.getElementById(id); if (!wrap) return;
+    const wb = wrap.querySelectorAll('span');
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+        _capWaveStream = stream;
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const src = ctx.createMediaStreamSource(stream);
+        const an = ctx.createAnalyser(); an.fftSize = 64; src.connect(an);
+        const data = new Uint8Array(an.frequencyBinCount);
+        (function loop() { an.getByteFrequencyData(data); for (let i = 0; i < wb.length; i++) { const v = data[Math.floor(i / wb.length * data.length)] / 255; wb[i].style.transform = 'scaleY(' + Math.max(0.12, v) + ')'; } _capWaveRAF = requestAnimationFrame(loop); })();
+      }).catch(() => _capFakeWave(wb));
+    } else { _capFakeWave(wb); }
+  }
+  function _capFakeWave(wb) { (function loop() { for (let i = 0; i < wb.length; i++) wb[i].style.transform = 'scaleY(' + (0.15 + Math.random() * 0.85).toFixed(2) + ')'; _capWaveRAF = requestAnimationFrame(() => setTimeout(loop, 90)); })(); }
+  function _capStopWave() { if (_capWaveRAF) cancelAnimationFrame(_capWaveRAF); _capWaveRAF = null; if (_capWaveStream) { _capWaveStream.getTracks().forEach(t => t.stop()); _capWaveStream = null; } }
+
+  // Panels reuse the .dash-cap__* design system (loaded globally in landing-theme.css).
+  function _capBackBar() { return '<button type="button" class="dash-cap__back" data-action="sppcap-back">' + ICON.back + (_isEs() ? 'Volver' : 'Back') + '</button>'; }
+  function _capturePanel() {
+    return state.capMode === 'voice' ? _capVoicePanel() : state.capMode === 'video' ? _capVideoPanel() : _capPhotosPanel();
+  }
+  function _capVoicePanel() {
+    const r = _capRec || { phase: 'idle', elapsed: 0 };
+    if (r.phase === 'done') {
+      return _capBackBar() +
+        '<div class="dash-cap__voice-done"><span class="dash-cap__play">' + ICON.play + '</span>' +
+        '<div class="dash-wave dash-wave--static">' + _capStaticBars() + '</div>' +
+        '<span class="dash-cap__dur">' + _capFmt(r.elapsed) + '</span></div>' +
+        '<div class="dash-cap__actions">' +
+          '<button type="button" class="dash-cap__btn dash-cap__btn--ghost" data-action="sppcap-voice-reset">' + ICON.mic + (_isEs() ? 'Repetir' : 'Re-record') + '</button>' +
+          '<button type="button" class="dash-cap__btn dash-cap__btn--accent" data-action="sppcap-voice-use">' + (_isEs() ? 'Usar grabación' : 'Use recording') + ICON.arrow + '</button>' +
+        '</div>';
+    }
+    const rec = r.phase === 'recording';
+    return _capBackBar() +
+      '<div class="dash-cap__voice">' +
+        '<button type="button" class="dash-mic' + (rec ? ' rec' : '') + '" data-action="sppcap-mic-toggle" aria-label="' + (rec ? 'Stop' : 'Record') + '">' + (rec ? ICON.stop : ICON.mic) + '</button>' +
+        (rec ? '<div class="dash-wave" id="spp-wave">' + _capBars() + '</div>' : '<div class="dash-wave dash-wave--idle">' + _capBars() + '</div>') +
+        '<div class="dash-cap__meta">' + (rec
+          ? '<span class="dash-cap__time"><i class="dash-cap__dot"></i><span id="spp-rec-elapsed">' + _capFmt(r.elapsed) + '</span> / ' + _capFmt(60) + '</span>'
+          : '<span class="dash-cap__hint">' + (_isEs() ? 'Toca para grabar (máx 1:00)' : 'Tap to record (max 1:00)') + '</span>') + '</div>' +
+      '</div>';
+  }
+  function _capVideoPanel() {
+    if (_capMedia.length) {
+      const it = _capMedia[0];
+      return _capBackBar() +
+        '<div class="dash-cap__media-chip' + (it.uploading ? ' uploading' : '') + '">' + ICON.video +
+          '<span>' + (it.name ? _capEsc(it.name) : (_isEs() ? 'Video listo' : 'Video ready')) + (it.dur ? ' · ' + _capFmt(it.dur) : '') + '</span>' +
+          '<button type="button" class="dash-cap__chip-x" data-action="sppcap-media-clear">' + ICON.close + '</button></div>' +
+        '<div class="dash-cap__actions"><button type="button" class="dash-cap__btn dash-cap__btn--accent" data-action="sppcap-media-use">' + (_isEs() ? 'Continuar' : 'Continue') + ICON.arrow + '</button></div>';
+    }
+    return _capBackBar() + '<div class="dash-cap__drop"><div class="dash-cap__drop-ic">' + ICON.video + '</div>' +
+      '<p class="dash-cap__drop-title">' + (_isEs() ? 'Sube o graba un video' : 'Upload or record a video') + '</p>' +
+      '<div class="dash-cap__drop-btns">' +
+        '<button type="button" class="dash-cap__btn dash-cap__btn--secondary" data-action="sppcap-vid-upload">' + ICON.upload + (_isEs() ? 'Subir video' : 'Upload video') + '</button>' +
+        '<button type="button" class="dash-cap__btn dash-cap__btn--secondary" data-action="sppcap-vid-record">' + ICON.video + (_isEs() ? 'Grabar' : 'Record') + '</button></div></div>';
+  }
+  function _capPhotosPanel() {
+    if (_capMedia.length) {
+      const thumbs = _capMedia.map((it, i) =>
+        '<div class="dash-thumb' + (it.uploading ? ' uploading' : '') + '">' + (it.url ? '<img src="' + it.url + '" alt="">' : ICON.camera) +
+        '<button type="button" class="dash-thumb__x" data-action="sppcap-media-remove:' + i + '">' + ICON.close + '</button></div>').join('');
+      const add = _capMedia.length < 5 ? '<button type="button" class="dash-thumb dash-thumb--add" data-action="sppcap-photos-add">' + ICON.plus + '</button>' : '';
+      return _capBackBar() + '<div class="dash-thumbs">' + thumbs + add + '</div>' +
+        '<div class="dash-cap__actions"><button type="button" class="dash-cap__btn dash-cap__btn--accent" data-action="sppcap-media-use">' +
+        (_isEs() ? 'Continuar (' + _capMedia.length + ')' : 'Continue (' + _capMedia.length + ')') + ICON.arrow + '</button></div>';
+    }
+    return _capBackBar() + '<div class="dash-cap__drop"><div class="dash-cap__drop-ic">' + ICON.camera + '</div>' +
+      '<p class="dash-cap__drop-title">' + (_isEs() ? 'Agrega fotos del problema' : 'Add photos of the problem') + '</p>' +
+      '<div class="dash-cap__drop-btns"><button type="button" class="dash-cap__btn dash-cap__btn--secondary" data-action="sppcap-photos-add">' + ICON.upload + (_isEs() ? 'Elegir fotos' : 'Choose photos') + '</button></div></div>';
+  }
+
+  // Swap just the describe panel's inner content in place, then resize the body.
+  function _renderCapture() {
+    const popover = document.getElementById('search-pill-popover');
+    if (!popover) return;
+    const panel = popover.querySelector('.spp-panel--describe');
+    if (!panel) return;
+    panel.innerHTML = _describeInner();
+    _showActivePanel('describe');
+  }
+
+  // Voice recorder — captures duration + a live waveform (mirrors the hero).
+  function _capStartVoice() {
+    _capRec = { phase: 'recording', elapsed: 0, t0: Date.now() };
+    _renderCapture();
+    _capRec.timer = setInterval(() => {
+      _capRec.elapsed = (Date.now() - _capRec.t0) / 1000;
+      const el = document.getElementById('spp-rec-elapsed'); if (el) el.textContent = _capFmt(_capRec.elapsed);
+      if (_capRec.elapsed >= 60) _capFinishVoice();
+    }, 100);
+    _capStartWave('spp-wave');
+  }
+  function _capFinishVoice() { if (!_capRec) return; clearInterval(_capRec.timer); _capStopWave(); _capRec.phase = 'done'; _renderCapture(); }
+
+  function _capPickPhotos() {
+    _capPickFiles('image/*', true, 'environment', files => {
+      files.slice(0, 5 - _capMedia.length).forEach(f => {
+        const item = { kind: 'photo', url: URL.createObjectURL(f), uploading: true };
+        _capMedia.push(item);
+        _capUpload(f).then(d => { item.url = d.url; item.uploading = false; _renderCapture(); })
+          .catch(() => { const i = _capMedia.indexOf(item); if (i > -1) _capMedia.splice(i, 1); _renderCapture(); });
+      });
+      _capMedia = _capMedia.slice(0, 5); _renderCapture();
+    });
+  }
+  function _capPickVideo(capture) {
+    _capPickFiles('video/*', false, capture ? 'environment' : null, files => {
+      if (!files.length) return;
+      const f = files[0];
+      const item = { kind: 'video', url: URL.createObjectURL(f), name: f.name, uploading: true };
+      _capMedia = [item]; _renderCapture();
+      _capUpload(f).then(d => { item.url = d.url; item.uploading = false; _renderCapture(); })
+        .catch(() => { item.uploading = false; _renderCapture(); });
+    });
+  }
+
+  function _capCleanMedia(it) { const o = { kind: it.kind }; if (it.url) o.url = it.url; if (it.dur) o.dur = it.dur; if (it.name) o.name = it.name; if (it.sample) o.sample = true; return o; }
+  function _capReset() {
+    _capStopWave();
+    if (_capRec && _capRec.timer) clearInterval(_capRec.timer);
+    _capRec = null; _capMedia = []; state.capMode = null;
+  }
+  // Hand captured media to the Smart Request review screen — same sessionStorage
+  // handoff the hero uses. This is the final submit step, not "opening a tool".
+  function _capHandoff(payload) {
+    if (state._describeText && state._describeText.trim()) payload.text = state._describeText.trim();
+    try { sessionStorage.setItem('sr_handoff', JSON.stringify(payload)); } catch (_) {}
+    const url = new URL('/smart-request.html', window.location.origin);
+    url.searchParams.set('return', window.location.pathname + window.location.search + window.location.hash);
+    window.location.href = url.toString();
   }
 
   function buildWhenPanel() {
@@ -426,21 +600,21 @@
     const lang = window.__lang || 'es';
     const confirmLabel = lang === 'es' ? 'Confirmar' : 'Confirm';
     return `
-      <div class="spp-panel" data-panel="when">
+      <div class="spp-panel spp-panel--when" data-panel="when">
         <div class="spp-when-opts">
           <button type="button" class="spp-when-opt" data-action="spp-when-asap" data-selected="${isAsap}">
             <span class="spp-when-opt-icon">${ICON.zap}</span>
-            ${t.header.pillWhenAsap || 'As soon as possible'}
+            <span class="spp-when-opt-label">${t.header.pillWhenAsap || 'As soon as possible'}</span>
           </button>
           <button type="button" class="spp-when-opt" data-action="spp-when-date" data-selected="${isDate}">
             <span class="spp-when-opt-icon">${ICON.calendar}</span>
-            ${t.header.pillWhenDate || 'Choose a date'}
+            <span class="spp-when-opt-label">${t.header.pillWhenDate || 'Choose a date'}</span>
           </button>
-          <input type="date" class="spp-date-input" id="spp-date-input"
-            ${isDate ? '' : 'hidden'}
-            value="${state.whenDate}"
-            min="${new Date().toISOString().split('T')[0]}">
         </div>
+        <input type="date" class="spp-date-input" id="spp-date-input"
+          ${isDate ? '' : 'hidden'}
+          value="${state.whenDate}"
+          min="${new Date().toISOString().split('T')[0]}">
         <div class="spp-when-footer">
           <button type="button" class="spp-when-confirm-btn" data-action="spp-when-confirm">
             ${confirmLabel} ${ICON.arrow}
@@ -488,6 +662,103 @@
     pill.style.setProperty('--pill-indicator-width', `${width}px`);
   }
 
+  // ─── Popover anchoring ─────────────────────────────────────────────────
+  // The popover "unfolds" from the active segment: it is sized to that
+  // segment's exact width and overlaps its bottom edge by 1px, so the segment
+  // and the panel read as one continuous surface. Geometry is published as
+  // CSS custom properties so the panel can glide + resize between segments.
+  function _positionPopover() {
+    const popover = document.getElementById('search-pill-popover');
+    const center = document.querySelector('.site-header__center');
+    const pill = document.querySelector('.site-header__pill');
+    if (!popover || !center || !pill) return;
+    const segName = state.segment === 'when' ? 'when' : 'describe';
+    const segBtn = pill.querySelector(`.search-pill__segment[data-segment="${segName}"]`);
+    if (!segBtn) return;
+    const centerRect = center.getBoundingClientRect();
+    const segRect = segBtn.getBoundingClientRect();
+    // "Describe" unfolds from its own (wide) segment. "When" is too narrow to
+    // anchor to without reading as a stray box floating mid-pill — so it unfolds
+    // from the WHOLE pill, edges flush with the pill's edges. The active card
+    // (below) widens to match, so the pill + panel still read as one surface.
+    const anchorRect = state.segment === 'when' ? pill.getBoundingClientRect() : segRect;
+    const left = anchorRect.left - centerRect.left;
+    const top = segRect.bottom - centerRect.top - 1;
+    // Exact (un-rounded) so the popover's left/right edges line up with the
+    // anchor's to the sub-pixel — any rounding shows up as a visible step.
+    popover.style.setProperty('--spp-left', `${left}px`);
+    popover.style.setProperty('--spp-top', `${top}px`);
+    popover.style.setProperty('--spp-width', `${anchorRect.width}px`);
+    // The card highlight in the pill rides the same segment geometry, so it
+    // slides + morphs in lockstep with the popover hanging beneath it.
+    _positionActiveCard();
+  }
+
+  // Position the sliding active-card highlight onto the active segment (relative
+  // to the pill). Shown only while a segment is open (scrolled-expanded); it is
+  // the white surface the popover continues from.
+  function _positionActiveCard() {
+    const pill = document.querySelector('.site-header__pill');
+    if (!pill) return;
+    const card = pill.querySelector('.search-pill__active-card');
+    if (!card) return;
+    if (state.segment !== 'describe' && state.segment !== 'when') {
+      card.removeAttribute('data-show');
+      return;
+    }
+    const seg = pill.querySelector(`.search-pill__segment[data-segment="${state.segment}"]`);
+    if (!seg) return;
+    const pr = pill.getBoundingClientRect();
+    // "When" turns the entire pill into the welded white surface (its lone
+    // segment is too narrow); "describe" highlights just its own segment.
+    const sr = state.segment === 'when' ? pr : seg.getBoundingClientRect();
+    // Absolute children are positioned from the pill's padding box, so offset by
+    // its border to land the card exactly on the segment (sub-pixel, like the popover).
+    const pcs = getComputedStyle(pill);
+    const bl = parseFloat(pcs.borderLeftWidth) || 0;
+    const bt = parseFloat(pcs.borderTopWidth) || 0;
+    card.style.setProperty('--card-x', `${sr.left - pr.left - bl}px`);
+    card.style.setProperty('--card-y', `${sr.top - pr.top - bt}px`);
+    card.style.setProperty('--card-w', `${sr.width}px`);
+    // +2px so the card underlaps the popover (which starts 1px above the
+    // segment's bottom); the popover paints on top, so the seam never shows.
+    card.style.setProperty('--card-h', `${sr.height + 2}px`);
+    card.setAttribute('data-segment', state.segment);
+    card.setAttribute('data-show', 'true');
+  }
+
+  // On open the whole pill morphs (and links reappear / browse button hides),
+  // so the active segment's position keeps shifting for a few hundred ms. Glue
+  // the popover to it every frame (no glide) until the layout settles, so the
+  // toolbar never rests a few px off from the card above it.
+  let _morphTrackRAF = null;
+  function _setSnap(on) {
+    // Suppress the left/width/top glide on BOTH the popover and the card while
+    // tracking, so they stay welded to the morphing segment instead of sliding
+    // in from a stale position.
+    const popover = document.getElementById('search-pill-popover');
+    const card = document.querySelector('.search-pill__active-card');
+    [popover, card].forEach(el => { if (el) el.classList.toggle('spp--instant', on); });
+  }
+  function _trackPopoverDuringMorph(ms) {
+    const popover = document.getElementById('search-pill-popover');
+    if (!popover) return;
+    if (_morphTrackRAF) cancelAnimationFrame(_morphTrackRAF);
+    _setSnap(true);
+    const start = performance.now();
+    const step = () => {
+      if (!state.segment) { _setSnap(false); _morphTrackRAF = null; return; }
+      _positionPopover();
+      if (performance.now() - start < ms) {
+        _morphTrackRAF = requestAnimationFrame(step);
+      } else {
+        _setSnap(false);
+        _morphTrackRAF = null;
+      }
+    };
+    _morphTrackRAF = requestAnimationFrame(step);
+  }
+
   // ─── State machine ─────────────────────────────────────────────────────
   const state = {
     scroll: 'hero',       // 'hero' | 'scrolled'
@@ -497,8 +768,12 @@
     whenChoice: 'asap',   // 'asap' | 'date'
     whenDate: '',         // ISO date string when choice === 'date'
     _describeText: '',    // carried from describe panel to when panel
+    capMode: null,        // null | 'photos' | 'voice' | 'video' — in-pill capture surface
   };
   let _pillIndicatorTimer = null;
+  let _capMedia = [];     // captured media in the popover [{kind,url,dur,name,uploading,sample}]
+  let _capRec = null;     // transient recorder {phase,elapsed,t0,timer}
+  let _capWaveRAF = null, _capWaveStream = null;
 
   function _showActivePanel(segment) {
     const popover = document.getElementById('search-pill-popover');
@@ -518,8 +793,48 @@
     // Animate body height to new panel's natural height
     body.style.height = targetHeight + 'px';
 
-    // Update popover width based on segment
+    // Tag the active segment (drives panel-specific styling) and re-anchor
+    // the panel under that segment so it glides + resizes into place.
     popover.setAttribute('data-segment', segment);
+    _positionPopover();
+  }
+
+  function _syncDescribeInputState() {
+    const input = document.getElementById('spp-describe-input');
+    if (!input) return;
+    input.readOnly = state.segment !== 'describe';
+    if (state._describeText !== input.value) input.value = state._describeText;
+    _autoGrowDescribe();
+  }
+
+  // The describe field is a single-line label in the collapsed pill and a
+  // downward-growing compose box when active. Size it to its content and keep
+  // the toolbar popover flush against the (now taller) segment's bottom edge.
+  const SPP_DESCRIBE_MAX_H = 168; // ~6 lines, then the textarea scrolls
+  function _autoGrowDescribe() {
+    const ta = document.getElementById('spp-describe-input');
+    if (!ta) return;
+    if (state.segment !== 'describe') {
+      // Collapsed: drop the inline height so the base single-line rule applies.
+      ta.style.height = '';
+      ta.style.overflowY = '';
+      return;
+    }
+    if (!ta.value) {
+      // Empty: use the CSS baseline height. (Measuring scrollHeight here
+      // would pick up the placeholder's wrapped height while the field is still
+      // narrow mid-morph, inflating it and then snapping down on first keypress.)
+      ta.style.height = '';
+      ta.style.overflowY = 'hidden';
+      _positionPopover();
+      return;
+    }
+    ta.style.height = 'auto';
+    const next = Math.min(ta.scrollHeight, SPP_DESCRIBE_MAX_H);
+    ta.style.height = next + 'px';
+    ta.style.overflowY = ta.scrollHeight > SPP_DESCRIBE_MAX_H ? 'auto' : 'hidden';
+    // As the card grows, re-anchor the toolbar to its new bottom edge.
+    _positionPopover();
   }
 
   function applyHeaderState() {
@@ -544,7 +859,9 @@
     document.querySelectorAll('.search-pill__segment').forEach(btn => {
       btn.setAttribute('data-active', btn.getAttribute('data-segment') === state.segment ? 'true' : 'false');
     });
+    _syncDescribeInputState();
     requestAnimationFrame(_updatePillIndicator);
+    requestAnimationFrame(_positionActiveCard);
     if (_pillIndicatorTimer) clearTimeout(_pillIndicatorTimer);
     _pillIndicatorTimer = setTimeout(_updatePillIndicator, 280);
 
@@ -568,20 +885,32 @@
             ${buildDescribePanel()}
             ${buildWhenPanel()}
           </div>`;
-          // Set initial heights after render
+          // Start collapsed so the body unfolds (0 → natural height) on open.
+          const _body = popover.querySelector('.spp-body');
+          if (_body) _body.style.height = '0px';
+          // Snap geometry before fade-in, then size the active panel.
+          // _trackPopoverDuringMorph adds (and solely owns) the .spp--instant
+          // snap for the whole open morph — calling _refreshPopoverGeometry here
+          // too would schedule a competing 2-frame removal that unglues the
+          // popover mid-morph, so it visibly lags the segment (overhang + seam).
           requestAnimationFrame(() => {
             _showActivePanel(state.segment);
             if (state.segment === 'describe') {
               const inp = document.getElementById('spp-describe-input');
               if (inp) inp.focus();
+              _autoGrowDescribe();
             }
+            // Keep the toolbar glued to the segment until the open-morph and
+            // reflowing nav (links/browse button) fully settle.
+            _trackPopoverDuringMorph(720);
           });
         } else {
-          // Already open — just switch active panel (no rebuild)
+          // Already open — glide the panel to the newly active segment
           _showActivePanel(state.segment);
           if (state.segment === 'describe') {
             const inp = document.getElementById('spp-describe-input');
             if (inp) inp.focus();
+            _autoGrowDescribe();
           }
         }
       }
@@ -613,10 +942,13 @@
       }
       return;
     }
+    // Leaving describe (e.g. switching to "when") tears down any open capture surface.
+    if (seg !== 'describe' && state.capMode) _capReset();
     state.segment = seg;
     applyHeaderState();
   }
   function closeSegment() {
+    if (state.capMode) _capReset();
     state.segment = null;
     applyHeaderState();
   }
@@ -698,42 +1030,43 @@
     openSegment('describe');
     requestAnimationFrame(() => {
       const input = document.getElementById('spp-describe-input');
-      if (input) input.focus();
+      if (input) {
+        input.readOnly = false;
+        input.focus();
+      }
     });
   }
 
   function releaseSearchPillFocus() {
     const popover = document.getElementById('search-pill-popover');
     const active = document.activeElement;
-    if (popover && active && popover.contains(active) && typeof active.blur === 'function') {
+    const pill = document.querySelector('.site-header__pill');
+    if (
+      active &&
+      typeof active.blur === 'function' &&
+      ((popover && popover.contains(active)) || (pill && pill.contains(active)))
+    ) {
       active.blur();
     }
   }
 
+  // Open an in-pill capture surface inside the popover (no navigation). `mode`:
+  //   'photos' | 'voice' | 'video' from the tool buttons; 'upload' from the "+".
   function openSearchPillMedia(mode) {
+    const cap = mode === 'upload' ? 'photos' : mode;
+    _capStopWave();
+    if (_capRec && _capRec.timer) clearInterval(_capRec.timer);
+    _capRec = null; _capMedia = [];
+    state.capMode = cap;
+    // Ensure the describe popover is open, then render the capture panel into it.
+    if (state.segment !== 'describe') openSegment('describe');
     releaseSearchPillFocus();
-    closeSegment();
-
     requestAnimationFrame(() => {
-      if (typeof window.openSmartRequest === 'function') {
-        window.openSmartRequest({ mode });
-        return;
-      }
-
-      const dashboardOpeners = {
-        photos: window._dashShowCameraExplain,
-        voice: window._dashShowMicExplain,
-        video: window._dashShowVideoExplain,
-      };
-      if (typeof dashboardOpeners[mode] === 'function') {
-        dashboardOpeners[mode]();
-        return;
-      }
-
-      const url = new URL('/smart-request.html', window.location.origin);
-      url.searchParams.set('mode', mode);
-      url.searchParams.set('return', window.location.pathname + window.location.search + window.location.hash);
-      window.location.href = url.toString();
+      _renderCapture();
+      // "+" jumps straight to the photo picker; video on touch devices opens the
+      // native camera immediately (same behavior as the homepage hero).
+      if (mode === 'upload') _capPickPhotos();
+      else if (cap === 'video' && _capShouldNativeVideo()) _capPickVideo(true);
     });
   }
 
@@ -797,6 +1130,17 @@
     const seg = e.target.closest('.search-pill__segment');
     if (seg) {
       const which = seg.getAttribute('data-segment');
+      if (which === 'describe') {
+        if (state.segment !== 'describe') openSegment('describe');
+        requestAnimationFrame(() => {
+          const input = document.getElementById('spp-describe-input');
+          if (input) {
+            input.readOnly = false;
+            input.focus();
+          }
+        });
+        return;
+      }
       if (which !== 'browse' && state.segment === which) closeSegment();
       else openSegment(which);
       return;
@@ -898,6 +1242,32 @@
         if (inp) { inp.value = suggestion; inp.focus(); }
         return;
       }
+      // In-pill capture actions (own namespace so they never collide with the
+      // homepage hero's separate [data-cap] handler).
+      if (action && action.indexOf('sppcap-') === 0) {
+        const parts = action.split(':'); const cmd = parts[0]; const arg = parts[1];
+        switch (cmd) {
+          case 'sppcap-back': _capReset(); _renderCapture(); break;
+          case 'sppcap-mic-toggle': (_capRec && _capRec.phase === 'recording') ? _capFinishVoice() : _capStartVoice(); break;
+          case 'sppcap-voice-reset': _capRec = null; _renderCapture(); break;
+          case 'sppcap-voice-use': _capHandoff({ mode: 'voice', media: [{ kind: 'voice', duration: _capRec ? _capRec.elapsed : 0 }] }); break;
+          case 'sppcap-photos-add': _capPickPhotos(); break;
+          case 'sppcap-media-remove': _capMedia.splice(+arg, 1); _renderCapture(); break;
+          case 'sppcap-media-clear': _capMedia = []; _renderCapture(); break;
+          case 'sppcap-media-use':
+            if (_capMedia.some(m => m.uploading)) return; // wait for uploads to finish
+            _capHandoff({ mode: state.capMode, media: _capMedia.map(_capCleanMedia) });
+            break;
+          case 'sppcap-vid-upload': _capPickVideo(false); break;
+          case 'sppcap-vid-record': _capPickVideo(true); break;
+        }
+        return;
+      }
+      if (action === 'spp-attach') {
+        // The "+" affordance opens the in-pill photo picker (capture in place).
+        openSearchPillMedia('upload');
+        return;
+      }
       if (action === 'spp-submit') {
         // Advance from describe → when panel
         advanceSearchPillDescribe();
@@ -963,6 +1333,13 @@
     }
   }
 
+  function onRootInput(e) {
+    if (e.target && e.target.id === 'spp-describe-input') {
+      state._describeText = e.target.value;
+      _autoGrowDescribe();
+    }
+  }
+
   function onRootKeydown(e) {
     if (e.key === 'Escape') {
       if (state.segment) closeSegment();
@@ -970,8 +1347,12 @@
     }
     if (e.key === 'Enter') {
       if (e.target && e.target.id === 'spp-describe-input') {
-        e.preventDefault();
-        advanceSearchPillDescribe();
+        // Compose box: plain Enter inserts a newline; the arrow button (or
+        // Cmd/Ctrl+Enter) submits and advances to the scheduling panel.
+        if (e.metaKey || e.ctrlKey) {
+          e.preventDefault();
+          advanceSearchPillDescribe();
+        }
       } else if (e.target && e.target.id === 'header-panel-input') {
         e.preventDefault();
         const val = e.target.value.trim();
@@ -1124,6 +1505,7 @@
       document.addEventListener('click', onRootClick);
       document.addEventListener('keydown', onRootKeydown);
       document.addEventListener('change', onRootChange);
+      document.addEventListener('input', onRootInput);
       document.body.__servisiteHeaderBound = true;
     }
     initScrollObserver();
@@ -1145,7 +1527,12 @@
     window.buildNavbar();
   }
   window.addEventListener('langchange', () => { window.buildNavbar(); });
-  window.addEventListener('resize', () => { requestAnimationFrame(_updatePillIndicator); }, { passive: true });
+  window.addEventListener('resize', () => {
+    requestAnimationFrame(() => {
+      _updatePillIndicator();
+      if (state.segment === 'describe' || state.segment === 'when') _positionPopover();
+    });
+  }, { passive: true });
 
   // ─── Legacy hamburger shim (used by some shared scripts) ──────────────
   window.toggleMobileMenu = function (show) {

@@ -212,12 +212,31 @@ body {
 
 .sr-when { display: flex; flex-direction: column; gap: 10px; }
 .sr-sched { display: flex; gap: 10px; margin-top: 12px; }
-.sr-sched .sr-input { flex: 1; }
+/* min-width:0 lets the flex children shrink — iOS date/time inputs have an
+   intrinsic content width that otherwise pushes them past the card edge.
+   appearance:none normalizes their height/box on iOS Safari. */
+.sr-sched .sr-input { flex: 1; min-width: 0; }
+.sr-sched input[type="date"],
+.sr-sched input[type="time"] {
+  -webkit-appearance: none;
+  appearance: none;
+  min-height: 48px;
+}
 .sr-where { margin-top: 18px; }
 .sr-where__label { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px; }
 .sr-where__label svg { color: var(--servi-teal-deep, #74B8C4); }
 .sr-where__row { display: flex; gap: 10px; }
 .sr-where__row .sr-input { flex: 1; }
+.sr-where__row--structured { display: block; }
+.sr-where__row--structured .servi-addr { width: 100%; }
+.sr-where__row--structured .servi-addr .sa-label { color: var(--text-primary); }
+.sr-where__row--structured .servi-addr .sa-input:focus,
+.sr-where__row--structured .servi-addr textarea.sa-input:focus,
+.sr-where__row--structured .servi-addr select.sa-input:focus {
+  border-color: var(--servi-teal, #95CCD5);
+  box-shadow: 0 0 0 3px var(--servi-teal-tint, #e8f4f6);
+}
+.sr-where__row--structured .servi-addr .sa-geo:hover { border-color: var(--servi-teal, #95CCD5); }
 .sr-loc { width: 46px; flex-shrink: 0; border: 1.5px solid var(--border-input, #d4d4d4); border-radius: 12px; background: #fff; color: var(--servi-teal-deep, #74B8C4); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: border-color .2s; }
 .sr-loc:hover { border-color: var(--servi-teal, #95CCD5); }
 .sr-loc.busy { opacity: .5; animation: sr-blink 1s infinite; }

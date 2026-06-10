@@ -579,7 +579,9 @@
       .svc-layout {
         grid-template-columns: 1fr;
       }
-      .svc-sidebar { display: none; }
+      /* Hide only the desktop sidebar (direct child of the layout grid);
+         the sidebar nested inside .svc-mobile-form must stay visible on mobile. */
+      .svc-layout > .svc-sidebar { display: none; }
       .svc-mobile-bar { display: block; }
       .svc-mobile-form { display: block; }
     }
