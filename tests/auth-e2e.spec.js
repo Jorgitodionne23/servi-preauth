@@ -32,6 +32,7 @@ const phones = {
   addressUser: `5632${PHONE_SUFFIX}`,
   servicePageGate: `5642${PHONE_SUFFIX}`,
   emailLinkHandoff: `5652${PHONE_SUFFIX}`,
+  emailSignupCrossDevice: `5662${PHONE_SUFFIX}`,
 };
 
 function e164(localPhone) {
@@ -549,6 +550,45 @@ test('email-first signup, full verification', async ({ page }) => {
     u.email_verified === true
   );
   expect(user.phone).toBe(e164(phones.emailFullSecondary));
+});
+
+test('email-first signup email link verified on another device resumes only original flow', async ({ browser, page }) => {
+  await clearBrowser(page);
+  await openAuth(page);
+  const primaryEmail = email('email-cross-device');
+  await enterIdentifier(page, primaryEmail);
+  await page.waitForSelector('#send-email-link-btn');
+  await page.click('#send-email-link-btn');
+
+  let link = null;
+  await expect.poll(async () => {
+    link = await latestEmailLink(primaryEmail).catch(() => null);
+    return link;
+  }, { timeout: 10_000 }).not.toBeNull();
+
+  const phoneContext = await browser.newContext();
+  const verifier = await phoneContext.newPage();
+  await verifier.goto(link);
+  await verifier.waitForLoadState('networkidle');
+  await expect(verifier.locator('#verification-title')).toContainText(/verificado|verified/i);
+  await expect(verifier.locator('#signup-first-name')).toHaveCount(0);
+
+  await page.bringToFront();
+  await page.waitForSelector('#signup-first-name', { timeout: 15_000 });
+  await fillName(page, 'CrossDevice', 'Email');
+  await page.waitForSelector('#secondary-phone');
+  await page.fill('#secondary-phone', phones.emailSignupCrossDevice);
+  await page.click('button[onclick="window.__uslSecondaryNext()"]');
+  await sendAndVerifyPhoneOtp(page, e164(phones.emailSignupCrossDevice));
+
+  const user = await pollUser(page, (u) =>
+    u.email === primaryEmail &&
+    u.phone === e164(phones.emailSignupCrossDevice) &&
+    u.email_verified === true &&
+    u.phone_verified === true
+  );
+  expect(user.email).toBe(primaryEmail);
+  await phoneContext.close();
 });
 
 test('existing email-link login completes when verified in another browser context', async ({ browser, page }) => {

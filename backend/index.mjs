@@ -5392,29 +5392,32 @@ app.post('/api/auth/email-link-flow/start', publicFormLimit, async (req, res) =>
   try {
     const emailNorm = normalizeEmail(req.body?.email || '');
     if (!emailNorm) return res.status(400).json({ error: 'invalid_email' });
+    const purpose = req.body?.purpose === 'signup_verification' ? 'signup_verification' : 'login';
 
     const ip = (req.headers['x-forwarded-for'] || req.ip || '').toString().split(',')[0].trim() || null;
     const allowed = await checkAndRecordIdentifierAttempt(emailNorm, 'email_link_flow', ip, 10, 60 * 60 * 1000);
     if (!allowed) return res.status(429).json({ error: 'rate_limited' });
 
-    const { rows } = await pool.query(
-      'SELECT id, email_verified FROM auth_users WHERE email = $1 LIMIT 1',
-      [emailNorm]
-    );
-    if (!rows.length) return res.status(404).json({ error: 'account_not_found' });
-    if (rows[0].email_verified !== true) return res.status(409).json({ error: 'email_not_verified' });
+    if (purpose === 'login') {
+      const { rows } = await pool.query(
+        'SELECT id, email_verified FROM auth_users WHERE email = $1 LIMIT 1',
+        [emailNorm]
+      );
+      if (!rows.length) return res.status(404).json({ error: 'account_not_found' });
+      if (rows[0].email_verified !== true) return res.status(409).json({ error: 'email_not_verified' });
+    }
 
     const flowId = randomUUID();
     const pollToken = randomBytes(32).toString('base64url');
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
     await pool.query('DELETE FROM auth_email_link_flows WHERE expires_at < NOW()');
     await pool.query(
-      `INSERT INTO auth_email_link_flows (id, email, poll_token_hash, expires_at)
-       VALUES ($1, $2, $3, $4)`,
-      [flowId, emailNorm, hashEmailLinkPollToken(pollToken), expiresAt]
+      `INSERT INTO auth_email_link_flows (id, email, purpose, poll_token_hash, expires_at)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [flowId, emailNorm, purpose, hashEmailLinkPollToken(pollToken), expiresAt]
     );
 
-    return res.json({ flow_id: flowId, poll_token: pollToken, expires_at: expiresAt.toISOString() });
+    return res.json({ flow_id: flowId, poll_token: pollToken, purpose, expires_at: expiresAt.toISOString() });
   } catch (err) {
     console.error('[POST /api/auth/email-link-flow/start]', err);
     return res.status(500).json({ error: 'internal_error' });
@@ -5442,7 +5445,7 @@ app.post('/api/auth/email-link-flow/complete', publicFormLimit, async (req, res)
     }
 
     const { rows: flowRows } = await pool.query(
-      `SELECT id, email FROM auth_email_link_flows
+      `SELECT id, email, purpose FROM auth_email_link_flows
        WHERE id = $1 AND expires_at > NOW()
        LIMIT 1`,
       [flowId]
@@ -5458,7 +5461,15 @@ app.post('/api/auth/email-link-flow/complete', publicFormLimit, async (req, res)
       [emailNorm]
     );
     let user = userRows[0];
-    if (!user) return res.status(404).json({ error: 'account_not_found' });
+    if (!user || flow.purpose === 'signup_verification') {
+      await pool.query(
+        `UPDATE auth_email_link_flows
+         SET firebase_uid = $1, completed_at = NOW()
+         WHERE id = $2`,
+        [decoded.uid, flowId]
+      );
+      return res.json({ completed: true, purpose: 'signup_verification' });
+    }
 
     await pool.query(
       `UPDATE auth_users
@@ -5509,7 +5520,7 @@ app.post('/api/auth/email-link-flow/poll', emailLinkPollLimit, async (req, res) 
     if (!flowId || !pollToken) return res.status(400).json({ error: 'missing_fields' });
 
     const { rows } = await pool.query(
-      `SELECT poll_token_hash, session_token, user_payload, completed_at
+      `SELECT email, purpose, poll_token_hash, session_token, user_payload, completed_at
        FROM auth_email_link_flows
        WHERE id = $1 AND expires_at > NOW()
        LIMIT 1`,
@@ -5521,11 +5532,20 @@ app.post('/api/auth/email-link-flow/poll', emailLinkPollLimit, async (req, res) 
       return res.status(403).json({ error: 'invalid_poll_token' });
     }
     if (!flow.completed_at || !flow.session_token || !flow.user_payload) {
-      return res.json({ completed: false });
+      if (flow.completed_at && flow.purpose === 'signup_verification') {
+        return res.json({
+          completed: true,
+          purpose: 'signup_verification',
+          email: flow.email,
+          email_verified: true,
+        });
+      }
+      return res.json({ completed: false, purpose: flow.purpose || 'login' });
     }
 
     return res.json({
       completed: true,
+      purpose: flow.purpose || 'login',
       token: flow.session_token,
       user: flow.user_payload,
     });
@@ -5534,6 +5554,23 @@ app.post('/api/auth/email-link-flow/poll', emailLinkPollLimit, async (req, res) 
     return res.status(500).json({ error: 'internal_error' });
   }
 });
+
+async function emailLinkFlowVerifiedForSignup(flowId, pollToken, emailNorm) {
+  if (!flowId || !pollToken || !emailNorm) return false;
+  const { rows } = await pool.query(
+    `SELECT email, purpose, poll_token_hash, completed_at
+     FROM auth_email_link_flows
+     WHERE id = $1 AND expires_at > NOW()
+     LIMIT 1`,
+    [String(flowId).trim()]
+  );
+  const flow = rows[0];
+  if (!flow) return false;
+  if (flow.purpose !== 'signup_verification') return false;
+  if (!flow.completed_at) return false;
+  if (flow.poll_token_hash !== hashEmailLinkPollToken(String(pollToken))) return false;
+  return normalizeEmail(flow.email || '') === emailNorm;
+}
 
 // --- Firebase Auth: verify ID token and sync user record ---
 app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
@@ -5576,6 +5613,9 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
     const signupComplete = req.body.signup_complete === true;
     const termsAccepted = req.body.terms_accepted === true;
     const emailSkipped = req.body.email_skipped === true && firstIdentifierType === 'phone' && !emailNormFromToken;
+    const emailVerifiedByCompletedLinkFlow = signupComplete
+      ? await emailLinkFlowVerifiedForSignup(req.body.email_link_flow_id, req.body.email_link_poll_token, emailNormFromToken)
+      : false;
 
     // Confirm-Phone login flow: the user typed their email, then re-typed their full phone
     // to receive an OTP. The Firebase token carries the verified phone; the client passes the
@@ -5647,7 +5687,7 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
       const phoneNorm = decodedPhoneNorm;
       const cleanName = name ? String(name).trim() : '';
       const finalPhoneVerified = phoneVerifiedByFirebase;
-      const finalEmailVerified = emailVerifiedByFirebase;
+      const finalEmailVerified = emailVerifiedByFirebase || emailVerifiedByCompletedLinkFlow;
       const phoneFirstMaySkipEmail = firstIdentifierType === 'phone' && (finalEmailVerified || emailSkipped);
       const nonPhoneFirstHasVerifiedEmail = firstIdentifierType !== 'phone' && finalEmailVerified;
       if (!signupComplete || !cleanName || !termsAccepted || !phoneNorm || !finalPhoneVerified || !(phoneFirstMaySkipEmail || nonPhoneFirstHasVerifiedEmail)) {

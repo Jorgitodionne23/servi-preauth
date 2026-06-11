@@ -457,6 +457,7 @@ export async function initDb() {
     CREATE TABLE IF NOT EXISTS auth_email_link_flows (
       id TEXT PRIMARY KEY,
       email TEXT NOT NULL,
+      purpose TEXT NOT NULL DEFAULT 'login',
       poll_token_hash TEXT NOT NULL,
       session_token TEXT,
       user_payload JSONB,
@@ -465,6 +466,9 @@ export async function initDb() {
       expires_at TIMESTAMPTZ NOT NULL,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
+
+    ALTER TABLE auth_email_link_flows
+      ADD COLUMN IF NOT EXISTS purpose TEXT NOT NULL DEFAULT 'login';
 
     CREATE INDEX IF NOT EXISTS auth_email_link_flows_expires_idx
       ON auth_email_link_flows(expires_at);

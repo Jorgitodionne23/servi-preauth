@@ -281,6 +281,7 @@
   async function maybeAutoResumeGhost(firebaseUser) {
     if (!window.__syncError || window.__syncError.code !== 'signup_incomplete') return;
     if (uslSuppressAutoSync || uslIsNew || uslCompletingExisting) return;
+    if (window.__serviEmailVerifiedPage || /\/email-verified\.html$/.test(window.location.pathname)) return;
     var modalEl = document.getElementById('auth-modal-global');
     if (modalEl && modalEl.innerHTML.trim() !== '') return;
     var resumeType = (firebaseUser && firebaseUser.phoneNumber) ? 'phone' : 'email';
@@ -306,6 +307,11 @@
         body.signup_complete = true;
         body.terms_accepted = !!(uslNewUserData && uslNewUserData.terms_accepted);
         body.email_skipped = !!(uslNewUserData && uslNewUserData.email_skipped);
+        var emailFlowProof = emailLinkFlowSignupProof();
+        if (emailFlowProof && body.email) {
+          body.email_link_flow_id = emailFlowProof.email_link_flow_id;
+          body.email_link_poll_token = emailFlowProof.email_link_poll_token;
+        }
       }
       var res = await fetch(API() + '/api/auth/firebase', {
         method: 'POST',
@@ -427,6 +433,9 @@
     window.__syncPromise = syncWithBackend(firebaseUser, { signupComplete: true });
     var ok = await awaitSyncAndCheck();
     if (!ok) uslSignupComplete = false;
+    if (ok) {
+      try { localStorage.removeItem('servi_email_link_flow'); } catch (_) {}
+    }
     return ok;
   }
 
@@ -718,11 +727,11 @@
     return '';
   }
 
-  async function startEmailLinkFlow(email) {
+  async function startEmailLinkFlow(email, purpose) {
     var res = await fetch(API() + '/api/auth/email-link-flow/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: email })
+      body: JSON.stringify({ email: email, purpose: purpose || 'login' })
     });
     var data = await res.json().catch(function () { return {}; });
     if (!res.ok || !data.flow_id || !data.poll_token) {
@@ -739,6 +748,7 @@
       localStorage.setItem('servi_email_link_flow', JSON.stringify({
         flow_id: flow.flow_id,
         poll_token: flow.poll_token,
+        purpose: flow.purpose || null,
         expires_at: flow.expires_at || null
       }));
     } catch (_) {}
@@ -785,6 +795,16 @@
     } catch (_) {}
     if (window.buildNavbar) window.buildNavbar();
     return true;
+  }
+
+  function emailLinkFlowSignupProof() {
+    var flow = loadEmailLinkFlow();
+    if (!flow || !flow.flow_id || !flow.poll_token) return null;
+    if (flow.purpose && flow.purpose !== 'signup_verification') return null;
+    return {
+      email_link_flow_id: flow.flow_id,
+      email_link_poll_token: flow.poll_token
+    };
   }
 
   // ── Monitor for email verification in other tab ─────────────────────────────────
@@ -884,6 +904,22 @@
       flowPollBusy = true;
       try {
         var data = await pollEmailLinkFlow(flow);
+        if (data && data.completed && data.purpose === 'signup_verification' && data.email_verified === true) {
+          var verifiedEmail = data.email || uslIdentifier || localStorage.getItem('servi_email_link_target');
+          uslNewUserData.email = verifiedEmail;
+          uslNewUserData.email_verified = true;
+          handled = true;
+          if (pollInterval) clearInterval(pollInterval);
+          if (onVerificationDetected) window.removeEventListener('storage', onVerificationDetected);
+          document.removeEventListener('visibilitychange', onVisibilityChange);
+          if (uslIsNew && uslFirstIdentifierType === 'email') {
+            renderNameCollectionScreen();
+          } else if (uslIsNew && uslFirstIdentifierType === 'phone') {
+            var created = await completeSignupSync();
+            if (created) onAuthSuccess();
+          }
+          return;
+        }
         if (data && data.completed && acceptEmailLinkFlowSession(data)) {
           handled = true;
           if (pollInterval) clearInterval(pollInterval);
@@ -942,6 +978,17 @@
 
       if (btn) { btn.disabled = true; btn.textContent = isEs() ? 'Verificando...' : 'Verifying...'; }
       var flowData = await pollEmailLinkFlow(loadEmailLinkFlow());
+      if (flowData && flowData.completed && flowData.purpose === 'signup_verification' && flowData.email_verified === true) {
+        uslNewUserData.email = flowData.email || uslIdentifier || localStorage.getItem('servi_email_link_target');
+        uslNewUserData.email_verified = true;
+        if (uslIsNew && uslFirstIdentifierType === 'email') {
+          renderNameCollectionScreen();
+        } else if (uslIsNew && uslFirstIdentifierType === 'phone') {
+          var signupCreated = await completeSignupSync();
+          if (signupCreated) onAuthSuccess();
+        }
+        return;
+      }
       if (flowData && flowData.completed && acceptEmailLinkFlowSession(flowData)) {
         onAuthSuccess();
         return;
@@ -1310,8 +1357,8 @@
         // Normalize email: lowercase for Firebase consistency
         var emailNorm = uslIdentifier.toLowerCase();
         var linkFlow = null;
-        if (!uslIsNew && uslIdentifierType === 'email') {
-          linkFlow = await startEmailLinkFlow(emailNorm);
+        if (uslIdentifierType === 'email') {
+          linkFlow = await startEmailLinkFlow(emailNorm, uslIsNew ? 'signup_verification' : 'login');
           saveEmailLinkFlow(linkFlow);
         }
         var emailLinkUrl = window.location.origin + '/email-verified.html?email=' + encodeURIComponent(emailNorm);

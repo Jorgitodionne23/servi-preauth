@@ -1780,43 +1780,5 @@
 })();
 </script>
 
-<!-- ═══ EMAIL VERIFICATION LISTENER ═══ -->
-<script>
-  (function() {
-    window.addEventListener('storage', function(e) {
-      if (e.key === 'servi_email_verified_at') {
-        handleEmailVerificationSignal();
-      }
-    });
-
-    window.addEventListener('servi-email-verified', function() {
-      handleEmailVerificationSignal();
-    });
-
-    function handleEmailVerificationSignal() {
-      var modalEl = document.getElementById('auth-modal-global');
-      if (!modalEl || !modalEl.innerHTML) return;
-
-      if (window.uslIsNew && window.uslFirstIdentifierType === 'email' && window.uslNewUserData && window.uslNewUserData.email) {
-        console.log('[SERVI] Email verified, resuming signup in modal');
-
-        if (window.uslNewUserData) {
-          window.uslNewUserData.email_verified = true;
-        }
-
-        window.renderIdentifierScreen = window.renderIdentifierScreen || function() {};
-
-        var es = window.isEs && window.isEs() ? true : (localStorage.getItem('servi_lang') === 'es' || !localStorage.getItem('servi_lang'));
-        var title = es ? 'Tu nombre' : 'Your name';
-
-        if (window.modalShell && modalEl) {
-          modalEl.innerHTML = window.modalShell(title, false, '');
-          window.renderNameScreen = window.renderNameScreen || function() {};
-          if (window.renderNameScreen) window.renderNameScreen();
-        }
-      }
-    }
-  })();
-</script>
 </body>
 </html>
