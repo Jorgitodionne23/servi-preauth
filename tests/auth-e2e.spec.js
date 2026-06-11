@@ -552,6 +552,26 @@ test('email-first signup, full verification', async ({ page }) => {
   expect(user.phone).toBe(e164(phones.emailFullSecondary));
 });
 
+test('email-first signup still sends link if handoff start is unavailable', async ({ page }) => {
+  await clearBrowser(page);
+  await page.route('**/api/auth/email-link-flow/start', async (route) => {
+    await route.fulfill({
+      status: 404,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: 'account_not_found' }),
+    });
+  });
+  await openAuth(page);
+  const primaryEmail = email('email-flow-start-404');
+  await enterIdentifier(page, primaryEmail);
+  await page.waitForSelector('#send-email-link-btn');
+  await page.click('#send-email-link-btn');
+  await expect(page.locator('#manual-email-continue-btn')).toBeVisible();
+  await expect.poll(async () => latestEmailLink(primaryEmail).then(Boolean).catch(() => false), {
+    timeout: 10_000,
+  }).toBe(true);
+});
+
 test('email-first signup email link verified on another device resumes only original flow', async ({ browser, page }) => {
   await clearBrowser(page);
   await openAuth(page);

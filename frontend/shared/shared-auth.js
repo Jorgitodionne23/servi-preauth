@@ -346,6 +346,11 @@
           window.__user = null;
           try { await auth.signOut(); } catch (_) {}
           window.__syncError = { code: 'email_phone_mismatch', message: errData.message };
+        } else if (res.status === 409 && errData.error === 'firebase_uid_conflict') {
+          localStorage.removeItem('servi_user_session');
+          window.__user = null;
+          try { await auth.signOut(); } catch (_) {}
+          window.__syncError = { code: 'firebase_uid_conflict', message: errData.message };
         } else {
           window.__syncError = { code: 'backend_sync_failed', status: res.status, message: errData.message };
         }
@@ -371,6 +376,8 @@
           ? (window.__syncError.message || (es ? 'Completa los pasos requeridos para crear tu cuenta.' : 'Complete the required steps to create your account.'))
         : window.__syncError.code === 'email_phone_mismatch'
           ? (es ? 'Ese teléfono no coincide con la cuenta de este correo. Intenta de nuevo.' : 'That phone doesn\'t match the account for this email. Try again.')
+        : window.__syncError.code === 'firebase_uid_conflict'
+          ? (es ? 'Esta cuenta ya está vinculada a otro método de acceso. Inicia sesión con tu correo.' : 'This account is already linked to another sign-in method. Sign in with your email.')
         : (es ? 'Error al conectar con el servidor. Intenta de nuevo.' : 'Error connecting to server. Please try again.');
       if (auth) { try { await auth.signOut(); } catch (_) {} }
       // For mismatch, return the user to the Confirm-Phone step so they can re-enter their phone.
@@ -728,12 +735,16 @@
   }
 
   async function startEmailLinkFlow(email, purpose) {
+    var flowPurpose = purpose || 'login';
     var res = await fetch(API() + '/api/auth/email-link-flow/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: email, purpose: purpose || 'login' })
+      body: JSON.stringify({ email: email, purpose: flowPurpose })
     });
     var data = await res.json().catch(function () { return {}; });
+    if (flowPurpose === 'signup_verification' && res.status === 404) {
+      return null;
+    }
     if (!res.ok || !data.flow_id || !data.poll_token) {
       var err = new Error(data.error || 'email_link_flow_start_failed');
       err.code = data.error || 'email_link_flow_start_failed';
@@ -1912,14 +1923,28 @@
         setVerifyOTPButtonLoading(btn, true, es);
         setError('');
         try {
-          // For secondary phone on an email-first account, link the phone credential
+          // For secondary phone on an email-first/current account, never confirm as
+          // a standalone phone sign-in. That creates a second Firebase Auth user.
           var credential = firebase.auth.PhoneAuthProvider.credential(confirmationResult.verificationId, code);
-          var fbUser = auth.currentUser;
-          if (fbUser && fbUser.email) {
-            // Already signed in with email — link phone
+          var fbUser = await waitForCurrentFirebaseUser(3000);
+          if (!fbUser) {
+            var missingUserErr = new Error('missing_firebase_user_for_phone_link');
+            missingUserErr.code = 'servi/missing-firebase-user-for-phone-link';
+            throw missingUserErr;
+          }
+          try {
             await fbUser.linkWithCredential(credential);
-          } else {
-            await confirmationResult.confirm(code);
+          } catch (linkErr) {
+            if (linkErr && linkErr.code === 'auth/provider-already-linked') {
+              await fbUser.reload();
+              if (auth.currentUser && auth.currentUser.phoneNumber === uslNewUserData.phone) {
+                fbUser = auth.currentUser;
+              } else {
+                throw linkErr;
+              }
+            } else {
+              throw linkErr;
+            }
           }
           uslNewUserData.phone_verified = true;
           localStorage.removeItem('servi_phone_skipped');
@@ -2787,6 +2812,7 @@
       'auth/user-disabled':             es ? 'Esta cuenta fue deshabilitada. Contáctanos.'       : 'This account has been disabled. Please contact us.',
       'auth/operation-not-allowed':     es ? 'Este método de acceso no está disponible por ahora.' : 'This sign-in method is not available right now.',
       'auth/requires-recent-login':     es ? 'Por seguridad, vuelve a iniciar sesión e intenta de nuevo.' : 'For your security, sign in again and retry.',
+      'servi/missing-firebase-user-for-phone-link': es ? 'Tu sesión expiró. Inicia sesión de nuevo antes de agregar el teléfono.' : 'Your session expired. Sign in again before adding your phone.',
     };
     return map[code] || (es ? 'Ocurrió un error. Intenta de nuevo.' : 'An error occurred. Please try again.');
   }

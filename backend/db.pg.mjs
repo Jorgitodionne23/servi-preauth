@@ -1,8 +1,10 @@
 // db.pg.mjs — Postgres client (Neon/Supabase)
 import pg from 'pg';
+import { APP_TIME_ZONE } from './timezone.mjs';
 const { Pool } = pg;
 
 const allowInsecure = String(process.env.ALLOW_INSECURE_DB_TLS || '').toLowerCase() === 'true';
+const postgresOptions = [process.env.PGOPTIONS, `-c timezone=${APP_TIME_ZONE}`].filter(Boolean).join(' ');
 
 if (allowInsecure && process.env.NODE_ENV === 'production') {
   throw new Error('ALLOW_INSECURE_DB_TLS=true is not permitted in production (NODE_ENV=production). Remove this flag before deploying.');
@@ -10,6 +12,7 @@ if (allowInsecure && process.env.NODE_ENV === 'production') {
 
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
+  options: postgresOptions,
   ...(process.env.DATABASE_URL?.startsWith('postgres://') || process.env.DATABASE_URL?.startsWith('postgresql://')
       ? { ssl: allowInsecure ? { rejectUnauthorized: false } : undefined }
       : {})
@@ -24,6 +27,7 @@ if (!allowInsecure) {
 } else {
   console.warn('[db] ALLOW_INSECURE_DB_TLS=true → accepting database TLS certificates without verification');
 }
+console.log(`[time] Node TZ=${process.env.TZ}; Postgres options=${postgresOptions}`);
 
 export async function initDb() {
   await pool.query(`

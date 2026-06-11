@@ -1,6 +1,7 @@
 /* eslint-env node */
 // index.mjs (ES Module version of your server)
 import 'dotenv/config';
+import './timezone.mjs';
 import express from 'express';
 import StripePackage from 'stripe';
 import path from 'path';
@@ -5648,6 +5649,12 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
       ({ rows } = await pool.query('SELECT * FROM auth_users WHERE email = $1', [emailNorm]));
       user = rows[0];
       if (user) {
+        if (user.firebase_uid && user.firebase_uid !== firebaseUid) {
+          return res.status(409).json({
+            error: 'firebase_uid_conflict',
+            message: 'This email account is already linked to a different Firebase user.',
+          });
+        }
         await pool.query(
           'UPDATE auth_users SET firebase_uid = $1, auth_provider = $2, last_login = NOW() WHERE id = $3',
           [firebaseUid, provider, user.id]
@@ -5866,10 +5873,17 @@ app.post('/api/auth/add-phone', publicFormLimit, async (req, res) => {
     const phoneNorm = normalizePhoneToE164(phone);
     if (!phoneNorm) return res.status(400).json({ error: 'invalid_phone' });
 
-    // Verify Firebase token proves ownership of this phone number
+    const { rows: userRows } = await pool.query('SELECT firebase_uid FROM auth_users WHERE id = $1', [payload.user_id]);
+    const currentFirebaseUid = userRows[0]?.firebase_uid || null;
+    if (!currentFirebaseUid) return res.status(401).json({ error: 'firebase_user_missing' });
+
+    // Verify Firebase token proves this same SERVI user owns this phone number.
     let decoded;
     try { decoded = await verifyFirebaseIdToken(firebase_id_token, true); }
     catch (e) { return res.status(401).json({ error: 'invalid_token' }); }
+    if (decoded.uid !== currentFirebaseUid) {
+      return res.status(401).json({ error: 'firebase_user_mismatch' });
+    }
     if (!decoded.phone_number || decoded.phone_number !== phoneNorm) {
       return res.status(400).json({ error: 'phone_mismatch', message: 'Token phone does not match supplied phone.' });
     }
