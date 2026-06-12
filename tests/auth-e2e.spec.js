@@ -652,6 +652,9 @@ test('existing email-link login completes when verified in another browser conte
   const session = await waitForSession(page);
   expect(session.user.email).toBe(loginEmail);
   expect(session.user.email_verified).toBe(true);
+
+  const orders = await authOrders(page);
+  expect(orders.status).toBe(200);
 });
 
 test('email-first signup requires verified phone before creating session', async ({ page }) => {

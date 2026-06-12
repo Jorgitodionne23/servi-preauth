@@ -5170,21 +5170,31 @@ app.post('/api/service-requests', publicFormLimit, async (req, res) => {
     }
 
     // If the request comes from an authenticated user, enforce both identifiers verified.
-    // Verification status is read live from Firebase (source of truth) so the gate is never
-    // stuck on a stale DB flag. Falls back to DB flags if the Firebase lookup fails.
+    // Verification status starts from the SERVI account row, then is upgraded when
+    // Firebase confirms the same identifier. Phone and email can be split across
+    // Firebase users if a provider was not linked, so one Firebase record must not
+    // downgrade the other already-verified identifier.
     if (userPayload?.user_id) {
       const { rows: vRows } = await pool.query(
-        'SELECT phone, firebase_uid, phone_verified, email_verified FROM auth_users WHERE id = $1',
+        'SELECT phone, email, firebase_uid, phone_verified, email_verified FROM auth_users WHERE id = $1',
         [userPayload.user_id]
       );
       const v = vRows[0];
-      let phoneVerified = v?.phone_verified;
-      let emailVerified = v?.email_verified;
+      let phoneVerified = !!v?.phone_verified;
+      let emailVerified = !!v?.email_verified;
       if (v?.firebase_uid) {
         try {
           const fbUser = await firebaseAdmin.auth().getUser(v.firebase_uid);
-          phoneVerified = !!fbUser.phoneNumber;
-          emailVerified = fbUser.emailVerified;
+          const dbPhoneNorm = v.phone ? normalizePhoneToE164(v.phone) : null;
+          const fbPhoneNorm = fbUser.phoneNumber ? normalizePhoneToE164(fbUser.phoneNumber) : null;
+          const dbEmailNorm = v.email ? normalizeEmail(v.email) : null;
+          const fbEmailNorm = fbUser.email ? normalizeEmail(fbUser.email) : null;
+          if (dbPhoneNorm && fbPhoneNorm && dbPhoneNorm === fbPhoneNorm) {
+            phoneVerified = true;
+          }
+          if (dbEmailNorm && fbEmailNorm && dbEmailNorm === fbEmailNorm && fbUser.emailVerified === true) {
+            emailVerified = true;
+          }
         } catch (fbErr) {
           console.warn('[service-requests] Firebase lookup failed, falling back to DB flags:', fbErr.message);
         }
@@ -5474,8 +5484,11 @@ app.post('/api/auth/email-link-flow/complete', publicFormLimit, async (req, res)
 
     await pool.query(
       `UPDATE auth_users
-       SET firebase_uid = $1, auth_provider = $2, email_verified = true,
-           email_skipped_at = NULL, last_login = NOW()
+       SET firebase_uid = CASE WHEN firebase_uid IS NULL THEN $1 ELSE firebase_uid END,
+           auth_provider = COALESCE(auth_provider, $2),
+           email_verified = true,
+           email_skipped_at = NULL,
+           last_login = NOW()
        WHERE id = $3`,
       [decoded.uid, decoded.firebase?.sign_in_provider || 'email', user.id]
     );
@@ -5650,15 +5663,19 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
       user = rows[0];
       if (user) {
         if (user.firebase_uid && user.firebase_uid !== firebaseUid) {
-          return res.status(409).json({
-            error: 'firebase_uid_conflict',
-            message: 'This email account is already linked to a different Firebase user.',
-          });
+          if (!emailVerifiedByFirebase) {
+            return res.status(409).json({
+              error: 'firebase_uid_conflict',
+              message: 'This email account is already linked to a different Firebase user.',
+            });
+          }
+          console.warn('[POST /api/auth/firebase] accepted verified email for user with different Firebase UID:', user.id);
+        } else {
+          await pool.query(
+            'UPDATE auth_users SET firebase_uid = $1, auth_provider = $2, last_login = NOW() WHERE id = $3',
+            [firebaseUid, provider, user.id]
+          );
         }
-        await pool.query(
-          'UPDATE auth_users SET firebase_uid = $1, auth_provider = $2, last_login = NOW() WHERE id = $3',
-          [firebaseUid, provider, user.id]
-        );
         if (name && !user.name) await pool.query('UPDATE auth_users SET name = $1 WHERE id = $2', [name, user.id]);
         if (phoneNormFromToken && !user.phone) {
           await pool.query('UPDATE auth_users SET phone = $1 WHERE id = $2', [phoneNormFromToken, user.id]);
