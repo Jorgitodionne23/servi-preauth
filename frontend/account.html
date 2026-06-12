@@ -845,6 +845,17 @@
                 <div class="security-inline-error" id="security-social-error"></div>
               </div>
 
+              <div class="security-panel" id="security-activity-panel">
+                <div class="security-panel-head">
+                  <div>
+                    <div class="security-panel-title" id="security-activity-title">Actividad de inicio de sesión</div>
+                    <div class="security-panel-sub" id="security-activity-sub">Revisa los accesos recientes a tu cuenta. Si ves algo que no reconoces, contáctanos.</div>
+                  </div>
+                </div>
+                <div class="security-rows" id="security-activity-list"></div>
+                <div class="security-inline-error" id="security-activity-error"></div>
+              </div>
+
               <div style="font-size:14px;color:var(--color-text-secondary);line-height:1.6" id="security-provider-info"></div>
             </div>
           </div>
@@ -1008,6 +1019,14 @@ const TX = {
     securityGoogleConnectedNote: 'Google conectado correctamente.',
     securityGoogleConflict: 'Ese Google ya está asociado a otra cuenta.',
     securityGoogleFailed: 'No pudimos conectar Google. Intenta de nuevo.',
+    securityActivityTitle: 'Actividad de inicio de sesión',
+    securityActivitySub: 'Revisa los accesos recientes a tu cuenta. Si ves algo que no reconoces, contáctanos.',
+    securityActivityLogin: 'Inicio de sesión',
+    securityActivityLogout: 'Cierre de sesión',
+    securityActivityUnknownDevice: 'Dispositivo desconocido',
+    securityActivityEmpty: 'Sin actividad reciente.',
+    securityActivityFailed: 'No pudimos cargar la actividad. Intenta de nuevo.',
+    securityActivityLoading: 'Cargando actividad...',
     emailWarnTitle: 'Verifica tu correo',
     emailWarnText: 'Verifica tu correo para proteger tu cuenta y confirmar solicitudes. Si no ves el enlace, revisa spam o correo no deseado.',
     emailWarnNoEmail: 'Agrega un correo para proteger tu cuenta y confirmar solicitudes. Si no ves el enlace, revisa spam o correo no deseado.',
@@ -1124,6 +1143,14 @@ const TX = {
     securityGoogleConnectedNote: 'Google connected successfully.',
     securityGoogleConflict: 'That Google account is already linked to another account.',
     securityGoogleFailed: 'We could not connect Google. Try again.',
+    securityActivityTitle: 'Login activity',
+    securityActivitySub: 'Review recent access to your account. If you see something you don\'t recognize, contact us.',
+    securityActivityLogin: 'Sign-in',
+    securityActivityLogout: 'Sign-out',
+    securityActivityUnknownDevice: 'Unknown device',
+    securityActivityEmpty: 'No recent activity.',
+    securityActivityFailed: 'We could not load activity. Try again.',
+    securityActivityLoading: 'Loading activity...',
     emailWarnTitle: 'Verify your email',
     emailWarnText: 'Verify your email to protect your account and confirm requests. If you do not see the link, check your spam or junk folder.',
     emailWarnNoEmail: 'Add an email to protect your account and confirm requests. If you do not see the link, check your spam or junk folder.',
@@ -1225,6 +1252,7 @@ function switchSection(id) {
   });
   buildNav();
   if (id === 'orders' && !_ordersLoaded) loadOrders();
+  if (id === 'security' && !_activityLoaded) loadLoginActivity();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -1655,6 +1683,61 @@ function renderConnectedSocialApps() {
           : `<button class="btn-outline" id="connect-google-btn" onclick="connectGoogleAccount()">${t.securityConnectGoogle}</button>`}
       </div>
     </div>`;
+}
+
+// ─── Login activity ───────────────────────────────────────────────────────────
+let _activityLoaded = false;
+let _activityEvents = [];
+
+async function loadLoginActivity() {
+  const t = tr();
+  const list = document.getElementById('security-activity-list');
+  const errEl = document.getElementById('security-activity-error');
+  if (!list) return;
+  if (errEl) errEl.textContent = '';
+  list.innerHTML = `<div class="security-inline-note">${t.securityActivityLoading}</div>`;
+  try {
+    const res = await fetch(API + '/api/auth/activity', { headers: authHeaders() });
+    if (!res.ok) throw new Error('activity_failed');
+    const data = await res.json();
+    _activityEvents = Array.isArray(data.events) ? data.events : [];
+    _activityLoaded = true;
+    renderLoginActivity();
+  } catch (_) {
+    list.innerHTML = '';
+    if (errEl) errEl.textContent = t.securityActivityFailed;
+  }
+}
+
+function renderLoginActivity() {
+  const t = tr();
+  const list = document.getElementById('security-activity-list');
+  if (!list || !_activityLoaded) return;
+  if (!_activityEvents.length) {
+    list.innerHTML = `<div class="security-inline-note">${t.securityActivityEmpty}</div>`;
+    return;
+  }
+  list.innerHTML = _activityEvents.map((ev) => {
+    const isLogin = ev.type === 'login';
+    const when = ev.created_at
+      ? new Date(ev.created_at).toLocaleString(isEs() ? 'es-MX' : 'en-US', {
+          day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit'
+        })
+      : '';
+    const device = ev.device || t.securityActivityUnknownDevice;
+    const detail = [device, ev.ip ? 'IP ' + ev.ip : null].filter(Boolean).join(' · ');
+    return `
+      <div class="security-row">
+        <span class="security-row-icon">${isLogin ? '🔑' : '🚪'}</span>
+        <div>
+          <div class="security-row-title">${escapeHtml(isLogin ? t.securityActivityLogin : t.securityActivityLogout)}</div>
+          <div class="security-row-sub">${escapeHtml(detail)}</div>
+        </div>
+        <div class="security-row-action">
+          <span class="security-row-sub">${escapeHtml(when)}</span>
+        </div>
+      </div>`;
+  }).join('');
 }
 
 async function handleSecurityEmailAction() {
@@ -2868,6 +2951,8 @@ function applyTranslations() {
   set('security-phone-title', t.securityPhoneTitle); set('security-phone-sub', t.securityPhoneSub);
   set('security-email-title', t.securityEmailTitle);
   set('security-social-title', t.securitySocialTitle); set('security-social-sub', t.securitySocialSub);
+  set('security-activity-title', t.securityActivityTitle); set('security-activity-sub', t.securityActivitySub);
+  renderLoginActivity();
   set('title-addresses', t.titleAddresses); set('sub-addresses', t.subAddresses);
   set('title-favorites', t.titleFavorites); set('sub-favorites', t.subFavorites);
   set('browse-favorites-btn', t.browseFavorites);

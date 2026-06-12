@@ -199,6 +199,42 @@ async function logAuthEvent(req, userId, eventType, metadata) {
   }
 }
 
+// Coarse device label from a raw user-agent ("Chrome · iPhone"). Intentionally
+// rough — the activity list only needs enough to let a user spot a stranger.
+function summarizeUserAgent(ua) {
+  const s = String(ua || '');
+  if (!s) return null;
+  let browser = null;
+  if (/edg(e|a|ios)?\//i.test(s)) browser = 'Edge';
+  else if (/opr\/|opera/i.test(s)) browser = 'Opera';
+  else if (/samsungbrowser/i.test(s)) browser = 'Samsung Internet';
+  else if (/firefox|fxios/i.test(s)) browser = 'Firefox';
+  else if (/crios|chrome/i.test(s)) browser = 'Chrome';
+  else if (/safari/i.test(s)) browser = 'Safari';
+  let os = null;
+  if (/iphone/i.test(s)) os = 'iPhone';
+  else if (/ipad/i.test(s)) os = 'iPad';
+  else if (/android/i.test(s)) os = 'Android';
+  else if (/windows/i.test(s)) os = 'Windows';
+  else if (/mac os x|macintosh/i.test(s)) os = 'Mac';
+  else if (/linux/i.test(s)) os = 'Linux';
+  if (browser && os) return `${browser} · ${os}`;
+  return browser || os || null;
+}
+
+// Privacy mask: keep enough of the IP to distinguish networks, never the full address.
+function maskIp(ip) {
+  const s = String(ip || '').trim();
+  if (!s) return null;
+  const v4 = s.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.\d{1,3}$/);
+  if (v4) return `${v4[1]}.${v4[2]}.${v4[3]}.x`;
+  if (s.includes(':')) {
+    const parts = s.split(':').filter(Boolean);
+    return parts.slice(0, 2).join(':') + ':…';
+  }
+  return null;
+}
+
 function hashEmailLinkPollToken(token) {
   return createHash('sha256').update(String(token || ''), 'utf8').digest('hex');
 }
@@ -6561,6 +6597,37 @@ app.post('/api/auth/refresh', publicFormLimit, async (req, res) => {
     });
   } catch (err) {
     console.error('[POST /api/auth/refresh]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// GET /api/auth/activity — recent sign-in activity for the logged-in user
+app.get('/api/auth/activity', async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const { rows } = await pool.query(
+      `SELECT event_type, ip, user_agent, metadata, created_at
+         FROM auth_events
+        WHERE user_id = $1 AND event_type IN ('login', 'logout')
+        ORDER BY created_at DESC
+        LIMIT 20`,
+      [payload.user_id]
+    );
+    const events = rows.map((r) => {
+      let meta = r.metadata;
+      if (typeof meta === 'string') { try { meta = JSON.parse(meta); } catch { meta = null; } }
+      return {
+        type: r.event_type,
+        device: summarizeUserAgent(r.user_agent),
+        ip: maskIp(r.ip),
+        provider: meta?.provider || null,
+        created_at: r.created_at,
+      };
+    });
+    return res.json({ ok: true, events });
+  } catch (err) {
+    console.error('[GET /api/auth/activity]', err);
     return res.status(500).json({ error: 'internal_error' });
   }
 });
