@@ -218,6 +218,76 @@ function publicUserPayload(user) {
   };
 }
 
+async function reconcileVerifiedEmailToFirebaseOwner({ emailNorm, verifiedEmailUid, ownerFirebaseUid }) {
+  if (!emailNorm || !verifiedEmailUid || !ownerFirebaseUid || verifiedEmailUid === ownerFirebaseUid) {
+    return { reconciled: false, firebaseUid: ownerFirebaseUid || verifiedEmailUid };
+  }
+
+  const { rows: uidRows } = await pool.query(
+    'SELECT id FROM auth_users WHERE firebase_uid = $1 LIMIT 1',
+    [verifiedEmailUid]
+  );
+  if (uidRows.length) {
+    const err = new Error('Verified email Firebase user is already attached to a SERVI account.');
+    err.status = 409;
+    err.code = 'email_uid_already_attached';
+    throw err;
+  }
+
+  let emailFirebaseUser;
+  let ownerFirebaseUser;
+  try {
+    emailFirebaseUser = await firebaseAdmin.auth().getUser(verifiedEmailUid);
+    ownerFirebaseUser = await firebaseAdmin.auth().getUser(ownerFirebaseUid);
+  } catch (err) {
+    err.status = 401;
+    err.code = 'firebase_user_missing';
+    throw err;
+  }
+
+  const emailUserEmail = normalizeEmail(emailFirebaseUser.email || '');
+  if (emailUserEmail !== emailNorm || emailFirebaseUser.emailVerified !== true) {
+    const err = new Error('Verified email Firebase user does not prove the supplied email.');
+    err.status = 400;
+    err.code = 'email_mismatch';
+    throw err;
+  }
+  if (emailFirebaseUser.phoneNumber) {
+    const err = new Error('Verified email Firebase user has its own phone and cannot be merged automatically.');
+    err.status = 409;
+    err.code = 'email_uid_has_phone';
+    throw err;
+  }
+
+  const ownerEmail = normalizeEmail(ownerFirebaseUser.email || '');
+  if (ownerEmail && ownerEmail !== emailNorm) {
+    const err = new Error('Canonical Firebase user already has another email.');
+    err.status = 409;
+    err.code = 'owner_email_conflict';
+    throw err;
+  }
+
+  try {
+    const existingEmailOwner = await firebaseAdmin.auth().getUserByEmail(emailNorm);
+    if (existingEmailOwner.uid !== verifiedEmailUid && existingEmailOwner.uid !== ownerFirebaseUid) {
+      const err = new Error('Email is already owned by another Firebase user.');
+      err.status = 409;
+      err.code = 'firebase_email_conflict';
+      throw err;
+    }
+  } catch (err) {
+    if (err.code !== 'auth/user-not-found') throw err;
+  }
+
+  await firebaseAdmin.auth().deleteUser(emailFirebaseUser.uid);
+  await firebaseAdmin.auth().updateUser(ownerFirebaseUid, {
+    email: emailNorm,
+    emailVerified: true,
+  });
+
+  return { reconciled: true, firebaseUid: ownerFirebaseUid };
+}
+
 // Per-identifier rate limiter using auth_otp_attempts. Returns true if allowed,
 // false if the identifier has exceeded `limit` attempts within `windowMs`.
 async function checkAndRecordIdentifierAttempt(identifier, kind, ip, limit, windowMs) {
@@ -5404,18 +5474,42 @@ app.post('/api/auth/email-link-flow/start', publicFormLimit, async (req, res) =>
     const emailNorm = normalizeEmail(req.body?.email || '');
     if (!emailNorm) return res.status(400).json({ error: 'invalid_email' });
     const purpose = req.body?.purpose === 'signup_verification' ? 'signup_verification' : 'login';
+    let ownerFirebaseUid = null;
+    let ownerUserId = null;
 
     const ip = (req.headers['x-forwarded-for'] || req.ip || '').toString().split(',')[0].trim() || null;
     const allowed = await checkAndRecordIdentifierAttempt(emailNorm, 'email_link_flow', ip, 10, 60 * 60 * 1000);
     if (!allowed) return res.status(429).json({ error: 'rate_limited' });
 
+    const authHeader = req.headers.authorization || '';
+    const ownerIdToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+    if (ownerIdToken) {
+      try {
+        const ownerDecoded = await verifyFirebaseIdToken(ownerIdToken, true);
+        if (!ownerDecoded.phone_number) {
+          return res.status(400).json({ error: 'owner_phone_required' });
+        }
+        ownerFirebaseUid = ownerDecoded.uid;
+      } catch (verifyErr) {
+        return res.status(401).json({ error: 'invalid_owner_token' });
+      }
+    }
+
     if (purpose === 'login') {
       const { rows } = await pool.query(
-        'SELECT id, email_verified FROM auth_users WHERE email = $1 LIMIT 1',
+        'SELECT id, firebase_uid, email_verified FROM auth_users WHERE email = $1 LIMIT 1',
         [emailNorm]
       );
       if (!rows.length) return res.status(404).json({ error: 'account_not_found' });
       if (rows[0].email_verified !== true) return res.status(409).json({ error: 'email_not_verified' });
+      ownerUserId = rows[0].id;
+      ownerFirebaseUid = ownerFirebaseUid || rows[0].firebase_uid || null;
+    } else if (ownerFirebaseUid) {
+      const { rows } = await pool.query(
+        'SELECT id FROM auth_users WHERE firebase_uid = $1 LIMIT 1',
+        [ownerFirebaseUid]
+      );
+      ownerUserId = rows[0]?.id || null;
     }
 
     const flowId = randomUUID();
@@ -5423,9 +5517,9 @@ app.post('/api/auth/email-link-flow/start', publicFormLimit, async (req, res) =>
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
     await pool.query('DELETE FROM auth_email_link_flows WHERE expires_at < NOW()');
     await pool.query(
-      `INSERT INTO auth_email_link_flows (id, email, purpose, poll_token_hash, expires_at)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [flowId, emailNorm, purpose, hashEmailLinkPollToken(pollToken), expiresAt]
+      `INSERT INTO auth_email_link_flows (id, email, purpose, poll_token_hash, owner_firebase_uid, owner_user_id, expires_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [flowId, emailNorm, purpose, hashEmailLinkPollToken(pollToken), ownerFirebaseUid, ownerUserId, expiresAt]
     );
 
     return res.json({ flow_id: flowId, poll_token: pollToken, purpose, expires_at: expiresAt.toISOString() });
@@ -5456,7 +5550,7 @@ app.post('/api/auth/email-link-flow/complete', publicFormLimit, async (req, res)
     }
 
     const { rows: flowRows } = await pool.query(
-      `SELECT id, email, purpose FROM auth_email_link_flows
+      `SELECT id, email, purpose, owner_firebase_uid, owner_user_id FROM auth_email_link_flows
        WHERE id = $1 AND expires_at > NOW()
        LIMIT 1`,
       [flowId]
@@ -5473,13 +5567,42 @@ app.post('/api/auth/email-link-flow/complete', publicFormLimit, async (req, res)
     );
     let user = userRows[0];
     if (!user || flow.purpose === 'signup_verification') {
+      let completedFirebaseUid = decoded.uid;
+      if (flow.owner_firebase_uid && decoded.uid !== flow.owner_firebase_uid) {
+        try {
+          const reconcile = await reconcileVerifiedEmailToFirebaseOwner({
+            emailNorm,
+            verifiedEmailUid: decoded.uid,
+            ownerFirebaseUid: flow.owner_firebase_uid,
+          });
+          completedFirebaseUid = reconcile.firebaseUid;
+        } catch (reconcileErr) {
+          return res.status(reconcileErr.status || 409).json({ error: reconcileErr.code || 'firebase_reconcile_failed' });
+        }
+      }
       await pool.query(
         `UPDATE auth_email_link_flows
          SET firebase_uid = $1, completed_at = NOW()
          WHERE id = $2`,
-        [decoded.uid, flowId]
+        [completedFirebaseUid, flowId]
       );
       return res.json({ completed: true, purpose: 'signup_verification' });
+    }
+
+    const canonicalFirebaseUid = flow.owner_firebase_uid || user.firebase_uid || decoded.uid;
+    if (user.firebase_uid && canonicalFirebaseUid && user.firebase_uid !== canonicalFirebaseUid) {
+      return res.status(409).json({ error: 'firebase_uid_conflict' });
+    }
+    if (canonicalFirebaseUid && decoded.uid !== canonicalFirebaseUid) {
+      try {
+        await reconcileVerifiedEmailToFirebaseOwner({
+          emailNorm,
+          verifiedEmailUid: decoded.uid,
+          ownerFirebaseUid: canonicalFirebaseUid,
+        });
+      } catch (reconcileErr) {
+        return res.status(reconcileErr.status || 409).json({ error: reconcileErr.code || 'firebase_reconcile_failed' });
+      }
     }
 
     await pool.query(
@@ -5490,7 +5613,7 @@ app.post('/api/auth/email-link-flow/complete', publicFormLimit, async (req, res)
            email_skipped_at = NULL,
            last_login = NOW()
        WHERE id = $3`,
-      [decoded.uid, decoded.firebase?.sign_in_provider || 'email', user.id]
+      [canonicalFirebaseUid, decoded.firebase?.sign_in_provider || 'email', user.id]
     );
     ({ rows: userRows } = await pool.query(
       'SELECT id, email, name, phone, auth_provider, phone_verified, email_verified, terms_accepted_at, email_skipped_at FROM auth_users WHERE id = $1',
@@ -5510,7 +5633,7 @@ app.post('/api/auth/email-link-flow/complete', publicFormLimit, async (req, res)
       `UPDATE auth_email_link_flows
        SET session_token = $1, user_payload = $2, firebase_uid = $3, completed_at = NOW()
        WHERE id = $4`,
-      [sessionToken, JSON.stringify(sessionUser), decoded.uid, flowId]
+      [sessionToken, JSON.stringify(sessionUser), canonicalFirebaseUid, flowId]
     );
     logAuthEvent(req, user.id, 'login', {
       provider: 'email_link_handoff',
@@ -5598,6 +5721,44 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
     try {
       decoded = await verifyFirebaseIdToken(idToken, true);
     } catch (verifyErr) {
+      const signupFlowId = req.body?.email_link_flow_id;
+      const signupPollToken = req.body?.email_link_poll_token;
+      if (req.body?.signup_complete === true && signupFlowId && signupPollToken) {
+        try {
+          const { rows: flowRows } = await pool.query(
+            `SELECT email, purpose, poll_token_hash, owner_firebase_uid, completed_at
+             FROM auth_email_link_flows
+             WHERE id = $1 AND expires_at > NOW()
+             LIMIT 1`,
+            [String(signupFlowId).trim()]
+          );
+          const flow = flowRows[0];
+          if (
+            flow &&
+            flow.purpose === 'signup_verification' &&
+            flow.completed_at &&
+            flow.owner_firebase_uid &&
+            flow.poll_token_hash === hashEmailLinkPollToken(String(signupPollToken))
+          ) {
+            const ownerUser = await firebaseAdmin.auth().getUser(flow.owner_firebase_uid);
+            if (ownerUser.phoneNumber) {
+              decoded = {
+                uid: ownerUser.uid,
+                email: normalizeEmail(ownerUser.email || flow.email),
+                email_verified: ownerUser.emailVerified === true || normalizeEmail(ownerUser.email || '') === normalizeEmail(flow.email || ''),
+                phone_number: ownerUser.phoneNumber,
+                name: ownerUser.displayName || null,
+                firebase: { sign_in_provider: 'phone' },
+              };
+            }
+          }
+        } catch (fallbackErr) {
+          console.warn('[POST /api/auth/firebase] completed signup flow fallback failed:', fallbackErr.message);
+        }
+      }
+      if (decoded) {
+        console.warn('[POST /api/auth/firebase] accepted completed signup flow after Firebase token verification failed:', verifyErr.code);
+      } else {
       console.error('[POST /api/auth/firebase] token verification failed:', verifyErr.code, verifyErr.message);
       if (verifyErr.code === 'auth/id-token-revoked') {
         return res.status(401).json({ error: 'token_revoked', message: 'Session has been revoked. Please sign in again.' });
@@ -5606,6 +5767,7 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
         return res.status(401).json({ error: 'user_disabled', message: 'This account has been disabled.' });
       }
       return res.status(401).json({ error: 'invalid_token', message: 'Firebase token verification failed' });
+      }
     }
 
     const firebaseUid = decoded.uid;
@@ -5630,6 +5792,33 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
     const emailVerifiedByCompletedLinkFlow = signupComplete
       ? await emailLinkFlowVerifiedForSignup(req.body.email_link_flow_id, req.body.email_link_poll_token, emailNormFromToken)
       : false;
+    if (signupComplete && emailVerifiedByCompletedLinkFlow && emailNormFromToken && decodedPhoneNorm) {
+      try {
+        const { rows: completedFlowRows } = await pool.query(
+          `SELECT firebase_uid
+           FROM auth_email_link_flows
+           WHERE id = $1
+             AND email = $2
+             AND purpose = 'signup_verification'
+             AND poll_token_hash = $3
+             AND completed_at IS NOT NULL
+             AND expires_at > NOW()
+           LIMIT 1`,
+          [String(req.body.email_link_flow_id || '').trim(), emailNormFromToken, hashEmailLinkPollToken(String(req.body.email_link_poll_token || ''))]
+        );
+        const emailFlowFirebaseUid = completedFlowRows[0]?.firebase_uid || null;
+        if (emailFlowFirebaseUid && emailFlowFirebaseUid !== firebaseUid) {
+          await reconcileVerifiedEmailToFirebaseOwner({
+            emailNorm: emailNormFromToken,
+            verifiedEmailUid: emailFlowFirebaseUid,
+            ownerFirebaseUid: firebaseUid,
+          });
+        }
+      } catch (reconcileErr) {
+        console.warn('[POST /api/auth/firebase] signup email/phone Firebase reconciliation failed:', reconcileErr.code || reconcileErr.message);
+        return res.status(reconcileErr.status || 409).json({ error: reconcileErr.code || 'firebase_reconcile_failed' });
+      }
+    }
 
     // Confirm-Phone login flow: the user typed their email, then re-typed their full phone
     // to receive an OTP. The Firebase token carries the verified phone; the client passes the
@@ -5669,7 +5858,20 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
               message: 'This email account is already linked to a different Firebase user.',
             });
           }
-          console.warn('[POST /api/auth/firebase] accepted verified email for user with different Firebase UID:', user.id);
+          try {
+            await reconcileVerifiedEmailToFirebaseOwner({
+              emailNorm,
+              verifiedEmailUid: firebaseUid,
+              ownerFirebaseUid: user.firebase_uid,
+            });
+            console.log('[POST /api/auth/firebase] reconciled verified email Firebase UID to owner:', user.id);
+          } catch (reconcileErr) {
+            console.warn('[POST /api/auth/firebase] Firebase UID reconciliation failed:', reconcileErr.code || reconcileErr.message);
+            return res.status(reconcileErr.status || 409).json({
+              error: reconcileErr.code || 'firebase_uid_conflict',
+              message: 'This email account is already linked to a different Firebase user.',
+            });
+          }
         } else {
           await pool.query(
             'UPDATE auth_users SET firebase_uid = $1, auth_provider = $2, last_login = NOW() WHERE id = $3',
@@ -5798,6 +6000,31 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
       phone: user.phone || phone || null,
     });
 
+    if (req.body.email_link_flow_id && emailNormFromToken && emailVerifiedByFirebase) {
+      try {
+        const sessionUser = {
+          id: user.id,
+          email: user.email,
+          name: user.name || name || null,
+          phone: user.phone || phone || null,
+          phone_verified: !!verifiedState.phone_verified,
+          email_verified: !!verifiedState.email_verified,
+          terms_accepted_at: verifiedState.terms_accepted_at || null,
+          email_skipped_at: verifiedState.email_skipped_at || null,
+        };
+        await pool.query(
+          `UPDATE auth_email_link_flows
+           SET session_token = $1, user_payload = $2, firebase_uid = $3, completed_at = NOW()
+           WHERE id = $4
+             AND email = $5
+             AND expires_at > NOW()`,
+          [token, JSON.stringify(sessionUser), user.firebase_uid || firebaseUid, String(req.body.email_link_flow_id).trim(), emailNormFromToken]
+        );
+      } catch (flowErr) {
+        console.warn('[POST /api/auth/firebase] email-link flow completion failed:', flowErr.message);
+      }
+    }
+
     // A12: audit log
     logAuthEvent(req, user.id, 'login', { provider, email_verified: !!verifiedState.email_verified, phone_verified: !!verifiedState.phone_verified });
 
@@ -5838,7 +6065,19 @@ app.post('/api/auth/add-email', publicFormLimit, async (req, res) => {
       try { decoded = await verifyFirebaseIdToken(firebase_id_token, true); }
       catch (e) { return res.status(401).json({ error: 'invalid_token' }); }
       if (decoded.uid !== currentFirebaseUid) {
-        return res.status(401).json({ error: 'firebase_user_mismatch' });
+        const decodedEmailNorm = normalizeEmail(decoded.email || '');
+        if (decodedEmailNorm !== emailNorm || decoded.email_verified !== true) {
+          return res.status(401).json({ error: 'firebase_user_mismatch' });
+        }
+        try {
+          await reconcileVerifiedEmailToFirebaseOwner({
+            emailNorm,
+            verifiedEmailUid: decoded.uid,
+            ownerFirebaseUid: currentFirebaseUid,
+          });
+        } catch (reconcileErr) {
+          return res.status(reconcileErr.status || 409).json({ error: reconcileErr.code || 'firebase_user_mismatch' });
+        }
       }
       if (!decoded.email || decoded.email.toLowerCase() !== emailNorm) {
         return res.status(400).json({ error: 'email_mismatch', message: 'Token email does not match supplied email.' });

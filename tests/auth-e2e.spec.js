@@ -33,6 +33,7 @@ const phones = {
   servicePageGate: `5642${PHONE_SUFFIX}`,
   emailLinkHandoff: `5652${PHONE_SUFFIX}`,
   emailSignupCrossDevice: `5662${PHONE_SUFFIX}`,
+  phoneSignupCrossDevice: `5672${PHONE_SUFFIX}`,
 };
 
 function e164(localPhone) {
@@ -398,6 +399,87 @@ test('phone-first signup, full verification', async ({ page }) => {
   expect(me.body.user.phone).toBe(e164(phones.phoneFull));
   expect(me.body.user.phone_verified).toBe(true);
   expect(me.body.user.email_verified).toBe(true);
+});
+
+test('phone-first secondary email verified in another browser keeps one Firebase identity and survives email login refresh', async ({ browser, page }) => {
+  const loginEmail = email('phone-cross-device');
+  await clearBrowser(page);
+  await openAuth(page);
+  await enterIdentifier(page, phones.phoneSignupCrossDevice);
+  await sendAndVerifyPhoneOtp(page, e164(phones.phoneSignupCrossDevice));
+  await fillName(page, 'PhoneCross', 'Device');
+
+  const firebaseBefore = await firebaseUserSnapshot(page);
+  expect(firebaseBefore.phoneNumber).toBe(e164(phones.phoneSignupCrossDevice));
+  expect(firebaseBefore.email).toBeNull();
+
+  await page.waitForSelector('#secondary-email');
+  await page.fill('#secondary-email', loginEmail);
+  await page.click('button[onclick="window.__uslSecondaryNext()"]');
+  await page.waitForSelector('#send-email-link-btn');
+  await page.click('#send-email-link-btn');
+  await expect(page.locator('#manual-email-continue-btn')).toBeVisible();
+
+  let signupLink = null;
+  await expect.poll(async () => {
+    signupLink = await latestEmailLink(loginEmail).catch(() => null);
+    return signupLink;
+  }, { timeout: 10_000 }).not.toBeNull();
+
+  const verifierContext = await browser.newContext();
+  const verifier = await verifierContext.newPage();
+  await verifier.goto(signupLink);
+  await verifier.waitForLoadState('networkidle');
+  await expect(verifier.locator('#verification-title')).toContainText(/verificado|verified/i);
+  await verifierContext.close();
+
+  await page.bringToFront();
+  const createdSession = await waitForSession(page);
+  expect(createdSession.user.email).toBe(loginEmail);
+  expect(createdSession.user.phone).toBe(e164(phones.phoneSignupCrossDevice));
+  expect(createdSession.user.phone_verified).toBe(true);
+  expect(createdSession.user.email_verified).toBe(true);
+
+  const firebaseAfter = await firebaseUserSnapshot(page);
+  expect(firebaseAfter.uid).toBe(firebaseBefore.uid);
+  expect(firebaseAfter.email).toBe(loginEmail);
+  expect(firebaseAfter.phoneNumber).toBe(e164(phones.phoneSignupCrossDevice));
+
+  await clearBrowser(page);
+  await openAuth(page);
+  await enterIdentifier(page, loginEmail);
+  await page.waitForSelector('#confirm-phone-input');
+  await page.fill('#confirm-phone-input', phones.phoneSignupCrossDevice);
+  await page.click('#confirm-phone-btn');
+  await page.waitForSelector('#usl-more-options-btn');
+  await page.click('#usl-more-options-btn');
+  await page.waitForSelector('button[onclick="window.__uslSwitchToEmailLink()"]');
+  await page.click('button[onclick="window.__uslSwitchToEmailLink()"]');
+
+  let loginLink = null;
+  await expect.poll(async () => {
+    loginLink = await latestEmailLink(loginEmail).catch(() => null);
+    return loginLink;
+  }, { timeout: 10_000 }).not.toBeNull();
+
+  const loginVerifierContext = await browser.newContext();
+  const loginVerifier = await loginVerifierContext.newPage();
+  await loginVerifier.goto(loginLink);
+  await loginVerifier.waitForLoadState('networkidle');
+  await expect(loginVerifier.locator('#verification-title')).toContainText(/verificado|verified/i);
+  await loginVerifierContext.close();
+
+  const loginSession = await waitForSession(page);
+  expect(loginSession.user.id).toBe(createdSession.user.id);
+  expect(loginSession.user.phone_verified).toBe(true);
+  expect(loginSession.user.email_verified).toBe(true);
+
+  await page.goto(`${BASE_URL}/account.html?section=security`);
+  await expect(page.locator('#security-phone-status')).toContainText(/verificado|verified/i, { timeout: 15_000 });
+  const meAfterRefresh = await authMe(page);
+  expect(meAfterRefresh.status).toBe(200);
+  expect(meAfterRefresh.body.user.phone_verified).toBe(true);
+  expect(meAfterRefresh.body.user.email_verified).toBe(true);
 });
 
 test('phone-first signup, skipped email, ordering gate returns email_required', async ({ page }) => {

@@ -473,6 +473,10 @@ export async function initDb() {
 
     ALTER TABLE auth_email_link_flows
       ADD COLUMN IF NOT EXISTS purpose TEXT NOT NULL DEFAULT 'login';
+    ALTER TABLE auth_email_link_flows
+      ADD COLUMN IF NOT EXISTS owner_firebase_uid TEXT;
+    ALTER TABLE auth_email_link_flows
+      ADD COLUMN IF NOT EXISTS owner_user_id TEXT;
 
     CREATE INDEX IF NOT EXISTS auth_email_link_flows_expires_idx
       ON auth_email_link_flows(expires_at);

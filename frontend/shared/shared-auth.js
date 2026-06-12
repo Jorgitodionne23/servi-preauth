@@ -262,10 +262,11 @@
       }
     } else {
       if (localStorage.getItem('servi_pending_logout')) localStorage.removeItem('servi_pending_logout');
-      var preservingEmailAction = hasPendingEmailVerificationAction() && !!localStorage.getItem('servi_user_session');
-      if (preservingEmailAction) {
+      var rawSession = localStorage.getItem('servi_user_session');
+      var preservingEmailAction = hasPendingEmailVerificationAction() && !!rawSession;
+      if (preservingEmailAction || rawSession) {
         try {
-          var preservedSession = JSON.parse(localStorage.getItem('servi_user_session') || 'null');
+          var preservedSession = JSON.parse(rawSession || 'null');
           window.__user = preservedSession && preservedSession.user ? preservedSession.user : window.__user;
         } catch (_) {}
       } else {
@@ -313,6 +314,8 @@
           body.email_link_poll_token = emailFlowProof.email_link_poll_token;
         }
       }
+      var activeEmailFlowId = getEmailLinkFlowIdFromUrl();
+      if (activeEmailFlowId) body.email_link_flow_id = activeEmailFlowId;
       var res = await fetch(API() + '/api/auth/firebase', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + idToken },
@@ -736,9 +739,15 @@
 
   async function startEmailLinkFlow(email, purpose) {
     var flowPurpose = purpose || 'login';
+    var headers = { 'Content-Type': 'application/json' };
+    if (flowPurpose === 'signup_verification' && auth && auth.currentUser && auth.currentUser.phoneNumber) {
+      try {
+        headers.Authorization = 'Bearer ' + await auth.currentUser.getIdToken(true);
+      } catch (_) {}
+    }
     var res = await fetch(API() + '/api/auth/email-link-flow/start', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: headers,
       body: JSON.stringify({ email: email, purpose: flowPurpose })
     });
     var data = await res.json().catch(function () { return {}; });
@@ -1928,22 +1937,28 @@
           var credential = firebase.auth.PhoneAuthProvider.credential(confirmationResult.verificationId, code);
           var fbUser = await waitForCurrentFirebaseUser(3000);
           if (!fbUser) {
-            var missingUserErr = new Error('missing_firebase_user_for_phone_link');
-            missingUserErr.code = 'servi/missing-firebase-user-for-phone-link';
-            throw missingUserErr;
-          }
-          try {
-            await fbUser.linkWithCredential(credential);
-          } catch (linkErr) {
-            if (linkErr && linkErr.code === 'auth/provider-already-linked') {
-              await fbUser.reload();
-              if (auth.currentUser && auth.currentUser.phoneNumber === uslNewUserData.phone) {
-                fbUser = auth.currentUser;
+            if (uslIsNew && uslFirstIdentifierType === 'email' && emailLinkFlowSignupProof()) {
+              var phoneCredential = await confirmationResult.confirm(code);
+              fbUser = (phoneCredential && phoneCredential.user) || (auth && auth.currentUser);
+            } else {
+              var missingUserErr = new Error('missing_firebase_user_for_phone_link');
+              missingUserErr.code = 'servi/missing-firebase-user-for-phone-link';
+              throw missingUserErr;
+            }
+          } else {
+            try {
+              await fbUser.linkWithCredential(credential);
+            } catch (linkErr) {
+              if (linkErr && linkErr.code === 'auth/provider-already-linked') {
+                await fbUser.reload();
+                if (auth.currentUser && auth.currentUser.phoneNumber === uslNewUserData.phone) {
+                  fbUser = auth.currentUser;
+                } else {
+                  throw linkErr;
+                }
               } else {
                 throw linkErr;
               }
-            } else {
-              throw linkErr;
             }
           }
           uslNewUserData.phone_verified = true;
