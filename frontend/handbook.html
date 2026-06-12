@@ -6,7 +6,7 @@
   <title>SERVI — Partners Handbook</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,700;1,9..40,400&family=Syne:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/shared/shared-styles.css">
   <link rel="stylesheet" href="/shared/landing-theme.css">
   <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -56,12 +56,12 @@
 
 <section style="padding-top:120px;padding-bottom:80px">
   <div class="container">
-    <div style="text-align:center;margin-bottom:56px">
+    <div style="text-align:center;margin-bottom:56px" data-reveal>
       <h1 class="heading-xl" style="margin-bottom:16px" data-i18n="handbook.title">Partners Handbook</h1>
       <p class="text-body" style="max-width:560px;margin:0 auto" data-i18n="handbook.subtitle">Un manual para el SERVI Partner. Todo lo que necesitas saber para trabajar con excelencia dentro de la comunidad SERVI.</p>
     </div>
 
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px" data-reveal-stagger>
       <a href="/handbook/guia-comunitaria.html" class="hb-card">
         <div class="hb-num">1</div>
         <h3 data-i18n="handbook.links.guide">Guía comunitaria</h3>
@@ -98,5 +98,9 @@
 
 <div id="footer"></div>
 <script src="/shared/shared-footer.js"></script>
+<!-- Motion layer (visual only) -->
+<script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/ScrollTrigger.min.js" defer></script>
+<script src="/shared/motion.js" defer></script>
 </body>
 </html>

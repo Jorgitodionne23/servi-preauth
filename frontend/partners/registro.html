@@ -6,7 +6,7 @@
   <title>SERVI — Registro de Partner</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,700;1,9..40,400&family=Syne:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/shared/shared-styles.css">
   <link rel="stylesheet" href="/shared/landing-theme.css">
   <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -20,7 +20,7 @@
 
 <section style="padding-top:120px;padding-bottom:80px">
   <div class="container" style="max-width:640px">
-    <div id="page-header">
+    <div id="page-header" data-reveal>
       <a href="/partners.html" class="nav-link" style="display:inline-flex;align-items:center;gap:6px;margin-bottom:24px">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
         <span data-i18n="nav.partners">Partners</span>
@@ -140,5 +140,9 @@ document.getElementById('partner-form').addEventListener('submit', async functio
   }
 });
 </script>
+<!-- Motion layer (visual only) -->
+<script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/ScrollTrigger.min.js" defer></script>
+<script src="/shared/motion.js" defer></script>
 </body>
 </html>

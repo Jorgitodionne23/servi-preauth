@@ -7,7 +7,7 @@
   <meta name="description" content="Servicios a domicilio sin complicaciones. Limpieza, reparaciones, mantenimiento y más — encuentra al especialista ideal en minutos.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,700;1,9..40,400&family=Syne:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/shared/shared-styles.css">
   <link rel="stylesheet" href="/shared/landing-theme.css">
   <script>
@@ -168,8 +168,8 @@
 <!-- ═══ HOW IT WORKS (light) ═══ -->
 <section id="how" class="section" style="padding-top:0">
   <div class="container">
-    <h2 class="heading-lg" data-i18n="how.title" style="margin-bottom:56px">Así de fácil</h2>
-    <div id="steps-grid"></div>
+    <h2 class="heading-lg" data-i18n="how.title" style="margin-bottom:56px" data-reveal>Así de fácil</h2>
+    <div id="steps-grid" data-reveal></div>
   </div>
 </section>
 
@@ -177,12 +177,12 @@
 <section id="about" class="section section--dark">
   <div class="container">
     <div class="about-layout" style="display:flex;gap:64px;align-items:center">
-      <div style="flex:1">
+      <div style="flex:1" data-reveal>
         <h2 class="heading-lg" data-i18n="about.title" style="margin-bottom:24px">¿Por qué SERVI?</h2>
         <p class="text-body" data-i18n="about.sub" style="margin-bottom:16px">Hoy puedes pedir comida o un taxi en segundos, pero encontrar un plomero o un electricista sigue siendo lento, informal y desorganizado.</p>
         <p class="text-body text-bold" data-i18n="about.bold" style="color:#fff">SERVI gestiona todo el proceso por ti.</p>
       </div>
-      <div style="flex:1" id="stats-grid"></div>
+      <div style="flex:1" id="stats-grid" data-reveal data-count-container></div>
     </div>
   </div>
 </section>
@@ -190,8 +190,8 @@
 <!-- ═══ TESTIMONIALS (light) ═══ -->
 <section id="testimonials" class="section">
   <div class="container">
-    <h2 class="heading-lg" data-i18n="testimonials.title" style="margin-bottom:48px">Nuestros clientes</h2>
-    <div class="grid-3" id="testimonials-grid" style="gap:20px"></div>
+    <h2 class="heading-lg" data-i18n="testimonials.title" style="margin-bottom:48px" data-reveal>Nuestros clientes</h2>
+    <div class="grid-3" id="testimonials-grid" style="gap:20px" data-reveal></div>
   </div>
 </section>
 
@@ -200,7 +200,7 @@
   <div class="container">
     <div class="app-layout">
       <!-- Copy -->
-      <div class="app-copy">
+      <div class="app-copy" data-reveal>
         <div class="app-eyebrow">
           <span class="app-eyebrow__dot"></span>
           <span data-i18n="app.badge">Muy pronto</span>
@@ -283,7 +283,7 @@
 <section id="providers" class="provider-full">
   <div class="container">
     <div class="provider-layout">
-      <div class="provider-copy">
+      <div class="provider-copy" data-reveal>
         <h2 class="provider-headline" data-i18n="providers.title">¿Eres proveedor de servicios?</h2>
         <p class="text-body" data-i18n="providers.sub" style="max-width:480px;margin-bottom:36px">Ofrece tus servicios con SERVI y haz crecer tu clientela de manera gratuita.</p>
         <div class="flex-gap-12">
@@ -299,8 +299,8 @@
 <!-- ═══ CONTACT (light) ═══ -->
 <section id="contact" class="section">
   <div class="container">
-    <h2 class="heading-lg" data-i18n="contact.title" style="margin-bottom:32px">Contacto</h2>
-    <div style="display:flex;flex-direction:column;gap:16px">
+    <h2 class="heading-lg" data-i18n="contact.title" style="margin-bottom:32px" data-reveal>Contacto</h2>
+    <div style="display:flex;flex-direction:column;gap:16px" data-reveal>
       <div class="contact-item">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
         <span data-i18n="contact.address">Santa Fe, Cuajimalpa de Morelos, Ciudad de México, CDMX.</span>
@@ -1780,5 +1780,9 @@
 })();
 </script>
 
+<!-- Motion layer (visual only) -->
+<script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/ScrollTrigger.min.js" defer></script>
+<script src="/shared/motion.js" defer></script>
 </body>
 </html>

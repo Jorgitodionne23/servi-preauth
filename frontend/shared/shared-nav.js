@@ -123,10 +123,10 @@
         }).join('')}
         <div style="height:1px;background:#eee;margin:8px 0"></div>
         ${window.__user
-          ? `<span style="font-size:16px;font-weight:600;font-family:'DM Sans',sans-serif">Hola, ${(window.__user.name || window.__user.email || '').split(' ')[0]}</span>
-             <a href="/account.html" onclick="toggleMobileMenu(false)" style="font-size:16px;font-weight:500;color:#0a0a0a;text-decoration:none;font-family:'DM Sans',sans-serif">${lang === 'es' ? 'Mi cuenta' : 'My account'}</a>
-             <button onclick="toggleMobileMenu(false);logoutUser && logoutUser()" style="background:none;border:none;font-size:16px;font-weight:500;cursor:pointer;text-align:left;font-family:'DM Sans',sans-serif;color:#ef4444">${lang === 'es' ? 'Cerrar sesión' : 'Log out'}</button>`
-          : `<button onclick="toggleMobileMenu(false);openAuthModal && openAuthModal('login')" style="background:none;border:none;font-size:16px;font-weight:600;cursor:pointer;text-align:left;font-family:'DM Sans',sans-serif">${t.nav.login}</button>
+          ? `<span style="font-size:16px;font-weight:600;font-family:'Plus Jakarta Sans',sans-serif">Hola, ${(window.__user.name || window.__user.email || '').split(' ')[0]}</span>
+             <a href="/account.html" onclick="toggleMobileMenu(false)" style="font-size:16px;font-weight:500;color:#0a0a0a;text-decoration:none;font-family:'Plus Jakarta Sans',sans-serif">${lang === 'es' ? 'Mi cuenta' : 'My account'}</a>
+             <button onclick="toggleMobileMenu(false);logoutUser && logoutUser()" style="background:none;border:none;font-size:16px;font-weight:500;cursor:pointer;text-align:left;font-family:'Plus Jakarta Sans',sans-serif;color:#ef4444">${lang === 'es' ? 'Cerrar sesión' : 'Log out'}</button>`
+          : `<button onclick="toggleMobileMenu(false);openAuthModal && openAuthModal('login')" style="background:none;border:none;font-size:16px;font-weight:600;cursor:pointer;text-align:left;font-family:'Plus Jakarta Sans',sans-serif">${t.nav.login}</button>
              <button class="btn-primary" onclick="toggleMobileMenu(false);openAuthModal && openAuthModal('signup')" style="justify-content:center">${t.nav.signup}</button>`
         }
       </div>
@@ -230,7 +230,7 @@
     const toast = document.createElement('div');
     toast.id = 'servi-session-expired-toast';
     toast.setAttribute('role', 'status');
-    toast.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:99999;display:flex;align-items:center;gap:14px;max-width:calc(100vw - 32px);background:#fff;color:#1a1a1a;border:1px solid #e8e8e8;border-radius:14px;box-shadow:0 8px 30px rgba(0,0,0,0.16);padding:14px 16px;font-family:\'DM Sans\',-apple-system,sans-serif;font-size:14px;font-weight:500';
+    toast.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:99999;display:flex;align-items:center;gap:14px;max-width:calc(100vw - 32px);background:#fff;color:#1a1a1a;border:1px solid #e8e8e8;border-radius:14px;box-shadow:0 8px 30px rgba(0,0,0,0.16);padding:14px 16px;font-family:\'Plus Jakarta Sans\',-apple-system,sans-serif;font-size:14px;font-weight:500';
     const text = document.createElement('span');
     text.textContent = es ? 'Tu sesión expiró. Inicia sesión de nuevo.' : 'Your session expired. Please sign in again.';
     const signInBtn = document.createElement('button');

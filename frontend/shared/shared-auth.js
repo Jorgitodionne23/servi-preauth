@@ -515,7 +515,7 @@
           '<div style="padding:32px">' +
             '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">' +
               (renderBack
-                ? '<button onclick="' + backFn + '()" style="background:none;border:none;cursor:pointer;padding:4px;display:flex;align-items:center;gap:6px;font-size:14px;color:#666;font-family:\'DM Sans\',sans-serif">' + icons.back + (isEs() ? ' Volver' : ' Back') + '</button>'
+                ? '<button onclick="' + backFn + '()" style="background:none;border:none;cursor:pointer;padding:4px;display:flex;align-items:center;gap:6px;font-size:14px;color:#666;font-family:\'Plus Jakarta Sans\',sans-serif">' + icons.back + (isEs() ? ' Volver' : ' Back') + '</button>'
                 : '<div></div>') +
               '<h2 class="heading-md" style="margin:0">' + title + '</h2>' +
               (locked
@@ -710,7 +710,7 @@
     }).join('');
     return (
       '<select id="auth-country-code" onchange="window.__uslSetDial(this.value)" ' +
-        'style="border:1.5px solid #e8e8e8;border-radius:10px 0 0 10px;padding:12px 8px;font-size:14px;font-family:\'DM Sans\',sans-serif;background:#fff;cursor:pointer;outline:none;flex-shrink:0">' +
+        'style="border:1.5px solid #e8e8e8;border-radius:10px 0 0 10px;padding:12px 8px;font-size:14px;font-family:\'Plus Jakarta Sans\',sans-serif;background:#fff;cursor:pointer;outline:none;flex-shrink:0">' +
         opts +
       '</select>'
     );
@@ -1109,7 +1109,7 @@
     var es = isEs();
     document.getElementById('auth-modal-global').innerHTML = modalShell(es ? 'Ingresa a SERVI' : 'Sign in to SERVI', false, '');
     setScreen(
-      '<button onclick="handleGoogleAuth()" id="google-auth-btn" style="width:100%;padding:14px;border:1.5px solid #e0e0e0;border-radius:12px;background:#fff;font-size:15px;font-weight:500;cursor:pointer;font-family:\'DM Sans\',sans-serif;margin-bottom:16px;display:flex;align-items:center;justify-content:center;gap:10px">' +
+      '<button onclick="handleGoogleAuth()" id="google-auth-btn" style="width:100%;padding:14px;border:1.5px solid #e0e0e0;border-radius:12px;background:#fff;font-size:15px;font-weight:500;cursor:pointer;font-family:\'Plus Jakarta Sans\',sans-serif;margin-bottom:16px;display:flex;align-items:center;justify-content:center;gap:10px">' +
         icons.google + ' ' + (es ? 'Continuar con Google' : 'Continue with Google') +
       '</button>' +
       '<div style="display:flex;align-items:center;gap:16px;margin-bottom:20px"><div style="flex:1;height:1px;background:#eee"></div><span style="font-size:12px;color:#aaa">' + (es ? 'o' : 'or') + '</span><div style="flex:1;height:1px;background:#eee"></div></div>' +
@@ -1118,7 +1118,7 @@
         '<div id="usl-country-wrap">' + countrySelect() + '</div>' +
         '<input id="auth-identifier" type="tel" inputmode="tel" ' +
           'placeholder="' + (es ? 'Teléfono o correo electrónico' : 'Phone number or email') + '" ' +
-          'style="flex:1;border:none;padding:12px;font-size:15px;font-family:\'DM Sans\',sans-serif;outline:none" ' +
+          'style="flex:1;border:none;padding:12px;font-size:15px;font-family:\'Plus Jakarta Sans\',sans-serif;outline:none" ' +
           'onkeydown="if(event.key===\'Enter\') window.__uslSubmitIdentifier()">' +
       '</div>' +
       '<button class="btn-primary" onclick="window.__uslSubmitIdentifier()" id="usl-continue-btn" style="width:100%;justify-content:center">' + (es ? 'Continuar' : 'Continue') + '</button>' +
@@ -1224,7 +1224,7 @@
       '<div style="display:flex;margin-bottom:12px;border:1.5px solid #e8e8e8;border-radius:10px;overflow:hidden">' +
         countrySelect() +
         '<input id="confirm-phone-input" type="tel" inputmode="numeric" placeholder="55 1234 5678" ' +
-          'style="flex:1;border:none;padding:12px;font-size:15px;font-family:\'DM Sans\',sans-serif;outline:none" ' +
+          'style="flex:1;border:none;padding:12px;font-size:15px;font-family:\'Plus Jakarta Sans\',sans-serif;outline:none" ' +
           'onkeydown="if(event.key===\'Enter\') window.__uslConfirmPhoneNext()">' +
       '</div>' +
       '<button class="btn-primary" onclick="window.__uslConfirmPhoneNext()" id="confirm-phone-btn" style="width:100%;justify-content:center">' +
@@ -1284,7 +1284,7 @@
       var moreOptionsBtn = (uslLoginViaEmail && uslAccountEmailVerified)
         ? '<div style="margin-top:12px;text-align:center">' +
             '<button onclick="window.__uslShowMoreOptions()" id="usl-more-options-btn" ' +
-              'style="background:#f3f4f6;border:none;border-radius:999px;padding:8px 18px;font-size:13px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif;color:#0a0a0a">' +
+              'style="background:#f3f4f6;border:none;border-radius:999px;padding:8px 18px;font-size:13px;font-weight:600;cursor:pointer;font-family:\'Plus Jakarta Sans\',sans-serif;color:#0a0a0a">' +
               (es ? 'Más opciones' : 'More options') +
             '</button>' +
           '</div>'
@@ -1308,13 +1308,13 @@
           '<button class="btn-primary" onclick="window.__uslVerifyOTP()" id="verify-otp-btn" style="width:100%;justify-content:center;margin-bottom:8px">' +
             (es ? 'Verificar' : 'Verify') +
           '</button>' +
-          '<button onclick="window.__uslResendOTP()" style="background:none;border:none;font-size:13px;color:var(--color-accent-hover, #74b8c4);font-weight:500;cursor:pointer;font-family:\'DM Sans\',sans-serif;width:100%;text-align:center">' +
+          '<button onclick="window.__uslResendOTP()" style="background:none;border:none;font-size:13px;color:var(--color-accent-hover, #74b8c4);font-weight:500;cursor:pointer;font-family:\'Plus Jakarta Sans\',sans-serif;width:100%;text-align:center">' +
             (es ? 'Reenviar código' : 'Resend code') +
           '</button>' +
         '</div>' +
         moreOptionsBtn +
         (isLogin && !uslLoginViaEmail
-          ? '<div style="margin-top:16px;text-align:center"><button onclick="window.__uslStartRecovery()" style="background:none;border:none;font-size:13px;color:#888;cursor:pointer;font-family:\'DM Sans\',sans-serif;text-decoration:underline">' + (es ? '¿No tienes acceso a tu teléfono?' : 'Can\'t access your phone?') + '</button></div>'
+          ? '<div style="margin-top:16px;text-align:center"><button onclick="window.__uslStartRecovery()" style="background:none;border:none;font-size:13px;color:#888;cursor:pointer;font-family:\'Plus Jakarta Sans\',sans-serif;text-decoration:underline">' + (es ? '¿No tienes acceso a tu teléfono?' : 'Can\'t access your phone?') + '</button></div>'
           : '')
       );
       ensureFirebase().then(setupRecaptchaInner);
@@ -1415,7 +1415,7 @@
                 : 'Verify link sent to <strong>' + uslIdentifier + '</strong>. <strong>Check your spam folder.</strong>') +
             '</p>' +
             '<button id="manual-email-continue-btn" onclick="window.__uslManualEmailContinue && window.__uslManualEmailContinue()" ' +
-              'style="background:#0a0a0a;color:#fff;border:none;border-radius:10px;padding:12px 20px;font-size:14px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif;width:100%">' +
+              'style="background:#0a0a0a;color:#fff;border:none;border-radius:10px;padding:12px 20px;font-size:14px;font-weight:600;cursor:pointer;font-family:\'Plus Jakarta Sans\',sans-serif;width:100%">' +
               (isEs() ? 'Ya verifiqué mi correo' : 'I verified my email') +
             '</button>' +
             '<p id="manual-email-hint" style="display:none;font-size:12px;color:#dc2626;line-height:1.5;margin-top:12px"></p>' +
@@ -1495,12 +1495,12 @@
       '</p>' +
       errorBox() +
       '<button onclick="window.__uslBackToPhoneOTP()" ' +
-        'style="width:100%;padding:14px;border:1.5px solid #e0e0e0;border-radius:12px;background:#fff;font-size:14px;font-weight:500;cursor:pointer;font-family:\'DM Sans\',sans-serif;margin-bottom:10px;text-align:left">' +
+        'style="width:100%;padding:14px;border:1.5px solid #e0e0e0;border-radius:12px;background:#fff;font-size:14px;font-weight:500;cursor:pointer;font-family:\'Plus Jakarta Sans\',sans-serif;margin-bottom:10px;text-align:left">' +
         '<div style="font-weight:600;margin-bottom:2px">' + (es ? 'Código SMS' : 'SMS code') + '</div>' +
         '<div style="font-size:13px;color:#666">' + phoneDisplay + '</div>' +
       '</button>' +
       '<button onclick="window.__uslSwitchToEmailLink()" ' +
-        'style="width:100%;padding:14px;border:1.5px solid #e0e0e0;border-radius:12px;background:#fff;font-size:14px;font-weight:500;cursor:pointer;font-family:\'DM Sans\',sans-serif;text-align:left">' +
+        'style="width:100%;padding:14px;border:1.5px solid #e0e0e0;border-radius:12px;background:#fff;font-size:14px;font-weight:500;cursor:pointer;font-family:\'Plus Jakarta Sans\',sans-serif;text-align:left">' +
         '<div style="font-weight:600;margin-bottom:2px">' + (es ? 'Enlace por correo' : 'Email link') + '</div>' +
         '<div style="font-size:13px;color:#666">' + escapeHtml(uslTypedEmail) + '</div>' +
       '</button>'
@@ -1554,7 +1554,7 @@
         (es ? 'Continuar' : 'Continue') +
       '</button>' +
       (canStartOver
-        ? '<button type="button" onclick="window.__uslStartOverFromLockedSignup()" id="auth-start-over-btn" style="width:100%;margin-top:10px;padding:12px;border:0;background:transparent;color:#666;font-size:14px;font-weight:500;cursor:pointer;font-family:\'DM Sans\',sans-serif">' +
+        ? '<button type="button" onclick="window.__uslStartOverFromLockedSignup()" id="auth-start-over-btn" style="width:100%;margin-top:10px;padding:12px;border:0;background:transparent;color:#666;font-size:14px;font-weight:500;cursor:pointer;font-family:\'Plus Jakarta Sans\',sans-serif">' +
             (es ? 'Usar otra cuenta' : 'Use another account') +
           '</button>'
         : '')
@@ -1765,17 +1765,17 @@
       (collectPhone
         ? '<div style="display:flex;margin-bottom:12px;border:1.5px solid #e8e8e8;border-radius:10px;overflow:hidden">' +
             countrySelect() +
-            '<input id="secondary-phone" type="tel" inputmode="numeric" placeholder="55 1234 5678" style="flex:1;border:none;padding:12px;font-size:15px;font-family:\'DM Sans\',sans-serif;outline:none" onkeydown="if(event.key===\'Enter\') window.__uslSecondaryNext()">' +
+            '<input id="secondary-phone" type="tel" inputmode="numeric" placeholder="55 1234 5678" style="flex:1;border:none;padding:12px;font-size:15px;font-family:\'Plus Jakarta Sans\',sans-serif;outline:none" onkeydown="if(event.key===\'Enter\') window.__uslSecondaryNext()">' +
           '</div>'
         : '<input id="secondary-email" class="input-field" type="email" placeholder="' + (es ? 'correo@ejemplo.com' : 'email@example.com') + '" style="margin-bottom:12px" onkeydown="if(event.key===\'Enter\') window.__uslSecondaryNext()">') +
       '<button class="btn-primary" onclick="window.__uslSecondaryNext()" style="width:100%;justify-content:center;margin-bottom:10px">' +
         (es ? 'Verificar' : 'Verify') +
       '</button>' +
       (collectPhone
-        ? '<button onclick="window.__uslLoginWithSecondaryPhone()" id="secondary-phone-login-btn" style="display:none;background:none;border:none;font-size:13px;color:#666;cursor:pointer;font-family:\'DM Sans\',sans-serif;width:100%;text-align:center;padding:8px;text-decoration:underline">' +
+        ? '<button onclick="window.__uslLoginWithSecondaryPhone()" id="secondary-phone-login-btn" style="display:none;background:none;border:none;font-size:13px;color:#666;cursor:pointer;font-family:\'Plus Jakarta Sans\',sans-serif;width:100%;text-align:center;padding:8px;text-decoration:underline">' +
             (es ? '¿Este teléfono ya tiene cuenta? Inicia sesión' : 'Phone already has an account? Log in') +
           '</button>'
-        : '<button onclick="window.__uslSkipSecondary()" style="background:none;border:none;font-size:13px;color:#888;cursor:pointer;font-family:\'DM Sans\',sans-serif;width:100%;text-align:center;padding:8px;text-decoration:underline">' +
+        : '<button onclick="window.__uslSkipSecondary()" style="background:none;border:none;font-size:13px;color:#888;cursor:pointer;font-family:\'Plus Jakarta Sans\',sans-serif;width:100%;text-align:center;padding:8px;text-decoration:underline">' +
             (es ? 'Omitir por ahora' : 'Skip for now') +
           '</button>')
     );
@@ -2323,7 +2323,7 @@
     document.body.style.display = 'flex';
     document.body.style.alignItems = 'center';
     document.body.style.justifyContent = 'center';
-    document.body.style.fontFamily = '"DM Sans", sans-serif';
+    document.body.style.fontFamily = '"Plus Jakarta Sans", sans-serif';
 
     // Create card container
     var card = document.createElement('div');
@@ -2351,7 +2351,7 @@
     titleEl.style.fontSize = '24px';
     titleEl.style.fontWeight = '700';
     titleEl.style.color = '#0a0a0a';
-    titleEl.style.fontFamily = '"Syne", sans-serif';
+    titleEl.style.fontFamily = '"Outfit", sans-serif';
     card.appendChild(titleEl);
 
     // Message
@@ -2892,7 +2892,7 @@
     var es = isEs();
     var toast = document.createElement('div');
     toast.id = 'servi-session-toast';
-    toast.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:10000;background:#0a0a0a;color:#fff;padding:12px 24px;border-radius:12px;font-family:"DM Sans",sans-serif;font-size:14px;font-weight:500;box-shadow:0 4px 20px rgba(0,0,0,0.15);display:flex;align-items:center;gap:10px;max-width:90%;animation:fadeInDown 0.3s ease';
+    toast.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:10000;background:#0a0a0a;color:#fff;padding:12px 24px;border-radius:12px;font-family:"Plus Jakarta Sans",sans-serif;font-size:14px;font-weight:500;box-shadow:0 4px 20px rgba(0,0,0,0.15);display:flex;align-items:center;gap:10px;max-width:90%;animation:fadeInDown 0.3s ease';
     toast.innerHTML = '<span>' + (es ? 'Tu sesión expiró. Inicia sesión de nuevo.' : 'Your session expired. Please sign in again.') + '</span>' +
       '<button onclick="this.parentElement.remove()" style="background:none;border:none;color:#888;cursor:pointer;font-size:18px;padding:0 4px">&times;</button>';
     document.body.appendChild(toast);

@@ -142,7 +142,7 @@
   function injectStyles() {
     if (document.getElementById(STYLE_ID)) return;
     var css = ''
-      + '.servi-ao{position:fixed;right:22px;bottom:22px;z-index:120;font-family:var(--font-body,"DM Sans",system-ui,sans-serif);max-width:min(330px,calc(100vw - 28px))}'
+      + '.servi-ao{position:fixed;right:22px;bottom:22px;z-index:120;font-family:var(--font-body,"Plus Jakarta Sans",system-ui,sans-serif);max-width:min(330px,calc(100vw - 28px))}'
       + '.servi-ao *{box-sizing:border-box}'
       + '.servi-ao[data-state="pill"] .servi-ao__card{display:none}'
       + '.servi-ao[data-state="card"] .servi-ao__pill{display:none}'

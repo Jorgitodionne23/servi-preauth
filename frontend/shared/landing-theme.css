@@ -2,26 +2,18 @@
 /* Imported ONLY by index.html. Scoped to .landing-page body class.           */
 
 /* ─── Variable Overrides ─────────────────────────────────────────────────── */
+/* Tokens are unified site-wide in shared-styles.css :root ("Refined Minimal+").
+   Keep this block only for values that intentionally differ on the landing page. */
 .landing-page {
-  --font-heading: 'Outfit', sans-serif;
-  --font-body: 'Plus Jakarta Sans', sans-serif;
-  --color-bg: #f7f7f7;
-  --color-bg-dark: #111111;
-  --color-text: #111111;
-  --color-text-secondary: #555555;
-  --color-text-muted: #8a8a8a;
-  --color-accent: #95ccd5;
-  --color-accent-hover: #74b8c4;
-  --color-border: #e0e0e0;
-  --color-border-input: #d8d8d8;
-  --color-card-bg: #fff;
-  --color-surface: #f0f0f0;
-  --shadow-card-hover: 0 20px 48px rgba(0,0,0,0.06);
+  --color-border-input: #d8dddd;
 }
 
 /* ─── Dark Sections ──────────────────────────────────────────────────────── */
 .landing-page .section--dark {
-  background: var(--color-bg-dark);
+  /* blue-black base + subtle teal radial glow (token sheet §06) */
+  background:
+    radial-gradient(700px circle at 85% -10%, rgba(127,196,207,0.14), transparent 62%),
+    var(--color-bg-dark);
   color: #fff;
 }
 .landing-page .section--dark .heading-lg,
@@ -66,7 +58,7 @@
 }
 .hero-search:focus-within {
   border-color: var(--color-accent);
-  box-shadow: 0 0 0 4px rgba(149,204,213,0.22), 0 28px 52px -24px rgba(0,0,0,0.18);
+  box-shadow: 0 0 0 4px rgba(127,196,207,0.22), 0 28px 52px -24px rgba(0,0,0,0.18);
 }
 .hero-search__input {
   flex: 1;
@@ -142,7 +134,7 @@
 .hero-chip:hover {
   border-color: var(--color-accent);
   color: var(--color-accent);
-  background: rgba(149,204,213,0.08);
+  background: rgba(127,196,207,0.08);
 }
 
 /* ─── Site Header — three-state rectangular floating bar ─────────────────── */
@@ -390,21 +382,21 @@
     inset 0 1px 0 rgba(255,255,255,0.88),
     0 5px 14px -6px rgba(31,42,45,0.22),
     0 18px 34px -22px rgba(31,42,45,0.34),
-    0 0 18px 2px rgba(149,204,213,0.10);
+    0 0 18px 2px rgba(127,196,207,0.10);
 }
 .site-header[data-state="browse-expanded"] .site-header__pill {
   width: clamp(560px, 54vw, 620px);
   min-width: 560px;
   height: 62px;
-  border-color: rgba(149,204,213,0.44);
+  border-color: rgba(127,196,207,0.44);
   background:
     linear-gradient(#fff, #fff) padding-box,
-    linear-gradient(135deg, rgba(149,204,213,0.56), rgba(255,255,255,0.88)) border-box;
+    linear-gradient(135deg, rgba(127,196,207,0.56), rgba(255,255,255,0.88)) border-box;
   box-shadow:
     inset 0 1px 0 rgba(255,255,255,0.92),
     0 7px 18px -8px rgba(31,42,45,0.22),
     0 22px 42px -24px rgba(31,42,45,0.36),
-    0 0 18px 2px rgba(149,204,213,0.10);
+    0 0 18px 2px rgba(127,196,207,0.10);
 }
 .site-header[data-state="scrolled"] .search-pill__segment {
   font-size: 15px;
@@ -971,8 +963,8 @@
 }
 .spp-cam-choice:hover {
   border-color: var(--color-accent);
-  background: rgba(149,204,213,0.08);
-  box-shadow: 0 0 0 3px rgba(149,204,213,0.14);
+  background: rgba(127,196,207,0.08);
+  box-shadow: 0 0 0 3px rgba(127,196,207,0.14);
   transform: translateY(-1px);
 }
 .spp-cam-choice:active { transform: translateY(0); }
@@ -1132,7 +1124,7 @@
 }
 .header-panel__search:focus-within {
   border-color: var(--color-accent);
-  box-shadow: 0 0 0 3px rgba(149,204,213,0.22);
+  box-shadow: 0 0 0 3px rgba(127,196,207,0.22);
 }
 .header-panel__input {
   flex: 1;
@@ -1431,8 +1423,8 @@
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(1200px 600px at 50% 60%, rgba(149,204,213,0.07), transparent 60%),
-    radial-gradient(800px 500px at 20% 10%, rgba(149,204,213,0.04), transparent 60%);
+    radial-gradient(1200px 600px at 50% 60%, rgba(127,196,207,0.07), transparent 60%),
+    radial-gradient(800px 500px at 20% 10%, rgba(127,196,207,0.04), transparent 60%);
   pointer-events: none;
 }
 .landing-hero__stage {
@@ -1538,7 +1530,7 @@
   font-family: var(--font-heading);
 }
 .hero-ai-suggestion:hover {
-  background: rgba(149,204,213,0.10);
+  background: rgba(127,196,207,0.10);
   color: var(--color-text);
 }
 
@@ -1652,7 +1644,7 @@
   content: "";
   position: absolute;
   inset: 0;
-  background: radial-gradient(ellipse at 70% 40%, rgba(149,204,213,0.12), transparent 60%);
+  background: radial-gradient(ellipse at 70% 40%, rgba(127,196,207,0.12), transparent 60%);
   pointer-events: none;
 }
 .landing-page .provider-headline {
@@ -2125,7 +2117,7 @@
 }
 .dash-hero__textarea-wrap:focus-within {
   border-color: var(--color-accent);
-  box-shadow: 0 0 0 4px rgba(149,204,213,0.18), 0 4px 24px -12px rgba(0,0,0,0.10);
+  box-shadow: 0 0 0 4px rgba(127,196,207,0.18), 0 4px 24px -12px rgba(0,0,0,0.10);
 }
 .dash-hero__textarea {
   width: 100%;
@@ -2215,7 +2207,7 @@
 }
 .dash-hero__media-btn:hover {
   border-color: var(--color-accent);
-  box-shadow: 0 8px 20px -8px rgba(149,204,213,0.4);
+  box-shadow: 0 8px 20px -8px rgba(127,196,207,0.4);
   transform: translateY(-2px);
 }
 .dash-hero__media-btn svg {
@@ -2473,7 +2465,7 @@
   color: #fff;
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.14),
-    0 0 0 4px rgba(149, 204, 213, 0.18);
+    0 0 0 4px rgba(127, 196, 207, 0.18);
   flex: 0 0 auto;
 }
 .dash-hero__tour-dot svg {
@@ -2519,7 +2511,7 @@
   position: absolute;
   inset: -12px;
   border-radius: inherit;
-  border: 1px solid rgba(149, 204, 213, 0.78);
+  border: 1px solid rgba(127, 196, 207, 0.78);
   pointer-events: none;
   animation: serviTourPulse 1700ms cubic-bezier(0.32, 0.72, 0, 1) infinite;
 }
@@ -3812,7 +3804,7 @@
 
 /* ═══════════════════════════════════════════════════════════════════════
    APP — "Coming Soon" section + iPhone Browse Dashboard mockup
-   On-brand (Syne / DM Sans, light theme, teal accent). The phone screen is
+   On-brand (Outfit / Plus Jakarta Sans, light theme, teal accent). The phone screen is
    static, self-contained markup — it is NOT wired to the live dash-cats-grid
    JS, so it can never interfere with the real booking flow.
    ═══════════════════════════════════════════════════════════════════════ */
@@ -3824,7 +3816,7 @@
   top: 50%; right: -8%;
   width: 640px; height: 640px;
   transform: translateY(-50%);
-  background: radial-gradient(circle, rgba(149,204,213,0.30) 0%, rgba(149,204,213,0) 68%);
+  background: radial-gradient(circle, rgba(127,196,207,0.30) 0%, rgba(127,196,207,0) 68%);
   pointer-events: none;
   z-index: 0;
 }
@@ -3843,7 +3835,7 @@
   gap: 8px;
   padding: 8px 16px 8px 13px;
   border-radius: var(--radius-pill);
-  background: rgba(149,204,213,0.16);
+  background: rgba(127,196,207,0.16);
   color: #1c6b77;
   font-family: var(--font-body);
   font-size: 14px;
@@ -3858,9 +3850,9 @@
   animation: appPulse 2.2s var(--ease-spring) infinite;
 }
 @keyframes appPulse {
-  0%   { box-shadow: 0 0 0 0 rgba(149,204,213,0.55); }
-  70%  { box-shadow: 0 0 0 9px rgba(149,204,213,0); }
-  100% { box-shadow: 0 0 0 0 rgba(149,204,213,0); }
+  0%   { box-shadow: 0 0 0 0 rgba(127,196,207,0.55); }
+  70%  { box-shadow: 0 0 0 9px rgba(127,196,207,0); }
+  100% { box-shadow: 0 0 0 0 rgba(127,196,207,0); }
 }
 .app-copy__title { margin: 0 0 18px; }
 .app-copy__sub {
