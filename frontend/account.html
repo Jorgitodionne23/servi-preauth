@@ -1640,7 +1640,7 @@ function renderConnectedSocialApps() {
   const u = window.__user || {};
   const providerIds = getFirebaseProviderIds();
   const authProvider = String(u.auth_provider || '').toLowerCase();
-  const googleConnected = providerIds.includes('google.com') || authProvider === 'google.com' || authProvider === 'google';
+  const googleConnected = u.google_connected === true || providerIds.includes('google.com') || authProvider === 'google.com' || authProvider === 'google';
 
   list.innerHTML = `
     <div class="security-row">

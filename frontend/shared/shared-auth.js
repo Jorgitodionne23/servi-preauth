@@ -561,6 +561,16 @@
     }
   }
 
+  function setSendOTPButtonLoading(btn, isLoading, es) {
+    if (!btn) return;
+    btn.disabled = !!isLoading;
+    if (isLoading) {
+      btn.innerHTML = loadingDotsMarkup(es ? 'Enviando código' : 'Sending code');
+    } else {
+      btn.textContent = es ? 'Enviar código SMS' : 'Send SMS code';
+    }
+  }
+
   window.__authOverlayClick = function (event) {
     if (event && event.target !== event.currentTarget) return;
     window.__authCloseClick();
@@ -1346,7 +1356,7 @@
 
     if (uslCurrentOTPType === 'phone') {
       var btn = document.getElementById('send-otp-btn');
-      if (btn) { btn.disabled = true; btn.textContent = '...'; }
+      setSendOTPButtonLoading(btn, true, isEs());
       try {
         if (!recaptchaVerifier) setupRecaptchaInner();
         confirmationResult = await auth.signInWithPhoneNumber(uslIdentifier, recaptchaVerifier);
@@ -1361,7 +1371,7 @@
         attachOTPInputHandlers();
         if (otpInput) otpInput.focus();
       } catch (err) {
-        if (btn) { btn.disabled = false; btn.textContent = isEs() ? 'Enviar código SMS' : 'Send SMS code'; }
+        setSendOTPButtonLoading(btn, false, isEs());
         if (err.code === 'auth/too-many-requests') {
           setError(isEs() ? 'Demasiados intentos. Espera unos minutos.' : 'Too many attempts. Wait a few minutes.');
         } else {
@@ -1467,7 +1477,7 @@
   window.__uslResendOTP = function () {
     var btn = document.getElementById('send-otp-btn');
     var entry = document.getElementById('otp-entry');
-    if (btn) { btn.style.display = 'block'; btn.disabled = false; btn.textContent = isEs() ? 'Enviar código SMS' : 'Send SMS code'; }
+    if (btn) { btn.style.display = 'block'; setSendOTPButtonLoading(btn, false, isEs()); }
     if (entry) entry.style.display = 'none';
     setupRecaptchaInner();
   };

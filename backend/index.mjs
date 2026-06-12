@@ -203,7 +203,21 @@ function hashEmailLinkPollToken(token) {
   return createHash('sha256').update(String(token || ''), 'utf8').digest('hex');
 }
 
-function publicUserPayload(user) {
+async function googleConnectedForUser(user) {
+  if (!user) return false;
+  const authProvider = normalizeFirebaseProvider(user.auth_provider);
+  if (authProvider === 'google') return true;
+  if (!user.firebase_uid || user.email_verified !== true) return false;
+  try {
+    const firebaseUser = await firebaseAdmin.auth().getUser(user.firebase_uid);
+    return (firebaseUser.providerData || []).some((entry) => entry.providerId === 'google.com');
+  } catch (err) {
+    console.warn('[googleConnectedForUser] Firebase lookup failed:', err.code || err.message);
+    return false;
+  }
+}
+
+async function publicUserPayload(user) {
   if (!user) return null;
   return {
     id: user.id,
@@ -211,6 +225,7 @@ function publicUserPayload(user) {
     name: user.name || null,
     phone: user.phone || null,
     auth_provider: user.auth_provider || null,
+    google_connected: await googleConnectedForUser(user),
     phone_verified: !!user.phone_verified,
     email_verified: !!user.email_verified,
     terms_accepted_at: user.terms_accepted_at || null,
@@ -5380,18 +5395,12 @@ app.get('/api/auth/me', async (req, res) => {
   if (!payload?.user_id) return res.status(401).json({ error: 'unauthorized' });
   try {
     const { rows } = await pool.query(
-      'SELECT id, email, name, phone, auth_provider, phone_verified, email_verified, terms_accepted_at, email_skipped_at FROM auth_users WHERE id = $1',
+      'SELECT id, email, name, phone, firebase_uid, auth_provider, phone_verified, email_verified, terms_accepted_at, email_skipped_at FROM auth_users WHERE id = $1',
       [payload.user_id]
     );
     const user = rows[0];
     if (!user) return res.status(404).json({ error: 'not_found' });
-    return res.json({ user: {
-      id: user.id, email: user.email, name: user.name,
-      phone: user.phone || null, auth_provider: user.auth_provider || null,
-      phone_verified: !!user.phone_verified, email_verified: !!user.email_verified,
-      terms_accepted_at: user.terms_accepted_at || null,
-      email_skipped_at: user.email_skipped_at || null,
-    }});
+    return res.json({ user: await publicUserPayload(user) });
   } catch (err) {
     console.error('[GET /api/auth/me]', err);
     return res.status(500).json({ error: 'internal_error' });
@@ -5616,12 +5625,12 @@ app.post('/api/auth/email-link-flow/complete', publicFormLimit, async (req, res)
       [canonicalFirebaseUid, decoded.firebase?.sign_in_provider || 'email', user.id]
     );
     ({ rows: userRows } = await pool.query(
-      'SELECT id, email, name, phone, auth_provider, phone_verified, email_verified, terms_accepted_at, email_skipped_at FROM auth_users WHERE id = $1',
+      'SELECT id, email, name, phone, firebase_uid, auth_provider, phone_verified, email_verified, terms_accepted_at, email_skipped_at FROM auth_users WHERE id = $1',
       [user.id]
     ));
     user = userRows[0];
 
-    const sessionUser = publicUserPayload(user);
+    const sessionUser = await publicUserPayload(user);
     const sessionToken = signSessionToken({
       user_id: user.id,
       email: user.email,
@@ -5932,7 +5941,7 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
            firstIdentifierType,
            emailSkipped]
         );
-        user = { id, email: emailNorm, name: cleanName, phone: phoneNorm, phone_verified: finalPhoneVerified, email_verified: finalEmailVerified, email_skipped_at: emailSkipped ? new Date().toISOString() : null };
+        user = { id, email: emailNorm, name: cleanName, phone: phoneNorm, firebase_uid: firebaseUid, auth_provider: provider, phone_verified: finalPhoneVerified, email_verified: finalEmailVerified, email_skipped_at: emailSkipped ? new Date().toISOString() : null };
         console.log('[POST /api/auth/firebase] new user created:', id, emailNorm || phoneNorm);
       } catch (insertErr) {
         if (insertErr.code === '23505') {
@@ -6002,16 +6011,15 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
 
     if (req.body.email_link_flow_id && emailNormFromToken && emailVerifiedByFirebase) {
       try {
-        const sessionUser = {
-          id: user.id,
-          email: user.email,
+        const sessionUser = await publicUserPayload({
+          ...user,
           name: user.name || name || null,
           phone: user.phone || phone || null,
           phone_verified: !!verifiedState.phone_verified,
           email_verified: !!verifiedState.email_verified,
           terms_accepted_at: verifiedState.terms_accepted_at || null,
           email_skipped_at: verifiedState.email_skipped_at || null,
-        };
+        });
         await pool.query(
           `UPDATE auth_email_link_flows
            SET session_token = $1, user_payload = $2, firebase_uid = $3, completed_at = NOW()
@@ -6030,14 +6038,15 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
 
     return res.json({
       token,
-      user: {
-        id: user.id, email: user.email, name: user.name || name,
+      user: await publicUserPayload({
+        ...user,
+        name: user.name || name,
         phone: user.phone || phone || null,
         phone_verified: !!verifiedState.phone_verified,
         email_verified: !!verifiedState.email_verified,
         terms_accepted_at: verifiedState.terms_accepted_at || null,
         email_skipped_at: verifiedState.email_skipped_at || null,
-      },
+      }),
     });
   } catch (err) {
     console.error('[POST /api/auth/firebase]', err);
@@ -6327,7 +6336,7 @@ app.patch('/api/auth/me', publicFormLimit, async (req, res) => {
     if (!sets.length) return res.status(400).json({ error: 'no_fields' });
     params.push(payload.user_id);
     await pool.query(`UPDATE auth_users SET ${sets.join(', ')} WHERE id = $${params.length}`, params);
-    const { rows } = await pool.query('SELECT id, email, name, phone, auth_provider, phone_verified, email_verified, terms_accepted_at, email_skipped_at FROM auth_users WHERE id = $1', [payload.user_id]);
+    const { rows } = await pool.query('SELECT id, email, name, phone, firebase_uid, auth_provider, phone_verified, email_verified, terms_accepted_at, email_skipped_at FROM auth_users WHERE id = $1', [payload.user_id]);
     const u = rows[0];
 
     // A12: audit identifier changes
@@ -6335,13 +6344,7 @@ app.patch('/api/auth/me', publicFormLimit, async (req, res) => {
       logAuthEvent(req, payload.user_id, 'profile_change', { fields: changes });
     }
 
-    return res.json({ user: {
-      id: u.id, email: u.email, name: u.name, phone: u.phone || null,
-      auth_provider: u.auth_provider || null,
-      phone_verified: !!u.phone_verified, email_verified: !!u.email_verified,
-      terms_accepted_at: u.terms_accepted_at || null,
-      email_skipped_at: u.email_skipped_at || null,
-    }});
+    return res.json({ user: await publicUserPayload(u) });
   } catch (err) {
     if (err.code === '23505') return res.status(409).json({ error: 'conflict', message: 'Ese dato ya está en uso.' });
     console.error('[PATCH /api/auth/me]', err);
@@ -6538,7 +6541,7 @@ app.post('/api/auth/refresh', publicFormLimit, async (req, res) => {
   try {
     // Re-fetch user from DB (don't trust JWT claims for user data)
     const { rows } = await pool.query(
-      'SELECT id, email, name, phone, auth_provider, phone_verified, email_verified, terms_accepted_at, email_skipped_at FROM auth_users WHERE id = $1',
+      'SELECT id, email, name, phone, firebase_uid, auth_provider, phone_verified, email_verified, terms_accepted_at, email_skipped_at FROM auth_users WHERE id = $1',
       [payload.user_id]
     );
     if (!rows.length) return res.status(404).json({ error: 'user_not_found' });
@@ -6554,14 +6557,7 @@ app.post('/api/auth/refresh', publicFormLimit, async (req, res) => {
 
     return res.json({
       token: newToken,
-      user: {
-        id: u.id, email: u.email, name: u.name, phone: u.phone || null,
-        auth_provider: u.auth_provider || null,
-        phone_verified: !!u.phone_verified,
-        email_verified: !!u.email_verified,
-        terms_accepted_at: u.terms_accepted_at || null,
-        email_skipped_at: u.email_skipped_at || null,
-      }
+      user: await publicUserPayload(u)
     });
   } catch (err) {
     console.error('[POST /api/auth/refresh]', err);

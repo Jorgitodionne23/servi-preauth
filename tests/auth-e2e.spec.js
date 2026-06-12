@@ -779,6 +779,45 @@ test('Google signup via emulator IDP cannot create an email-only or body-asserte
   expect(spoofedPhoneSync.body.error).toBe('signup_incomplete');
 });
 
+test('account security shows Google verified from backend google_connected flag', async ({ page }) => {
+  await clearBrowser(page);
+  const session = {
+    token: 'test-google-connected-session',
+    user: {
+      id: `google-connected-${RUN_ID}`,
+      email: email('google-connected'),
+      name: 'Google Connected',
+      phone: e164(phones.emailFullSecondary),
+      auth_provider: 'phone',
+      google_connected: false,
+      phone_verified: true,
+      email_verified: true,
+    },
+  };
+  const backendUser = {
+    ...session.user,
+    google_connected: true,
+  };
+
+  await page.route('**/api/auth/me', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ user: backendUser }),
+    });
+  });
+  await page.addInitScript((storedSession) => {
+    localStorage.setItem('servi_user_session', JSON.stringify(storedSession));
+    window.__user = storedSession.user;
+    window.getSessionToken = () => storedSession.token;
+  }, session);
+
+  await page.goto(`${BASE_URL}/account.html?section=security`);
+  const googleRow = page.locator('#security-social-list .security-row').filter({ hasText: 'Google' });
+  await expect(googleRow.locator('.security-status')).toContainText(/verificado|verified/i, { timeout: 15_000 });
+  await expect(googleRow.locator('#connect-google-btn')).toHaveCount(0);
+});
+
 test('account page email change, verification, phone reauth, and phone_exists conflict', async ({ page }) => {
   await phoneFirstSignup(page, {
     phone: phones.conflictOwner,
