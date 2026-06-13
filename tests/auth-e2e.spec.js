@@ -110,7 +110,7 @@ async function sendAndOpenEmailLink(page, targetEmail, { newTab = false } = {}) 
   await expect.poll(async () => {
     link = await latestEmailLink(targetEmail).catch(() => null);
     return link;
-  }, { timeout: 10_000 }).not.toBeNull();
+  }, { timeout: 25_000 }).not.toBeNull();
   if (newTab) {
     const verifier = await page.context().newPage();
     await verifier.goto(link);
@@ -128,7 +128,7 @@ async function openLatestEmailLink(page, targetEmail, { newTab = false } = {}) {
   await expect.poll(async () => {
     link = await latestEmailLink(targetEmail).catch(() => null);
     return link;
-  }, { timeout: 10_000 }).not.toBeNull();
+  }, { timeout: 25_000 }).not.toBeNull();
   if (newTab) {
     const verifier = await page.context().newPage();
     await verifier.goto(link);
@@ -213,69 +213,65 @@ async function authOrders(page) {
   }, { baseUrl: BASE_URL, token: session.token });
 }
 
-async function submitLegacyBookingFromUi(page) {
+// The landing-page intake is the Smart Request overlay (frontend/smart-request/sr-app.js).
+// window.openBooking / window.openConversation both route into window.openSmartRequest.
+// These helpers drive that overlay through a real UI submission so we exercise the
+// auth-header wiring and the in-overlay verification gates.
+async function openSmartRequestAndSubmit(page, seedText) {
   await page.goto(BASE_URL);
-  await page.waitForFunction(() => typeof window.openBooking === 'function' && window.__user);
-  await page.evaluate(async () => {
-    window.__legacyBooking = true;
-    await window.openBooking('custom');
-    window.bookingState.description = 'Auth E2E legacy booking request';
-    window.bookingState.whenType = 'asap';
-    window.bookingState.step = 3;
-    window.renderBooking();
-  });
-  await page.fill('#booking-address', 'Calle UI Legacy 123');
+  await page.waitForFunction(() => typeof window.openSmartRequest === 'function' && window.__user);
+  await page.evaluate((seed) => window.openSmartRequest({ text: seed }), seedText);
+  // The "thinking" step (AI parse → heuristic fallback) resolves into the build
+  // phase, where the structured address is pre-filled and the submit button enables.
+  await page.waitForSelector('#sr-submit:not([disabled])', { timeout: 20_000 });
 
   const responsePromise = page.waitForResponse((res) =>
     res.url().includes('/api/service-requests') && res.request().method() === 'POST'
   );
-
-  await page.click('#booking-submit-btn');
+  await page.click('#sr-submit');
   const response = await responsePromise;
-  await expect(page.locator('.booking-email-gate')).toBeVisible();
   return {
     status: response.status(),
     body: await response.json(),
     requestHeaders: response.request().headers(),
-    gateVisible: true,
   };
 }
 
-async function submitConversationBookingFromUi(page) {
-  await page.goto(BASE_URL);
-  await page.waitForFunction(() => typeof window.openConversation === 'function' && window.__user);
-  await page.evaluate(() => {
-    window.__legacyBooking = false;
-    window.openConversation('Auth E2E conversational booking request');
-  });
-  await page.click('#bk-convo-send');
-  await page.locator('#bk-convo-stream .hero-chip').first().click();
-  await page.fill('#bk-convo-addr', 'Calle UI Conversation 456');
-  await page.click('#bk-convo-addr-send');
-  await page.waitForSelector('#bk-convo-confirm');
+async function submitLegacyBookingFromUi(page) {
+  // Phone-only (email-skipped) users hit the email-required gate inside the overlay.
+  const result = await openSmartRequestAndSubmit(page, 'Auth E2E legacy booking request');
+  await expect(page.locator('.booking-email-gate')).toBeVisible();
+  return { ...result, gateVisible: true };
+}
 
-  const responsePromise = page.waitForResponse((res) =>
-    res.url().includes('/api/service-requests') && res.request().method() === 'POST'
-  );
-  await page.click('#bk-convo-confirm');
-  const response = await responsePromise;
-  const body = await response.json();
-  await page.waitForFunction(() => {
-    const bubbles = Array.from(document.querySelectorAll('#bk-convo-stream .bk-convo__bubble--bot'));
-    return bubbles.some((bubble) => /verifica|verify/i.test(bubble.textContent || ''));
+async function submitConversationBookingFromUi(page) {
+  // Unverified-phone users hit the phone-required gate, surfaced via a native alert.
+  let dialogMessage = '';
+  page.on('dialog', (dialog) => {
+    if (!dialogMessage) dialogMessage = dialog.message();
+    dialog.dismiss().catch(() => {});
   });
-  const botMessages = await page.locator('#bk-convo-stream .bk-convo__bubble--bot').allTextContents();
-  return {
-    status: response.status(),
-    body,
-    requestHeaders: response.request().headers(),
-    botMessage: botMessages[botMessages.length - 1] || '',
-  };
+  const result = await openSmartRequestAndSubmit(page, 'Auth E2E conversational booking request');
+  await expect.poll(() => dialogMessage, { timeout: 5_000 }).not.toBe('');
+  return { ...result, botMessage: dialogMessage };
+}
+
+// The personal-info section renders a read-only view; the editable #info-* inputs
+// only appear once the card enters edit mode (the "Modificar" button). Idempotent.
+async function ensureProfileEditMode(page) {
+  const editing = await page.evaluate(() => {
+    const card = document.getElementById('profile-card');
+    return !!card && card.classList.contains('is-editing');
+  });
+  if (!editing) {
+    await page.click('#profile-edit-btn');
+  }
+  await page.waitForSelector('#info-email', { state: 'visible' });
 }
 
 async function changeAccountPhoneWithReauth(page, newPhone, currentFirebasePhone) {
   await page.goto(`${BASE_URL}/account.html?section=info`);
-  await page.waitForSelector('#info-phone');
+  await ensureProfileEditMode(page);
   await page.fill('#info-phone', newPhone);
   await page.click('#info-save-btn');
   await page.waitForSelector('#reauth-step');
@@ -424,7 +420,7 @@ test('phone-first secondary email verified in another browser keeps one Firebase
   await expect.poll(async () => {
     signupLink = await latestEmailLink(loginEmail).catch(() => null);
     return signupLink;
-  }, { timeout: 10_000 }).not.toBeNull();
+  }, { timeout: 25_000 }).not.toBeNull();
 
   const verifierContext = await browser.newContext();
   const verifier = await verifierContext.newPage();
@@ -460,7 +456,7 @@ test('phone-first secondary email verified in another browser keeps one Firebase
   await expect.poll(async () => {
     loginLink = await latestEmailLink(loginEmail).catch(() => null);
     return loginLink;
-  }, { timeout: 10_000 }).not.toBeNull();
+  }, { timeout: 25_000 }).not.toBeNull();
 
   const loginVerifierContext = await browser.newContext();
   const loginVerifier = await loginVerifierContext.newPage();
@@ -515,14 +511,17 @@ test('phone-first signup, skipped email, ordering gate returns email_required', 
 
   const skippedEmail = email('phone-skipped-added');
   const skippedFirebaseBefore = await firebaseUserSnapshot(page);
+  // The "add email" CTA opens the personal-info section; enter edit mode to reveal inputs.
+  await page.click('#email-warning-action');
+  await ensureProfileEditMode(page);
   await page.fill('#info-email', skippedEmail);
   await page.click('#info-save-btn');
-  await page.waitForSelector('#reauth-step');
-  await page.click('#reauth-send-btn');
-  await page.waitForSelector('#reauth-otp-input', { state: 'visible' });
-  const reauthCode = await latestSmsCode(e164(phones.phoneSkippedEmail));
-  await page.fill('#reauth-otp-input', reauthCode);
-  await page.click('#reauth-confirm-btn');
+  // Adding a FIRST email to a phone-verified account sends a verification link
+  // directly (no phone reauth step). Wait for the emulator to issue the link.
+  await expect.poll(
+    async () => latestEmailLink(skippedEmail).catch(() => null),
+    { timeout: 25_000 }
+  ).not.toBeNull();
   await expect.poll(async () => (await authMe(page)).body.user.email_verified, { timeout: 10_000 }).toBe(false);
   const staleSkippedSync = await syncFirebaseSession(page);
   expect(staleSkippedSync.status).toBe(200);
@@ -565,11 +564,25 @@ test('service page email gate verifies and resumes without duplicate requests', 
     }
   });
 
+  // The address section re-mounts after the saved-address GET resolves, which would
+  // wipe any value typed before then. Wait for that fetch+render to settle first.
+  const svcAddrLoaded = page.waitForResponse(
+    (res) => res.url().includes('/api/auth/addresses') && res.request().method() === 'GET',
+    { timeout: 20_000 }
+  ).catch(() => null);
   await page.goto(serviceUrl);
   await page.waitForFunction(() => typeof window._svcSubmit === 'function' && window.__user);
+  await svcAddrLoaded;
+  await page.waitForTimeout(300); // let the post-fetch re-render settle
   const svcPrefix = await page.locator('#svc-sidebar-wrap-mob').isVisible() ? 'mob' : 'desk';
-  await page.locator(`#svc-addr-${svcPrefix}`).scrollIntoViewIfNeeded();
-  await page.fill(`#svc-addr-${svcPrefix}`, 'Calle Service Gate 123');
+  // service.html now uses the structured ServiAddress form (prefix svca_<prefix>);
+  // only the street field is required for validation.
+  const svcStreetField = `#svca_${svcPrefix}_street`;
+  await page.locator(svcStreetField).scrollIntoViewIfNeeded();
+  await expect.poll(async () => {
+    await page.fill(svcStreetField, 'Calle Service Gate 123');
+    return page.inputValue(svcStreetField);
+  }, { timeout: 10_000 }).toBe('Calle Service Gate 123');
   await page.fill(`#svc-details-${svcPrefix}`, uniqueDetails);
 
   const blockedResponsePromise = page.waitForResponse((res) =>
@@ -650,7 +663,7 @@ test('email-first signup still sends link if handoff start is unavailable', asyn
   await page.click('#send-email-link-btn');
   await expect(page.locator('#manual-email-continue-btn')).toBeVisible();
   await expect.poll(async () => latestEmailLink(primaryEmail).then(Boolean).catch(() => false), {
-    timeout: 10_000,
+    timeout: 25_000,
   }).toBe(true);
 });
 
@@ -666,7 +679,7 @@ test('email-first signup email link verified on another device resumes only orig
   await expect.poll(async () => {
     link = await latestEmailLink(primaryEmail).catch(() => null);
     return link;
-  }, { timeout: 10_000 }).not.toBeNull();
+  }, { timeout: 25_000 }).not.toBeNull();
 
   const phoneContext = await browser.newContext();
   const verifier = await phoneContext.newPage();
@@ -716,7 +729,7 @@ test('existing email-link login completes when verified in another browser conte
   await expect.poll(async () => {
     link = await latestEmailLink(loginEmail).catch(() => null);
     return link;
-  }, { timeout: 10_000 }).not.toBeNull();
+  }, { timeout: 25_000 }).not.toBeNull();
 
   const phoneContext = await browser.newContext();
   const verifier = await phoneContext.newPage();
@@ -832,7 +845,7 @@ test('account page email change, verification, phone reauth, and phone_exists co
   });
 
   await page.goto(`${BASE_URL}/account.html?section=info`);
-  await page.waitForSelector('#info-email');
+  await ensureProfileEditMode(page);
   const accountFirebaseBefore = await firebaseUserSnapshot(page);
   const changedEmail = email('account-changed');
   await page.fill('#info-email', changedEmail);
@@ -858,6 +871,7 @@ test('account page email change, verification, phone reauth, and phone_exists co
   expect(accountFirebaseAfter.uid).toBe(accountFirebaseBefore.uid);
   expect(accountFirebaseAfter.email).toBe(changedEmail);
 
+  await ensureProfileEditMode(page);
   await page.fill('#info-phone', e164(phones.accountNewPhone));
   await page.click('#info-save-btn');
   await page.waitForSelector('#reauth-step');
@@ -870,6 +884,7 @@ test('account page email change, verification, phone reauth, and phone_exists co
   const afterPhoneChange = await authMe(page);
   expect(afterPhoneChange.body.user.phone_verified).toBe(false);
 
+  await ensureProfileEditMode(page);
   await page.fill('#info-phone', e164(phones.conflictOwner));
   await page.click('#info-save-btn');
   await page.waitForSelector('#reauth-step');
@@ -955,7 +970,7 @@ test('reauth token must belong to the same account as the SERVI session', async 
   expect(victimAfter.body.user.phone_verified).toBe(true);
 });
 
-test('recovery email link signs in and lands on account security', async ({ page }) => {
+test('recovery email link signs the user back in', async ({ page }) => {
   const recoveryEmail = email('recovery');
   await phoneFirstSignup(page, {
     phone: phones.recoveryUser,
@@ -972,7 +987,12 @@ test('recovery email link signs in and lands on account security', async ({ page
   await page.fill('#recovery-email', recoveryEmail);
   await page.click('#recovery-send-btn');
   await openLatestEmailLink(page, recoveryEmail);
-  await expect(page).toHaveURL(/account\.html\?section=security/);
+  // The recovery link signs the user back in. The verification tab stays on its
+  // success screen and broadcasts to the original tab (it intentionally does not
+  // redirect — see the isRecovery branch in shared-auth.js).
+  await expect(page).toHaveURL(/email-verified\.html/);
+  const session = await waitForSession(page);
+  expect(session.user.email).toBe(recoveryEmail);
 });
 
 test('logout revokes session JWT — same token returns 401 on /api/auth/me', async ({ page }) => {

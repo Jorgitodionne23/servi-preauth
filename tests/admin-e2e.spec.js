@@ -1,8 +1,10 @@
 import { test, expect } from '@playwright/test';
 
-const BASE = 'http://localhost:4242';
+const BASE = process.env.ADMIN_E2E_BASE_URL || 'http://localhost:4242';
 const ADMIN_URL = `${BASE}/admin.html`;
-const VALID_TOKEN = 'b92d6934a131c7db37c75c69bac64e77';
+// Local-dev default matches the token in the local .env. In any shared/CI run,
+// override via ADMIN_API_TOKEN so a real token is never committed.
+const VALID_TOKEN = process.env.ADMIN_API_TOKEN || 'b92d6934a131c7db37c75c69bac64e77';
 const BAD_TOKEN = 'invalidtoken123';
 
 // ─── helpers ────────────────────────────────────────────────────────────────
@@ -252,7 +254,12 @@ test.describe('Sidebar navigation', () => {
 // ─── Inbox panel ─────────────────────────────────────────────────────────────
 
 test.describe('Inbox panel', () => {
-  test.beforeEach(async ({ page }) => loginAndWait(page));
+  // Orders is the default panel, so navigate to Inbox before each assertion.
+  test.beforeEach(async ({ page }) => {
+    await loginAndWait(page);
+    await page.locator('.nav-item[data-panel="inbox"]').click();
+    await expect(page.locator('#panel-inbox')).toBeVisible();
+  });
 
   test('shows inbox filter row', async ({ page }) => {
     await expect(page.locator('#inbox-filter-row')).toBeVisible();
@@ -349,24 +356,30 @@ test.describe('Orders panel', () => {
     expect(rowCount > 0 || emptyVis).toBeTruthy();
   });
 
+  // Only real order rows open the detail panel; incoming WEB-submission rows
+  // expose a "+ Crear enlace" button instead and have no row-level click handler.
   test('order row click opens detail side panel', async ({ page }) => {
     await waitForListLoad(page, 'orders-body', 10000);
-    const rowCount = await page.locator('#orders-body tr').count();
-    if (rowCount === 0) {
-      test.skip(true, 'No orders in test data');
+    const orderRows = page.locator('#orders-body tr[onclick]');
+    if (await orderRows.count() === 0) {
+      test.skip(true, 'No real order rows in test data (only WEB submissions)');
       return;
     }
-    await page.locator('#orders-body tr').first().click();
-    await expect(page.locator('#order-panel')).toBeVisible({ timeout: 5000 });
+    await orderRows.first().click();
+    await expect(page.locator('#order-panel')).toHaveClass(/open/, { timeout: 5000 });
   });
 
   test('order detail panel closes via sp-close button', async ({ page }) => {
     await waitForListLoad(page, 'orders-body', 10000);
-    const rowCount = await page.locator('#orders-body tr').count();
-    if (rowCount === 0) test.skip(true, 'No orders in test data');
-    await page.locator('#orders-body tr').first().click();
+    const orderRows = page.locator('#orders-body tr[onclick]');
+    if (await orderRows.count() === 0) {
+      test.skip(true, 'No real order rows in test data (only WEB submissions)');
+      return;
+    }
+    await orderRows.first().click();
+    await expect(page.locator('#order-panel')).toHaveClass(/open/, { timeout: 5000 });
     await page.locator('#order-panel button.sp-close').click();
-    await expect(page.locator('#order-panel')).toBeHidden({ timeout: 2000 });
+    await expect(page.locator('#order-panel')).not.toHaveClass(/open/, { timeout: 2000 });
   });
 
   test('search input filters table', async ({ page }) => {
@@ -828,9 +841,19 @@ test.describe('Layout integrity', () => {
   });
 
   test('main-area fills available horizontal space', async ({ page }) => {
+    // "Fills available space" = viewport width minus the sidebar, with no overlap.
+    // Asserting a fixed pixel width fails on mobile (Pixel 7 = 412px wide), so we
+    // verify the relationship between sidebar and main-area instead.
+    const sidebar = await page.locator('.sidebar').boundingBox();
     const box = await page.locator('.main-area').boundingBox();
+    const viewport = page.viewportSize();
+    expect(sidebar).not.toBeNull();
     expect(box).not.toBeNull();
-    expect(box.width).toBeGreaterThan(400);
+    // Main area starts where the sidebar ends (no horizontal overlap).
+    expect(box.x).toBeGreaterThanOrEqual(sidebar.x + sidebar.width - 2);
+    // Main area fills the rest of the viewport width (allow small rounding slack).
+    expect(box.width).toBeGreaterThanOrEqual(viewport.width - box.x - 4);
+    expect(box.width).toBeGreaterThan(0);
   });
 
   test('topbar within viewport width', async ({ page }) => {

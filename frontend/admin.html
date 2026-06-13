@@ -1313,6 +1313,7 @@ function switchPanel(name) {
   document.getElementById('panel-' + name)?.classList.add('panel-section--active');
   document.querySelector('.nav-item[data-panel="' + name + '"]')?.classList.add('active');
   if (name === 'orders') loadOrders();
+  if (name === 'inbox') loadInbox();
   if (name === 'providers') { (_provSub === 'roster') ? loadRoster() : loadProviders(); }
 }
 
