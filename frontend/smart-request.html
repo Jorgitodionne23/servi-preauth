@@ -23,9 +23,9 @@
   window.getDashAddress = function () {
     try {
       const saved = localStorage.getItem('dash_hero_address');
-      if (saved && saved.trim()) return saved.trim();
+      if (saved && saved.trim() && saved.trim() !== 'Santa Fe, CDMX') return saved.trim();
     } catch (_) {}
-    return 'Santa Fe, CDMX';
+    return 'CDMX';
   };
 </script>
 

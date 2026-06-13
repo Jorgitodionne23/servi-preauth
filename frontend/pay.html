@@ -6,6 +6,7 @@
   <title>Pago - SERVI</title>
 
   <script src="./config.js"></script>
+  <script src="./shared/contact-cta.js"></script>
   <script src="https://js.stripe.com/v3/"></script>
   
 
@@ -446,7 +447,7 @@
       </div>
       <div id="link-expired" class="notice" style="display:none;">
         <strong>Enlace expirado</strong>
-        <span>Solicita un nuevo enlace a través de WhatsApp.</span>
+        <span>Solicita un nuevo enlace a través de nuestro correo.</span>
         <small id="link-expired-date" style="display:none;"></small>
       </div>
 
@@ -839,7 +840,7 @@
     const recordConsent = async (orderId, extras = {}) => {
       const CONSENT_VERSION = '1.0';
       const text =
-        'Autorizo a SERVI a guardar esta tarjeta y realizar cargos adicionales relacionados con mi servicio, previa confirmación por WhatsApp. Si mi banco exige verificación, se me pedirá confirmarlo (3-D Secure). Puedo solicitar la eliminación de mi método de pago en cualquier momento.';
+        'Autorizo a SERVI a guardar esta tarjeta y realizar cargos adicionales relacionados con mi servicio, previa confirmación por correo electrónico. Si mi banco exige verificación, se me pedirá confirmarlo (3-D Secure). Puedo solicitar la eliminación de mi método de pago en cualquier momento.';
       const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
       const bytes = new Uint8Array(buf);
       const hash = Array.from(bytes)

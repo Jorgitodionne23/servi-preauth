@@ -13,7 +13,7 @@
 (function () {
   var I = window.SR_ICON;
   var CAT = function () { return window.SERVI_CATALOG || {}; };
-  var DEFAULT_ADDR = (typeof window.getDashAddress === 'function' && window.getDashAddress()) || 'Santa Fe, CDMX';
+  var DEFAULT_ADDR = (typeof window.getDashAddress === 'function' && window.getDashAddress()) || 'CDMX';
   function defaultAddress() { return (typeof window.getDashAddress === 'function' && window.getDashAddress()) || DEFAULT_ADDR; }
 
   // ── settings (localStorage-persisted; surfaced via the Tweaks button) ──
@@ -700,7 +700,15 @@
       case 'browse-open': window.location.href = '/browse.html'; break;
       case 'open-tweaks': openTweaks(); break;
       case 'modal-close': if (e.target.closest('[data-stop]') && !e.target.closest('.sr-modal__close') && !e.target.closest('.sr-browsecard')) return; closeModal(); break;
-      case 'open-whatsapp': var wa = (window.CONFIG && window.CONFIG.WHATSAPP_NUMBER) || '525525112588'; window.open('https://wa.me/' + wa, '_blank'); break;
+      case 'open-whatsapp': {
+        var cfg = window.CONFIG || {};
+        if ((cfg.CONTACT_MODE || 'whatsapp') === 'email') {
+          window.location.href = 'mailto:' + (cfg.CONTACT_EMAIL || 'serv.clientserv@gmail.com');
+        } else {
+          window.open('https://wa.me/' + (cfg.WHATSAPP_NUMBER || '525525112588'), '_blank');
+        }
+        break;
+      }
       case 'tw-engine': SETTINGS.engine = arg; saveSettings(); openTweaks(); break;
       case 'tw-layout': SETTINGS.twoPane = (arg === 'two'); saveSettings(); openTweaks(); break;
       case 'tw-voice': SETTINGS.voiceLimit = +arg; saveSettings(); openTweaks(); break;

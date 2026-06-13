@@ -104,7 +104,7 @@ const T = {
       ],
     },
     dashHero: {
-      location: "Santa Fe, CDMX",
+      location: "CDMX",
       changeAddress: "Cambiar dirección",
       headline: "Solicita un servicio ahora",
       placeholder: "Describe lo que necesitas...",
@@ -339,7 +339,7 @@ const T = {
       title: "Contacto",
       address: "Santa Fe, Cuajimalpa de Morelos, Ciudad de México, CDMX.",
       email: "serv.clientserv@gmail.com",
-      whatsapp: "WhatsApp",
+      whatsapp: "Correo",
     },
     cta: {
       request: "Solicita tu servicio",
@@ -538,7 +538,7 @@ const T = {
     contactHelp: {
       title: "Contáctanos",
       sub: "¿Tienes más dudas o preguntas de cómo trabajar con <strong>SERVI</strong>?",
-      cardBody: "Envíanos tu duda directamente a nuestro WhatsApp.",
+      cardBody: "Envíanos tu duda directamente a nuestro correo.",
       button: "Comunícate con SERVI",
     },
     partnersPage: {
@@ -711,9 +711,9 @@ const T = {
     handbookContact: {
       title: "Contáctanos",
       sub: "¿Tienes más dudas o preguntas de cómo trabajar con SERVI?",
-      whatsappTitle: "Escríbenos por WhatsApp",
+      whatsappTitle: "Escríbenos por correo",
       whatsappBody: "Estamos disponibles para resolver tus dudas y ayudarte en lo que necesites.",
-      whatsappButton: "Abrir WhatsApp",
+      whatsappButton: "Enviar correo",
       partnerTitle: "¿Todavía no eres SERVI Partner verificado?",
       partnerBody: "Únete a nuestra comunidad de especialistas y empieza a ofrecer tus servicios a domicilio.",
       partnerButton: "Quiero ser Partner",
@@ -844,7 +844,7 @@ const T = {
       ],
     },
     dashHero: {
-      location: "Santa Fe, CDMX",
+      location: "CDMX",
       changeAddress: "Change address",
       headline: "Request a service now",
       placeholder: "Describe what you need...",
@@ -1079,7 +1079,7 @@ const T = {
       title: "Contact",
       address: "Santa Fe, Cuajimalpa de Morelos, Mexico City, CDMX.",
       email: "serv.clientserv@gmail.com",
-      whatsapp: "WhatsApp",
+      whatsapp: "Email",
     },
     cta: {
       request: "Request your service",
@@ -1278,7 +1278,7 @@ const T = {
     contactHelp: {
       title: "Contact us",
       sub: "Do you have more questions about how to work with <strong>SERVI</strong>?",
-      cardBody: "Send your question directly to our WhatsApp.",
+      cardBody: "Send your question directly to our email.",
       button: "Contact SERVI",
     },
     partnersPage: {
@@ -1451,9 +1451,9 @@ const T = {
     handbookContact: {
       title: "Contact us",
       sub: "Do you have more questions about how to work with SERVI?",
-      whatsappTitle: "Message us on WhatsApp",
+      whatsappTitle: "Message us by email",
       whatsappBody: "We are available to answer your questions and help with anything you need.",
-      whatsappButton: "Open WhatsApp",
+      whatsappButton: "Send email",
       partnerTitle: "Not a verified SERVI Partner yet?",
       partnerBody: "Join our community of specialists and start offering your services at home.",
       partnerButton: "Become a Partner",

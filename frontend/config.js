@@ -48,8 +48,14 @@
     '';
 
   // Single source of truth for the WhatsApp support number.
-  // Update here when the number changes; then update the href values in each HTML file.
   const WHATSAPP_NUMBER = '525525112588';
+
+  // Contact channel control. The old WhatsApp number was resold, so all contact CTAs
+  // are temporarily routed to email by shared/contact-cta.js.
+  // To restore WhatsApp: set CONTACT_MODE = 'whatsapp' and update WHATSAPP_NUMBER above.
+  // That is the only edit needed — every page's CTA is rebuilt from these values at runtime.
+  const CONTACT_EMAIL = 'serv.clientserv@gmail.com';
+  const CONTACT_MODE = 'email'; // 'email' | 'whatsapp'
 
   // Firebase configuration — apiKey is the Firebase Web API Key (public by design, safe to commit).
   // Do NOT delete or rotate this key in Google Cloud Console; Firebase Auth depends on it.
@@ -86,6 +92,8 @@
     API_BASE: normalizedApi,
     STRIPE_PUBLISHABLE_KEY: rawPk,
     WHATSAPP_NUMBER,
+    CONTACT_EMAIL,
+    CONTACT_MODE,
     FIREBASE_CONFIG,
     GOOGLE_CLIENT_ID: '315005869570-lb1549n2f20thjsmb43neoun4vf1nc1p.apps.googleusercontent.com'
   };

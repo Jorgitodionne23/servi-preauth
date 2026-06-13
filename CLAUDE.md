@@ -260,6 +260,7 @@ See `backend/db.pg.mjs` for the full schema. Key tables: `all_bookings`, `consen
 
 ### What's Incomplete / In Progress
 
+- **⚠️ WhatsApp number needs replacing** — The old WhatsApp business number (`525525112588`) was **resold** and the WhatsApp Business account is no longer accessible; messages now reach a stranger. As a stopgap, all contact CTAs are routed to email (`serv.clientserv@gmail.com`) via `frontend/shared/contact-cta.js`, controlled by `CONTACT_MODE='email'` in `frontend/config.js`. **TODO: get a new phone number + WhatsApp Business account.** Once live, set the new `WHATSAPP_NUMBER` and flip `CONTACT_MODE` back to `'whatsapp'` in `config.js` — that single edit restores WhatsApp across all pages.
 - **Smoke test before first real users** — All flows need end-to-end testing on live domain: phone OTP, Google OAuth, browse→service→confirm booking, account management, payment link flow
 - **Admin dashboard migration** — Order creation still requires Apps Script; target is full `admin.html` + backend workflow
 - **Legal page text** — `legal.html` structure is built but contains placeholder content; real legal copy needed
