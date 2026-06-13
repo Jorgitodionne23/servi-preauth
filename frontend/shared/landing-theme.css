@@ -2818,6 +2818,8 @@
   border-color: var(--color-text);
   color: #fff;
 }
+.dash-cat-card--custom:hover .dash-cat-card__details,
+.dash-cat-card--custom:focus-visible .dash-cat-card__details,
 .dash-cat-card--custom .dash-cat-card__details:hover {
   background: var(--color-accent);
   border-color: var(--color-accent);
