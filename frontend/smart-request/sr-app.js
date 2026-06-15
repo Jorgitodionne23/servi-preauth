@@ -331,6 +331,7 @@
         '<div class="sr-success__rows"><div><span>' + esc(tr('successRequest')) + '</span>' + esc(what) + '</div>' +
         '<div><span>' + esc(tr('rowWhen')) + '</span>' + esc(whenStr) + '</div><div><span>' + esc(tr('rowWhere')) + '</span>' + esc(S.address || '—') + '</div></div></div>' +
       '<div class="sr-success__actions">' + btn('accent', 'md', tr('openWhatsapp'), { action: 'open-whatsapp', iconLeft: I.whatsapp(18) }) +
+        btn('secondary', 'md', tr('myOrders'), { action: 'my-orders', iconLeft: I.grid(18) }) +
         btn('secondary', 'md', tr('newRequest'), { action: 'reset' }) + '</div></div></div>';
   }
 
@@ -593,7 +594,12 @@
           e.status = r.status; e.body = body; throw e;
         });
       })
-      .then(function (data) { S.submittedId = data && data.id; S.phase = 'success'; render(); window.scrollTo({ top: 0 }); })
+      .then(function (data) {
+        if (payload.serviceAddressDetails && window.ServiAddress && window.ServiAddress.rememberLastUsed) {
+          window.ServiAddress.rememberLastUsed(payload.serviceAddressDetails);
+        }
+        S.submittedId = data && data.id; S.phase = 'success'; render(); window.scrollTo({ top: 0 });
+      })
       .catch(function (err) {
         if (err && err.body && err.body.error === 'email_required' && typeof window.__showServiceRequestEmailGate === 'function') {
           restoreBtn();
@@ -695,6 +701,7 @@
       case 'chip': var key = arg, val = t.getAttribute('data-val'); S.answers[key] = (S.answers[key] === val ? '' : val); render(); break;
       case 'submit': submit(); break;
       case 'reset': reset(); break;
+      case 'my-orders': window.location.href = '/account.html?section=orders'; break;
       case 'sr-close': window.closeSmartRequest(); break;
       case 'sr-lang': if (typeof window.setLang === 'function') window.setLang(arg); else { window.__lang = arg; } render(); break;
       case 'browse-open': window.location.href = '/browse.html'; break;

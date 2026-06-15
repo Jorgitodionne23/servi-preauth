@@ -1274,6 +1274,9 @@
       }
       serviceSubmitCompleted = true;
       serviceEmailGatePending = false;
+      if (payload.serviceAddressDetails && window.ServiAddress && window.ServiAddress.rememberLastUsed) {
+        window.ServiAddress.rememberLastUsed(payload.serviceAddressDetails);
+      }
       showSuccess(prefix);
     } catch (err) {
       serviceSubmitInFlight = false;

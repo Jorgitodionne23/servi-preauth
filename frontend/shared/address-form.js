@@ -59,6 +59,7 @@
       contactPhone: 'Teléfono de contacto (opcional)', contactPhonePh: '55 1234 5678',
       defaultLabel: 'Usar como predeterminada',
       reqStreet: 'La calle es obligatoria.',
+      lastUsedLabel: 'Última dirección usada', lastUsedUse: 'Usar',
     },
     en: {
       typeLabel: 'Address type', typeHouse: 'House', typeApartment: 'Apartment',
@@ -87,6 +88,7 @@
       contactPhone: 'Contact phone (optional)', contactPhonePh: '55 1234 5678',
       defaultLabel: 'Set as default',
       reqStreet: 'Street is required.',
+      lastUsedLabel: 'Last address used', lastUsedUse: 'Use',
     },
   };
   function t() { return DICT[lang()]; }
@@ -192,6 +194,15 @@
       '.servi-addr .sa-more-hint{font-size:12.5px;color:#888;margin:-2px 0 2px}' +
       '.servi-addr .sa-checkbox{display:flex;align-items:center;gap:9px;font-size:13.5px;color:#444;cursor:pointer}' +
       '.servi-addr .sa-checkbox input{width:16px;height:16px;accent-color:#111}' +
+      '.servi-addr .sa-lastused{align-items:center;gap:12px;justify-content:space-between;' +
+        'border:1.5px solid #e2e2e2;border-radius:12px;background:#fafafa;padding:10px 13px}' +
+      '.servi-addr .sa-lastused__info{display:flex;flex-direction:column;gap:2px;min-width:0}' +
+      '.servi-addr .sa-lastused__label{font-size:11px;font-weight:700;letter-spacing:.04em;' +
+        'text-transform:uppercase;color:#999}' +
+      '.servi-addr .sa-lastused__text{font-size:13.5px;color:#333;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
+      '.servi-addr .sa-lastused__use{flex:0 0 auto;border:1.5px solid #111;border-radius:10px;background:#111;' +
+        'color:#fff;font:inherit;font-size:13px;font-weight:600;padding:8px 15px;cursor:pointer;transition:opacity .15s ease}' +
+      '.servi-addr .sa-lastused__use:hover{opacity:.85}' +
       '@media (max-width:560px){.servi-addr .sa-row,.servi-addr .sa-row.sa-3{grid-template-columns:1fr}}';
     var el = document.createElement('style');
     el.id = 'servi-addr-styles';
@@ -234,6 +245,9 @@
     }
 
     var html = '<div class="servi-addr" id="' + p + '_root">';
+
+    // "Last address used" quick-fill chip (populated by renderLastUsed for logged-in users)
+    html += '<div class="sa-lastused" id="' + p + '_lastused" style="display:none"></div>';
 
     // Address type
     html += '<div class="sa-field"><span class="sa-label">' + esc(x.typeLabel) + '</span>' +
@@ -387,6 +401,52 @@
     }, { enableHighAccuracy: true, maximumAge: 300000, timeout: 12000 });
   }
 
+  // ─── "Last address used" store + chip ──────────────────────────────────────
+  // Remembers the structured address from a user's most recent booking and
+  // offers it as a one-click quick-fill on every address field set. Scoped to
+  // the logged-in user so it never leaks across accounts on a shared device.
+  var LAST_KEY = 'servi_last_address';
+  function currentUid() { try { return (window.__user && window.__user.id) || ''; } catch (e) { return ''; } }
+  function isLoggedIn() { try { return !!(window.__user && window.__user.id); } catch (e) { return false; } }
+
+  function rememberLastUsed(address) {
+    if (!address || !address.street) return;
+    try {
+      localStorage.setItem(LAST_KEY, JSON.stringify({ uid: currentUid(), ts: Date.now(), address: address }));
+    } catch (e) {}
+  }
+  function getLastUsed() {
+    try {
+      var d = JSON.parse(localStorage.getItem(LAST_KEY) || 'null');
+      if (!d || !d.address || !d.address.street) return null;
+      var uid = currentUid();
+      if (d.uid && uid && d.uid !== uid) return null; // belongs to another account
+      return d.address;
+    } catch (e) { return null; }
+  }
+
+  function renderLastUsed(prefix) {
+    var host = document.getElementById(prefix + '_lastused');
+    if (!host) return;
+    function hide() { host.style.display = 'none'; host.innerHTML = ''; }
+    if (!isLoggedIn()) return hide();
+    var a = getLastUsed();
+    if (!a || !a.street) return hide();
+    if (getVal(prefix + '_street')) return hide(); // don't intrude on a pre-filled / edited form
+    var x = t();
+    var full = format(a) || a.street;
+    var head = (full.split(' · ')[0]) || a.street;
+    host.innerHTML =
+      '<div class="sa-lastused__info">' +
+        '<span class="sa-lastused__label">' + esc(x.lastUsedLabel) + '</span>' +
+        '<span class="sa-lastused__text" title="' + esc(full) + '">' + esc(head) + '</span>' +
+      '</div>' +
+      '<button type="button" class="sa-lastused__use">' + esc(x.lastUsedUse) + '</button>';
+    host.style.display = 'flex';
+    var btn = host.querySelector('.sa-lastused__use');
+    if (btn) btn.addEventListener('click', function () { fill(prefix, a); hide(); });
+  }
+
   // ─── init / fill / collect / clear ─────────────────────────────────────────
   function getTypeWrap(prefix) { return document.getElementById(prefix + '_typewrap'); }
 
@@ -404,6 +464,7 @@
     }
     setGeo(prefix, { state: '', city: '' });
     if (opts.address) fill(prefix, opts.address);
+    renderLastUsed(prefix);
   }
 
   function setVal(id, v) { var el = document.getElementById(id); if (el) el.value = v == null ? '' : v; }
@@ -521,6 +582,9 @@
     validate: validate,
     format: format,
     geolocate: geolocate,
+    rememberLastUsed: rememberLastUsed,
+    getLastUsed: getLastUsed,
+    renderLastUsed: renderLastUsed,
     populateStates: populateStates,
     populateCities: populateCities,
     setGeo: setGeo,
