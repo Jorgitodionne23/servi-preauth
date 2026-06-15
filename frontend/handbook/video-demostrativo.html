@@ -315,20 +315,33 @@
       ctaSub: "Te respondemos al momento.",
       steps: [
         { short:"Recibe", title:"Recibe la solicitud", ruleTag:"Primero",
-          rule:"Te llega un mensaje de SERVI con los datos del cliente. Mantén tu cuenta activa para recibir solicitudes y cobrar.",
+          rule:"Te llegará un mensaje de SERVI con los datos del cliente. Mantén tu cuenta activa para recibir solicitudes y cobrar.",
           msgs:[
             { t:"sys",   text:"🔔 <b>NUEVA SOLICITUD SERVI</b>\n• Dirección\n• Fecha y hora\n• Detalles del trabajo" },
             { t:"servi", text:"¡Responde rápido para acordar un precio y mandárselo al cliente!" } ] },
-        { short:"Acepta", title:"Acepta y cotiza", ruleTag:"Regla de oro",
-          rule:"Entre más rápido respondas, más posibilidades de quedarte con el servicio.",
+        { short:"Cotiza", title:"Manda tu precio", ruleTag:"Regla de oro",
+          rule:"Revisa bien los datos del trabajo y manda un precio justo y claro lo antes posible: entre más rápido cotices, más chance tienes de quedarte el servicio.",
           link:{ href:"/handbook/calificacion.html", key:"rating" },
           msgs:[
+            { t:"servi", text:"¿Cuánto cobrarías por este trabajo? Mándanos tu precio. 💬" },
+            { t:"you",   text:"Tomando en cuenta el trabajo, mi precio sería:" },
             { t:"you",   text:"$$$" },
+            { t:"servi", text:"¡Listo! Se lo pasamos al cliente. 🙌" } ] },
+        { short:"Acepta", title:"Acepta el servicio", ruleTag:"Regla de oro",
+          rule:"Cuando tu cotización gana, SERVI te asigna el servicio. Confírmalo y prepárate: el trabajo ya es tuyo.",
+          msgs:[
             { t:"sys",   text:"✅ <b>SERVICIO ASIGNADO</b>\n¡Este servicio es tuyo!" },
             { t:"you",   text:"¡Genial!" } ] },
+        { short:"Prepárate", title:"Prepárate para la cita", ruleTag:"Antes de la cita",
+          rule:"Una vez que el servicio es tuyo, confirma los detalles con SERVI y alista tus herramientas y materiales con tiempo: llegar preparado evita demoras y deja la mejor impresión.",
+          link:{ href:"/handbook/prepararte-cita.html", key:"prep" },
+          msgs:[
+            { t:"sep",   text:"Antes del día de la cita" },
+            { t:"you",   text:"¿Algún detalle que deba saber del cliente?" },
+            { t:"servi", text:"Te paso todo: acceso, piso y lo que pidió. 📋" },
+            { t:"you",   text:"¡Perfecto! Ya tengo mis herramientas y materiales listos. 🧰" } ] },
         { short:"Llega", title:"Llega y empieza", ruleTag:"Comunicación",
           rule:"Avísanos cuando empieces y cuando termines. Comunicarte con SERVI es parte del trabajo.",
-          link:{ href:"/handbook/prepararte-cita.html", key:"prep" },
           msgs:[
             { t:"sep",   text:"Día de la cita" },
             { t:"servi", text:"🔔 Recordatorio: tienes un servicio hoy" },
@@ -344,11 +357,17 @@
             { t:"you",   text:"Precio nuevo: $$$" },
             { t:"servi", text:"Un momento… confirmamos con el cliente." },
             { t:"sys",   text:"✅ <b>Confirmado.</b> Precio ajustado a $$$.\n¡Puedes continuar!" } ] },
+        { short:"Termina", title:"Marca el trabajo terminado", ruleTag:"Importante",
+          rule:"Cuando acabes, avísanos y manda una foto del trabajo terminado: así confirmamos con el cliente que todo quedó bien y se libera tu pago.",
+          msgs:[
+            { t:"you",   text:"¡Terminé! Aquí está el trabajo listo. 👇" },
+            { t:"photo", emoji:"✨" },
+            { t:"servi", text:"¡Quedó increíble! Confirmamos con el cliente. ✅" },
+            { t:"sys",   text:"✅ <b>TRABAJO CONFIRMADO</b>\nEl cliente quedó conforme.\n¡Tu pago se libera!" } ] },
         { short:"Cobra", title:"Termina y cobra", ruleTag:"Regla de oro",
           rule:"El pago siempre va por la plataforma. No cobres directamente al cliente.",
           link:{ href:"/handbook/pagos.html", key:"payments" },
           msgs:[
-            { t:"you",   text:"✅ ¡Servicio terminado!" },
             { t:"servi", text:"🧾 Nosotros le cobramos al cliente por ti." },
             { t:"servi", text:"💸 Te transferimos tu pago al método que prefieras. ¡Y gestionamos tu reseña! 🚀" } ] },
       ],
@@ -367,16 +386,29 @@
           msgs:[
             { t:"sys",   text:"🔔 <b>NEW SERVI REQUEST</b>\n• Address\n• Date & time\n• Job details" },
             { t:"servi", text:"Reply fast to agree on a price and send it to the client!" } ] },
-        { short:"Accept", title:"Accept & quote", ruleTag:"Golden rule",
-          rule:"The faster you reply, the better your chance of winning the job.",
+        { short:"Quote", title:"Send your price", ruleTag:"Golden rule",
+          rule:"Review the job details carefully and send a fair, clear price as soon as you can: the quicker you quote, the better your chance of winning the job.",
           link:{ href:"/handbook/calificacion.html", key:"rating" },
           msgs:[
+            { t:"servi", text:"How much would you charge for this job? Send us your price. 💬" },
+            { t:"you",   text:"Based on the work, my price would be:" },
             { t:"you",   text:"$$$" },
+            { t:"servi", text:"Got it! We'll pass it to the client. 🙌" } ] },
+        { short:"Accept", title:"Accept the job", ruleTag:"Golden rule",
+          rule:"When your quote wins, SERVI assigns you the job. Confirm it and get ready: the work is yours.",
+          msgs:[
             { t:"sys",   text:"✅ <b>JOB ASSIGNED</b>\nThis job is yours!" },
             { t:"you",   text:"Great!" } ] },
+        { short:"Prepare", title:"Prep for the appointment", ruleTag:"Before the visit",
+          rule:"Once the job is yours, confirm the details with SERVI and get your tools and materials ready ahead of time: arriving prepared avoids delays and makes the best impression.",
+          link:{ href:"/handbook/prepararte-cita.html", key:"prep" },
+          msgs:[
+            { t:"sep",   text:"Before the appointment day" },
+            { t:"you",   text:"Any client details I should know?" },
+            { t:"servi", text:"Sending you everything: access, floor, and what they asked for. 📋" },
+            { t:"you",   text:"Perfect! My tools and materials are ready. 🧰" } ] },
         { short:"Arrive", title:"Arrive & start", ruleTag:"Communication",
           rule:"Tell us when you start and when you finish. Communicating with SERVI is part of the job.",
-          link:{ href:"/handbook/prepararte-cita.html", key:"prep" },
           msgs:[
             { t:"sep",   text:"Day of the appointment" },
             { t:"servi", text:"🔔 Reminder: you have a job today" },
@@ -392,11 +424,17 @@
             { t:"you",   text:"New price: $$$" },
             { t:"servi", text:"One moment… we're confirming with the client." },
             { t:"sys",   text:"✅ <b>Confirmed.</b> Price adjusted to $$$.\nYou can continue!" } ] },
+        { short:"Finalize", title:"Mark the job done", ruleTag:"Important",
+          rule:"When you finish, let us know and send a photo of the completed work: that's how we confirm with the client that everything's right and your payment is released.",
+          msgs:[
+            { t:"you",   text:"All done! Here's the finished job. 👇" },
+            { t:"photo", emoji:"✨" },
+            { t:"servi", text:"It looks amazing! We'll confirm with the client. ✅" },
+            { t:"sys",   text:"✅ <b>JOB CONFIRMED</b>\nThe client is happy.\nYour payment is being released!" } ] },
         { short:"Get paid", title:"Finish & get paid", ruleTag:"Golden rule",
           rule:"Payment always goes through the platform. Never charge the client directly.",
           link:{ href:"/handbook/pagos.html", key:"payments" },
           msgs:[
-            { t:"you",   text:"✅ Job finished!" },
             { t:"servi", text:"🧾 We charge the client for you." },
             { t:"servi", text:"💸 We transfer your pay to your preferred method. And we handle your review! 🚀" } ] },
       ],
@@ -620,12 +658,15 @@
     // step gets an equal ramp→dwell, so under a scrub no step flies past
     // and the snap rests dead-centre on each. Fixes: early steps skipping,
     // and the zoom finishing long before step 0 hands off to step 1.
-    var LEAD = 0.16, RAMP = 0.12, DWELL = 0.07;   // progress units (un-normalised)
+    // RAMP is now PER MESSAGE, so every bubble gets the same scroll distance no
+    // matter how many its step has (a 5-msg step no longer bursts in across the
+    // same window a 2-msg step uses). cumEnd[k]-cumEnd[k-1] = step k's msg count.
+    var LEAD = 0.16, RAMP_PER_MSG = 0.07, DWELL = 0.07;   // progress units (un-normalised)
     var KF = [[0, 0]], STOPS = [];
     (function buildTimeline(){
       var t = LEAD; KF.push([t, 0]); STOPS.push(t);      // step 0: zoom-in + dwell
       for (var k = 1; k < N; k++){
-        t += RAMP;  KF.push([t, k]);                     // ramp into step k
+        t += RAMP_PER_MSG * (cumEnd[k] - cumEnd[k - 1]); KF.push([t, k]);  // ramp into step k, paced by its msg count
         t += DWELL; KF.push([t, k]); STOPS.push(t);      // dwell on step k
       }
       var total = t || 1;
@@ -719,7 +760,7 @@
       scrollTrigger: {
         trigger: stageEl,
         start: pinStart,             // centre the stage in the area below the navbar
-        end: function (){ return '+=' + Math.round(N * Math.min(760, window.innerHeight * 0.82)); },
+        end: function (){ return '+=' + Math.round(N * Math.min(900, window.innerHeight * 0.95)); },
         pin: stageEl,
         pinSpacing: true,
         anticipatePin: 1,
