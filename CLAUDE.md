@@ -146,7 +146,7 @@ This is NOT a simple payment form. It's a complete **admin-driven order manageme
 
 - **Runtime:** Node.js with ES modules (`.mjs` extensions only)
 - **Framework:** Express 5
-- **Entry point:** `backend/index.mjs` — ALL routes and business logic in one file (~7,700 lines)
+- **Entry point:** `backend/index.mjs` — ALL routes and business logic in one file (~8,300 lines)
 - **Database:** `backend/db.pg.mjs` — Pool connection + full schema (`CREATE TABLE IF NOT EXISTS`). See this file for authoritative table definitions.
 - **Pricing:** `backend/pricing.mjs` — Dynamic fee calculation (alpha curve for booking fees, Stripe processing fees with VAT)
 - **TLS guard:** `ALLOW_INSECURE_DB_TLS=true` throws at startup if `NODE_ENV=production`
@@ -177,13 +177,17 @@ See `backend/db.pg.mjs` for the full schema. Key tables: `all_bookings`, `consen
 #### Shared Components (`frontend/shared/`)
 
 - `shared-styles.css` — Global design system (brand colors, components, animations)
-- `landing-theme.css` — Extended CSS for landing/marketing pages (~92KB)
-- `shared-auth.js` — Firebase auth flow (phone OTP, email magic link, Google OAuth, cross-identifier recovery — ~2,550 lines)
+- `landing-theme.css` — Extended CSS for landing/marketing pages (~110KB)
+- `shared-auth.js` — Firebase auth flow (phone OTP, email magic link, Google OAuth, cross-identifier recovery — ~3,070 lines)
 - `shared-nav.js` — Navigation bar (language toggle, auth state, user menu dropdown, mobile hamburger)
 - `shared-footer.js` — 4-column footer component
-- `morphing-nav.js` — Animated navbar variant used on landing page (~1,094 lines)
+- `morphing-nav.js` — Animated navbar variant used on landing page (~1,500 lines)
 - `i18n.js` — Full Spanish/English translation system
 - `browse-data.js` — Service category/provider data for browse and service pages
+- `address-form.js` — Shared structured CDMX-aware address form (`window.ServiAddress`) used by `account.html` saved-address book and `service.html` booking panel
+- `shared-active-order.js` — Floating "active order" dock that surfaces a logged-in customer's ongoing/pending order on every customer-facing page (status + pay shortcut)
+- `contact-cta.js` — Runtime rewrite of contact CTAs based on `window.CONFIG.CONTACT_MODE` (`'email'` vs `'whatsapp'`); single edit in `config.js` toggles every `wa.me` link site-wide
+- `motion.js` — Declarative GSAP scroll-reveal + stat-counter motion layer; markup stays visible if GSAP CDN fails
 
 **Navbar (customer-facing pages):** SERVI. logo, Servicios / Cómo funciona / Testimonios (index.html anchors), Partners, Help Center, ES/EN toggle, Login/Crear cuenta (or user avatar + dropdown if logged in), mobile hamburger at ≤900px.
 
@@ -194,6 +198,7 @@ See `backend/db.pg.mjs` for the full schema. Key tables: `all_bookings`, `consen
 #### Customer-Facing Pages
 
 - `index.html` — Landing page (hero, categories, how it works, testimonials, contact)
+- `smart-request.html` — Standalone Smart Request page (describe / show / say what you need; backed by `frontend/smart-request/` + `POST /api/parse-request`)
 - `browse.html` — Service category browser / discovery page
 - `service.html` — Individual service request flow (describe + schedule)
 - `account.html` — User account management (edit profile, saved addresses, delete account — auth-guarded)
