@@ -18,21 +18,39 @@
 
   var EASE = 'power3.out';
 
-  // [data-reveal] — single element fade-up
+  // [data-reveal] — single element fade-up.
+  // Hidden state is set once up front (not via a scroll-bound from-tween), then
+  // a plain to-tween plays on enter. This way ScrollTrigger's post-load refresh
+  // can recompute positions WITHOUT ever re-hiding content — so the reveal always
+  // completes, even for above-the-fold elements on short pages that can't scroll.
   document.querySelectorAll('[data-reveal]').forEach(function (el) {
-    gsap.from(el, {
-      y: 32, opacity: 0, duration: 0.9, ease: EASE,
-      scrollTrigger: { trigger: el, start: 'top 86%', once: true }
+    gsap.set(el, { y: 32, opacity: 0 });
+    ScrollTrigger.create({
+      trigger: el, start: 'top 86%', once: true,
+      onEnter: function () {
+        gsap.to(el, { y: 0, opacity: 1, duration: 0.9, ease: EASE, overwrite: 'auto' });
+      }
     });
   });
 
   // [data-reveal-stagger] — direct children fade-up, slow 0.15s stagger
   document.querySelectorAll('[data-reveal-stagger]').forEach(function (parent) {
-    if (!parent.children.length) return;
-    gsap.from(parent.children, {
-      y: 32, opacity: 0, duration: 0.8, ease: EASE, stagger: 0.15,
-      scrollTrigger: { trigger: parent, start: 'top 84%', once: true }
+    var kids = parent.children;
+    if (!kids.length) return;
+    gsap.set(kids, { y: 32, opacity: 0 });
+    ScrollTrigger.create({
+      trigger: parent, start: 'top 84%', once: true,
+      onEnter: function () {
+        gsap.to(kids, { y: 0, opacity: 1, duration: 0.8, ease: EASE, stagger: 0.15, overwrite: 'auto' });
+      }
     });
+  });
+
+  // gsap.set above now holds the hidden state via inline styles, so the pre-paint
+  // CSS guard (html.reveal-armed) can be released. Done in a rAF so the inline
+  // opacity:0 is committed before the class is removed — no flash either way.
+  requestAnimationFrame(function () {
+    document.documentElement.classList.remove('reveal-armed');
   });
 
   // [data-count] — stat counter, 2.4s

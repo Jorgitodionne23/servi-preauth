@@ -611,6 +611,14 @@ textarea.input-field { resize: vertical; min-height: 100px; }
 .animate-fadeUp { animation: fadeUp 0.8s ease both; }
 .animate-fadeIn { animation: fadeIn 0.5s ease both; }
 
+/* Pre-paint hide for GSAP scroll reveals (see motion.js). The `reveal-armed`
+   class is set in each page's <head> before first paint and removed by motion.js
+   once it takes over (or by a failsafe timeout if the motion layer never loads),
+   so content is never permanently trapped hidden. Prevents the flash where
+   reveal targets paint visible, then GSAP hides + re-animates them. */
+html.reveal-armed [data-reveal],
+html.reveal-armed [data-reveal-stagger] > * { opacity: 0; }
+
 /* ─── Responsive ─────────────────────────────────────────────────────────── */
 @media (max-width: 900px) {
   .desktop-nav { display: none !important; }

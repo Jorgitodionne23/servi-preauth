@@ -563,7 +563,7 @@ const T = {
         step2Title: "Tener una especialidad comprobable",
         step2Body: "En SERVI no trabajamos con improvisados. Solo aceptamos especialistas con experiencia real.",
         step3Title: "Completa tu aplicación",
-        step3Body: "<a href=\"/partners/registro.html\" style=\"color:#2a9fd6;font-weight:600\">Haz clic aquí</a> para comenzar tu registro.",
+        step3Body: "<a href=\"/partners/registro.html\" class=\"partner-inline-link\">Haz clic aquí</a> para comenzar tu registro.",
       },
       handbookCtaTitle: "¿Ya eres SERVI Partner?",
       handbookCtaBody: "Échale un vistazo a nuestro manual hecho para aquellos partners verificados. ¡Estúdialo bien antes de tu primera cita!",
@@ -645,10 +645,10 @@ const T = {
     },
     handbookVideo: {
       title: "Video demostrativo",
-      subtitle: "Aprende cómo tomar tu primera solicitud con SERVI.",
+      subtitle: "Aprende cómo tomar tu primera solicitud con SERVI. Toca el paso que necesites.",
       sectionTitle: "Cómo tomar una solicitud",
       videoSoon: "Video próximamente",
-      body: "Una vez registrado como proveedor, mira este video para aprender cómo tomar tu primera solicitud con SERVI.",
+      body: "Una vez registrado como proveedor, recorre estos pasos para aprender cómo tomar tu primera solicitud con SERVI.",
     },
     handbookPricing: {
       title: "Los tipos de cambios en precio",
@@ -1303,7 +1303,7 @@ const T = {
         step2Title: "Have a verifiable specialty",
         step2Body: "At SERVI we don't work with amateurs. We only accept specialists with real experience.",
         step3Title: "Complete your application",
-        step3Body: "<a href=\"/partners/registro.html\" style=\"color:#2a9fd6;font-weight:600\">Click here</a> to start your registration.",
+        step3Body: "<a href=\"/partners/registro.html\" class=\"partner-inline-link\">Click here</a> to start your registration.",
       },
       handbookCtaTitle: "Already a SERVI Partner?",
       handbookCtaBody: "Take a look at our handbook for verified partners. Study it well before your first appointment.",
@@ -1385,10 +1385,10 @@ const T = {
     },
     handbookVideo: {
       title: "Demo video",
-      subtitle: "Learn how to take your first request with SERVI.",
+      subtitle: "Learn how to take your first request with SERVI. Tap the step you need.",
       sectionTitle: "How to take a request",
       videoSoon: "Video coming soon",
-      body: "Once you're registered as a provider, watch this video to learn how to take your first request with SERVI.",
+      body: "Once you're registered as a provider, walk through these steps to learn how to take your first request with SERVI.",
     },
     handbookPricing: {
       title: "Types of price changes",
