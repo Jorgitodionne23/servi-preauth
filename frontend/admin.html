@@ -1004,11 +1004,19 @@ function scheduleRowText(o) {
   if (orderIsAsap(o) && !o.service_datetime) return '<span class="schedule-asap-text">ASAP</span> · pendiente de agendar';
   return escapeHtml(fmtServiceDateTime(o.service_date, o.service_datetime));
 }
+function isClockTimeValue(value) {
+  return /^\d{2}:\d{2}$/.test(String(value || '').trim());
+}
+function submissionSchedulePlainText(s) {
+  if (orderIsAsap(s)) return 'ASAP';
+  if (s.preferred_date) {
+    return `${fmtServiceDate(s.preferred_date)}${s.preferred_time ? ' · ' + s.preferred_time : ' · Hora por definir'}`;
+  }
+  return 'Pendiente';
+}
 function submissionScheduleText(s) {
   if (orderIsAsap(s)) return '<span class="schedule-asap-text">ASAP</span>';
-  if (s.preferred_date) {
-    return escapeHtml(`${fmtServiceDate(s.preferred_date)}${s.preferred_time ? ' · ' + s.preferred_time : ' · Hora por definir'}`);
-  }
+  if (s.preferred_date) return escapeHtml(submissionSchedulePlainText(s));
   return '<span style="color:var(--text-mute)">Pendiente</span>';
 }
 function scheduleDetailHtml(o) {
@@ -1806,9 +1814,10 @@ function openSubmissionLinkModal(subId) {
   // Remove existing modal if any
   document.getElementById('sub-modal-overlay')?.remove();
 
-  const datetimeValue = sub.preferred_date
-    ? (sub.preferred_date + (sub.preferred_time ? 'T' + sub.preferred_time : 'T00:00'))
+  const datetimeValue = sub.preferred_date && isClockTimeValue(sub.preferred_time)
+    ? (sub.preferred_date + 'T' + sub.preferred_time)
     : '';
+  const preferredSchedule = submissionSchedulePlainText(sub);
 
   const overlay = document.createElement('div');
   overlay.id = 'sub-modal-overlay';
@@ -1846,6 +1855,7 @@ function openSubmissionLinkModal(subId) {
         ${orderIsAsap(sub) ? '<div class="schedule-note"><strong>ASAP solicitado.</strong> Si ya acordaste una hora, asígnala aquí; si no, el pedido seguirá marcado como ASAP.</div>' : ''}
         <label class="form-label">Fecha y hora del servicio</label>
         <input class="adm-input" id="sub-datetime" type="datetime-local" value="${escapeHtml(datetimeValue)}" style="margin-bottom:0">
+        ${!orderIsAsap(sub) && (sub.preferred_date || sub.preferred_time) ? '<div class="schedule-helper">Preferencia cliente: ' + escapeHtml(preferredSchedule) + '</div>' : ''}
         ${orderIsAsap(sub) ? '' : '<div class="schedule-helper">Usa este campo para guardar la fecha y hora confirmada del servicio.</div>'}
       </div>
       <label style="display:flex;gap:10px;align-items:flex-start;margin-bottom:16px;color:#ddd;font-size:13px;line-height:1.4">
@@ -1895,7 +1905,7 @@ async function submitSubmissionLink(subId) {
   if (!isVisita && (!amount || amount <= 0)) { errEl.textContent = 'Monto requerido.'; errEl.style.display = 'block'; return; }
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { errEl.textContent = 'Email inválido.'; errEl.style.display = 'block'; return; }
 
-  let serviceDate = '', serviceDateTime = '', hasTimeComponent = false;
+  let serviceDate = sub.preferred_date || '', serviceDateTime = '', hasTimeComponent = false;
   if (dtVal) {
     const d = new Date(dtVal);
     serviceDate = dtVal.slice(0, 10);

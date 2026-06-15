@@ -164,11 +164,12 @@
       background: #111;
       color: #fff;
     }
+    .svc-schedule-panel { margin-top: 10px; }
     .svc-schedule-row {
       display: flex;
       gap: 8px;
-      margin-top: 10px;
     }
+    .svc-schedule-row .svc-sidebar__input { min-width: 0; }
     .svc-schedule-row input {
       flex: 1;
       padding: 9px 12px;
@@ -182,6 +183,8 @@
       transition: border-color 0.15s;
     }
     .svc-schedule-row input:focus { border-color: #111; background: #fff; }
+    .svc-time-select { flex: 0 0 42%; }
+    .svc-exact-time-row { margin-top: 8px; }
 
     .svc-sidebar__input {
       width: 100%;
@@ -1088,6 +1091,7 @@
   let serviceSubmitCompleted = false;
   let serviceEmailGatePending = false;
   let serviceEmailResumeInFlight = false;
+  const SVC_TIME_PREFS = ['exact', 'morning', 'afternoon', 'evening', 'whenever'];
 
   function createClientRequestId() {
     if (window.crypto && typeof window.crypto.randomUUID === 'function') {
@@ -1108,8 +1112,38 @@
     document.querySelectorAll('.svc-when-chip').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.when === type);
     });
-    const schedRows = document.querySelectorAll('.svc-schedule-row');
-    schedRows.forEach(r => { r.style.display = type === 'schedule' ? 'flex' : 'none'; });
+    const schedPanels = document.querySelectorAll('.svc-schedule-panel');
+    schedPanels.forEach(r => { r.style.display = type === 'schedule' ? 'block' : 'none'; });
+  }
+
+  function getScheduleTimeOptions() {
+    const s = sp();
+    return [
+      { value: 'exact', label: s.timeExact || (lang() === 'es' ? 'Hora exacta' : 'Exact time') },
+      { value: 'morning', label: s.timeMorning || (lang() === 'es' ? 'Mañana' : 'Morning') },
+      { value: 'afternoon', label: s.timeAfternoon || (lang() === 'es' ? 'Tarde' : 'Afternoon') },
+      { value: 'evening', label: s.timeEvening || (lang() === 'es' ? 'Noche' : 'Evening') },
+      { value: 'whenever', label: s.timeWhenever || (lang() === 'es' ? 'Cuando sea' : 'Whenever') },
+    ];
+  }
+
+  function scheduleTimeLabel(pref) {
+    const match = getScheduleTimeOptions().find(opt => opt.value === pref);
+    return match ? match.label : '';
+  }
+
+  function setScheduleTimePreference(prefix, pref) {
+    const next = SVC_TIME_PREFS.includes(pref) ? pref : 'exact';
+    const select = document.getElementById(`svc-time-pref-${prefix}`);
+    if (select) select.value = next;
+    const exactRow = document.getElementById(`svc-exact-time-row-${prefix}`);
+    if (exactRow) exactRow.style.display = next === 'exact' ? 'block' : 'none';
+  }
+
+  function getScheduleTimePreference(prefix) {
+    const select = document.getElementById(`svc-time-pref-${prefix}`);
+    const value = select && select.value;
+    return SVC_TIME_PREFS.includes(value) ? value : 'exact';
   }
 
   function validateAndCollect(prefix) {
@@ -1156,8 +1190,13 @@
         dateInput.classList.remove('error');
         if (dateErr) dateErr.classList.remove('visible');
         preferredDate = dateInput.value;
-        const timeInput = document.getElementById(`svc-time-${prefix}`);
-        if (timeInput && timeInput.value) preferredTime = timeInput.value;
+        const timePref = getScheduleTimePreference(prefix);
+        if (timePref === 'exact') {
+          const timeInput = document.getElementById(`svc-time-${prefix}`);
+          if (timeInput && timeInput.value) preferredTime = timeInput.value;
+        } else {
+          preferredTime = scheduleTimeLabel(timePref);
+        }
       }
     }
 
@@ -1420,11 +1459,22 @@
           <button class="svc-when-chip" type="button" data-when="schedule"
                   onclick="window._svcToggleWhen('schedule')">${esc(s.whenSchedule || 'Programar')}</button>
         </div>
-        <div class="svc-schedule-row" style="display:none">
-          <input type="date" class="svc-sidebar__input" id="svc-date-${prefix}" min="${today}"
-                 placeholder="${esc(s.datePlaceholder || 'Fecha')}">
-          <input type="time" class="svc-sidebar__input" id="svc-time-${prefix}"
-                 placeholder="${esc(s.timePlaceholder || 'Hora (opcional)')}">
+        <div class="svc-schedule-panel" style="display:none">
+          <div class="svc-schedule-row">
+            <input type="date" class="svc-sidebar__input" id="svc-date-${prefix}" min="${today}"
+                   placeholder="${esc(s.datePlaceholder || 'Fecha')}">
+            <select class="svc-sidebar__input svc-time-select" id="svc-time-pref-${prefix}"
+                    onchange="window._svcSetTimePreference('${prefix}', this.value)"
+                    aria-label="${esc(s.timePreferenceLabel || (lang() === 'es' ? 'Preferencia de hora' : 'Time preference'))}">
+              ${getScheduleTimeOptions().map(opt => `
+                <option value="${esc(opt.value)}"${opt.value === 'exact' ? ' selected' : ''}>${esc(opt.label)}</option>
+              `).join('')}
+            </select>
+          </div>
+          <div class="svc-exact-time-row" id="svc-exact-time-row-${prefix}">
+            <input type="time" class="svc-sidebar__input" id="svc-time-${prefix}"
+                   placeholder="${esc(s.timePlaceholder || 'Hora (opcional)')}">
+          </div>
         </div>
         <div class="svc-error-msg" id="svc-date-err-${prefix}">${esc(s.dateError || 'Por favor selecciona una fecha')}</div>
 
@@ -1471,6 +1521,10 @@
 
   window._svcToggleWhen = function(type) {
     toggleWhen(type);
+  };
+
+  window._svcSetTimePreference = function(prefix, pref) {
+    setScheduleTimePreference(prefix, pref);
   };
 
   window._svcSubmit = function(prefix) {
