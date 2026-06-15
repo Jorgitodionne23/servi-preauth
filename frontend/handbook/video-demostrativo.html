@@ -88,15 +88,22 @@
   .wt__more:hover{ color:var(--color-accent-hover); }
   .wt__more[hidden]{ display:none; }
 
-  .wt__controls{ width:100%; display:flex; align-items:center; justify-content:space-between; gap:9px; flex-wrap:nowrap; }
-  .wt__btn{ border:1.5px solid var(--color-border); background:#fff; border-radius:var(--radius-pill);
-    padding:10px 14px; cursor:pointer; font:600 13px/1 var(--font-body); color:var(--color-text);
-    display:inline-flex; align-items:center; gap:7px; transition:border-color .15s, background .15s; }
+  /* controls live at the bottom of the phone screen as a native-style bottom bar;
+     chat (flex:1) naturally gives up the height this bar needs */
+  .wt__controls{ flex:0 0 auto; width:100%; box-sizing:border-box; display:flex; align-items:center;
+    justify-content:space-between; gap:6px; padding:9px 10px; background:#fff; border-top:1px solid rgba(0,0,0,.07); }
+  .wt__btn{ flex:1 1 0; min-width:0; box-sizing:border-box; justify-content:center; white-space:nowrap; overflow:hidden;
+    border:1.5px solid var(--color-border); background:#fff; border-radius:var(--radius-pill);
+    padding:9px 10px; cursor:pointer; font:600 12.5px/1 var(--font-body); color:var(--color-text);
+    display:inline-flex; align-items:center; gap:5px; transition:border-color .15s, background .15s; }
   .wt__btn:hover{ border-color:#bcbcbc; }
   .wt__btn:focus-visible{ outline:2px solid var(--color-accent); outline-offset:2px; }
   .wt__btn--primary{ background:var(--color-text); border-color:var(--color-text); color:#fff; }
   .wt__btn--primary:hover{ background:#000; }
   .wt__btn:disabled{ opacity:.4; cursor:default; }
+  /* replay is icon-only (↺) → it shrinks to its glyph so Anterior/Siguiente get the room */
+  .wt__controls .wt__btn--primary{ flex:0 0 auto; padding:9px 13px; font-size:15px; gap:0; }
+  .wt__controls .wt__btn--primary #wtReplayLbl{ display:none; }
   /* closing CTA */
   .wt__cta{ margin-top:48px; background:var(--color-bg-dark); border-radius:var(--radius-lg); padding:26px 28px;
     display:flex; align-items:center; justify-content:space-between; gap:18px; flex-wrap:wrap; }
@@ -173,27 +180,14 @@
     .wt{ margin-top:4px; }
     .wt__stage{ grid-template-columns:1fr; gap:18px; max-width:430px; margin:0 auto; }
     .wt__side{ display:contents; }
-    .wt__rail{ order:1; width:100%; align-self:auto; display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:6px; margin-bottom:18px; padding:6px; background:#fff; border:1px solid var(--color-border); border-radius:20px; box-shadow:0 16px 34px -26px rgba(16,18,19,.28); }
-    .wt__phone-col{ order:2; width:min(316px,100%); }
-    .wt__rule{ order:3; }
-    .wt__controls{ order:4; }
-    .wt__step:last-child:nth-child(odd){ grid-column:auto; }
-    .wt__step{ width:auto; height:auto; justify-content:center; flex-direction:column; gap:5px; min-height:66px; border:0; border-radius:15px; padding:7px 4px 6px; font-size:10.5px; line-height:1.05; text-align:center; }
-    .wt__step:hover{ border-color:transparent; }
-    .wt__step .n{ width:24px; height:24px; font-size:11.5px; }
-    .wt__step .label{ display:-webkit-box; min-height:22px; overflow:hidden; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
-    .wt__rule{ border-left-width:0; border-top:3px solid var(--color-accent); padding:18px 18px 19px; }
-    .wt__controls{ width:100%; justify-content:center; flex-wrap:wrap; }
+    /* rail removed on mobile — the in-phone controls handle step navigation */
+    .wt__rail{ display:none; }
+    .wt__phone-col{ order:2; width:min(316px,100%); justify-self:center; }
+    .wt__rule{ order:3; border-left-width:0; border-top:3px solid var(--color-accent); padding:18px 18px 19px; }
   }
 
   @media (max-width:390px){
-    .wt__rail{ grid-template-columns:repeat(6,minmax(0,1fr)); gap:4px; padding:5px; border-radius:18px; }
-    .wt__step{ grid-column:span 2; min-height:60px; padding:6px 2px; font-size:10px; border-radius:13px; }
-    .wt__step:nth-child(n+4){ grid-column:span 3; min-height:56px; }
-    .wt__step:last-child:nth-child(odd){ grid-column:span 3; }
-    .wt__step .n{ width:22px; height:22px; }
-    .wt__step .label{ min-height:20px; }
-    .wt__btn{ padding:10px 13px; }
+    .wt__btn{ padding:9px 7px; font-size:12px; gap:4px; }
   }
   </style>
 </head>
@@ -231,6 +225,11 @@
                   <span class="wt__live"><i></i><span id="wtLive">en línea</span></span>
                 </div>
                 <div class="wt__chat" id="wtChat" aria-live="polite"></div>
+                <div class="wt__controls">
+                  <button class="wt__btn" id="wtPrev" type="button">‹ <span id="wtPrevLbl">Anterior</span></button>
+                  <button class="wt__btn wt__btn--primary" id="wtReplay" type="button">↺ <span id="wtReplayLbl">Reproducir</span></button>
+                  <button class="wt__btn" id="wtNext" type="button"><span id="wtNextLbl">Siguiente</span> ›</button>
+                </div>
               </div>
             </div>
           </div>
@@ -246,11 +245,6 @@
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
               </a>
             </div>
-          </div>
-          <div class="wt__controls">
-            <button class="wt__btn" id="wtPrev" type="button">‹ <span id="wtPrevLbl">Anterior</span></button>
-            <button class="wt__btn wt__btn--primary" id="wtReplay" type="button">↺ <span id="wtReplayLbl">Reproducir</span></button>
-            <button class="wt__btn" id="wtNext" type="button"><span id="wtNextLbl">Siguiente</span> ›</button>
           </div>
         </div>
       </div>
