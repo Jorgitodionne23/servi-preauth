@@ -1145,6 +1145,40 @@ function buildFrontendLinks(orderId) {
   };
 }
 
+function paymentFlowForOrderRow(row) {
+  const kind = String(row?.kind || '').toLowerCase();
+  return (row?.customer_id || kind === 'book' || kind === 'adjustment') ? 'book' : 'pay';
+}
+
+function buildOrderPaymentUrl(row, retryToken = null) {
+  const flow = paymentFlowForOrderRow(row);
+  const baseUrl = flow === 'book'
+    ? buildFrontendUrl('/book.html', { orderId: row.id })
+    : buildFrontendUrl('/pay.html', { order: row.id });
+  if (!baseUrl || !retryToken) return baseUrl;
+  const urlObj = new URL(baseUrl);
+  urlObj.searchParams.set('rt', retryToken);
+  return urlObj.toString();
+}
+
+async function issueFreshOrderPaymentLink(row) {
+  const token = randomBytes(12).toString('base64url');
+  const upd = await pool.query(
+    `UPDATE all_bookings
+        SET retry_token = $1,
+            retry_token_created_at = NOW()
+      WHERE id = $2
+      RETURNING retry_token_created_at`,
+    [token, row.id]
+  );
+  const flow = paymentFlowForOrderRow(row);
+  return {
+    url: buildOrderPaymentUrl(row, token),
+    flow,
+    issuedAt: upd.rows[0]?.retry_token_created_at || new Date().toISOString(),
+  };
+}
+
 app.use((req, res, next) => {
   const allowed = applyCorsHeaders(req, res);
   if (req.method === 'OPTIONS') {
@@ -1725,8 +1759,13 @@ app.use(express.static(FRONTEND_DIR));
       allow_cash_once,
       category: categoryRaw,
       isAsap,
-      is_asap
+      is_asap,
+      serviceRequestId: serviceRequestIdCamel,
+      service_request_id: serviceRequestIdSnake,
+      requestId,
+      request_id: requestIdSnake
     } = req.body;
+    const sourceRequestId = String(serviceRequestIdCamel ?? serviceRequestIdSnake ?? requestId ?? requestIdSnake ?? '').trim();
     const categoryInput = String(categoryRaw || '').trim().toLowerCase() || null;
     const VALID_CATEGORIES = new Set(['cleaning','repair','wellness','maintenance','supply','custom']);
     const category = categoryInput && VALID_CATEGORIES.has(categoryInput) ? categoryInput : (categoryInput || null);
@@ -1784,7 +1823,69 @@ app.use(express.static(FRONTEND_DIR));
     String(isAsap ?? is_asap ?? '').toLowerCase() === 'true' ||
     isAsap === '1' ||
     is_asap === '1';
+  let claimedSourceRequestId = null;
+  let orderInserted = false;
+  let orderId = null;
   try {
+    let sourceRequest = null;
+    if (sourceRequestId) {
+      const { rows: requestRows } = await pool.query(
+        `SELECT id, client_phone, client_email, converted_order_id
+           FROM service_requests
+          WHERE id = $1
+          LIMIT 1`,
+        [sourceRequestId]
+      );
+      sourceRequest = requestRows[0] || null;
+      if (!sourceRequest) {
+        return res.status(404).send({
+          error: 'service_request_not_found',
+          message: 'La solicitud original ya no existe.'
+        });
+      }
+      const requestPhoneDigits = normalizePhoneDigits(sourceRequest.client_phone);
+      if (requestPhoneDigits && phoneDigits && requestPhoneDigits !== phoneDigits) {
+        return res.status(409).send({
+          error: 'service_request_phone_conflict',
+          message: 'La solicitud original pertenece a otro WhatsApp.'
+        });
+      }
+      const requestEmail = normalizeEmail(sourceRequest.client_email || '');
+      if (requestEmail && clientEmailNormalized && requestEmail !== clientEmailNormalized) {
+        return res.status(409).send({
+          error: 'service_request_email_conflict',
+          message: 'La solicitud original pertenece a otro email.'
+        });
+      }
+      if (sourceRequest.converted_order_id) {
+        const { rows: existingRows } = await pool.query(
+          `SELECT id, public_code, customer_id, kind, status
+             FROM all_bookings
+            WHERE id = $1
+            LIMIT 1`,
+          [sourceRequest.converted_order_id]
+        );
+        const existing = existingRows[0] || null;
+        if (!existing) {
+          return res.status(409).send({
+            error: 'converted_order_missing',
+            message: 'La solicitud ya fue convertida, pero no se encontró la orden vinculada.'
+          });
+        }
+        const freshLink = await issueFreshOrderPaymentLink(existing);
+        const links = buildFrontendLinks(existing.id);
+        return res.send({
+          orderId: existing.id,
+          publicCode: existing.public_code || null,
+          payUrl: freshLink.url,
+          successUrl: links.successUrl,
+          bookUrl: links.bookUrl,
+          flow: freshLink.flow,
+          issuedAt: freshLink.issuedAt,
+          alreadyConverted: true
+        });
+      }
+    }
     const captureMethod = String(capture).toLowerCase() === 'automatic' ? 'automatic' : 'manual';
     const savedPhoneRecord = phoneDigits ? await findSavedClientByPhoneDigits(phoneDigits) : null;
     const storedPhoneNameKey = savedPhoneRecord ? normalizeNameKey(savedPhoneRecord.customer_name) : '';
@@ -1925,8 +2026,56 @@ app.use(express.static(FRONTEND_DIR));
     }
 
     // Create the order row (allow NULL customer_id for now)
-    const orderId = randomUUID();
+    orderId = randomUUID();
     const publicCode = await generateUniqueCode();
+    if (sourceRequest) {
+      const claim = await pool.query(
+        `UPDATE service_requests
+            SET converted_order_id = $1,
+                status = CASE WHEN status ~* '^cancel' THEN status ELSE 'contacted' END,
+                updated_at = NOW()
+          WHERE id = $2
+            AND COALESCE(converted_order_id, '') = ''
+          RETURNING id`,
+        [orderId, sourceRequest.id]
+      );
+      if (!claim.rowCount) {
+        const { rows: rereadRows } = await pool.query(
+          `SELECT converted_order_id FROM service_requests WHERE id = $1 LIMIT 1`,
+          [sourceRequest.id]
+        );
+        const convertedOrderId = rereadRows[0]?.converted_order_id || null;
+        if (convertedOrderId) {
+          const { rows: existingRows } = await pool.query(
+            `SELECT id, public_code, customer_id, kind, status
+               FROM all_bookings
+              WHERE id = $1
+              LIMIT 1`,
+            [convertedOrderId]
+          );
+          const existing = existingRows[0] || null;
+          if (existing) {
+            const freshLink = await issueFreshOrderPaymentLink(existing);
+            const links = buildFrontendLinks(existing.id);
+            return res.send({
+              orderId: existing.id,
+              publicCode: existing.public_code || null,
+              payUrl: freshLink.url,
+              successUrl: links.successUrl,
+              bookUrl: links.bookUrl,
+              flow: freshLink.flow,
+              issuedAt: freshLink.issuedAt,
+              alreadyConverted: true
+            });
+          }
+        }
+        return res.status(409).send({
+          error: 'service_request_already_converted',
+          message: 'La solicitud original ya fue convertida por otro enlace.'
+        });
+      }
+      claimedSourceRequestId = sourceRequest.id;
+    }
     const links = buildFrontendLinks(orderId);
     const linkPayload = {
       payUrl: links.payUrl,
@@ -2007,6 +2156,7 @@ app.use(express.static(FRONTEND_DIR));
         alphaValue
       ]
     );
+    orderInserted = true;
 
     // also persist service_date/service_datetime (you already do)
   await pool.query(
@@ -2203,6 +2353,21 @@ app.use(express.static(FRONTEND_DIR));
 
 
   } catch (err) {
+    if (claimedSourceRequestId && orderId && !orderInserted) {
+      try {
+        await pool.query(
+          `UPDATE service_requests
+              SET converted_order_id = NULL,
+                  status = CASE WHEN status = 'contacted' THEN 'pending' ELSE status END,
+                  updated_at = NOW()
+            WHERE id = $1
+              AND converted_order_id = $2`,
+          [claimedSourceRequestId, orderId]
+        );
+      } catch (cleanupErr) {
+        console.warn('[create-payment-intent] source request claim cleanup failed:', cleanupErr?.message || cleanupErr);
+      }
+    }
     console.error('Error creating payment intent:', err);
     const status = err.status || 400;
     const payload = {
@@ -6945,7 +7110,7 @@ async function resolveUserOrderMatch(userId) {
 
 // Statuses where the customer can still pay/authorize online. Case-insensitive,
 // because the admin create path stores 'pending' while Apps Script stores 'Pending'.
-const PAYABLE_ONLINE_STATUSES = new Set(['pending', 'pending (3ds)', 'setup required', 'setup created']);
+const PAYABLE_ONLINE_STATUSES = new Set(['pending', 'new', 'pending (3ds)', 'setup required', 'setup created']);
 
 function isOrderPayableOnline(row) {
   if (!row) return false;
@@ -6959,8 +7124,7 @@ function isOrderPayableOnline(row) {
 
 // Which checkout page a payable order should open (mirrors useBookFlow in admin regenerate-link).
 function orderPayFlow(row) {
-  const kind = String(row?.kind || '').toLowerCase();
-  return (row?.customer_id || kind === 'book' || kind === 'adjustment') ? 'book' : 'pay';
+  return paymentFlowForOrderRow(row);
 }
 
 // GET /api/auth/orders — the authenticated user's own orders + pending requests.

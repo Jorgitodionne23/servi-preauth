@@ -2321,11 +2321,12 @@ function setOrdersCount(bucket, n) {
   el.hidden = !n;
 }
 
-async function loadOrders() {
-  if (_ordersLoading) return;
+async function loadOrders(opts = {}) {
+  const force = opts === true || !!opts.force;
+  if (_ordersLoading) return false;
   _ordersLoading = true;
   const list = document.getElementById('orders-list');
-  if (list && !_ordersLoaded) list.innerHTML = ordersSkeletonHtml();
+  if (list && !_ordersLoaded && !force) list.innerHTML = ordersSkeletonHtml();
   try {
     const res = await fetch(API + '/api/auth/orders', { headers: authHeaders() });
     if (!res.ok) throw new Error('load_failed');
@@ -2333,8 +2334,10 @@ async function loadOrders() {
     _orders = Array.isArray(d.orders) ? d.orders : [];
     _ordersLoaded = true;
     renderOrders();
+    return true;
   } catch {
     if (list) list.innerHTML = ordersErrorHtml();
+    return false;
   } finally {
     _ordersLoading = false;
   }
@@ -2602,9 +2605,31 @@ function orderDrawerHtml(item) {
     ${orderDrawerActionsHtml(item)}`;
 }
 
-function openOrderDrawer(id) {
-  const item = _orders.find(o => o.id === id);
+function sameOrderField(a, b) {
+  return String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+}
+
+function findRefreshedOrderForStaleRequest(staleItem) {
+  if (!staleItem || staleItem.source !== 'request') return null;
+  const staleCreated = new Date(staleItem.createdAt || 0).getTime();
+  return _orders.find((item) => {
+    if (item.source !== 'order') return false;
+    if (staleItem.category && item.category && staleItem.category !== item.category) return false;
+    if (staleItem.address && item.address && !sameOrderField(staleItem.address, item.address)) return false;
+    if (staleItem.serviceDate && item.serviceDate && staleItem.serviceDate !== item.serviceDate) return false;
+    const itemCreated = new Date(item.createdAt || 0).getTime();
+    return !staleCreated || !itemCreated || itemCreated >= staleCreated - 60000;
+  }) || null;
+}
+
+async function openOrderDrawer(id) {
+  let item = _orders.find(o => o.id === id);
   if (!item) return;
+  const staleItem = item;
+  const refreshed = await loadOrders({ force: true });
+  if (refreshed) {
+    item = _orders.find(o => o.id === id) || findRefreshedOrderForStaleRequest(staleItem) || staleItem;
+  }
   const content = document.getElementById('order-drawer-content');
   const overlay = document.getElementById('order-drawer-overlay');
   if (!content || !overlay) return;

@@ -123,6 +123,7 @@ async function mockAdminApis(page, {
   detailOrder = null,
   opsRadar = null,
   onCreatePaymentIntent = null,
+  onPatchServiceRequest = null,
   onPreauthNow = null,
   onSnooze = null,
 } = {}) {
@@ -145,7 +146,10 @@ async function mockAdminApis(page, {
   });
   await page.route('**/api/admin/orders?*', route => route.fulfill({ json: { items: orders, total: orders.length } }));
   await page.route('**/api/service-requests?*', route => route.fulfill({ json: { items: submissions, total: submissions.length } }));
-  await page.route('**/api/service-requests/*', route => route.fulfill({ json: { ok: true } }));
+  await page.route('**/api/service-requests/*', async route => {
+    if (onPatchServiceRequest) await onPatchServiceRequest(route.request().postDataJSON());
+    return route.fulfill({ json: { ok: true } });
+  });
   await page.route('**/create-payment-intent', async route => {
     if (onCreatePaymentIntent) await onCreatePaymentIntent(route.request().postDataJSON());
     return route.fulfill({ json: { orderId: 'order-from-asap', payUrl: 'http://localhost:4242/pay.html?order=order-from-asap' } });
@@ -465,6 +469,44 @@ test.describe('Orders panel scheduling UI (mocked)', () => {
     await expect(page.locator('#orders-body tr').first()).toHaveClass(/row-ops-critical/);
   });
 
+  test('orders table shows received date and time for orders and web submissions', async ({ page }) => {
+    const order = orderFixture({
+      id: 'order-received-1',
+      public_code: 'SV-RECV',
+      client_name: 'Cliente Recibido',
+      created_at: '2026-06-05T18:00:00.000Z',
+    });
+    await mockAdminApis(page, {
+      orders: [order],
+      submissions: [{
+        id: 'sub-received-1',
+        category: 'repair',
+        description: 'Solicitud recibida',
+        preferred_date: '2026-06-09',
+        preferred_time: '11:30',
+        is_asap: false,
+        service_address: 'Calle Recibida 10',
+        client_name: 'Cliente Web Recibido',
+        client_phone: '+525500000010',
+        client_email: '',
+        status: 'pending',
+        created_at: '2026-06-06T19:30:00.000Z',
+      }],
+    });
+    await loginAndWait(page);
+    await waitForListLoad(page, 'orders-body', 10000);
+
+    await expect(page.locator('#panel-orders thead')).toContainText('Recibida');
+
+    const orderReceivedCell = page.locator('#orders-body tr', { hasText: 'Cliente Recibido' }).locator('td').nth(1);
+    await expect(orderReceivedCell).toContainText(/05\s+jun\.?\s+2026/i);
+    await expect(orderReceivedCell).toContainText(/\d{2}:\d{2}/);
+
+    const submissionReceivedCell = page.locator('#orders-body tr', { hasText: 'Cliente Web Recibido' }).locator('td').nth(1);
+    await expect(submissionReceivedCell).toContainText(/06\s+jun\.?\s+2026/i);
+    await expect(submissionReceivedCell).toContainText(/\d{2}:\d{2}/);
+  });
+
   test('preauth ops action calls preauth-now endpoint', async ({ page }) => {
     let called = false;
     const risky = orderFixture({
@@ -563,12 +605,14 @@ test.describe('Orders panel scheduling UI (mocked)', () => {
     await waitForListLoad(page, 'orders-body', 10000);
 
     const firstRow = page.locator('#orders-body tr').first();
-    await expect(firstRow).toContainText('ASAP');
-    await expect(firstRow).not.toContainText('05 jun 2026');
+    await expect(firstRow.locator('td').nth(1)).toContainText(/05\s+jun\.?\s+2026/i);
+    await expect(firstRow.locator('td').nth(5)).toContainText('ASAP');
+    await expect(firstRow.locator('td').nth(5)).not.toContainText(/05\s+jun\.?\s+2026/i);
   });
 
   test('creating payment link from ASAP submission preserves isAsap flag', async ({ page }) => {
     let createPayload;
+    let patchPayload;
     await mockAdminApis(page, {
       orders: [],
       submissions: [{
@@ -586,6 +630,7 @@ test.describe('Orders panel scheduling UI (mocked)', () => {
         created_at: '2026-06-05T18:00:00.000Z',
       }],
       onCreatePaymentIntent: payload => { createPayload = payload; },
+      onPatchServiceRequest: payload => { patchPayload = payload; },
     });
     await loginAndWait(page);
     await page.locator('.nav-item[data-panel="orders"]').click();
@@ -600,6 +645,8 @@ test.describe('Orders panel scheduling UI (mocked)', () => {
     expect(createPayload).toBeTruthy();
     expect(createPayload.isAsap).toBe(true);
     expect(createPayload.serviceDateTime).toBe('');
+    expect(createPayload.serviceRequestId).toBe('sub-asap-2');
+    expect(patchPayload).toMatchObject({ status: 'contacted', convertedOrderId: 'order-from-asap' });
   });
 });
 
