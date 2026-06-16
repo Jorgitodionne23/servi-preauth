@@ -953,6 +953,8 @@ const TX = {
     stRequested: 'Solicitud recibida', stPendingPay: 'Pendiente de pago', stPay3ds: 'Verificación de pago',
     stCash: 'Pago en efectivo', stScheduled: 'Programado', stAuthorized: 'Autorizado',
     stCompleted: 'Completado', stCanceled: 'Cancelado', stCanceledFee: 'Cancelado (con tarifa)', stDeclined: 'Rechazado', stRefunded: 'Reembolsado',
+    stNeedCard: 'Falta método de pago', stConfirmBooking: 'Confirma tu reserva',
+    noteScheduled: 'Listo. Autorizaremos tu tarjeta ~24 h antes del servicio.',
     tlRequested: 'Solicitud recibida', tlMatched: 'Especialista asignado', tlAuthorized: 'Pago autorizado',
     tlCompleted: 'Servicio completado', tlCanceledTitle: 'Pedido cancelado',
     drawerTimeline: 'Estado del pedido', drawerService: 'Servicio', drawerSchedule: 'Fecha y hora',
@@ -961,7 +963,7 @@ const TX = {
     priceProvider: 'Servicio', priceBooking: 'Tarifa de servicio', priceProcessing: 'Procesamiento',
     priceVat: 'IVA', priceTotal: 'Total', priceTotalCharged: 'Total cobrado', priceTotalHold: 'Total autorizado',
     priceEstimate: 'Estimado', priceCash: 'Pago en efectivo al especialista', priceTbd: 'Por confirmar',
-    actReorder: 'Pedir de nuevo', actPay: 'Completar pago', actHelp: '¿Necesitas ayuda?', actClose: 'Cerrar',
+    actReorder: 'Pedir de nuevo', actPay: 'Completar pago', actConfirm: 'Confirmar reserva', actSaveCard: 'Guardar tarjeta y reservar', actHelp: '¿Necesitas ayuda?', actClose: 'Cerrar',
     actEditAddress: 'Editar dirección', actReschedule: 'Reagendar', actCancel: 'Cancelar pedido',
     actWithdraw: 'Retirar solicitud', actSave: 'Guardar',
     cancelTitle: '¿Cancelar este pedido?', cancelReqTitle: '¿Retirar esta solicitud?',
@@ -1077,6 +1079,8 @@ const TX = {
     stRequested: 'Request received', stPendingPay: 'Payment pending', stPay3ds: 'Payment verification',
     stCash: 'Cash payment', stScheduled: 'Scheduled', stAuthorized: 'Authorized',
     stCompleted: 'Completed', stCanceled: 'Canceled', stCanceledFee: 'Canceled (fee applied)', stDeclined: 'Declined', stRefunded: 'Refunded',
+    stNeedCard: 'Add payment method', stConfirmBooking: 'Confirm booking',
+    noteScheduled: "All set. We'll authorize your card ~24h before service.",
     tlRequested: 'Request received', tlMatched: 'Specialist assigned', tlAuthorized: 'Payment authorized',
     tlCompleted: 'Service completed', tlCanceledTitle: 'Order canceled',
     drawerTimeline: 'Order status', drawerService: 'Service', drawerSchedule: 'Date & time',
@@ -1085,7 +1089,7 @@ const TX = {
     priceProvider: 'Service', priceBooking: 'Service fee', priceProcessing: 'Processing',
     priceVat: 'VAT', priceTotal: 'Total', priceTotalCharged: 'Total charged', priceTotalHold: 'Total authorized',
     priceEstimate: 'Estimate', priceCash: 'Cash payment to specialist', priceTbd: 'To be confirmed',
-    actReorder: 'Order again', actPay: 'Complete payment', actHelp: 'Need help?', actClose: 'Close',
+    actReorder: 'Order again', actPay: 'Complete payment', actConfirm: 'Confirm booking', actSaveCard: 'Save card & book', actHelp: 'Need help?', actClose: 'Close',
     actEditAddress: 'Edit address', actReschedule: 'Reschedule', actCancel: 'Cancel order',
     actWithdraw: 'Withdraw request', actSave: 'Save',
     cancelTitle: 'Cancel this order?', cancelReqTitle: 'Withdraw this request?',
@@ -2137,6 +2141,8 @@ function orderStatusMeta(item) {
     return { label: t.stRequested, cls: 'is-progress', step: 1, canceled: false };
   }
   const raw = String(item.status || '').trim();
+  const kind = String(item.kind || '').toLowerCase();
+  const setupStyle = (kind === 'setup' || kind === 'setup_required');
   // Compound labels the backend emits (e.g. 'Canceled (late fee)', 'Canceled (expired)',
   // 'Captured (partial refund)') are matched by prefix so they never fall through to "pending".
   if (/^captured/i.test(raw))  return { label: t.stCompleted, cls: 'is-done',     step: 4, canceled: false };
@@ -2145,6 +2151,9 @@ function orderStatusMeta(item) {
     const fee = /late fee/i.test(raw);
     return { label: fee ? t.stCanceledFee : t.stCanceled, cls: 'is-canceled', step: 1, canceled: true };
   }
+  // 'Blocked' is the admin-parked "needs a saved card" state for setup-style orders. For the
+  // owner it reads as an action ("add your payment method"), not a dead end.
+  if (/^blocked/i.test(raw)) return { label: t.stNeedCard, cls: 'is-pending', step: 2, canceled: false };
   switch (raw) {
     case 'Confirmed':                return { label: t.stAuthorized, cls: 'is-authorized', step: 3, canceled: false };
     case 'Scheduled':                return { label: t.stScheduled,  cls: 'is-progress',   step: 2, canceled: false };
@@ -2152,10 +2161,33 @@ function orderStatusMeta(item) {
     case 'Pending (3DS)':            return { label: t.stPay3ds,     cls: 'is-pending',    step: 2, canceled: false };
     case 'Declined':                 return { label: t.stDeclined,   cls: 'is-declined',   step: 1, canceled: true };
     case 'Expired':                  return { label: t.stCanceled,   cls: 'is-canceled',   step: 1, canceled: true };
-    default:                         return { label: t.stPendingPay, cls: 'is-pending',    step: 2, canceled: false };
+    default:
+      // Pending family — read by what the order needs from the user: setup-style → add a card;
+      // saved-card 'book' → confirm the booking; otherwise → pay now.
+      if (setupStyle)      return { label: t.stNeedCard,       cls: 'is-pending', step: 2, canceled: false };
+      if (kind === 'book') return { label: t.stConfirmBooking, cls: 'is-pending', step: 2, canceled: false };
+      return { label: t.stPendingPay, cls: 'is-pending', step: 2, canceled: false };
   }
 }
 function orderTitle(item) { return categoryLabel(item.category); }
+// Smart CTA label by what the order needs from the user: save a card (setup-style),
+// confirm a saved-card booking (book), or pay now (everything else).
+function orderCtaLabel(item) {
+  const t = tr();
+  const kind = String(item.kind || '').toLowerCase();
+  const flow = String(item.payFlow || '').toLowerCase();
+  if (kind === 'setup' || kind === 'setup_required') return t.actSaveCard;
+  if (flow === 'book' || kind === 'book') return t.actConfirm;
+  return t.actPay;
+}
+// Short reassurance for states where the user does nothing and the cron acts for them.
+function orderNote(item) {
+  const t = tr();
+  if (item.source !== 'order') return '';
+  const kind = String(item.kind || '').toLowerCase();
+  if (String(item.status || '').trim() === 'Scheduled' && (kind === 'book' || item.payFlow === 'book')) return t.noteScheduled;
+  return '';
+}
 function orderIsPayable(item) {
   if (item.source !== 'order') return false;
   // Server is the source of truth (price confirmed + payable status). Fall back to the
@@ -2289,9 +2321,10 @@ function orderCardHtml(item, idx) {
   else if (item.providerName) metaItems.push(`<span class="order-meta-item">${ORDER_ICONS.user}<span>${escapeHtml(item.providerName)}</span></span>`);
 
   const actions = [];
-  if (orderIsPayable(item)) actions.push(`<button class="order-cta" onclick="event.stopPropagation();startOrderPayment('${escapeHtml(item.id)}','${escapeHtml(item.payFlow || item.kind)}',this)">${escapeHtml(t.actPay)}</button>`);
+  if (orderIsPayable(item)) actions.push(`<button class="order-cta" onclick="event.stopPropagation();startOrderPayment('${escapeHtml(item.id)}','${escapeHtml(item.payFlow || item.kind)}',this)">${escapeHtml(orderCtaLabel(item))}</button>`);
   // "Order again" only on closed/past orders (server-authoritative). Cancel/modify live in the drawer.
   if (orderCanReorder(item)) actions.push(`<button class="addr-btn default-btn" onclick="event.stopPropagation();reorder('${escapeHtml(item.category)}')">${escapeHtml(t.actReorder)}</button>`);
+  const note = orderNote(item);
 
   return `
     <div class="order-card" tabindex="0" role="button" aria-label="${escapeHtml(orderTitle(item))} — ${escapeHtml(meta.label)}"
@@ -2310,6 +2343,7 @@ function orderCardHtml(item, idx) {
           ${price ? `<div class="order-price">${escapeHtml(price)}</div>` : ''}
         </div>
       </div>
+      ${note ? `<div class="order-note" style="margin-top:10px;font-size:12.5px;line-height:1.4;color:#6b7280">${escapeHtml(note)}</div>` : ''}
       ${actions.length ? `<div class="order-actions">${actions.join('')}</div>` : ''}
     </div>`;
 }
@@ -2417,7 +2451,7 @@ function orderDrawerActionsHtml(item) {
   const pol = orderPolicy(item);
   const id = escapeHtml(item.id);
   const a = [];
-  if (orderIsPayable(item)) a.push(`<button class="btn-save" onclick="startOrderPayment('${id}','${escapeHtml(item.payFlow || item.kind)}',this)">${escapeHtml(t.actPay)}</button>`);
+  if (orderIsPayable(item)) a.push(`<button class="btn-save" onclick="startOrderPayment('${id}','${escapeHtml(item.payFlow || item.kind)}',this)">${escapeHtml(orderCtaLabel(item))}</button>`);
   if (pol.canEditAddress) a.push(`<button class="btn-outline" onclick="openAddressForm('${id}')">${escapeHtml(t.actEditAddress)}</button>`);
   if (pol.canRequestReschedule) a.push(`<button class="btn-outline" onclick="openRescheduleForm('${id}')">${escapeHtml(t.actReschedule)}</button>`);
   if (pol.canCancel) a.push(`<button class="btn-danger-line" onclick="confirmCancelOrder('${id}')">${escapeHtml(item.source === 'request' ? t.actWithdraw : t.actCancel)}</button>`);
@@ -3092,6 +3126,22 @@ document.addEventListener('DOMContentLoaded', () => {
     const pmList = document.getElementById('pm-list');
     if (pmList && pmList.querySelector('.pm-card')) loadPaymentMethods();
   });
+
+  // Returning from a payment/booking tab: silently refresh orders + saved cards so the new
+  // status and any newly-saved card appear without a manual reload. Debounced, visible-only,
+  // no skeleton flash (force re-fetch).
+  let _lastReturnRefresh = 0;
+  const refreshOnReturn = () => {
+    if (document.visibilityState === 'hidden') return;
+    const now = Date.now();
+    if (now - _lastReturnRefresh < 4000) return;
+    _lastReturnRefresh = now;
+    if (_ordersLoaded) loadOrders({ force: true });
+    const pmList = document.getElementById('pm-list');
+    if (pmList && pmList.querySelector('.pm-card')) loadPaymentMethods();
+  };
+  document.addEventListener('visibilitychange', refreshOnReturn);
+  window.addEventListener('focus', refreshOnReturn);
 
   // Close the order drawer with Escape
   document.addEventListener('keydown', (e) => {

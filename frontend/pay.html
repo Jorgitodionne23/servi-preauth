@@ -970,7 +970,11 @@
       const consentChecked = document.getElementById('consent-checkbox').checked;
       const cardholder = (cardholderInput?.value || '').trim();
       const email = (currentOrder.email || currentOrder.client_email || '').trim();
-      const requireConsentForBooking = needsConsentForBooking(currentOrder);
+      // A SetupIntent (seti_…) means "save the card now, charge later" — used by future-dated
+      // (≥5 days) and visit orders that can't place a hold yet. An off-session save needs consent.
+      const isSetupIntent = String(currentOrder.intentType || '').toLowerCase() === 'setup'
+        || String(clientSecret || '').startsWith('seti_');
+      const requireConsentForBooking = needsConsentForBooking(currentOrder) || isSetupIntent;
 
       const missingAlerts = [];
       if (!termsChecked) {
@@ -1015,6 +1019,37 @@
 
         if (!clientSecret) {
           alert('No se pudo inicializar el flujo de pago. Contacta a soporte.');
+          return;
+        }
+
+        // SetupIntent path: save the card now, NO charge. The hourly cron places the hold
+        // ~24h before service (setup_intent.succeeded → status 'Scheduled', kind 'book'). The
+        // saved card lands on the user's canonical Stripe customer, so it appears in their account.
+        if (isSetupIntent) {
+          if (consentChecked) {
+            await recordConsent(orderId, { billingEmail: email });
+          }
+          const setupResult = await stripe.confirmCardSetup(clientSecret, {
+            payment_method: {
+              card,
+              billing_details: {
+                ...(cardholder ? { name: cardholder } : {}),
+                ...(email ? { email } : {})
+              }
+            }
+          });
+          if (setupResult.error) {
+            if (handleLinkExpiredError(setupResult.error)) return;
+            alert(setupResult.error.message || 'No se pudo guardar tu método de pago.');
+            return;
+          }
+          const siStatus = (setupResult.setupIntent?.status || '').toLowerCase();
+          if (siStatus === 'succeeded' || siStatus === 'processing') {
+            localStorage.setItem('orderId', String(orderId));
+            redirectToSuccess(orderId);
+            return;
+          }
+          alert('No se pudo guardar tu método de pago.');
           return;
         }
 

@@ -158,13 +158,41 @@ This is NOT a simple payment form. It's a complete **admin-driven order manageme
 ### Key Backend Concepts
 
 - **Order kinds:** `primary`, `book` (saved card), `setup` (needs card save), `setup_required` (needs consent + card), `adjustment` (child order for surcharges/corrections)
-- **Pre-auth window:** 24h before service → auto-authorize saved cards (hourly GitHub Actions trigger → `/tasks/preauth-due`)
-- **Early pre-auth:** ≤72h allows PI creation without confirm; >72h stays Scheduled
-- **Link expiration:** Payment links expire after 2 hours; `retry_token` can extend
+- **Pre-auth window (24h):** the hourly cron (`/tasks/preauth-due`, GitHub Actions) auto-authorizes saved cards **off-session** ~24h before service → `Confirmed`. The customer does nothing after booking.
+- **Saved-card requirement (5 days):** orders booked **≥5 days out require a saved card + consent**; guests are blocked until they create an account / save a card. See **Booking Lead-Time Guardrails** below.
+- **Link expiration:** Payment links expire after 2 hours; `retry_token` mints a fresh 2-hour link (used by `account.html` "My Orders" so a logged-in user can self-serve their own pending order).
 - **Consent system:** Per-order audit (`consented_offsession_bookings`) + per-customer registry (`saved_servi_users`)
 - **Cash exception:** First-time customers can opt for cash via `/orders/:id/choose-cash`
 - **Pricing engine:** `computePricing()` in `pricing.mjs` — provider price → alpha-curve booking fee → Stripe processing fee → VAT → total. Visit pre-auth has fixed pricing ($140 MXN total, $90 provider)
 - **Admin endpoints:** All `/api/admin/*` routes are in `backend/index.mjs` (orders list/detail/stats, reports, partner applications, capture/cancel/refund)
+
+### Booking Lead-Time Guardrails (Pre-Auth Timing)
+
+**Why this exists:** A Stripe card hold (pre-authorization) is only valid for ~7 days before the bank releases it. So SERVI **never places a hold more than ~5 days early**, and it refuses to accept an order it could not eventually hold. Everything below follows from that one constraint.
+
+**Two thresholds drive the whole model:**
+
+- **5 days (120h) — the "saved card required" line.**
+- **24 hours — the "automatic pre-auth" line.**
+
+**Special rule — Visits (`bookingKey='visita'`):** a visit-to-quote **always requires an account with a saved card, at any lead time**. A visit with no saved card is immediately `Blocked` / `setup_required` — the 5-day / 24h thresholds below don't apply to it.
+
+**Saved-card users** (= a Stripe customer with a card on file **AND** a recorded off-session consent/mandate in `saved_servi_users` / `consented_offsession_bookings`). A saved card **without** recorded consent is *not* enough — the order is routed through a `setup` flow to collect consent first:
+
+- Can book at **any** lead time. The order is created as kind `book`, status `Scheduled` — **no hold is placed yet**.
+- The hourly cron (`/tasks/preauth-due`) automatically pre-authorizes the saved card **off-session ~24h before** the service → `Confirmed`. The user does nothing after booking.
+- The "wait until ~24h before" deferral only applies when the service is **more than 24h away at booking time**. If they book a service that is already **<24h away**, there is nothing to wait for — an immediate `primary` PaymentIntent is created to confirm on the spot instead of being scheduled.
+
+**Guests / users without a saved card:**
+
+- **Less than 5 days out:** allowed. A PaymentIntent is created **immediately** (kind `primary`); the customer authorizes their card on `pay.html` right away. The hold is placed now and lasts long enough (~7 days) to reach the service date.
+- **5 or more days out:** **blocked** as a guest (`status='Blocked'`, `kind='setup_required'`). They must create an account + save a card (consent) → kind `setup` (SetupIntent) → and from then on they follow the saved-card flow above.
+
+**In one line:** holds are deferred to 24h before service for saved cards; guests must pay up front and can only do so when the service is <5 days away; anything ≥5 days away requires a saved card.
+
+**Links / self-service:** payment links expire after 2h; `retry_token` mints a fresh link. `account.html` "My Orders" lets a logged-in user re-open and pay their own pending/`Scheduled` order directly — no admin step needed.
+
+> **Note (ignore for normal flow):** the code also contains a `≤72h` "early pre-auth" branch in `/confirm-with-saved` that can create/confirm a hold before the 24h window. This was built as a **manual/admin testing trigger** (simulating events) and is **not** part of the normal automatic user logic. The canonical model is the **5-day gate + 24h auto-auth** described above.
 
 ### Database
 

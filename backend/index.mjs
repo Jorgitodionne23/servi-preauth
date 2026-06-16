@@ -4930,8 +4930,12 @@ app.post('/confirm-with-saved', async (req, res) => {
     let piId = row.payment_intent_id || null;
     const isSetup = piId && String(piId).startsWith('seti_');
 
-    // >72h: keep scheduled flow; no PI until 24h window
-    if (hoursAhead > EARLY_PREAUTH_THRESHOLD_HOURS && !force) {
+    // >24h: keep scheduled flow; NO PaymentIntent until the 24h preauth window. A normal user
+    // confirm (no force/createOnly) records the saved card + sets status='Scheduled' and returns
+    // the "programado" 409; the hourly cron places the actual hold ~24h before service. `force`
+    // bypasses this entirely and the inner `createOnly` branch still serves admin/testing early
+    // PI creation for the 24h–72h range — those manual triggers are unchanged.
+    if (hoursAhead > PREAUTH_WINDOW_HOURS && !force) {
       if (!savedPmId && row.customer_id) {
         const list = await stripe.paymentMethods.list({
           customer: row.customer_id,
@@ -7110,7 +7114,11 @@ async function resolveUserOrderMatch(userId) {
 
 // Statuses where the customer can still pay/authorize online. Case-insensitive,
 // because the admin create path stores 'pending' while Apps Script stores 'Pending'.
-const PAYABLE_ONLINE_STATUSES = new Set(['pending', 'new', 'pending (3ds)', 'setup required', 'setup created']);
+// 'blocked' is included for the AUTHENTICATED-OWNER surface only (both call sites below
+// are auth-only): visits-without-card and long-lead-guests-without-card are parked at
+// status='Blocked', kind='setup_required' at admin-create time. A logged-in owner can
+// self-serve them (save a card → setup → book → cron). Guests never evaluate this.
+const PAYABLE_ONLINE_STATUSES = new Set(['pending', 'new', 'pending (3ds)', 'setup required', 'setup created', 'blocked']);
 
 function isOrderPayableOnline(row) {
   if (!row) return false;
@@ -7118,6 +7126,9 @@ function isOrderPayableOnline(row) {
   const status = String(row.status || '').trim().toLowerCase();
   if (!PAYABLE_ONLINE_STATUSES.has(status)) return false;
   const kind = String(row.kind || '').toLowerCase();
+  // 'Blocked' is the admin-parked state for setup-style orders only — never let any other
+  // Blocked row become spuriously payable.
+  if (status === 'blocked' && !(kind === 'setup' || kind === 'setup_required')) return false;
   const hasPrice = row.pricing_total_amount != null || row.amount != null;
   return hasPrice || kind === 'setup' || kind === 'setup_required';
 }
@@ -7275,6 +7286,28 @@ app.post('/api/auth/orders/:id/payment-link', publicFormLimit, async (req, res) 
     // below returns 409 and the client refreshes instead of minting a link for a paid order.
     await reconcileOrderStatusFromStripe(row);
     if (!isOrderPayableOnline(row)) return res.status(409).json({ error: 'not_payable' });
+
+    // Owner self-service: bind a setup-style order with no customer to the user's CANONICAL
+    // Stripe customer BEFORE redirect. This is the customer section-payments reads, so a card
+    // saved on pay.html lands where the account can see it (no divergent throwaway customer from
+    // ensureCustomerForOrder), and any card the user already saved is reused (getOrderPayload's
+    // setup_required branch flips to kind='book', skipping re-entry). Never rebinds an existing
+    // customer; never creates a PaymentIntent or places a hold.
+    const linkKind = String(row.kind || '').toLowerCase();
+    if (!row.customer_id && (linkKind === 'setup' || linkKind === 'setup_required')) {
+      try {
+        const canonicalCustomerId = await getStripeCustomerForUser(payload.user_id);
+        if (canonicalCustomerId) {
+          await pool.query(
+            `UPDATE all_bookings SET customer_id = $1 WHERE id = $2 AND customer_id IS NULL`,
+            [canonicalCustomerId, row.id]
+          );
+          row.customer_id = canonicalCustomerId;
+        }
+      } catch (custErr) {
+        console.warn('[POST /api/auth/orders/:id/payment-link] customer bind failed', row.id, custErr?.message || custErr);
+      }
+    }
 
     const token = randomBytes(12).toString('base64url');
     await pool.query(
