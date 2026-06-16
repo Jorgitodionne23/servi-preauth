@@ -28,6 +28,7 @@
     es: {
       pay: 'Pago pendiente', active: 'Pedido activo', requested: 'Solicitud recibida',
       authorized: 'Autorizado', scheduled: 'Programado', cash: 'Pago en efectivo', inProcess: 'En proceso',
+      rate: 'Servicio completado', ctaRate: 'Califica tu servicio',
       ctaPay: 'Completar pago', view: 'Ver pedido', viewAll: 'Ver todos',
       moreOne: 'pedido más', moreMany: 'pedidos más',
       ariaOpen: 'Ver tu pedido activo', ariaClose: 'Minimizar',
@@ -37,6 +38,7 @@
     en: {
       pay: 'Payment pending', active: 'Active order', requested: 'Request received',
       authorized: 'Authorized', scheduled: 'Scheduled', cash: 'Cash payment', inProcess: 'In progress',
+      rate: 'Service complete', ctaRate: 'Rate your service',
       ctaPay: 'Complete payment', view: 'View order', viewAll: 'View all',
       moreOne: 'more order', moreMany: 'more orders',
       ariaOpen: 'View your active order', ariaClose: 'Minimize',
@@ -65,11 +67,15 @@
   function getToken() { return (window.getSessionToken && window.getSessionToken()) || null; }
   function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
 
+  // A completed service awaiting the customer's 👍/👎 (server-authoritative policy flag).
+  function isRate(o) { return !!(o && !o.payable && o.policy && o.policy.canRate && !o.rated); }
+
   // ── status → short label + tone ──
   function shortStatus(o) {
     var s = t();
     if (o.source === 'request') return s.requested;
     if (o.payable) return s.pay;
+    if (isRate(o)) return s.rate;
     switch (String(o.status || '').trim().toLowerCase()) {
       case 'confirmed': return s.authorized;
       case 'scheduled': return s.scheduled;
@@ -77,7 +83,7 @@
       default: return s.inProcess;
     }
   }
-  function tone(o) { return o.payable ? 'pay' : 'active'; }
+  function tone(o) { return o.payable ? 'pay' : (isRate(o) ? 'rate' : 'active'); }
   function isPaymentPending(o) { return !!(o && o.payable); }
 
   function whenLabel(o) {
@@ -89,10 +95,14 @@
     return d.toLocaleDateString(isEs() ? 'es-MX' : 'en-US', { day: 'numeric', month: 'short' });
   }
 
-  // ── pick the most urgent active order ──
+  // ── pick the most urgent order ──
+  // Priority: a payment due > an active (in-progress) order > a completed order awaiting a rating.
   function pickPrimary(list) {
     var payable = list.filter(function (o) { return o.payable; });
-    return (payable.length ? payable : list)[0] || null;
+    if (payable.length) return payable[0];
+    var active = list.filter(function (o) { return o.bucket === 'active'; });
+    if (active.length) return active[0];
+    return list[0] || null;
   }
 
   // ── data ──
@@ -107,7 +117,10 @@
       var res = await fetch(API + '/api/auth/orders', { headers: { 'Authorization': 'Bearer ' + token } });
       if (!res.ok) return [];
       var d = await res.json();
-      return (d.orders || []).filter(function (o) { return o.bucket === 'active'; });
+      // Active orders (in-progress) plus recently-completed orders that still need a 👍/👎.
+      return (d.orders || []).filter(function (o) {
+        return o.bucket === 'active' || (o.policy && o.policy.canRate && !o.rated);
+      });
     } catch (e) { return []; }
   }
 
@@ -142,7 +155,7 @@
   function injectStyles() {
     if (document.getElementById(STYLE_ID)) return;
     var css = ''
-      + '.servi-ao{position:fixed;right:22px;bottom:22px;z-index:120;font-family:var(--font-body,"DM Sans",system-ui,sans-serif);max-width:min(330px,calc(100vw - 28px))}'
+      + '.servi-ao{position:fixed;right:22px;bottom:22px;z-index:120;font-family:var(--font-body,"Plus Jakarta Sans",system-ui,sans-serif);max-width:min(330px,calc(100vw - 28px))}'
       + '.servi-ao *{box-sizing:border-box}'
       + '.servi-ao[data-state="pill"] .servi-ao__card{display:none}'
       + '.servi-ao[data-state="card"] .servi-ao__pill{display:none}'
@@ -157,6 +170,7 @@
       // tone
       + '.servi-ao[data-tone="pay"] .servi-ao__dot{background:#d68a1f;box-shadow:0 0 0 0 rgba(214,138,31,.5);animation:aoPulse 2s infinite}'
       + '.servi-ao[data-tone="active"] .servi-ao__dot{background:#3f9aa8}'
+      + '.servi-ao[data-tone="rate"] .servi-ao__dot{background:#7fc4cf}'
       // card
       + '.servi-ao__card{width:330px;max-width:calc(100vw - 28px);background:#fff;border:1px solid rgba(17,17,17,0.07);border-radius:20px;box-shadow:0 28px 64px -28px rgba(17,17,17,0.5);overflow:hidden;animation:aoCardIn .42s cubic-bezier(.16,1,.3,1) both}'
       + '.servi-ao__hero{position:relative;padding:18px 18px 16px;background:linear-gradient(155deg,var(--ao-tint,rgba(149,204,213,.18)),rgba(255,255,255,0) 80%)}'
@@ -171,6 +185,7 @@
       + '.servi-ao__status{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;margin-top:4px}'
       + '.servi-ao[data-tone="pay"] .servi-ao__status{color:#a8690f}'
       + '.servi-ao[data-tone="active"] .servi-ao__status{color:#2b6d77}'
+      + '.servi-ao[data-tone="rate"] .servi-ao__status{color:#2b6d77}'
       + '.servi-ao__status .servi-ao__dot{width:7px;height:7px}'
       + '.servi-ao__meta{padding:0 18px 4px;margin-top:12px;font-size:12.5px;color:#7a7a7a;display:flex;gap:6px 14px;flex-wrap:wrap}'
       + '.servi-ao__meta span{display:inline-flex;align-items:center;gap:5px;min-width:0;max-width:100%}'
@@ -251,7 +266,9 @@
             '</div>'
           : '') +
         '<div class="servi-ao__actions">' +
-          (o.payable ? '<button class="servi-ao__cta" type="button">' + esc(s.ctaPay) + '</button>' : '') +
+          (o.payable
+            ? '<button class="servi-ao__cta" type="button">' + esc(s.ctaPay) + '</button>'
+            : (isRate(o) ? '<a class="servi-ao__cta" style="text-decoration:none;text-align:center" href="/account.html?section=orders">' + esc(s.ctaRate) + '</a>' : '')) +
           '<a class="servi-ao__ghost" href="/account.html?section=orders">' + esc(s.view) + '</a>' +
         '</div>' +
         (moreTxt ? '<div class="servi-ao__more"><a href="/account.html?section=orders">' + esc(moreTxt) + ' →</a></div>' : '') +

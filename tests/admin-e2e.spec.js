@@ -1,8 +1,10 @@
 import { test, expect } from '@playwright/test';
 
-const BASE = 'http://localhost:4242';
+const BASE = process.env.ADMIN_E2E_BASE_URL || 'http://localhost:4242';
 const ADMIN_URL = `${BASE}/admin.html`;
-const VALID_TOKEN = 'b92d6934a131c7db37c75c69bac64e77';
+// Local-dev default matches the token in the local .env. In any shared/CI run,
+// override via ADMIN_API_TOKEN so a real token is never committed.
+const VALID_TOKEN = process.env.ADMIN_API_TOKEN || 'b92d6934a131c7db37c75c69bac64e77';
 const BAD_TOKEN = 'invalidtoken123';
 
 // ─── helpers ────────────────────────────────────────────────────────────────
@@ -121,6 +123,7 @@ async function mockAdminApis(page, {
   detailOrder = null,
   opsRadar = null,
   onCreatePaymentIntent = null,
+  onPatchServiceRequest = null,
   onPreauthNow = null,
   onSnooze = null,
 } = {}) {
@@ -143,7 +146,10 @@ async function mockAdminApis(page, {
   });
   await page.route('**/api/admin/orders?*', route => route.fulfill({ json: { items: orders, total: orders.length } }));
   await page.route('**/api/service-requests?*', route => route.fulfill({ json: { items: submissions, total: submissions.length } }));
-  await page.route('**/api/service-requests/*', route => route.fulfill({ json: { ok: true } }));
+  await page.route('**/api/service-requests/*', async route => {
+    if (onPatchServiceRequest) await onPatchServiceRequest(route.request().postDataJSON());
+    return route.fulfill({ json: { ok: true } });
+  });
   await page.route('**/create-payment-intent', async route => {
     if (onCreatePaymentIntent) await onCreatePaymentIntent(route.request().postDataJSON());
     return route.fulfill({ json: { orderId: 'order-from-asap', payUrl: 'http://localhost:4242/pay.html?order=order-from-asap' } });
@@ -252,7 +258,12 @@ test.describe('Sidebar navigation', () => {
 // ─── Inbox panel ─────────────────────────────────────────────────────────────
 
 test.describe('Inbox panel', () => {
-  test.beforeEach(async ({ page }) => loginAndWait(page));
+  // Orders is the default panel, so navigate to Inbox before each assertion.
+  test.beforeEach(async ({ page }) => {
+    await loginAndWait(page);
+    await page.locator('.nav-item[data-panel="inbox"]').click();
+    await expect(page.locator('#panel-inbox')).toBeVisible();
+  });
 
   test('shows inbox filter row', async ({ page }) => {
     await expect(page.locator('#inbox-filter-row')).toBeVisible();
@@ -349,24 +360,30 @@ test.describe('Orders panel', () => {
     expect(rowCount > 0 || emptyVis).toBeTruthy();
   });
 
+  // Only real order rows open the detail panel; incoming WEB-submission rows
+  // expose a "+ Crear enlace" button instead and have no row-level click handler.
   test('order row click opens detail side panel', async ({ page }) => {
     await waitForListLoad(page, 'orders-body', 10000);
-    const rowCount = await page.locator('#orders-body tr').count();
-    if (rowCount === 0) {
-      test.skip(true, 'No orders in test data');
+    const orderRows = page.locator('#orders-body tr[onclick]');
+    if (await orderRows.count() === 0) {
+      test.skip(true, 'No real order rows in test data (only WEB submissions)');
       return;
     }
-    await page.locator('#orders-body tr').first().click();
-    await expect(page.locator('#order-panel')).toBeVisible({ timeout: 5000 });
+    await orderRows.first().click();
+    await expect(page.locator('#order-panel')).toHaveClass(/open/, { timeout: 5000 });
   });
 
   test('order detail panel closes via sp-close button', async ({ page }) => {
     await waitForListLoad(page, 'orders-body', 10000);
-    const rowCount = await page.locator('#orders-body tr').count();
-    if (rowCount === 0) test.skip(true, 'No orders in test data');
-    await page.locator('#orders-body tr').first().click();
+    const orderRows = page.locator('#orders-body tr[onclick]');
+    if (await orderRows.count() === 0) {
+      test.skip(true, 'No real order rows in test data (only WEB submissions)');
+      return;
+    }
+    await orderRows.first().click();
+    await expect(page.locator('#order-panel')).toHaveClass(/open/, { timeout: 5000 });
     await page.locator('#order-panel button.sp-close').click();
-    await expect(page.locator('#order-panel')).toBeHidden({ timeout: 2000 });
+    await expect(page.locator('#order-panel')).not.toHaveClass(/open/, { timeout: 2000 });
   });
 
   test('search input filters table', async ({ page }) => {
@@ -450,6 +467,44 @@ test.describe('Orders panel scheduling UI (mocked)', () => {
     await waitForListLoad(page, 'orders-body', 10000);
 
     await expect(page.locator('#orders-body tr').first()).toHaveClass(/row-ops-critical/);
+  });
+
+  test('orders table shows received date and time for orders and web submissions', async ({ page }) => {
+    const order = orderFixture({
+      id: 'order-received-1',
+      public_code: 'SV-RECV',
+      client_name: 'Cliente Recibido',
+      created_at: '2026-06-05T18:00:00.000Z',
+    });
+    await mockAdminApis(page, {
+      orders: [order],
+      submissions: [{
+        id: 'sub-received-1',
+        category: 'repair',
+        description: 'Solicitud recibida',
+        preferred_date: '2026-06-09',
+        preferred_time: '11:30',
+        is_asap: false,
+        service_address: 'Calle Recibida 10',
+        client_name: 'Cliente Web Recibido',
+        client_phone: '+525500000010',
+        client_email: '',
+        status: 'pending',
+        created_at: '2026-06-06T19:30:00.000Z',
+      }],
+    });
+    await loginAndWait(page);
+    await waitForListLoad(page, 'orders-body', 10000);
+
+    await expect(page.locator('#panel-orders thead')).toContainText('Recibida');
+
+    const orderReceivedCell = page.locator('#orders-body tr', { hasText: 'Cliente Recibido' }).locator('td').nth(1);
+    await expect(orderReceivedCell).toContainText(/05\s+jun\.?\s+2026/i);
+    await expect(orderReceivedCell).toContainText(/\d{2}:\d{2}/);
+
+    const submissionReceivedCell = page.locator('#orders-body tr', { hasText: 'Cliente Web Recibido' }).locator('td').nth(1);
+    await expect(submissionReceivedCell).toContainText(/06\s+jun\.?\s+2026/i);
+    await expect(submissionReceivedCell).toContainText(/\d{2}:\d{2}/);
   });
 
   test('preauth ops action calls preauth-now endpoint', async ({ page }) => {
@@ -550,12 +605,14 @@ test.describe('Orders panel scheduling UI (mocked)', () => {
     await waitForListLoad(page, 'orders-body', 10000);
 
     const firstRow = page.locator('#orders-body tr').first();
-    await expect(firstRow).toContainText('ASAP');
-    await expect(firstRow).not.toContainText('05 jun 2026');
+    await expect(firstRow.locator('td').nth(1)).toContainText(/05\s+jun\.?\s+2026/i);
+    await expect(firstRow.locator('td').nth(5)).toContainText('ASAP');
+    await expect(firstRow.locator('td').nth(5)).not.toContainText(/05\s+jun\.?\s+2026/i);
   });
 
   test('creating payment link from ASAP submission preserves isAsap flag', async ({ page }) => {
     let createPayload;
+    let patchPayload;
     await mockAdminApis(page, {
       orders: [],
       submissions: [{
@@ -573,6 +630,7 @@ test.describe('Orders panel scheduling UI (mocked)', () => {
         created_at: '2026-06-05T18:00:00.000Z',
       }],
       onCreatePaymentIntent: payload => { createPayload = payload; },
+      onPatchServiceRequest: payload => { patchPayload = payload; },
     });
     await loginAndWait(page);
     await page.locator('.nav-item[data-panel="orders"]').click();
@@ -587,6 +645,8 @@ test.describe('Orders panel scheduling UI (mocked)', () => {
     expect(createPayload).toBeTruthy();
     expect(createPayload.isAsap).toBe(true);
     expect(createPayload.serviceDateTime).toBe('');
+    expect(createPayload.serviceRequestId).toBe('sub-asap-2');
+    expect(patchPayload).toMatchObject({ status: 'contacted', convertedOrderId: 'order-from-asap' });
   });
 });
 
@@ -828,9 +888,19 @@ test.describe('Layout integrity', () => {
   });
 
   test('main-area fills available horizontal space', async ({ page }) => {
+    // "Fills available space" = viewport width minus the sidebar, with no overlap.
+    // Asserting a fixed pixel width fails on mobile (Pixel 7 = 412px wide), so we
+    // verify the relationship between sidebar and main-area instead.
+    const sidebar = await page.locator('.sidebar').boundingBox();
     const box = await page.locator('.main-area').boundingBox();
+    const viewport = page.viewportSize();
+    expect(sidebar).not.toBeNull();
     expect(box).not.toBeNull();
-    expect(box.width).toBeGreaterThan(400);
+    // Main area starts where the sidebar ends (no horizontal overlap).
+    expect(box.x).toBeGreaterThanOrEqual(sidebar.x + sidebar.width - 2);
+    // Main area fills the rest of the viewport width (allow small rounding slack).
+    expect(box.width).toBeGreaterThanOrEqual(viewport.width - box.x - 4);
+    expect(box.width).toBeGreaterThan(0);
   });
 
   test('topbar within viewport width', async ({ page }) => {

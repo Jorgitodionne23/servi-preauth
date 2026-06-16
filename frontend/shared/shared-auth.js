@@ -147,6 +147,26 @@
   function hasPendingEmailVerificationAction() {
     return !!localStorage.getItem('servi_email_verification_mode');
   }
+  function resetUslFlowState() {
+    uslIdentifier = '';
+    uslIdentifierType = '';
+    uslFirstIdentifierType = '';
+    uslCurrentOTPType = '';
+    uslIsNew = false;
+    uslSignupComplete = false;
+    uslSuppressAutoSync = false;
+    uslCompletingExisting = false;
+    uslNewUserData = {};
+    uslLoginViaEmail = false;
+    uslTypedEmail = '';
+    uslAccountFirstName = '';
+    uslAccountPhoneLast4 = '';
+    uslAccountEmailVerified = false;
+    window.__syncError = null;
+    window.__syncPromise = null;
+    window.__user = null;
+    localStorage.removeItem('servi_user_session');
+  }
 
   // ── Modal container ──────────────────────────────────────────────────────────
   if (!document.getElementById('auth-modal-global')) {
@@ -242,10 +262,11 @@
       }
     } else {
       if (localStorage.getItem('servi_pending_logout')) localStorage.removeItem('servi_pending_logout');
-      var preservingEmailAction = hasPendingEmailVerificationAction() && !!localStorage.getItem('servi_user_session');
-      if (preservingEmailAction) {
+      var rawSession = localStorage.getItem('servi_user_session');
+      var preservingEmailAction = hasPendingEmailVerificationAction() && !!rawSession;
+      if (preservingEmailAction || rawSession) {
         try {
-          var preservedSession = JSON.parse(localStorage.getItem('servi_user_session') || 'null');
+          var preservedSession = JSON.parse(rawSession || 'null');
           window.__user = preservedSession && preservedSession.user ? preservedSession.user : window.__user;
         } catch (_) {}
       } else {
@@ -261,6 +282,7 @@
   async function maybeAutoResumeGhost(firebaseUser) {
     if (!window.__syncError || window.__syncError.code !== 'signup_incomplete') return;
     if (uslSuppressAutoSync || uslIsNew || uslCompletingExisting) return;
+    if (window.__serviEmailVerifiedPage || /\/email-verified\.html$/.test(window.location.pathname)) return;
     var modalEl = document.getElementById('auth-modal-global');
     if (modalEl && modalEl.innerHTML.trim() !== '') return;
     var resumeType = (firebaseUser && firebaseUser.phoneNumber) ? 'phone' : 'email';
@@ -286,7 +308,14 @@
         body.signup_complete = true;
         body.terms_accepted = !!(uslNewUserData && uslNewUserData.terms_accepted);
         body.email_skipped = !!(uslNewUserData && uslNewUserData.email_skipped);
+        var emailFlowProof = emailLinkFlowSignupProof();
+        if (emailFlowProof && body.email) {
+          body.email_link_flow_id = emailFlowProof.email_link_flow_id;
+          body.email_link_poll_token = emailFlowProof.email_link_poll_token;
+        }
       }
+      var activeEmailFlowId = getEmailLinkFlowIdFromUrl();
+      if (activeEmailFlowId) body.email_link_flow_id = activeEmailFlowId;
       var res = await fetch(API() + '/api/auth/firebase', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + idToken },
@@ -320,6 +349,11 @@
           window.__user = null;
           try { await auth.signOut(); } catch (_) {}
           window.__syncError = { code: 'email_phone_mismatch', message: errData.message };
+        } else if (res.status === 409 && errData.error === 'firebase_uid_conflict') {
+          localStorage.removeItem('servi_user_session');
+          window.__user = null;
+          try { await auth.signOut(); } catch (_) {}
+          window.__syncError = { code: 'firebase_uid_conflict', message: errData.message };
         } else {
           window.__syncError = { code: 'backend_sync_failed', status: res.status, message: errData.message };
         }
@@ -345,6 +379,8 @@
           ? (window.__syncError.message || (es ? 'Completa los pasos requeridos para crear tu cuenta.' : 'Complete the required steps to create your account.'))
         : window.__syncError.code === 'email_phone_mismatch'
           ? (es ? 'Ese teléfono no coincide con la cuenta de este correo. Intenta de nuevo.' : 'That phone doesn\'t match the account for this email. Try again.')
+        : window.__syncError.code === 'firebase_uid_conflict'
+          ? (es ? 'Esta cuenta ya está vinculada a otro método de acceso. Inicia sesión con tu correo.' : 'This account is already linked to another sign-in method. Sign in with your email.')
         : (es ? 'Error al conectar con el servidor. Intenta de nuevo.' : 'Error connecting to server. Please try again.');
       if (auth) { try { await auth.signOut(); } catch (_) {} }
       // For mismatch, return the user to the Confirm-Phone step so they can re-enter their phone.
@@ -407,6 +443,9 @@
     window.__syncPromise = syncWithBackend(firebaseUser, { signupComplete: true });
     var ok = await awaitSyncAndCheck();
     if (!ok) uslSignupComplete = false;
+    if (ok) {
+      try { localStorage.removeItem('servi_email_link_flow'); } catch (_) {}
+    }
     return ok;
   }
 
@@ -476,7 +515,7 @@
           '<div style="padding:32px">' +
             '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">' +
               (renderBack
-                ? '<button onclick="' + backFn + '()" style="background:none;border:none;cursor:pointer;padding:4px;display:flex;align-items:center;gap:6px;font-size:14px;color:#666;font-family:\'DM Sans\',sans-serif">' + icons.back + (isEs() ? ' Volver' : ' Back') + '</button>'
+                ? '<button onclick="' + backFn + '()" style="background:none;border:none;cursor:pointer;padding:4px;display:flex;align-items:center;gap:6px;font-size:14px;color:#666;font-family:\'Plus Jakarta Sans\',sans-serif">' + icons.back + (isEs() ? ' Volver' : ' Back') + '</button>'
                 : '<div></div>') +
               '<h2 class="heading-md" style="margin:0">' + title + '</h2>' +
               (locked
@@ -519,6 +558,16 @@
       btn.innerHTML = loadingDotsMarkup(es ? 'Verificando' : 'Verifying');
     } else {
       btn.textContent = es ? 'Verificar' : 'Verify';
+    }
+  }
+
+  function setSendOTPButtonLoading(btn, isLoading, es) {
+    if (!btn) return;
+    btn.disabled = !!isLoading;
+    if (isLoading) {
+      btn.innerHTML = loadingDotsMarkup(es ? 'Enviando código' : 'Sending code');
+    } else {
+      btn.textContent = es ? 'Enviar código SMS' : 'Send SMS code';
     }
   }
 
@@ -585,7 +634,13 @@
     input.addEventListener('focus', updateOTPBoxes);
     input.addEventListener('blur', updateOTPBoxes);
     input.addEventListener('keydown', function (event) {
-      if (event.key === 'Enter') window.__uslVerifyOTP();
+      if (event.key !== 'Enter') return;
+      // The verify button is disabled synchronously while a verification is in flight, so
+      // honoring its disabled state here stops a rapid second Enter from re-entering
+      // confirmationResult.confirm() / linkWithCredential() and double-submitting the code.
+      var vbtn = document.getElementById('verify-otp-btn');
+      if (vbtn && vbtn.disabled) return;
+      window.__uslVerifyOTP();
     });
     updateOTPBoxes();
   }
@@ -655,13 +710,132 @@
     }).join('');
     return (
       '<select id="auth-country-code" onchange="window.__uslSetDial(this.value)" ' +
-        'style="border:1.5px solid #e8e8e8;border-radius:10px 0 0 10px;padding:12px 8px;font-size:14px;font-family:\'DM Sans\',sans-serif;background:#fff;cursor:pointer;outline:none;flex-shrink:0">' +
+        'style="border:1.5px solid #e8e8e8;border-radius:10px 0 0 10px;padding:12px 8px;font-size:14px;font-family:\'Plus Jakarta Sans\',sans-serif;background:#fff;cursor:pointer;outline:none;flex-shrink:0">' +
         opts +
       '</select>'
     );
   }
 
   window.__uslSetDial = function (val) { setSelectedDial(val); };
+
+  function getEmailLinkTargetFromUrl() {
+    try {
+      var params = new URLSearchParams(window.location.search || '');
+      var direct = params.get('email') || params.get('email_hint');
+      if (direct) return direct.toLowerCase().trim();
+      var continueUrl = params.get('continueUrl');
+      if (continueUrl) {
+        var nested = new URL(continueUrl);
+        var nestedEmail = nested.searchParams.get('email') || nested.searchParams.get('email_hint');
+        if (nestedEmail) return nestedEmail.toLowerCase().trim();
+      }
+    } catch (_) {}
+    return '';
+  }
+
+  function getEmailLinkFlowIdFromUrl() {
+    try {
+      var params = new URLSearchParams(window.location.search || '');
+      var direct = params.get('flow_id');
+      if (direct) return direct;
+      var continueUrl = params.get('continueUrl');
+      if (continueUrl) {
+        var nested = new URL(continueUrl);
+        return nested.searchParams.get('flow_id') || '';
+      }
+    } catch (_) {}
+    return '';
+  }
+
+  async function startEmailLinkFlow(email, purpose) {
+    var flowPurpose = purpose || 'login';
+    var headers = { 'Content-Type': 'application/json' };
+    if (flowPurpose === 'signup_verification' && auth && auth.currentUser && auth.currentUser.phoneNumber) {
+      try {
+        headers.Authorization = 'Bearer ' + await auth.currentUser.getIdToken(true);
+      } catch (_) {}
+    }
+    var res = await fetch(API() + '/api/auth/email-link-flow/start', {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify({ email: email, purpose: flowPurpose })
+    });
+    var data = await res.json().catch(function () { return {}; });
+    if (flowPurpose === 'signup_verification' && res.status === 404) {
+      return null;
+    }
+    if (!res.ok || !data.flow_id || !data.poll_token) {
+      var err = new Error(data.error || 'email_link_flow_start_failed');
+      err.code = data.error || 'email_link_flow_start_failed';
+      throw err;
+    }
+    return data;
+  }
+
+  function saveEmailLinkFlow(flow) {
+    if (!flow || !flow.flow_id || !flow.poll_token) return;
+    try {
+      localStorage.setItem('servi_email_link_flow', JSON.stringify({
+        flow_id: flow.flow_id,
+        poll_token: flow.poll_token,
+        purpose: flow.purpose || null,
+        expires_at: flow.expires_at || null
+      }));
+    } catch (_) {}
+  }
+
+  function loadEmailLinkFlow() {
+    try { return JSON.parse(localStorage.getItem('servi_email_link_flow') || 'null'); } catch (_) { return null; }
+  }
+
+  async function completeEmailLinkFlowIfPresent() {
+    var flowId = getEmailLinkFlowIdFromUrl();
+    if (!flowId || !auth || !auth.currentUser) return false;
+    var idToken = await auth.currentUser.getIdToken(true);
+    var res = await fetch(API() + '/api/auth/email-link-flow/complete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + idToken },
+      body: JSON.stringify({ flow_id: flowId })
+    });
+    return res.ok;
+  }
+
+  async function pollEmailLinkFlow(flow) {
+    if (!flow || !flow.flow_id || !flow.poll_token) return null;
+    var res = await fetch(API() + '/api/auth/email-link-flow/poll', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ flow_id: flow.flow_id, poll_token: flow.poll_token })
+    });
+    if (res.status === 404) {
+      try { localStorage.removeItem('servi_email_link_flow'); } catch (_) {}
+      return null;
+    }
+    if (!res.ok) return null;
+    return res.json().catch(function () { return null; });
+  }
+
+  function acceptEmailLinkFlowSession(data) {
+    if (!data || !data.token || !data.user) return false;
+    window.__user = data.user;
+    try {
+      localStorage.setItem('servi_user_session', JSON.stringify({ token: data.token, user: data.user }));
+      localStorage.setItem('servi_email_verified_at', Date.now().toString());
+      localStorage.removeItem('servi_email_link_flow');
+    } catch (_) {}
+    if (window.buildNavbar) window.buildNavbar();
+    return true;
+  }
+
+  function emailLinkFlowSignupProof() {
+    var flow = loadEmailLinkFlow();
+    if (!flow || !flow.flow_id || !flow.poll_token) return null;
+    if (flow.purpose && flow.purpose !== 'signup_verification') return null;
+    return {
+      email_link_flow_id: flow.flow_id,
+      email_link_poll_token: flow.poll_token
+    };
+  }
 
   // ── Monitor for email verification in other tab ─────────────────────────────────
   // When user clicks email link in a new tab, that tab verifies and broadcasts.
@@ -674,6 +848,7 @@
     var pollInterval = null;
     var onVerificationDetected = null;
     var handled = false; // guard against double-calls across storage/poll/visibility triggers
+    var flowPollBusy = false;
 
     function checkVerifiedFlag() {
       return !!localStorage.getItem('servi_email_verified_at');
@@ -752,6 +927,41 @@
       }
     }
 
+    async function continueAfterEmailLinkFlow() {
+      if (handled || flowPollBusy) return;
+      var flow = loadEmailLinkFlow();
+      if (!flow) return;
+      flowPollBusy = true;
+      try {
+        var data = await pollEmailLinkFlow(flow);
+        if (data && data.completed && data.purpose === 'signup_verification' && data.email_verified === true) {
+          var verifiedEmail = data.email || uslIdentifier || localStorage.getItem('servi_email_link_target');
+          uslNewUserData.email = verifiedEmail;
+          uslNewUserData.email_verified = true;
+          handled = true;
+          if (pollInterval) clearInterval(pollInterval);
+          if (onVerificationDetected) window.removeEventListener('storage', onVerificationDetected);
+          document.removeEventListener('visibilitychange', onVisibilityChange);
+          if (uslIsNew && uslFirstIdentifierType === 'email') {
+            renderNameCollectionScreen();
+          } else if (uslIsNew && uslFirstIdentifierType === 'phone') {
+            var created = await completeSignupSync();
+            if (created) onAuthSuccess();
+          }
+          return;
+        }
+        if (data && data.completed && acceptEmailLinkFlowSession(data)) {
+          handled = true;
+          if (pollInterval) clearInterval(pollInterval);
+          if (onVerificationDetected) window.removeEventListener('storage', onVerificationDetected);
+          document.removeEventListener('visibilitychange', onVisibilityChange);
+          onAuthSuccess();
+        }
+      } finally {
+        flowPollBusy = false;
+      }
+    }
+
     // Listen for storage events (from other tabs setting servi_email_verified_at)
     onVerificationDetected = function (e) {
       if (e.key === 'servi_email_verified_at') {
@@ -764,6 +974,7 @@
     function onVisibilityChange() {
       if (document.hidden) return;
       if (checkVerifiedFlag()) continueAfterVerification();
+      continueAfterEmailLinkFlow();
     }
     document.addEventListener('visibilitychange', onVisibilityChange);
 
@@ -775,16 +986,17 @@
         return;
       }
       if (checkVerifiedFlag()) continueAfterVerification();
-    }, 500);
+      continueAfterEmailLinkFlow();
+    }, 1000);
 
     // Cleanup on modal close
     var originalCloseAuthModal = window.closeAuthModal;
-    window.closeAuthModal = function () {
+    window.closeAuthModal = function (force) {
       if (pollInterval) clearInterval(pollInterval);
       if (onVerificationDetected) window.removeEventListener('storage', onVerificationDetected);
       document.removeEventListener('visibilitychange', onVisibilityChange);
       window.__uslManualEmailContinue = null;
-      if (originalCloseAuthModal) originalCloseAuthModal();
+      if (originalCloseAuthModal) originalCloseAuthModal(force);
     };
 
     // Manual escape hatch: user taps "Ya verifiqué" — bypasses storage event
@@ -794,8 +1006,25 @@
       var btn = document.getElementById('manual-email-continue-btn');
       var hint = document.getElementById('manual-email-hint');
 
+      if (btn) { btn.disabled = true; btn.textContent = isEs() ? 'Verificando...' : 'Verifying...'; }
+      var flowData = await pollEmailLinkFlow(loadEmailLinkFlow());
+      if (flowData && flowData.completed && flowData.purpose === 'signup_verification' && flowData.email_verified === true) {
+        uslNewUserData.email = flowData.email || uslIdentifier || localStorage.getItem('servi_email_link_target');
+        uslNewUserData.email_verified = true;
+        if (uslIsNew && uslFirstIdentifierType === 'email') {
+          renderNameCollectionScreen();
+        } else if (uslIsNew && uslFirstIdentifierType === 'phone') {
+          var signupCreated = await completeSignupSync();
+          if (signupCreated) onAuthSuccess();
+        }
+        return;
+      }
+      if (flowData && flowData.completed && acceptEmailLinkFlowSession(flowData)) {
+        onAuthSuccess();
+        return;
+      }
+
       if (auth && auth.currentUser && auth.currentUser.email) {
-        if (btn) { btn.disabled = true; btn.textContent = isEs() ? 'Verificando...' : 'Verifying...'; }
         try {
           // Force-refresh Firebase user state — the local object may be stale and
           // not yet reflect the email_verified flag set after the link was clicked.
@@ -850,7 +1079,6 @@
       }
 
       // No Firebase user yet — poll until auth state resolves
-      if (btn) { btn.disabled = true; btn.textContent = '...'; }
       var waited = 0;
       var waitForAuth = setInterval(function () {
         waited += 500;
@@ -881,7 +1109,7 @@
     var es = isEs();
     document.getElementById('auth-modal-global').innerHTML = modalShell(es ? 'Ingresa a SERVI' : 'Sign in to SERVI', false, '');
     setScreen(
-      '<button onclick="handleGoogleAuth()" id="google-auth-btn" style="width:100%;padding:14px;border:1.5px solid #e0e0e0;border-radius:12px;background:#fff;font-size:15px;font-weight:500;cursor:pointer;font-family:\'DM Sans\',sans-serif;margin-bottom:16px;display:flex;align-items:center;justify-content:center;gap:10px">' +
+      '<button onclick="handleGoogleAuth()" id="google-auth-btn" style="width:100%;padding:14px;border:1.5px solid #e0e0e0;border-radius:12px;background:#fff;font-size:15px;font-weight:500;cursor:pointer;font-family:\'Plus Jakarta Sans\',sans-serif;margin-bottom:16px;display:flex;align-items:center;justify-content:center;gap:10px">' +
         icons.google + ' ' + (es ? 'Continuar con Google' : 'Continue with Google') +
       '</button>' +
       '<div style="display:flex;align-items:center;gap:16px;margin-bottom:20px"><div style="flex:1;height:1px;background:#eee"></div><span style="font-size:12px;color:#aaa">' + (es ? 'o' : 'or') + '</span><div style="flex:1;height:1px;background:#eee"></div></div>' +
@@ -890,7 +1118,7 @@
         '<div id="usl-country-wrap">' + countrySelect() + '</div>' +
         '<input id="auth-identifier" type="tel" inputmode="tel" ' +
           'placeholder="' + (es ? 'Teléfono o correo electrónico' : 'Phone number or email') + '" ' +
-          'style="flex:1;border:none;padding:12px;font-size:15px;font-family:\'DM Sans\',sans-serif;outline:none" ' +
+          'style="flex:1;border:none;padding:12px;font-size:15px;font-family:\'Plus Jakarta Sans\',sans-serif;outline:none" ' +
           'onkeydown="if(event.key===\'Enter\') window.__uslSubmitIdentifier()">' +
       '</div>' +
       '<button class="btn-primary" onclick="window.__uslSubmitIdentifier()" id="usl-continue-btn" style="width:100%;justify-content:center">' + (es ? 'Continuar' : 'Continue') + '</button>' +
@@ -996,7 +1224,7 @@
       '<div style="display:flex;margin-bottom:12px;border:1.5px solid #e8e8e8;border-radius:10px;overflow:hidden">' +
         countrySelect() +
         '<input id="confirm-phone-input" type="tel" inputmode="numeric" placeholder="55 1234 5678" ' +
-          'style="flex:1;border:none;padding:12px;font-size:15px;font-family:\'DM Sans\',sans-serif;outline:none" ' +
+          'style="flex:1;border:none;padding:12px;font-size:15px;font-family:\'Plus Jakarta Sans\',sans-serif;outline:none" ' +
           'onkeydown="if(event.key===\'Enter\') window.__uslConfirmPhoneNext()">' +
       '</div>' +
       '<button class="btn-primary" onclick="window.__uslConfirmPhoneNext()" id="confirm-phone-btn" style="width:100%;justify-content:center">' +
@@ -1056,7 +1284,7 @@
       var moreOptionsBtn = (uslLoginViaEmail && uslAccountEmailVerified)
         ? '<div style="margin-top:12px;text-align:center">' +
             '<button onclick="window.__uslShowMoreOptions()" id="usl-more-options-btn" ' +
-              'style="background:#f3f4f6;border:none;border-radius:999px;padding:8px 18px;font-size:13px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif;color:#0a0a0a">' +
+              'style="background:#f3f4f6;border:none;border-radius:999px;padding:8px 18px;font-size:13px;font-weight:600;cursor:pointer;font-family:\'Plus Jakarta Sans\',sans-serif;color:#0a0a0a">' +
               (es ? 'Más opciones' : 'More options') +
             '</button>' +
           '</div>'
@@ -1080,13 +1308,13 @@
           '<button class="btn-primary" onclick="window.__uslVerifyOTP()" id="verify-otp-btn" style="width:100%;justify-content:center;margin-bottom:8px">' +
             (es ? 'Verificar' : 'Verify') +
           '</button>' +
-          '<button onclick="window.__uslResendOTP()" style="background:none;border:none;font-size:13px;color:var(--color-accent-hover, #74b8c4);font-weight:500;cursor:pointer;font-family:\'DM Sans\',sans-serif;width:100%;text-align:center">' +
+          '<button onclick="window.__uslResendOTP()" style="background:none;border:none;font-size:13px;color:var(--color-accent-hover, #74b8c4);font-weight:500;cursor:pointer;font-family:\'Plus Jakarta Sans\',sans-serif;width:100%;text-align:center">' +
             (es ? 'Reenviar código' : 'Resend code') +
           '</button>' +
         '</div>' +
         moreOptionsBtn +
         (isLogin && !uslLoginViaEmail
-          ? '<div style="margin-top:16px;text-align:center"><button onclick="window.__uslStartRecovery()" style="background:none;border:none;font-size:13px;color:#888;cursor:pointer;font-family:\'DM Sans\',sans-serif;text-decoration:underline">' + (es ? '¿No tienes acceso a tu teléfono?' : 'Can\'t access your phone?') + '</button></div>'
+          ? '<div style="margin-top:16px;text-align:center"><button onclick="window.__uslStartRecovery()" style="background:none;border:none;font-size:13px;color:#888;cursor:pointer;font-family:\'Plus Jakarta Sans\',sans-serif;text-decoration:underline">' + (es ? '¿No tienes acceso a tu teléfono?' : 'Can\'t access your phone?') + '</button></div>'
           : '')
       );
       ensureFirebase().then(setupRecaptchaInner);
@@ -1128,7 +1356,7 @@
 
     if (uslCurrentOTPType === 'phone') {
       var btn = document.getElementById('send-otp-btn');
-      if (btn) { btn.disabled = true; btn.textContent = '...'; }
+      setSendOTPButtonLoading(btn, true, isEs());
       try {
         if (!recaptchaVerifier) setupRecaptchaInner();
         confirmationResult = await auth.signInWithPhoneNumber(uslIdentifier, recaptchaVerifier);
@@ -1143,7 +1371,7 @@
         attachOTPInputHandlers();
         if (otpInput) otpInput.focus();
       } catch (err) {
-        if (btn) { btn.disabled = false; btn.textContent = isEs() ? 'Enviar código SMS' : 'Send SMS code'; }
+        setSendOTPButtonLoading(btn, false, isEs());
         if (err.code === 'auth/too-many-requests') {
           setError(isEs() ? 'Demasiados intentos. Espera unos minutos.' : 'Too many attempts. Wait a few minutes.');
         } else {
@@ -1158,6 +1386,15 @@
       try {
         // Normalize email: lowercase for Firebase consistency
         var emailNorm = uslIdentifier.toLowerCase();
+        var linkFlow = null;
+        if (uslIdentifierType === 'email') {
+          linkFlow = await startEmailLinkFlow(emailNorm, uslIsNew ? 'signup_verification' : 'login');
+          saveEmailLinkFlow(linkFlow);
+        }
+        var emailLinkUrl = window.location.origin + '/email-verified.html?email=' + encodeURIComponent(emailNorm);
+        if (linkFlow && linkFlow.flow_id) {
+          emailLinkUrl += '&flow_id=' + encodeURIComponent(linkFlow.flow_id);
+        }
         // Persist USL state so handleEmailLinkSignIn can restore after redirect
         localStorage.setItem('servi_email_link_target', emailNorm);
         localStorage.setItem('servi_usl_state', JSON.stringify({
@@ -1167,7 +1404,7 @@
           isNew: uslIsNew,
           newUserData: uslNewUserData,
         }));
-        await auth.sendSignInLinkToEmail(emailNorm, { url: window.location.origin + '/email-verified.html', handleCodeInApp: true });
+        await auth.sendSignInLinkToEmail(emailNorm, { url: emailLinkUrl, handleCodeInApp: true });
         setScreen(
           '<div style="text-align:center;padding:16px 0">' +
             '<div style="font-size:40px;margin-bottom:12px">📧</div>' +
@@ -1175,10 +1412,10 @@
             '<p style="font-size:14px;color:#666;line-height:1.6;margin-bottom:20px">' +
               (isEs()
                 ? 'Revisa <strong>' + uslIdentifier + '</strong> y haz clic en el enlace para continuar. Si no lo encuentras, revisa spam o correo no deseado.'
-                : 'Check <strong>' + uslIdentifier + '</strong> and click the link to continue. If you cannot find it, check your spam or junk folder.') +
+                : 'Verify link sent to <strong>' + uslIdentifier + '</strong>. <strong>Check your spam folder.</strong>') +
             '</p>' +
             '<button id="manual-email-continue-btn" onclick="window.__uslManualEmailContinue && window.__uslManualEmailContinue()" ' +
-              'style="background:#0a0a0a;color:#fff;border:none;border-radius:10px;padding:12px 20px;font-size:14px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif;width:100%">' +
+              'style="background:#0a0a0a;color:#fff;border:none;border-radius:10px;padding:12px 20px;font-size:14px;font-weight:600;cursor:pointer;font-family:\'Plus Jakarta Sans\',sans-serif;width:100%">' +
               (isEs() ? 'Ya verifiqué mi correo' : 'I verified my email') +
             '</button>' +
             '<p id="manual-email-hint" style="display:none;font-size:12px;color:#dc2626;line-height:1.5;margin-top:12px"></p>' +
@@ -1240,7 +1477,7 @@
   window.__uslResendOTP = function () {
     var btn = document.getElementById('send-otp-btn');
     var entry = document.getElementById('otp-entry');
-    if (btn) { btn.style.display = 'block'; btn.disabled = false; btn.textContent = isEs() ? 'Enviar código SMS' : 'Send SMS code'; }
+    if (btn) { btn.style.display = 'block'; setSendOTPButtonLoading(btn, false, isEs()); }
     if (entry) entry.style.display = 'none';
     setupRecaptchaInner();
   };
@@ -1258,12 +1495,12 @@
       '</p>' +
       errorBox() +
       '<button onclick="window.__uslBackToPhoneOTP()" ' +
-        'style="width:100%;padding:14px;border:1.5px solid #e0e0e0;border-radius:12px;background:#fff;font-size:14px;font-weight:500;cursor:pointer;font-family:\'DM Sans\',sans-serif;margin-bottom:10px;text-align:left">' +
+        'style="width:100%;padding:14px;border:1.5px solid #e0e0e0;border-radius:12px;background:#fff;font-size:14px;font-weight:500;cursor:pointer;font-family:\'Plus Jakarta Sans\',sans-serif;margin-bottom:10px;text-align:left">' +
         '<div style="font-weight:600;margin-bottom:2px">' + (es ? 'Código SMS' : 'SMS code') + '</div>' +
         '<div style="font-size:13px;color:#666">' + phoneDisplay + '</div>' +
       '</button>' +
       '<button onclick="window.__uslSwitchToEmailLink()" ' +
-        'style="width:100%;padding:14px;border:1.5px solid #e0e0e0;border-radius:12px;background:#fff;font-size:14px;font-weight:500;cursor:pointer;font-family:\'DM Sans\',sans-serif;text-align:left">' +
+        'style="width:100%;padding:14px;border:1.5px solid #e0e0e0;border-radius:12px;background:#fff;font-size:14px;font-weight:500;cursor:pointer;font-family:\'Plus Jakarta Sans\',sans-serif;text-align:left">' +
         '<div style="font-weight:600;margin-bottom:2px">' + (es ? 'Enlace por correo' : 'Email link') + '</div>' +
         '<div style="font-size:13px;color:#666">' + escapeHtml(uslTypedEmail) + '</div>' +
       '</button>'
@@ -1291,18 +1528,19 @@
     var verifiedLabel = uslCurrentOTPType === 'phone'
       ? (es ? '✓ Teléfono verificado' : '✓ Phone verified')
       : (es ? '✓ Correo verificado'   : '✓ Email verified');
+    var canStartOver = isSignupFlowLocked();
+    var nameParts = String((uslNewUserData && uslNewUserData.name) || '').trim().split(/\s+/);
+    var firstNameValue = nameParts.length ? escapeHtml(nameParts.shift()) : '';
+    var lastNameValue = nameParts.length ? escapeHtml(nameParts.join(' ')) : '';
 
     document.getElementById('auth-modal-global').innerHTML = modalShell(es ? 'Tu nombre' : 'Your name', false, '');
     setScreen(
       progressDots(3) +
       infoBanner(verifiedLabel) +
-      '<p style="font-size:14px;color:#666;margin-bottom:16px">' +
-        (es ? 'Lo usamos para personalizar tus solicitudes de servicio.' : 'We use this to personalize your service requests.') +
-      '</p>' +
       errorBox() +
       '<div style="display:flex;gap:8px;margin-bottom:12px">' +
-        '<input id="signup-first-name" class="input-field" type="text" placeholder="' + (es ? 'Nombre' : 'First name') + '" onkeydown="if(event.key===\'Enter\') window.__uslNameNext()" style="flex:1">' +
-        '<input id="signup-last-name"  class="input-field" type="text" placeholder="' + (es ? 'Apellido' : 'Last name') + '" onkeydown="if(event.key===\'Enter\') window.__uslNameNext()" style="flex:1">' +
+        '<input id="signup-first-name" class="input-field" type="text" value="' + firstNameValue + '" placeholder="' + (es ? 'Nombre' : 'First name') + '" onkeydown="if(event.key===\'Enter\') window.__uslNameNext()" style="flex:1">' +
+        '<input id="signup-last-name"  class="input-field" type="text" value="' + lastNameValue + '" placeholder="' + (es ? 'Apellido' : 'Last name') + '" onkeydown="if(event.key===\'Enter\') window.__uslNameNext()" style="flex:1">' +
       '</div>' +
       '<label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;margin-bottom:20px">' +
         '<input type="checkbox" id="terms-check" style="margin-top:3px;accent-color:var(--color-accent, #95ccd5)">' +
@@ -1314,11 +1552,35 @@
       '</label>' +
       '<button class="btn-primary" onclick="window.__uslNameNext()" id="name-next-btn" style="width:100%;justify-content:center">' +
         (es ? 'Continuar' : 'Continue') +
-      '</button>'
+      '</button>' +
+      (canStartOver
+        ? '<button type="button" onclick="window.__uslStartOverFromLockedSignup()" id="auth-start-over-btn" style="width:100%;margin-top:10px;padding:12px;border:0;background:transparent;color:#666;font-size:14px;font-weight:500;cursor:pointer;font-family:\'Plus Jakarta Sans\',sans-serif">' +
+            (es ? 'Usar otra cuenta' : 'Use another account') +
+          '</button>'
+        : '')
     );
     var f = document.getElementById('signup-first-name');
     if (f) f.focus();
   }
+
+  window.__uslStartOverFromLockedSignup = async function () {
+    var es = isEs();
+    var btn = document.getElementById('auth-start-over-btn');
+    if (btn) { btn.disabled = true; btn.textContent = es ? 'Saliendo...' : 'Signing out...'; }
+    uslSuppressAutoSync = true;
+    window.__syncError = null;
+    window.__syncPromise = null;
+    localStorage.removeItem('servi_user_session');
+    try {
+      if (auth && auth.currentUser) await auth.signOut();
+    } catch (err) {
+      console.warn('[SERVI] Could not sign out while restarting signup:', err && err.message);
+    }
+    resetUslFlowState();
+    selectedDial = '+52';
+    document.body.style.overflow = 'hidden';
+    renderIdentifierScreen();
+  };
 
   window.__uslNameNext = async function () {
     var firstName = (document.getElementById('signup-first-name') || {}).value.trim();
@@ -1503,15 +1765,17 @@
       (collectPhone
         ? '<div style="display:flex;margin-bottom:12px;border:1.5px solid #e8e8e8;border-radius:10px;overflow:hidden">' +
             countrySelect() +
-            '<input id="secondary-phone" type="tel" inputmode="numeric" placeholder="55 1234 5678" style="flex:1;border:none;padding:12px;font-size:15px;font-family:\'DM Sans\',sans-serif;outline:none" onkeydown="if(event.key===\'Enter\') window.__uslSecondaryNext()">' +
+            '<input id="secondary-phone" type="tel" inputmode="numeric" placeholder="55 1234 5678" style="flex:1;border:none;padding:12px;font-size:15px;font-family:\'Plus Jakarta Sans\',sans-serif;outline:none" onkeydown="if(event.key===\'Enter\') window.__uslSecondaryNext()">' +
           '</div>'
         : '<input id="secondary-email" class="input-field" type="email" placeholder="' + (es ? 'correo@ejemplo.com' : 'email@example.com') + '" style="margin-bottom:12px" onkeydown="if(event.key===\'Enter\') window.__uslSecondaryNext()">') +
       '<button class="btn-primary" onclick="window.__uslSecondaryNext()" style="width:100%;justify-content:center;margin-bottom:10px">' +
         (es ? 'Verificar' : 'Verify') +
       '</button>' +
       (collectPhone
-        ? ''
-        : '<button onclick="window.__uslSkipSecondary()" style="background:none;border:none;font-size:13px;color:#888;cursor:pointer;font-family:\'DM Sans\',sans-serif;width:100%;text-align:center;padding:8px;text-decoration:underline">' +
+        ? '<button onclick="window.__uslLoginWithSecondaryPhone()" id="secondary-phone-login-btn" style="display:none;background:none;border:none;font-size:13px;color:#666;cursor:pointer;font-family:\'Plus Jakarta Sans\',sans-serif;width:100%;text-align:center;padding:8px;text-decoration:underline">' +
+            (es ? '¿Este teléfono ya tiene cuenta? Inicia sesión' : 'Phone already has an account? Log in') +
+          '</button>'
+        : '<button onclick="window.__uslSkipSecondary()" style="background:none;border:none;font-size:13px;color:#888;cursor:pointer;font-family:\'Plus Jakarta Sans\',sans-serif;width:100%;text-align:center;padding:8px;text-decoration:underline">' +
             (es ? 'Omitir por ahora' : 'Skip for now') +
           '</button>')
     );
@@ -1529,6 +1793,8 @@
       var candidatePhone = selectedDial + digits;
       var nextBtn = document.querySelector('button[onclick="window.__uslSecondaryNext()"]');
       var nextBtnLabel = nextBtn ? nextBtn.textContent : '';
+      var loginBtn = document.getElementById('secondary-phone-login-btn');
+      if (loginBtn) loginBtn.style.display = 'none';
       if (nextBtn) { nextBtn.disabled = true; nextBtn.textContent = '...'; }
       setError('');
       try {
@@ -1541,6 +1807,7 @@
           var checkData = await checkRes.json();
           if (checkData && checkData.available === false) {
             if (nextBtn) { nextBtn.disabled = false; nextBtn.textContent = nextBtnLabel || (es ? 'Verificar' : 'Verify'); }
+            if (loginBtn) loginBtn.style.display = 'block';
             setError(es
               ? 'Este número ya está registrado con otra cuenta. Inicia sesión o usa otro número.'
               : 'This phone is already registered with another account. Log in or use a different number.');
@@ -1564,6 +1831,66 @@
       uslIdentifier = email;
       uslIdentifierType = 'email';
       renderOTPScreen('email', false);
+    }
+  };
+
+  window.__uslLoginWithSecondaryPhone = async function () {
+    var es = isEs();
+    var rawPhone = ((document.getElementById('secondary-phone') || {}).value || '').trim();
+    var candidatePhone = phoneIdentifierFromInput(rawPhone);
+    var btn = document.getElementById('secondary-phone-login-btn');
+    var btnLabel = btn ? btn.textContent : '';
+
+    if (!rawPhone || candidatePhone.replace(/\D/g, '').length < 8) {
+      setError(es ? 'Ingresa el teléfono para iniciar sesión.' : 'Enter the phone number to log in.');
+      return;
+    }
+
+    if (btn) { btn.disabled = true; btn.textContent = '...'; }
+    setError('');
+
+    try {
+      var res = await fetch(API() + '/api/auth/check-identifier', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier: candidatePhone })
+      });
+      var data = await res.json();
+
+      if (!res.ok) throw new Error('check_identifier_failed');
+      if (!data.exists) {
+        if (btn) { btn.disabled = false; btn.textContent = btnLabel || (es ? '¿Este teléfono ya tiene cuenta? Inicia sesión' : 'Phone already has an account? Log in'); }
+        setError(es
+          ? 'Este teléfono no tiene cuenta todavía. Usa Verificar para continuar el registro.'
+          : 'This phone is not registered yet. Use Verify to continue sign up.');
+        return;
+      }
+      if (data.provider === 'google') {
+        if (btn) { btn.disabled = false; btn.textContent = btnLabel || (es ? '¿Este teléfono ya tiene cuenta? Inicia sesión' : 'Phone already has an account? Log in'); }
+        setError(es
+          ? 'Esta cuenta usa Google. Vuelve al inicio de sesión y continúa con Google.'
+          : 'This account uses Google. Return to sign in and continue with Google.');
+        return;
+      }
+
+      uslIdentifier = candidatePhone;
+      uslIdentifierType = 'phone';
+      uslFirstIdentifierType = 'phone';
+      uslCurrentOTPType = '';
+      uslIsNew = false;
+      uslSignupComplete = false;
+      uslSuppressAutoSync = false;
+      uslCompletingExisting = false;
+      uslNewUserData = {};
+      uslLoginViaEmail = false;
+      uslTypedEmail = '';
+      uslAccountFirstName = '';
+      uslAccountPhoneLast4 = '';
+      uslAccountEmailVerified = false;
+      renderOTPScreen('phone', /* isLogin= */ true);
+    } catch (err) {
+      if (btn) { btn.disabled = false; btn.textContent = btnLabel || (es ? '¿Este teléfono ya tiene cuenta? Inicia sesión' : 'Phone already has an account? Log in'); }
+      setError(es ? 'Error de conexión. Intenta de nuevo.' : 'Connection error. Try again.');
     }
   };
 
@@ -1603,17 +1930,46 @@
           return;
         }
         var btn = document.getElementById('verify-otp-btn');
+        // confirmationResult (and its verificationId) is set when the SMS is sent. If it's
+        // missing/stale — the user sat on this screen, the send never completed, or Firebase
+        // state was reset — recover to the "send code" state with a clear message instead of
+        // throwing an opaque TypeError that surfaces as the generic "An error occurred".
+        if (!confirmationResult || !confirmationResult.verificationId) {
+          setError(es ? 'Tu código expiró. Solicita uno nuevo.' : 'Your code expired. Request a new one.');
+          if (typeof window.__uslResendOTP === 'function') window.__uslResendOTP();
+          return;
+        }
         setVerifyOTPButtonLoading(btn, true, es);
         setError('');
         try {
-          // For secondary phone on an email-first account, link the phone credential
+          // For secondary phone on an email-first/current account, never confirm as
+          // a standalone phone sign-in. That creates a second Firebase Auth user.
           var credential = firebase.auth.PhoneAuthProvider.credential(confirmationResult.verificationId, code);
-          var fbUser = auth.currentUser;
-          if (fbUser && fbUser.email) {
-            // Already signed in with email — link phone
-            await fbUser.linkWithCredential(credential);
+          var fbUser = await waitForCurrentFirebaseUser(3000);
+          if (!fbUser) {
+            if (uslIsNew && uslFirstIdentifierType === 'email' && emailLinkFlowSignupProof()) {
+              var phoneCredential = await confirmationResult.confirm(code);
+              fbUser = (phoneCredential && phoneCredential.user) || (auth && auth.currentUser);
+            } else {
+              var missingUserErr = new Error('missing_firebase_user_for_phone_link');
+              missingUserErr.code = 'servi/missing-firebase-user-for-phone-link';
+              throw missingUserErr;
+            }
           } else {
-            await confirmationResult.confirm(code);
+            try {
+              await fbUser.linkWithCredential(credential);
+            } catch (linkErr) {
+              if (linkErr && linkErr.code === 'auth/provider-already-linked') {
+                await fbUser.reload();
+                if (auth.currentUser && auth.currentUser.phoneNumber === uslNewUserData.phone) {
+                  fbUser = auth.currentUser;
+                } else {
+                  throw linkErr;
+                }
+              } else {
+                throw linkErr;
+              }
+            }
           }
           uslNewUserData.phone_verified = true;
           localStorage.removeItem('servi_phone_skipped');
@@ -1967,7 +2323,7 @@
     document.body.style.display = 'flex';
     document.body.style.alignItems = 'center';
     document.body.style.justifyContent = 'center';
-    document.body.style.fontFamily = '"DM Sans", sans-serif';
+    document.body.style.fontFamily = '"Plus Jakarta Sans", sans-serif';
 
     // Create card container
     var card = document.createElement('div');
@@ -1995,7 +2351,7 @@
     titleEl.style.fontSize = '24px';
     titleEl.style.fontWeight = '700';
     titleEl.style.color = '#0a0a0a';
-    titleEl.style.fontFamily = '"Syne", sans-serif';
+    titleEl.style.fontFamily = '"Outfit", sans-serif';
     card.appendChild(titleEl);
 
     // Message
@@ -2112,13 +2468,13 @@
     );
     if (!auth.isSignInWithEmailLink(window.location.href) && !isAccountActionCode && !isAccountActionFallback) return;
 
-    // Retrieve the email address from localStorage (saved before the link was sent)
-    var email = localStorage.getItem('servi_email_link_target');
-    // Fallback: if no stored email (e.g., user opened link in a different browser/device),
-    // prompt for email address. This ensures email link verification works in edge cases.
+    // Retrieve the email address from localStorage (same browser) or from the
+    // link context (different browser/device). Do not prompt: clicking the link
+    // should be the only confirmation step.
+    var email = localStorage.getItem('servi_email_link_target') || getEmailLinkTargetFromUrl();
     if (!email) {
-      email = prompt(isEs() ? 'Confirma tu correo electrónico:' : 'Confirm your email address:');
-      if (!email) return;
+      window.__emailLinkProcessingStatus = 'missing-email';
+      return;
     }
 
     // Restore USL state from before the redirect
@@ -2247,6 +2603,7 @@
       } else {
         await auth.signInWithEmailLink(email, window.location.href);
       }
+      try { await completeEmailLinkFlowIfPresent(); } catch (_) {}
 
       // Clear the email link target from localStorage to prevent re-verification on subsequent page loads.
       // Also clean up the browser history so the URL no longer shows the verification code.
@@ -2350,6 +2707,7 @@
       var provider = new firebase.auth.GoogleAuthProvider();
       provider.addScope('email');
       provider.addScope('profile');
+      provider.setCustomParameters({ prompt: 'select_account' });
       uslSuppressAutoSync = true;
       uslFirstIdentifierType = 'email'; // Google gives email
       var googleResult = await auth.signInWithPopup(provider);
@@ -2473,6 +2831,13 @@
       'auth/network-request-failed':    es ? 'Error de conexión. Verifica tu internet.'      : 'Connection error. Check your internet.',
       'auth/invalid-action-code':       es ? 'El enlace expiró o ya fue usado.'              : 'The link has expired or already been used.',
       'auth/credential-already-in-use': es ? 'Este identificador ya está asociado a otra cuenta.' : 'This identifier is already linked to another account.',
+      'auth/account-exists-with-different-credential': es ? 'Ya existe una cuenta con este correo. Inicia sesión con tu método original.' : 'An account already exists with this email. Sign in with your original method.',
+      'auth/email-already-in-use':      es ? 'Este correo ya está registrado.'                   : 'This email is already registered.',
+      'auth/invalid-email':             es ? 'Correo electrónico inválido.'                      : 'Invalid email address.',
+      'auth/user-disabled':             es ? 'Esta cuenta fue deshabilitada. Contáctanos.'       : 'This account has been disabled. Please contact us.',
+      'auth/operation-not-allowed':     es ? 'Este método de acceso no está disponible por ahora.' : 'This sign-in method is not available right now.',
+      'auth/requires-recent-login':     es ? 'Por seguridad, vuelve a iniciar sesión e intenta de nuevo.' : 'For your security, sign in again and retry.',
+      'servi/missing-firebase-user-for-phone-link': es ? 'Tu sesión expiró. Inicia sesión de nuevo antes de agregar el teléfono.' : 'Your session expired. Sign in again before adding your phone.',
     };
     return map[code] || (es ? 'Ocurrió un error. Intenta de nuevo.' : 'An error occurred. Please try again.');
   }
@@ -2527,12 +2892,166 @@
     var es = isEs();
     var toast = document.createElement('div');
     toast.id = 'servi-session-toast';
-    toast.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:10000;background:#0a0a0a;color:#fff;padding:12px 24px;border-radius:12px;font-family:"DM Sans",sans-serif;font-size:14px;font-weight:500;box-shadow:0 4px 20px rgba(0,0,0,0.15);display:flex;align-items:center;gap:10px;max-width:90%;animation:fadeInDown 0.3s ease';
+    toast.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:10000;background:#0a0a0a;color:#fff;padding:12px 24px;border-radius:12px;font-family:"Plus Jakarta Sans",sans-serif;font-size:14px;font-weight:500;box-shadow:0 4px 20px rgba(0,0,0,0.15);display:flex;align-items:center;gap:10px;max-width:90%;animation:fadeInDown 0.3s ease';
     toast.innerHTML = '<span>' + (es ? 'Tu sesión expiró. Inicia sesión de nuevo.' : 'Your session expired. Please sign in again.') + '</span>' +
       '<button onclick="this.parentElement.remove()" style="background:none;border:none;color:#888;cursor:pointer;font-size:18px;padding:0 4px">&times;</button>';
     document.body.appendChild(toast);
     setTimeout(function () { if (toast.parentElement) toast.remove(); }, 6000);
   }
+
+  // ── Service-request submit helpers (shared across pages) ─────────────────────
+  // Used by service.html and the Smart Request flow (frontend/smart-request/sr-app.js).
+  // These previously lived inside index.html's page script; they now live here so every
+  // page that loads shared-auth.js gets authenticated submit + the email gate.
+
+  // Headers for authenticated JSON POSTs — attaches the session Bearer token if present.
+  window.__serviJsonAuthHeaders = function () {
+    const headers = { 'Content-Type': 'application/json' };
+    try {
+      const session = JSON.parse(localStorage.getItem('servi_user_session') || 'null');
+      if (session && session.token) headers.Authorization = 'Bearer ' + session.token;
+    } catch (_) {}
+    return headers;
+  };
+
+  // Bilingual message for a service-request error code (or a fallback).
+  window.__serviceRequestErrorMessage = function (error, fallback) {
+    const es = isEs();
+    if (error === 'email_required') {
+      return es
+        ? 'Verifica tu correo electrónico para confirmar tu solicitud.'
+        : 'Verify your email to confirm your request.';
+    }
+    if (error === 'phone_required') {
+      return es
+        ? 'Verifica tu número de teléfono para confirmar tu solicitud.'
+        : 'Verify your phone number to confirm your request.';
+    }
+    return fallback || (es ? 'Error al enviar. Inténtalo de nuevo.' : 'Submission error. Please try again.');
+  };
+
+  function bookingGateEscapeHtml(str) {
+    return String(str || '').replace(/[&<>"']/g, ch => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[ch]));
+  }
+
+  // Inline "verify your email to continue" gate. Appends into opts.target and, once the
+  // email is verified (via storage / servi-email-verified events), calls opts.retry.
+  window.__showServiceRequestEmailGate = function (options) {
+    const opts = options || {};
+    const es = isEs();
+    const target = opts.target || document.getElementById('sr-root');
+    if (!target) return false;
+
+    document.querySelectorAll('.booking-email-gate').forEach((node) => {
+      if (node._cleanup) node._cleanup();
+      node.remove();
+    });
+
+    const currentEmail = String((window.__user && window.__user.email) || '').trim().toLowerCase();
+    const gate = document.createElement('div');
+    gate.className = 'booking-email-gate';
+    gate.style.cssText = 'border:1px solid #ead8b7;background:#fff8ec;border-radius:10px;padding:14px;margin:12px 0;display:flex;flex-direction:column;gap:10px;color:#4a3421';
+    gate.innerHTML = `
+      <div style="font-weight:800;font-size:14px">${es ? 'Verifica tu correo para continuar' : 'Verify your email to continue'}</div>
+      <div style="font-size:13px;line-height:1.45">${es ? 'Ya usaste tu primera solicitud sin correo verificado. Te enviaremos un enlace de verificación y continuaremos la solicitud cuando se confirme.' : 'You already used your first request without a verified email. We will send a verification link and continue the request after it is confirmed.'}</div>
+      ${currentEmail ? `<div style="font-size:13px;font-weight:700">${bookingGateEscapeHtml(currentEmail)}</div>` : `<input class="input-field" id="booking-email-gate-input" type="email" placeholder="${es ? 'correo@email.com' : 'email@example.com'}" style="background:#fff">`}
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button type="button" class="btn-accent" id="booking-email-gate-send">${es ? 'Enviar verificación' : 'Send verification'}</button>
+        <span id="booking-email-gate-status" style="font-size:12px;color:#6f5742"></span>
+      </div>
+    `;
+
+    const appendTarget = opts.target || target;
+    appendTarget.appendChild(gate);
+    try { gate.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (_) {}
+
+    const statusEl = gate.querySelector('#booking-email-gate-status');
+    const sendBtn = gate.querySelector('#booking-email-gate-send');
+    const input = gate.querySelector('#booking-email-gate-input');
+    let cleaned = false;
+
+    async function refreshAuthUser() {
+      const API = (window.CONFIG && window.CONFIG.API_BASE) || '';
+      let session = null;
+      try { session = JSON.parse(localStorage.getItem('servi_user_session') || 'null'); } catch (_) {}
+      const token = session && session.token;
+      if (!token) return null;
+      const res = await fetch(API + '/api/auth/me', { headers: { Authorization: 'Bearer ' + token } });
+      if (!res.ok) return null;
+      const data = await res.json().catch(() => ({}));
+      if (!data.user) return null;
+      window.__user = data.user;
+      try {
+        session.user = data.user;
+        localStorage.setItem('servi_user_session', JSON.stringify(session));
+      } catch (_) {}
+      return data.user;
+    }
+
+    async function retryIfVerified() {
+      const user = await refreshAuthUser();
+      if (!user || user.email_verified !== true) return;
+      cleanup();
+      gate.remove();
+      if (typeof opts.retry === 'function') setTimeout(opts.retry, 50);
+    }
+
+    function onStorage(e) {
+      if (e.key === 'servi_email_verified_at') retryIfVerified();
+    }
+
+    function onVerified() {
+      retryIfVerified();
+    }
+
+    function cleanup() {
+      if (cleaned) return;
+      cleaned = true;
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('servi-email-verified', onVerified);
+    }
+
+    gate._cleanup = cleanup;
+    window.addEventListener('storage', onStorage);
+    window.addEventListener('servi-email-verified', onVerified);
+
+    sendBtn.addEventListener('click', async () => {
+      const email = currentEmail || String((input && input.value) || '').trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        if (statusEl) statusEl.textContent = es ? 'Ingresa un correo válido.' : 'Enter a valid email.';
+        if (input) input.focus();
+        return;
+      }
+      if (!window.__sendEmailVerification) {
+        if (statusEl) statusEl.textContent = es ? 'No se pudo iniciar la verificación.' : 'Could not start verification.';
+        return;
+      }
+      try {
+        sendBtn.disabled = true;
+        if (statusEl) statusEl.textContent = es ? 'Enviando...' : 'Sending...';
+        localStorage.setItem('servi_email_verification_mode', '1');
+        localStorage.setItem('servi_email_link_target', email);
+        const sent = await window.__sendEmailVerification(email);
+        if (!sent) {
+          localStorage.removeItem('servi_email_verification_mode');
+          localStorage.removeItem('servi_email_link_target');
+          sendBtn.disabled = false;
+          if (statusEl) statusEl.textContent = es ? 'No se pudo enviar. Intenta de nuevo.' : 'Could not send. Try again.';
+          return;
+        }
+        if (statusEl) statusEl.textContent = es ? 'Revisa tu correo. Continuaremos cuando se verifique.' : 'Check your email. We will continue after verification.';
+      } catch (_) {
+        localStorage.removeItem('servi_email_verification_mode');
+        localStorage.removeItem('servi_email_link_target');
+        sendBtn.disabled = false;
+        if (statusEl) statusEl.textContent = es ? 'No se pudo enviar. Intenta de nuevo.' : 'Could not send. Try again.';
+      }
+    });
+
+    return true;
+  };
 
   // ── Init ──────────────────────────────────────────────────────────────────────
   // Expose handleEmailLinkSignIn's promise so email-verified.html can await it

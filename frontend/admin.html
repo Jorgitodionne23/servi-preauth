@@ -335,6 +335,8 @@
     .admin-table tr:last-child td { border-bottom:none; }
     .admin-table tbody tr { transition:background 0.15s; }
     .admin-table tbody tr:hover td { background:rgba(255,255,255,0.025); }
+    .received-cell { min-width:96px; color:var(--text-dim); white-space:nowrap; }
+    .received-cell span { color:var(--text-faint); font-size:11px; }
     .submission-detail { max-width:210px; }
     .submission-detail-text { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .submission-attachments { display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:7px; }
@@ -458,6 +460,65 @@
     .sp-save-btn { padding:7px 14px;border-radius:8px;border:none;background:linear-gradient(135deg,var(--brand),var(--brand-2));color:var(--bg);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;transition:filter 0.15s; }
     .sp-save-btn:hover { filter:brightness(1.08); }
 
+    /* ─── Page header (per-panel context) ─────────────────────────────────── */
+    .page-head {
+      display:flex; align-items:flex-end; justify-content:space-between;
+      gap:16px; margin-bottom:18px; flex-wrap:wrap;
+    }
+    .page-head__text { min-width:0; }
+    .page-title { font-size:21px; font-weight:800; letter-spacing:-0.015em; color:var(--text); line-height:1.15; }
+    .page-sub { font-size:12.5px; color:var(--text-mute); margin-top:4px; line-height:1.4; max-width:70ch; }
+    .page-head__actions { display:flex; align-items:center; gap:8px; flex-shrink:0; }
+    .ghost-btn {
+      display:inline-flex; align-items:center; gap:6px;
+      padding:7px 13px; border-radius:8px;
+      background:var(--surface); border:1px solid var(--border);
+      color:var(--text-dim); font-size:12px; font-weight:600;
+      cursor:pointer; font-family:inherit; transition:all 0.18s;
+    }
+    .ghost-btn:hover { color:var(--text); border-color:#3a3f54; }
+    .ghost-btn .ghost-ico { font-size:13px; line-height:1; transition:transform 0.5s ease; }
+    .ghost-btn.is-spinning .ghost-ico { transform:rotate(360deg); }
+
+    /* ─── Clickable KPI cards ──────────────────────────────────────────────── */
+    .stat-card.is-clickable { cursor:pointer; position:relative; }
+    .stat-card.is-clickable:hover { border-color:var(--brand); background:var(--surface-3); transform:translateY(-1px); }
+    .stat-card.is-clickable::after {
+      content:'›'; position:absolute; top:11px; right:13px;
+      color:var(--text-faint); font-size:15px; line-height:1; opacity:0; transition:opacity 0.18s;
+    }
+    .stat-card.is-clickable:hover::after { opacity:1; }
+    .stat-card .num.num--money { font-size:18px; }
+    .stat-card .delta { font-size:10px; font-weight:700; color:var(--ok); margin-left:6px; }
+
+    /* ─── Loading / empty / error states ───────────────────────────────────── */
+    .table-state { text-align:center; padding:28px 12px !important; color:var(--text-mute); font-size:13px; }
+    .table-state--err { color:var(--danger-soft); }
+    .state-spinner {
+      display:inline-block; width:15px; height:15px; vertical-align:-2px; margin-right:8px;
+      border:2px solid var(--border); border-top-color:var(--brand); border-radius:50%;
+      animation:stateSpin 0.7s linear infinite;
+    }
+    @keyframes stateSpin { to { transform:rotate(360deg); } }
+    .empty-state__ico { font-size:30px; line-height:1; margin-bottom:10px; opacity:0.6; }
+    .empty-state__title { font-size:14px; font-weight:700; color:var(--text-dim); margin-bottom:3px; }
+    .empty-state__sub { font-size:12px; color:var(--text-faint); }
+    .list-loading { display:flex; flex-direction:column; gap:10px; }
+    .skeleton-card { height:74px; border-radius:12px; border:1px solid var(--border);
+      background:linear-gradient(100deg, var(--surface) 30%, var(--surface-3) 50%, var(--surface) 70%);
+      background-size:220% 100%; animation:skeletonShimmer 1.3s ease-in-out infinite; }
+    @keyframes skeletonShimmer { from { background-position:160% 0; } to { background-position:-60% 0; } }
+
+    /* ─── Responsive form layouts (Nueva / Ajustes) ───────────────────────── */
+    .form-split { display:grid; grid-template-columns:1fr 400px; gap:24px; align-items:start; }
+    .form-grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+    @media (max-width:1080px) {
+      .form-split { grid-template-columns:1fr; }
+    }
+    @media (max-width:560px) {
+      .form-grid-2 { grid-template-columns:1fr; }
+    }
+
     /* ─── Responsive: collapse sidebar on narrow viewports ────────────────── */
     @media (max-width:900px) {
       .sidebar { width:64px; padding:18px 8px; }
@@ -465,6 +526,7 @@
       .nav-section-title { display:none; }
       .main-area { padding:18px; }
       .tb-badge { display:none; }
+      .page-title { font-size:18px; }
     }
   </style>
 </head>
@@ -480,7 +542,7 @@
       <span class="auth-tag">Admin</span>
     </div>
     <div class="auth-sub">Acceso restringido al panel de operaciones</div>
-    <input class="auth-input" id="token-input" type="password" placeholder="Admin token">
+    <input class="auth-input" id="token-input" type="password" placeholder="Admin token" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
     <button class="auth-btn" onclick="doLogin()">Acceder</button>
     <div class="auth-error" id="auth-error">Token inválido</div>
   </div>
@@ -531,7 +593,20 @@
 
     <!-- Main content area -->
     <main class="main-area">
-      <!-- Stats -->
+      <!-- Per-panel context header -->
+      <div class="page-head" id="page-head">
+        <div class="page-head__text">
+          <h1 class="page-title" id="page-title">Órdenes</h1>
+          <p class="page-sub" id="page-sub">Cola operativa en vivo — autoriza, captura y da seguimiento.</p>
+        </div>
+        <div class="page-head__actions">
+          <button class="ghost-btn" id="refresh-btn" onclick="manualRefresh()" title="Actualizar datos del panel activo">
+            <span class="ghost-ico">↻</span><span>Actualizar</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Stats (operational KPI strip — Orders hub) -->
       <div class="stats-row" id="stats-row"></div>
 
 
@@ -550,7 +625,11 @@
         <button class="filter-pill" data-type-filter="suggestion">Sugerencias</button>
       </div>
       <div class="inbox-list" id="inbox-list"></div>
-      <div id="inbox-empty" class="empty-state" style="display:none">No hay elementos.</div>
+      <div id="inbox-empty" class="empty-state" style="display:none">
+        <div class="empty-state__ico">🧾</div>
+        <div class="empty-state__title">Inbox al día</div>
+        <div class="empty-state__sub">No hay reportes ni sugerencias con este filtro.</div>
+      </div>
     </div>
 
     <!-- Orders Panel -->
@@ -592,21 +671,25 @@
       <div class="table-scroll">
         <table class="admin-table">
           <thead>
-            <tr><th>Código</th><th>Cliente</th><th>Servicio</th><th>Monto</th><th>Servicio</th><th>Faltan</th><th>Estado</th><th>Acciones</th></tr>
+            <tr><th>Código</th><th>Recibida</th><th>Cliente</th><th>Servicio</th><th>Monto</th><th>Horario</th><th>Faltan</th><th>Estado</th><th>Acciones</th></tr>
           </thead>
           <tbody id="orders-body"></tbody>
         </table>
       </div>
-      <div id="orders-empty" class="empty-state" style="display:none">No hay órdenes.</div>
+      <div id="orders-empty" class="empty-state" style="display:none">
+        <div class="empty-state__ico">📦</div>
+        <div class="empty-state__title">No hay órdenes aquí</div>
+        <div class="empty-state__sub">Ajusta el filtro de estado o la búsqueda para ver más.</div>
+      </div>
       <div class="pagination" id="orders-pagination"></div>
     </div>
 
     <!-- Nueva Orden Panel -->
     <div id="panel-nueva" class="panel-section">
-      <div style="display:grid;grid-template-columns:1fr 400px;gap:24px;align-items:start">
+      <div class="form-split">
         <div class="card-surface">
           <h3 style="font-size:16px;font-weight:700;margin:0 0 20px">Datos del cliente y servicio</h3>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+          <div class="form-grid-2">
             <div><label class="form-label">WhatsApp (E.164) *</label><input class="auth-input" id="n-phone" placeholder="+5255..." oninput="onPhoneInput()"></div>
             <div><label class="form-label">Nombre del cliente *</label><input class="auth-input" id="n-name" placeholder="Nombre completo"></div>
             <div><label class="form-label">Email</label><input class="auth-input" id="n-email" type="email" placeholder="correo@email.com"></div>
@@ -673,7 +756,7 @@
 
     <!-- Ajustes Panel -->
     <div id="panel-ajustes" class="panel-section">
-      <div style="display:grid;grid-template-columns:1fr 400px;gap:24px;align-items:start">
+      <div class="form-split">
         <div class="card-surface">
           <h3 style="font-size:16px;font-weight:700;margin:0 0 20px">Crear ajuste / cobro adicional</h3>
           <div style="display:grid;gap:14px">
@@ -682,7 +765,7 @@
               <input class="auth-input" id="aj-parent" placeholder="UUID de la orden padre" oninput="onAjParentInput()">
               <div id="aj-parent-info" style="font-size:12px;color:#888;margin-top:6px"></div>
             </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+            <div class="form-grid-2">
               <div>
                 <label class="form-label">Tipo de ajuste *</label>
                 <select class="auth-input" id="aj-reason" style="background:#222">
@@ -750,7 +833,11 @@
             <tbody id="providers-body"></tbody>
           </table>
         </div>
-        <div id="providers-empty" class="empty-state" style="display:none">No hay aplicaciones de proveedores.</div>
+        <div id="providers-empty" class="empty-state" style="display:none">
+          <div class="empty-state__ico">🧰</div>
+          <div class="empty-state__title">Sin aplicaciones</div>
+          <div class="empty-state__sub">No hay solicitudes de partners con este filtro.</div>
+        </div>
       </div>
 
       <div id="prov-view-roster" style="display:none">
@@ -770,7 +857,11 @@
             <tbody id="roster-body"></tbody>
           </table>
         </div>
-        <div id="roster-empty" class="empty-state" style="display:none">No hay proveedores en el roster.</div>
+        <div id="roster-empty" class="empty-state" style="display:none">
+          <div class="empty-state__ico">🧑‍🔧</div>
+          <div class="empty-state__title">Roster vacío</div>
+          <div class="empty-state__sub">Aún no hay especialistas verificados con este filtro.</div>
+        </div>
       </div>
     </div>
 
@@ -778,6 +869,7 @@
   </div>
 </div>
 
+<!-- Panel & component styles (forms, inbox, filters, side-panel internals) -->
 <style>
   .form-label { display:block; font-size:11px; color:var(--text-mute); font-weight:600; margin-bottom:5px; text-transform:uppercase; letter-spacing:0.05em; }
   #panel-nueva .auth-input, #panel-ajustes .auth-input { width:100%; }
@@ -787,7 +879,7 @@
   #nueva-wa-msg, #ajuste-wa-msg, #sub-modal-wa { background:var(--surface-2)!important; color:var(--text-dim)!important; border:1px solid var(--border); }
 
   /* ─── Inbox styles ────────────────────────────────────────────────── */
-  .inbox-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:20px; }
+  .inbox-stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:20px; }
   .inbox-stat { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:14px 18px; transition:border-color 0.18s; }
   .inbox-stat:hover { border-color:#3a3f54; }
   .inbox-stat-icon { font-size:20px; margin-bottom:4px; }
@@ -980,8 +1072,21 @@ function toast(msg, type = 'ok', timeout = 4200) {
   stack.appendChild(el);
   if (timeout > 0) setTimeout(dismiss, timeout);
 }
+// ─── Loading / empty / error state helpers ───────────────────────────────────
+function tableStateRow(cols, msg, isError = false) {
+  const spinner = isError ? '⚠️ ' : '<span class="state-spinner"></span>';
+  return `<tr><td colspan="${cols}" class="table-state${isError ? ' table-state--err' : ''}">${spinner}${escapeHtml(msg)}</td></tr>`;
+}
+function listSkeleton(n = 4) {
+  return '<div class="list-loading">' + Array.from({ length: n }).map(() => '<div class="skeleton-card"></div>').join('') + '</div>';
+}
+
 function fmtDate(d) { if (!d) return '—'; const dt = new Date(d); return dt.toLocaleDateString('es-MX', { day:'2-digit', month:'short', year:'numeric' }); }
 function fmtTime(d) { if (!d) return '—'; const dt = new Date(d); return dt.toLocaleTimeString('es-MX', { hour:'2-digit', minute:'2-digit' }); }
+function receivedAtCellHtml(value) {
+  if (!value) return '<td class="received-cell">—</td>';
+  return `<td class="received-cell">${escapeHtml(fmtDate(value))}<br><span>${escapeHtml(fmtTime(value))}</span></td>`;
+}
 function isDateOnly(value) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(value || '').trim());
 }
@@ -1004,11 +1109,19 @@ function scheduleRowText(o) {
   if (orderIsAsap(o) && !o.service_datetime) return '<span class="schedule-asap-text">ASAP</span> · pendiente de agendar';
   return escapeHtml(fmtServiceDateTime(o.service_date, o.service_datetime));
 }
+function isClockTimeValue(value) {
+  return /^\d{2}:\d{2}$/.test(String(value || '').trim());
+}
+function submissionSchedulePlainText(s) {
+  if (orderIsAsap(s)) return 'ASAP';
+  if (s.preferred_date) {
+    return `${fmtServiceDate(s.preferred_date)}${s.preferred_time ? ' · ' + s.preferred_time : ' · Hora por definir'}`;
+  }
+  return 'Pendiente';
+}
 function submissionScheduleText(s) {
   if (orderIsAsap(s)) return '<span class="schedule-asap-text">ASAP</span>';
-  if (s.preferred_date) {
-    return escapeHtml(`${fmtServiceDate(s.preferred_date)}${s.preferred_time ? ' · ' + s.preferred_time : ' · Hora por definir'}`);
-  }
+  if (s.preferred_date) return escapeHtml(submissionSchedulePlainText(s));
   return '<span style="color:var(--text-mute)">Pendiente</span>';
 }
 function scheduleDetailHtml(o) {
@@ -1283,25 +1396,48 @@ function updateNavBadges(d) {
   setNavBadge('nav-badge-ajustes', 0);
 }
 
+// Single source of truth for the KPI strip. Cards with a `shortcut` are clickable
+// (filter Orders by status, or jump to Inbox / Proveedores).
+function renderStatsRow(d) {
+  const el = document.getElementById('stats-row');
+  if (!el) return;
+  const cards = [
+    { num: d.requestsToday,             label: 'Solicitudes hoy' },
+    { num: d.pendingOrders,             label: 'Órdenes pendientes',  shortcut: 'Pending' },
+    { num: d.confirmedOrders,           label: 'Confirmadas',         shortcut: 'Confirmed' },
+    { num: d.capturedOrders,            label: 'Capturadas',          shortcut: 'Captured' },
+    { num: fmtMoney(d.capturedRevenue), label: 'Revenue capturado',   money: true },
+    { num: d.newReports,                label: 'Reportes nuevos',     shortcut: 'inbox' },
+    { num: d.pendingApplications,       label: 'Apps pendientes',     shortcut: 'providers' },
+    { num: d.pendingChanges,            label: 'Cambios por revisar', shortcut: 'all' },
+  ];
+  el.innerHTML = cards.map(s => {
+    const numCls = s.money ? 'num num--money' : 'num';
+    if (!s.shortcut) {
+      return `<div class="stat-card"><div class="${numCls}">${escapeHtml(s.num)}</div><div class="label">${escapeHtml(s.label)}</div></div>`;
+    }
+    return `<div class="stat-card is-clickable" role="button" tabindex="0" onclick="statShortcut('${s.shortcut}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();statShortcut('${s.shortcut}');}"><div class="${numCls}">${escapeHtml(s.num)}</div><div class="label">${escapeHtml(s.label)}</div></div>`;
+  }).join('');
+}
+
 async function loadStats() {
   try {
     const res = await fetch(API + '/api/admin/stats', { headers: headers() });
     const d = await res.json();
     updateNavBadges(d);
-    document.getElementById('stats-row').innerHTML = [
-      { num: d.requestsToday, label: 'Solicitudes hoy' },
-      { num: d.pendingOrders, label: 'Órdenes pendientes' },
-      { num: d.confirmedOrders, label: 'Confirmadas' },
-      { num: d.capturedOrders, label: 'Capturadas' },
-      { num: fmtMoney(d.capturedRevenue), label: 'Revenue capturado' },
-      { num: d.newReports, label: 'Reportes nuevos' },
-      { num: d.pendingApplications, label: 'Apps pendientes' },
-      { num: d.pendingChanges, label: 'Cambios por revisar' },
-    ].map(s => `<div class="stat-card"><div class="num">${escapeHtml(s.num)}</div><div class="label">${escapeHtml(s.label)}</div></div>`).join('');
+    renderStatsRow(d);
   } catch {}
 }
 
 // Panel switching
+const PANEL_META = {
+  orders:    { title: 'Órdenes',        sub: 'Cola operativa en vivo — autoriza, captura y da seguimiento.' },
+  inbox:     { title: 'Inbox',          sub: 'Reportes e ideas de clientes. Revísalos y resuélvelos.' },
+  providers: { title: 'Proveedores',    sub: 'Aplicaciones de partners y roster de especialistas verificados.' },
+  nueva:     { title: 'Nueva Orden',    sub: 'Crea una orden y genera el enlace de pago para el cliente.' },
+  ajustes:   { title: 'Ajuste / Cobro', sub: 'Cargo adicional o corrección sobre una orden existente.' },
+};
+
 function switchPanel(name) {
   if (name === 'orders') {
     const badge = document.getElementById('orders-badge');
@@ -1312,8 +1448,41 @@ function switchPanel(name) {
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
   document.getElementById('panel-' + name)?.classList.add('panel-section--active');
   document.querySelector('.nav-item[data-panel="' + name + '"]')?.classList.add('active');
+
+  // Contextual page header + scope the global KPI strip to the operational hub.
+  const meta = PANEL_META[name] || PANEL_META.orders;
+  const titleEl = document.getElementById('page-title');
+  const subEl = document.getElementById('page-sub');
+  if (titleEl) titleEl.textContent = meta.title;
+  if (subEl) subEl.textContent = meta.sub;
+  const statsRow = document.getElementById('stats-row');
+  if (statsRow) statsRow.style.display = (name === 'orders') ? 'grid' : 'none';
+
   if (name === 'orders') loadOrders();
+  if (name === 'inbox') loadInbox();
   if (name === 'providers') { (_provSub === 'roster') ? loadRoster() : loadProviders(); }
+}
+
+// Manual refresh of the active panel (+ shared widgets). Spins the icon briefly.
+async function manualRefresh() {
+  const btn = document.getElementById('refresh-btn');
+  if (btn) { btn.classList.add('is-spinning'); btn.disabled = true; }
+  try {
+    await liveTick();
+  } finally {
+    setTimeout(() => { if (btn) { btn.classList.remove('is-spinning'); btn.disabled = false; } }, 500);
+  }
+}
+
+// KPI card shortcut: jump to a panel, optionally pre-filtering Orders by status.
+function statShortcut(target) {
+  if (target === 'inbox' || target === 'providers') { switchPanel(target); return; }
+  const sel = document.getElementById('orders-status');
+  if (sel) sel.value = target === 'all' ? '' : target;   // '', 'Pending', 'Confirmed', 'Captured'
+  ordersPage = 0;
+  ordersAttentionOnly = false;
+  document.getElementById('orders-attention')?.classList.remove('filter-pill--active-status');
+  switchPanel('orders');   // reads the select value in loadOrders()
 }
 
 // Flash the "Live Dispatch" pill when new orders come in
@@ -1429,7 +1598,7 @@ function renderInboxList() {
 async function loadInbox() {
   const list = document.getElementById('inbox-list');
   const empty = document.getElementById('inbox-empty');
-  if (list) list.innerHTML = '<div style="text-align:center;padding:24px;color:#666">Cargando...</div>';
+  if (list) list.innerHTML = listSkeleton();
   if (empty) empty.style.display = 'none';
 
   const merged = [];
@@ -1467,7 +1636,7 @@ async function loadInbox() {
       if (still) renderInboxDetail(still);
     }
   } catch (err) {
-    if (list) list.innerHTML = '<div style="text-align:center;color:#ef4444;padding:24px">Error al cargar datos</div>';
+    if (list) list.innerHTML = '<div class="empty-state table-state--err"><div class="empty-state__ico">⚠️</div><div class="empty-state__title">No se pudo cargar el inbox</div><div class="empty-state__sub">Revisa tu conexión y reintenta.</div></div>';
   }
 }
 
@@ -1642,7 +1811,7 @@ async function loadOrders() {
   const limit = ordersAttentionOnly ? 200 : 30;
   const offset = ordersAttentionOnly ? 0 : ordersPage * limit;
 
-  body.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;color:#666">Cargando...</td></tr>';
+  body.innerHTML = tableStateRow(9, 'Cargando órdenes…');
   try {
     const params = new URLSearchParams({ limit, offset });
     if (search) params.set('search', search);
@@ -1699,6 +1868,7 @@ async function loadOrders() {
       return `
       <tr onclick="openOrderDetail('${o.id}')" style="cursor:pointer" class="${rowClass}">
         <td style="font-family:monospace;font-size:12px">${escapeHtml(o.public_code || o.id.slice(0,8))}</td>
+        ${receivedAtCellHtml(o.created_at)}
         <td>${escapeHtml(o.client_name || '—')}<br><span style="color:#666;font-size:11px">${escapeHtml(o.client_phone || '')}</span></td>
         <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(o.service_description || '—')}</td>
         <td>${fmtMoney(o.pricing_total_amount || o.amount)}</td>
@@ -1722,7 +1892,7 @@ async function loadOrders() {
       <button onclick="ordersPage++;loadOrders()" ${ordersPage >= totalPages - 1 ? 'disabled' : ''}>Siguiente</button>
     `;
   } catch (err) {
-    body.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#ef4444">Error al cargar órdenes</td></tr>';
+    body.innerHTML = tableStateRow(9, 'No se pudieron cargar las órdenes. Reintenta.', true);
   }
 }
 
@@ -1774,9 +1944,12 @@ function buildSubmissionRow(s) {
   const isCanceled = /^cancel/i.test(String(s.status || ''));
   const border = isCanceled ? '#ef4444' : '#7c3aed';
   const code = isCanceled ? '#ef4444' : '#a78bfa';
-  const badge = isCanceled
+  const trustedBadge = (!isCanceled && s.preferred_provider_id)
+    ? `<br><span class="badge" style="background:#2e1065;color:#ddd6fe;border:1px solid #6d28d9;margin-top:3px">⭐ Pidió a ${escapeHtml((s.preferred_provider_name || s.preferred_provider_id).slice(0, 24))}</span>`
+    : '';
+  const badge = (isCanceled
     ? `<span class="badge badge-canceled">Cancelado · Cliente</span>`
-    : `<span class="badge badge-web">Web · Sin enlace</span>`;
+    : `<span class="badge badge-web">Web · Sin enlace</span>`) + trustedBadge;
   const action = isCanceled
     ? `<span style="color:#888;font-size:11px">Retirado por cliente</span>`
     : `<button class="action-btn" style="background:#3b0764;color:#c4b5fd;border:1px solid #6d28d9"
@@ -1784,6 +1957,7 @@ function buildSubmissionRow(s) {
   return `
     <tr style="border-left:3px solid ${border}">
       <td style="font-family:monospace;font-size:12px;color:${code}">WEB-${s.id.slice(0,6).toUpperCase()}</td>
+      ${receivedAtCellHtml(s.created_at)}
       <td>${escapeHtml(s.client_name || '—')}<br><span style="color:#666;font-size:11px">${escapeHtml(s.client_phone || '')}</span></td>
       <td class="submission-detail" title="${escapeHtml(detail)}">
         <div class="submission-detail-text">${escapeHtml(detail)}</div>
@@ -1805,9 +1979,10 @@ function openSubmissionLinkModal(subId) {
   // Remove existing modal if any
   document.getElementById('sub-modal-overlay')?.remove();
 
-  const datetimeValue = sub.preferred_date
-    ? (sub.preferred_date + (sub.preferred_time ? 'T' + sub.preferred_time : 'T00:00'))
+  const datetimeValue = sub.preferred_date && isClockTimeValue(sub.preferred_time)
+    ? (sub.preferred_date + 'T' + sub.preferred_time)
     : '';
+  const preferredSchedule = submissionSchedulePlainText(sub);
 
   const overlay = document.createElement('div');
   overlay.id = 'sub-modal-overlay';
@@ -1835,7 +2010,16 @@ function openSubmissionLinkModal(subId) {
       </div>
       <div style="margin-bottom:10px">
         <label class="form-label">Proveedor asignado</label>
-        <input class="adm-input" id="sub-provider" placeholder="Nombre del proveedor" style="margin-bottom:0">
+        ${sub.preferred_provider_id ? `<div class="schedule-note" style="margin:0 0 7px;border-color:#6d28d9;background:#2e1065;color:#ddd6fe">⭐ <strong>Cliente recurrente</strong> — pidió a ${escapeHtml(sub.preferred_provider_name || sub.preferred_provider_id)} (${escapeHtml(sub.preferred_provider_id)}). Asígnalo si está disponible.</div>` : ''}
+        <div style="display:flex;gap:8px;margin-bottom:6px">
+          <input class="adm-input" id="sub-provider-search" placeholder="Buscar por nombre, especialidad o ID…" style="flex:1;margin-bottom:0" oninput="searchProvidersForSub()">
+          <select class="adm-input" id="sub-provider_id" style="flex:1;margin-bottom:0;background:#222" onchange="onSubProviderPick()">
+            <option value="">— Sin asignar —</option>
+            ${sub.preferred_provider_id ? `<option value="${escapeHtml(sub.preferred_provider_id)}" selected>⭐ ${escapeHtml((sub.preferred_provider_name || sub.preferred_provider_id) + ' · ' + sub.preferred_provider_id)}</option>` : ''}
+          </select>
+        </div>
+        <input class="adm-input" id="sub-provider" placeholder="Nombre del proveedor (texto libre)" value="${escapeHtml(sub.preferred_provider_name || '')}" style="margin-bottom:0">
+        <div class="schedule-helper" style="margin:6px 0 0">Asignar un especialista verificado habilita "Especialistas de confianza" para el cliente tras completar el servicio.</div>
       </div>
       <div style="margin-bottom:10px">
         <label class="form-label">Email del cliente</label>
@@ -1845,6 +2029,7 @@ function openSubmissionLinkModal(subId) {
         ${orderIsAsap(sub) ? '<div class="schedule-note"><strong>ASAP solicitado.</strong> Si ya acordaste una hora, asígnala aquí; si no, el pedido seguirá marcado como ASAP.</div>' : ''}
         <label class="form-label">Fecha y hora del servicio</label>
         <input class="adm-input" id="sub-datetime" type="datetime-local" value="${escapeHtml(datetimeValue)}" style="margin-bottom:0">
+        ${!orderIsAsap(sub) && (sub.preferred_date || sub.preferred_time) ? '<div class="schedule-helper">Preferencia cliente: ' + escapeHtml(preferredSchedule) + '</div>' : ''}
         ${orderIsAsap(sub) ? '' : '<div class="schedule-helper">Usa este campo para guardar la fecha y hora confirmada del servicio.</div>'}
       </div>
       <label style="display:flex;gap:10px;align-items:flex-start;margin-bottom:16px;color:#ddd;font-size:13px;line-height:1.4">
@@ -1875,6 +2060,46 @@ function openSubmissionLinkModal(subId) {
   document.getElementById('sub-amount').focus();
 }
 
+let _subProvTimer = null;
+function searchProvidersForSub() {
+  clearTimeout(_subProvTimer);
+  _subProvTimer = setTimeout(_doSearchProvidersForSub, 300);
+}
+async function _doSearchProvidersForSub() {
+  const q = (document.getElementById('sub-provider-search')?.value || '').trim();
+  const sel = document.getElementById('sub-provider_id');
+  if (!sel) return;
+  const current = sel.value;
+  const currentLabel = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : '';
+  try {
+    const params = new URLSearchParams({ status: 'verified', limit: 25 });
+    if (q) params.set('search', q);
+    const res = await fetch(API + '/api/admin/providers?' + params, { headers: headers() });
+    const d = await res.json();
+    const items = d.items || [];
+    let opts = '<option value="">— Sin asignar —</option>';
+    // Keep the current pick selectable even if it's outside the search results.
+    if (current && !items.some(p => p.provider_id === current)) {
+      opts += `<option value="${escapeHtml(current)}" selected>${escapeHtml(currentLabel)}</option>`;
+    }
+    items.forEach(p => {
+      const label = `${p.name || '(sin nombre)'}${p.specialty ? ' · ' + p.specialty : ''} · ${p.provider_id}`;
+      opts += `<option value="${escapeHtml(p.provider_id)}"${p.provider_id === current ? ' selected' : ''}>${escapeHtml(label)}</option>`;
+    });
+    sel.innerHTML = opts;
+  } catch (e) { /* silent — search is best-effort */ }
+}
+function onSubProviderPick() {
+  // Auto-fill the free-text name field from the picked option when empty.
+  const sel = document.getElementById('sub-provider_id');
+  const nameEl = document.getElementById('sub-provider');
+  if (!sel || !nameEl) return;
+  if (!sel.value) return;
+  const txt = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : '';
+  const nm = (txt.replace(/^⭐\s*/, '').split(' · ')[0] || '').trim();
+  if (nm && nm !== '(sin nombre)' && !nameEl.value.trim()) nameEl.value = nm;
+}
+
 async function submitSubmissionLink(subId) {
   const overlay = document.getElementById('sub-modal-overlay');
   if (!overlay) return;
@@ -1885,6 +2110,7 @@ async function submitSubmissionLink(subId) {
   const amountRaw = parseFloat(document.getElementById('sub-amount').value);
   const bookingTypeKey = document.getElementById('sub-booking-type').value;
   const provider = document.getElementById('sub-provider').value.trim();
+  const providerId = (document.getElementById('sub-provider_id')?.value || '').trim() || sub.preferred_provider_id || undefined;
   const email = document.getElementById('sub-email').value.trim();
   const dtVal = document.getElementById('sub-datetime').value;
   const allowCashOnce = !!document.getElementById('sub-allow-cash')?.checked;
@@ -1894,7 +2120,7 @@ async function submitSubmissionLink(subId) {
   if (!isVisita && (!amount || amount <= 0)) { errEl.textContent = 'Monto requerido.'; errEl.style.display = 'block'; return; }
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { errEl.textContent = 'Email inválido.'; errEl.style.display = 'block'; return; }
 
-  let serviceDate = '', serviceDateTime = '', hasTimeComponent = false;
+  let serviceDate = sub.preferred_date || '', serviceDateTime = '', hasTimeComponent = false;
   if (dtVal) {
     const d = new Date(dtVal);
     serviceDate = dtVal.slice(0, 10);
@@ -1922,9 +2148,11 @@ async function submitSubmissionLink(subId) {
         bookingType,
         capture: 'manual',
         providerName: provider || undefined,
+        providerId,
         allowCashOnce,
         isAsap: orderIsAsap(sub) && !serviceDateTime,
         category: sub.category || undefined,
+        serviceRequestId: sub.id,
       })
     });
     const data = await res.json();
@@ -1944,7 +2172,7 @@ async function submitSubmissionLink(subId) {
     // Mark submission as contacted so it leaves the pending list
     await fetch(API + '/api/service-requests/' + subId, {
       method: 'PATCH', headers: headers(),
-      body: JSON.stringify({ status: 'contacted' })
+      body: JSON.stringify({ status: 'contacted', convertedOrderId: data.orderId })
     });
 
     loadOrders();
@@ -2537,16 +2765,7 @@ async function pollNewOrders(silent = true) {
 
     updateNavBadges(d);
     // Update stat cards quietly
-    document.getElementById('stats-row').innerHTML = [
-      { num: d.requestsToday, label: 'Solicitudes hoy' },
-      { num: d.pendingOrders, label: 'Órdenes pendientes' },
-      { num: d.confirmedOrders, label: 'Confirmadas' },
-      { num: d.capturedOrders, label: 'Capturadas' },
-      { num: fmtMoney(d.capturedRevenue), label: 'Revenue capturado' },
-      { num: d.newReports, label: 'Reportes nuevos' },
-      { num: d.pendingApplications, label: 'Apps pendientes' },
-      { num: d.pendingChanges, label: 'Cambios por revisar' },
-    ].map(s => `<div class="stat-card"><div class="num">${escapeHtml(s.num)}</div><div class="label">${escapeHtml(s.label)}</div></div>`).join('');
+    renderStatsRow(d);
   } catch (_) {}
 }
 
@@ -2585,6 +2804,22 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden) liveTick();
 });
 window.addEventListener('focus', () => liveTick());
+
+// Escape closes the top-most overlay: transient modals first, then side panels.
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  const admNo = document.getElementById('adm-no');          // admModal (confirm/prompt)
+  if (admNo) { admNo.click(); return; }                     // routes through its cancel/resolve(null)
+  const subModal = document.getElementById('sub-modal-overlay');
+  if (subModal) { subModal.remove(); return; }
+  const admOverlay = document.querySelector('.adm-overlay'); // copy-link / generic modal
+  if (admOverlay) { admOverlay.remove(); return; }
+  const chMod = document.getElementById('ch-mod-bg'); if (chMod) { chMod.remove(); return; }
+  const edMod = document.getElementById('ed-mod-bg'); if (edMod) { edMod.remove(); return; }
+  if (document.getElementById('order-panel')?.classList.contains('open')) { closeOrderDetail(); return; }
+  if (document.getElementById('inbox-panel-detail')?.classList.contains('open')) { closeInboxDetail(); return; }
+  if (document.getElementById('prov-panel')?.classList.contains('open')) { closeProviderDetail(); return; }
+});
 
 // ─── Order Detail Panel ───────────────────────────────────────────────────────
 let _openDetailOrderId = null;
@@ -2717,6 +2952,9 @@ const CHANGE_STATUS_BADGE = {
   rejected: 'badge-canceled',
   failed: 'badge-rejected'
 };
+function changeNeedsReview(c) {
+  return c && c.status === 'applied' && String(c.requested_by || '').toLowerCase() === 'cliente' && !c.reviewed_at;
+}
 
 async function loadOrderChanges(orderId) {
   const target = document.getElementById('op-changes-list');
@@ -2728,7 +2966,9 @@ async function loadOrderChanges(orderId) {
     if (!items.length) { target.innerHTML = '<div style="color:#555;font-size:12px">Sin cambios solicitados</div>'; return; }
     target.innerHTML = items.map(c => {
       const label = CHANGE_TYPE_LABEL[c.change_type] || c.change_type;
-      const badgeCls = CHANGE_STATUS_BADGE[c.status] || 'badge-pending';
+      const needsReview = changeNeedsReview(c);
+      const badgeCls = needsReview ? 'badge-pending' : (CHANGE_STATUS_BADGE[c.status] || 'badge-pending');
+      const badgeText = needsReview ? 'por revisar' : c.status;
       const orig = c.original_service_datetime || c.original_service_address || c.original_status || '';
       const req = c.requested_service_datetime || c.requested_service_address || '';
       const diffLine = (orig || req)
@@ -2741,11 +2981,15 @@ async function loadOrderChanges(orderId) {
              <button class="action-btn" style="background:#1e3a2a;color:#10b981;border:1px solid #166534" onclick="applyChange('${c.id}','${orderId}')">Aplicar</button>
              <button class="action-btn" onclick="rejectChange('${c.id}','${orderId}')">Rechazar</button>
            </div>`
+        : needsReview
+        ? `<div style="display:flex;gap:6px;margin-top:8px">
+             <button class="action-btn" style="background:#1e3a2a;color:#10b981;border:1px solid #166534" onclick="reviewChange('${c.id}','${orderId}')">Marcar revisado</button>
+           </div>`
         : '';
       return `<div class="sp-adj">
         <div style="display:flex;justify-content:space-between;align-items:center">
           <span style="font-weight:600">${escapeHtml(label)}</span>
-          <span class="badge ${badgeCls}">${escapeHtml(c.status)}</span>
+          <span class="badge ${badgeCls}">${escapeHtml(badgeText)}</span>
         </div>
         <div style="font-size:11px;color:#666;margin-top:3px">${escapeHtml(c.id)} · ${fmtDate(c.created_at)} ${fmtTime(c.created_at)} · ${escapeHtml(c.requested_by||'—')}</div>
         ${diffLine}
@@ -2820,6 +3064,7 @@ async function submitChange(orderId) {
     toast('Cambio registrado', 'ok');
     closeChangeModal({ target: { id: 'ch-mod-bg' } });
     loadOrderChanges(orderId);
+    loadOrders(); loadStats();
   } catch (e) {
     err.textContent = e.message; err.style.display = 'block';
   }
@@ -2832,7 +3077,7 @@ async function applyChange(changeId, orderId) {
     if (!res.ok) throw new Error(d.message || d.error || `HTTP ${res.status}`);
     toast('Cambio aplicado', 'ok');
     openOrderDetail(orderId);
-    loadOrders();
+    loadOrders(); loadStats();
   } catch (e) { toast('Error: ' + e.message, 'err'); }
 }
 async function rejectChange(changeId, orderId) {
@@ -2843,6 +3088,17 @@ async function rejectChange(changeId, orderId) {
     if (!res.ok) throw new Error(d.message || d.error || `HTTP ${res.status}`);
     toast('Cambio rechazado', 'ok');
     loadOrderChanges(orderId);
+    loadOrders(); loadStats();
+  } catch (e) { toast('Error: ' + e.message, 'err'); }
+}
+async function reviewChange(changeId, orderId) {
+  try {
+    const res = await fetch(API + '/api/admin/changes/' + encodeURIComponent(changeId) + '/review', { method: 'POST', headers: headers() });
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.message || d.error || `HTTP ${res.status}`);
+    toast('Cambio revisado', 'ok');
+    loadOrderChanges(orderId);
+    loadOrders(); loadStats();
   } catch (e) { toast('Error: ' + e.message, 'err'); }
 }
 
@@ -2863,6 +3119,17 @@ function openOrderEdit(orderId) {
           <div><label class="form-label">Email</label><input class="auth-input" id="ed-client_email" value="${escapeHtml(o.client_email||'')}"></div>
           <div><label class="form-label">Proveedor (nombre)</label><input class="auth-input" id="ed-provider_name" value="${escapeHtml(o.provider_name||'')}"></div>
           <div><label class="form-label">Monto proveedor (MXN)</label><input class="auth-input" id="ed-provider_amount" type="number" min="1" value="${providerMxn}"></div>
+          <div style="grid-column:1/-1">
+            <label class="form-label">Asignar especialista verificado</label>
+            <div style="display:flex;gap:8px">
+              <input class="auth-input" id="ed-provider-search" placeholder="Buscar por nombre, especialidad o ID…" style="flex:1" oninput="searchProvidersForEdit()">
+              <select class="auth-input" id="ed-provider_id" style="flex:1" onchange="onEditProviderPick()">
+                <option value="">— Sin asignar —</option>
+                ${o.provider_id ? `<option value="${escapeHtml(o.provider_id)}" selected>${escapeHtml((o.provider_name || o.provider_id) + ' · ' + o.provider_id)}</option>` : ''}
+              </select>
+            </div>
+            <div class="schedule-helper" style="margin:6px 0 0">Asignar un proveedor verificado habilita "Especialistas de confianza" para el cliente tras completar el servicio.</div>
+          </div>
           <div>
             <label class="form-label">Fecha y hora confirmada del servicio</label>
             ${orderIsAsap(o) ? '<div class="schedule-helper" style="margin:0 0 7px">Esta orden está marcada como ASAP. Al guardar una fecha y hora, quedará agendada.</div>' : ''}
@@ -2881,9 +3148,48 @@ function closeOrderEdit(e) {
   if (e && e.target && e.target.id !== 'ed-mod-bg') return;
   const m = document.getElementById('ed-mod-bg'); if (m) m.remove();
 }
+let _edProvTimer = null;
+function searchProvidersForEdit() {
+  clearTimeout(_edProvTimer);
+  _edProvTimer = setTimeout(_doSearchProvidersForEdit, 300);
+}
+async function _doSearchProvidersForEdit() {
+  const q = (document.getElementById('ed-provider-search')?.value || '').trim();
+  const sel = document.getElementById('ed-provider_id');
+  if (!sel) return;
+  const current = sel.value;
+  const currentLabel = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : '';
+  try {
+    const params = new URLSearchParams({ status: 'verified', limit: 25 });
+    if (q) params.set('search', q);
+    const res = await fetch(API + '/api/admin/providers?' + params, { headers: headers() });
+    const d = await res.json();
+    const items = d.items || [];
+    let opts = '<option value="">— Sin asignar —</option>';
+    // Keep the current assignment selectable even if it's outside the search results.
+    if (current && !items.some(p => p.provider_id === current)) {
+      opts += `<option value="${escapeHtml(current)}" selected>${escapeHtml(currentLabel)}</option>`;
+    }
+    items.forEach(p => {
+      const label = `${p.name || '(sin nombre)'}${p.specialty ? ' · ' + p.specialty : ''} · ${p.provider_id}`;
+      opts += `<option value="${escapeHtml(p.provider_id)}"${p.provider_id === current ? ' selected' : ''}>${escapeHtml(label)}</option>`;
+    });
+    sel.innerHTML = opts;
+  } catch (e) { /* silent — search is best-effort */ }
+}
+function onEditProviderPick() {
+  // Auto-fill the provider name field from the picked option when the admin hasn't typed one.
+  const sel = document.getElementById('ed-provider_id');
+  const nameEl = document.getElementById('ed-provider_name');
+  if (!sel || !nameEl) return;
+  if (!sel.value) return;
+  const txt = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : '';
+  const nm = (txt.split(' · ')[0] || '').trim();
+  if (nm && nm !== '(sin nombre)' && !nameEl.value.trim()) nameEl.value = nm;
+}
 async function submitOrderEdit(orderId) {
   const o = _detailOrderCache || {};
-  const fields = ['client_name','client_phone','client_email','provider_name','provider_amount','service_datetime','service_description','service_address'];
+  const fields = ['client_name','client_phone','client_email','provider_id','provider_name','provider_amount','service_datetime','service_description','service_address'];
   const body = {};
   for (const f of fields) {
     const el = document.getElementById('ed-' + f);
@@ -2933,7 +3239,7 @@ async function loadProviders() {
   const status = document.getElementById('prov-status')?.value || '';
   const body = document.getElementById('providers-body');
   const empty = document.getElementById('providers-empty');
-  body.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:#666">Cargando...</td></tr>';
+  body.innerHTML = tableStateRow(6, 'Cargando aplicaciones…');
   try {
     const params = new URLSearchParams({ limit: 100 });
     if (status) params.set('status', status);
@@ -2962,7 +3268,7 @@ async function loadProviders() {
       </tr>
     `).join('');
   } catch (err) {
-    body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#ef4444">Error al cargar</td></tr>';
+    body.innerHTML = tableStateRow(6, 'No se pudieron cargar las aplicaciones. Reintenta.', true);
   }
 }
 
@@ -3074,7 +3380,7 @@ async function loadRoster() {
   const status = document.getElementById('roster-status')?.value || '';
   const body = document.getElementById('roster-body');
   const empty = document.getElementById('roster-empty');
-  body.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:#666">Cargando...</td></tr>';
+  body.innerHTML = tableStateRow(7, 'Cargando roster…');
   try {
     const params = new URLSearchParams({ limit: 200 });
     if (status) params.set('status', status);
@@ -3091,7 +3397,7 @@ async function loadRoster() {
       return `
       <tr onclick="openRosterDetail('${escapeHtml(p.provider_id)}')"${highlight}>
         <td style="font-family:monospace;font-size:12px;color:#10b981">${escapeHtml(p.provider_id)}</td>
-        <td style="font-weight:600">${escapeHtml(p.name || '—')}</td>
+        <td style="font-weight:600">${escapeHtml(p.name || '—')}${p.trusted_by_count > 0 ? ` <span class="badge" style="background:#2e1065;color:#ddd6fe;border:1px solid #6d28d9" title="Clientes que lo marcaron de confianza">⭐ ${p.trusted_by_count}</span>` : ''}</td>
         <td>${escapeHtml(p.phone || '—')}</td>
         <td>${escapeHtml(p.specialty || '—')}</td>
         <td>${escapeHtml(p.city || '—')}</td>
@@ -3101,7 +3407,7 @@ async function loadRoster() {
     }).join('');
     _highlightRosterId = null;
   } catch (err) {
-    body.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#ef4444">Error al cargar</td></tr>';
+    body.innerHTML = tableStateRow(7, 'No se pudo cargar el roster. Reintenta.', true);
   }
 }
 
@@ -3122,6 +3428,7 @@ function openRosterDetail(providerId) {
         <div><div class="sp-lbl">Estado</div><div class="sp-val"><span class="badge ${p.status==='removed' ? 'badge-rejected' : 'badge-verified'}">${escapeHtml(p.status)}</span></div></div>
         <div><div class="sp-lbl">Creado</div><div class="sp-val">${fmtDate(p.created_at)}</div></div>
         <div><div class="sp-lbl">Actualizado</div><div class="sp-val">${fmtDate(p.updated_at)}</div></div>
+        <div><div class="sp-lbl">Clientes de confianza</div><div class="sp-val">${p.trusted_by_count > 0 ? '⭐ ' + p.trusted_by_count : '—'}</div></div>
       </div>
     </div>
     <div class="sp-sec">

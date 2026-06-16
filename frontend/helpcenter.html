@@ -6,9 +6,10 @@
   <title>SERVI — Help Center</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,700;1,9..40,400&family=Syne:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/shared/shared-styles.css">
   <link rel="stylesheet" href="/shared/landing-theme.css">
+  <script>/* Hide scroll-reveal targets before first paint to prevent flicker; failsafe reveals them if the motion layer never loads (see motion.js + shared-styles.css). */(function(){var d=document.documentElement;d.classList.add('reveal-armed');setTimeout(function(){d.classList.remove('reveal-armed');},2000);})();</script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <style>
     .hc-hero {
@@ -73,11 +74,11 @@
 
 <section class="hc-hero">
   <div class="container">
-    <h1 class="heading-lg" style="margin-bottom:24px" data-i18n="helpcenter.title">Reporta Problemas o Comparte Ideas</h1>
+    <h1 class="heading-lg" style="margin-bottom:24px" data-i18n="helpcenter.title" data-reveal>Reporta Problemas o Comparte Ideas</h1>
     <p style="font-size:17px;color:rgba(255,255,255,0.7);max-width:600px;line-height:1.7;margin-bottom:48px" data-i18n="helpcenter.intro">
       Bienvenido al Centro de Ayuda y Feedback de SERVI. Reporta cualquier incidente que hayas experimentado o comparte tus valiosas sugerencias e ideas sobre cómo podemos mejorar SERVI para ti y para todos.
     </p>
-    <div style="display:flex;gap:20px;flex-wrap:wrap">
+    <div style="display:flex;gap:20px;flex-wrap:wrap" data-reveal>
       <a href="/helpcenter/report.html" class="hc-btn" data-i18n-html="helpcenter.ctaReport">Reportar Incidente<br>o Problema</a>
       <a href="/helpcenter/suggestion.html" class="hc-btn" data-i18n-html="helpcenter.ctaSuggestion">Compartir<br>Sugerencia o Idea</a>
     </div>
@@ -86,5 +87,9 @@
 
 <div id="footer"></div>
 <script src="/shared/shared-footer.js"></script>
+<!-- Motion layer (visual only) -->
+<script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/ScrollTrigger.min.js" defer></script>
+<script src="/shared/motion.js" defer></script>
 </body>
 </html>

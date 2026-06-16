@@ -6,12 +6,13 @@
   <title>Pago - SERVI</title>
 
   <script src="./config.js"></script>
+  <script src="./shared/contact-cta.js"></script>
   <script src="https://js.stripe.com/v3/"></script>
   
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@800&display=swap" rel="stylesheet">
 
   <style>
       * { box-sizing: border-box; }
@@ -39,8 +40,35 @@
       }
 
       .logo {
-        max-width: 150px;
+        color: #fff;
+        cursor: pointer;
+        display: inline-block;
+        font-family: "Outfit", "Inter", system-ui, sans-serif;
+        font-size: 30px;
+        font-weight: 800;
+        letter-spacing: -0.01em;
+        line-height: 1;
         margin-bottom: 6px;
+        position: relative;
+        text-decoration: none;
+        top: -1px;
+        white-space: nowrap;
+      }
+
+      .logo-dot {
+        background: currentColor;
+        border-radius: 0.34em 0.34em 0 0;
+        color: currentColor;
+        display: inline-block;
+        font-size: inherit;
+        height: 0.20em;
+        line-height: 1;
+        margin-left: 2px;
+        margin-bottom: 0;
+        overflow: hidden;
+        text-indent: 100%;
+        vertical-align: baseline;
+        width: 0.34em;
       }
 
       .container {
@@ -423,8 +451,8 @@
 </head>
 <body>
   <div class="page">
-    <a href="/index.html" rel="noopener">
-      <img src="logo-servi-white.png" alt="SERVI Logo" class="logo" />
+    <a href="/index.html" class="logo" rel="noopener" aria-label="SERVI">
+      SERVI<span class="logo-dot" aria-hidden="true">.</span>
     </a>
 
     <div class="container">
@@ -446,7 +474,7 @@
       </div>
       <div id="link-expired" class="notice" style="display:none;">
         <strong>Enlace expirado</strong>
-        <span>Solicita un nuevo enlace a través de WhatsApp.</span>
+        <span>Solicita un nuevo enlace a través de nuestro correo.</span>
         <small id="link-expired-date" style="display:none;"></small>
       </div>
 
@@ -550,6 +578,7 @@
     const orderParam = qs.get('order') || qs.get('orderId');
     const retryToken = qs.get('rt') || '';
     const allowExpired = qs.get('allowExpired') === '1';
+    const fromAccount = qs.get('from') === 'account';
 
     const PREVIEW_KEY = 'serviSuccessPreview';
     const PREVIEW_CACHE_PREFIX = `${PREVIEW_KEY}:`;
@@ -700,7 +729,8 @@
     const redirectToSuccess = (orderId) => {
       if (!orderId) return;
       setPreventBackLock(orderId);
-      window.location.replace(`success.html?order=${encodeURIComponent(orderId)}`);
+      const sourceParam = fromAccount ? '&from=account' : '';
+      window.location.replace(`success.html?order=${encodeURIComponent(orderId)}${sourceParam}`);
     };
 
     const mountCardElement = () => {
@@ -839,7 +869,7 @@
     const recordConsent = async (orderId, extras = {}) => {
       const CONSENT_VERSION = '1.0';
       const text =
-        'Autorizo a SERVI a guardar esta tarjeta y realizar cargos adicionales relacionados con mi servicio, previa confirmación por WhatsApp. Si mi banco exige verificación, se me pedirá confirmarlo (3-D Secure). Puedo solicitar la eliminación de mi método de pago en cualquier momento.';
+        'Autorizo a SERVI a guardar esta tarjeta y realizar cargos adicionales relacionados con mi servicio, previa confirmación por correo electrónico. Si mi banco exige verificación, se me pedirá confirmarlo (3-D Secure). Puedo solicitar la eliminación de mi método de pago en cualquier momento.';
       const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
       const bytes = new Uint8Array(buf);
       const hash = Array.from(bytes)
@@ -969,7 +999,11 @@
       const consentChecked = document.getElementById('consent-checkbox').checked;
       const cardholder = (cardholderInput?.value || '').trim();
       const email = (currentOrder.email || currentOrder.client_email || '').trim();
-      const requireConsentForBooking = needsConsentForBooking(currentOrder);
+      // A SetupIntent (seti_…) means "save the card now, charge later" — used by future-dated
+      // (≥5 days) and visit orders that can't place a hold yet. An off-session save needs consent.
+      const isSetupIntent = String(currentOrder.intentType || '').toLowerCase() === 'setup'
+        || String(clientSecret || '').startsWith('seti_');
+      const requireConsentForBooking = needsConsentForBooking(currentOrder) || isSetupIntent;
 
       const missingAlerts = [];
       if (!termsChecked) {
@@ -1014,6 +1048,37 @@
 
         if (!clientSecret) {
           alert('No se pudo inicializar el flujo de pago. Contacta a soporte.');
+          return;
+        }
+
+        // SetupIntent path: save the card now, NO charge. The hourly cron places the hold
+        // ~24h before service (setup_intent.succeeded → status 'Scheduled', kind 'book'). The
+        // saved card lands on the user's canonical Stripe customer, so it appears in their account.
+        if (isSetupIntent) {
+          if (consentChecked) {
+            await recordConsent(orderId, { billingEmail: email });
+          }
+          const setupResult = await stripe.confirmCardSetup(clientSecret, {
+            payment_method: {
+              card,
+              billing_details: {
+                ...(cardholder ? { name: cardholder } : {}),
+                ...(email ? { email } : {})
+              }
+            }
+          });
+          if (setupResult.error) {
+            if (handleLinkExpiredError(setupResult.error)) return;
+            alert(setupResult.error.message || 'No se pudo guardar tu método de pago.');
+            return;
+          }
+          const siStatus = (setupResult.setupIntent?.status || '').toLowerCase();
+          if (siStatus === 'succeeded' || siStatus === 'processing') {
+            localStorage.setItem('orderId', String(orderId));
+            redirectToSuccess(orderId);
+            return;
+          }
+          alert('No se pudo guardar tu método de pago.');
           return;
         }
 

@@ -1,6 +1,7 @@
 /* eslint-env node */
 // index.mjs (ES Module version of your server)
 import 'dotenv/config';
+import './timezone.mjs';
 import express from 'express';
 import StripePackage from 'stripe';
 import path from 'path';
@@ -23,7 +24,9 @@ import nodemailer from 'nodemailer';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { NodeHttpHandler } from '@smithy/node-http-handler';
 import https from 'https';
+import Anthropic from '@anthropic-ai/sdk';
 import { classifyOrderOps, sortOpsItems, summarizeOps } from './ops-radar.mjs';
+import { buildParseSystemPrompt, buildParseUserPrompt, parseModelResponse, MAX_TEXT } from './smartRequestParse.mjs';
 
 // --- R2 / S3 Client ---
 const r2 = new S3Client({
@@ -196,6 +199,146 @@ async function logAuthEvent(req, userId, eventType, metadata) {
   }
 }
 
+// Coarse device label from a raw user-agent ("Chrome · iPhone"). Intentionally
+// rough — the activity list only needs enough to let a user spot a stranger.
+function summarizeUserAgent(ua) {
+  const s = String(ua || '');
+  if (!s) return null;
+  let browser = null;
+  if (/edg(e|a|ios)?\//i.test(s)) browser = 'Edge';
+  else if (/opr\/|opera/i.test(s)) browser = 'Opera';
+  else if (/samsungbrowser/i.test(s)) browser = 'Samsung Internet';
+  else if (/firefox|fxios/i.test(s)) browser = 'Firefox';
+  else if (/crios|chrome/i.test(s)) browser = 'Chrome';
+  else if (/safari/i.test(s)) browser = 'Safari';
+  let os = null;
+  if (/iphone/i.test(s)) os = 'iPhone';
+  else if (/ipad/i.test(s)) os = 'iPad';
+  else if (/android/i.test(s)) os = 'Android';
+  else if (/windows/i.test(s)) os = 'Windows';
+  else if (/mac os x|macintosh/i.test(s)) os = 'Mac';
+  else if (/linux/i.test(s)) os = 'Linux';
+  if (browser && os) return `${browser} · ${os}`;
+  return browser || os || null;
+}
+
+// Privacy mask: keep enough of the IP to distinguish networks, never the full address.
+function maskIp(ip) {
+  const s = String(ip || '').trim();
+  if (!s) return null;
+  const v4 = s.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.\d{1,3}$/);
+  if (v4) return `${v4[1]}.${v4[2]}.${v4[3]}.x`;
+  if (s.includes(':')) {
+    const parts = s.split(':').filter(Boolean);
+    return parts.slice(0, 2).join(':') + ':…';
+  }
+  return null;
+}
+
+function hashEmailLinkPollToken(token) {
+  return createHash('sha256').update(String(token || ''), 'utf8').digest('hex');
+}
+
+async function googleConnectedForUser(user) {
+  if (!user) return false;
+  const authProvider = normalizeFirebaseProvider(user.auth_provider);
+  if (authProvider === 'google') return true;
+  if (!user.firebase_uid || user.email_verified !== true) return false;
+  try {
+    const firebaseUser = await firebaseAdmin.auth().getUser(user.firebase_uid);
+    return (firebaseUser.providerData || []).some((entry) => entry.providerId === 'google.com');
+  } catch (err) {
+    console.warn('[googleConnectedForUser] Firebase lookup failed:', err.code || err.message);
+    return false;
+  }
+}
+
+async function publicUserPayload(user) {
+  if (!user) return null;
+  return {
+    id: user.id,
+    email: user.email || null,
+    name: user.name || null,
+    phone: user.phone || null,
+    auth_provider: user.auth_provider || null,
+    google_connected: await googleConnectedForUser(user),
+    phone_verified: !!user.phone_verified,
+    email_verified: !!user.email_verified,
+    terms_accepted_at: user.terms_accepted_at || null,
+    email_skipped_at: user.email_skipped_at || null,
+  };
+}
+
+async function reconcileVerifiedEmailToFirebaseOwner({ emailNorm, verifiedEmailUid, ownerFirebaseUid }) {
+  if (!emailNorm || !verifiedEmailUid || !ownerFirebaseUid || verifiedEmailUid === ownerFirebaseUid) {
+    return { reconciled: false, firebaseUid: ownerFirebaseUid || verifiedEmailUid };
+  }
+
+  const { rows: uidRows } = await pool.query(
+    'SELECT id FROM auth_users WHERE firebase_uid = $1 LIMIT 1',
+    [verifiedEmailUid]
+  );
+  if (uidRows.length) {
+    const err = new Error('Verified email Firebase user is already attached to a SERVI account.');
+    err.status = 409;
+    err.code = 'email_uid_already_attached';
+    throw err;
+  }
+
+  let emailFirebaseUser;
+  let ownerFirebaseUser;
+  try {
+    emailFirebaseUser = await firebaseAdmin.auth().getUser(verifiedEmailUid);
+    ownerFirebaseUser = await firebaseAdmin.auth().getUser(ownerFirebaseUid);
+  } catch (err) {
+    err.status = 401;
+    err.code = 'firebase_user_missing';
+    throw err;
+  }
+
+  const emailUserEmail = normalizeEmail(emailFirebaseUser.email || '');
+  if (emailUserEmail !== emailNorm || emailFirebaseUser.emailVerified !== true) {
+    const err = new Error('Verified email Firebase user does not prove the supplied email.');
+    err.status = 400;
+    err.code = 'email_mismatch';
+    throw err;
+  }
+  if (emailFirebaseUser.phoneNumber) {
+    const err = new Error('Verified email Firebase user has its own phone and cannot be merged automatically.');
+    err.status = 409;
+    err.code = 'email_uid_has_phone';
+    throw err;
+  }
+
+  const ownerEmail = normalizeEmail(ownerFirebaseUser.email || '');
+  if (ownerEmail && ownerEmail !== emailNorm) {
+    const err = new Error('Canonical Firebase user already has another email.');
+    err.status = 409;
+    err.code = 'owner_email_conflict';
+    throw err;
+  }
+
+  try {
+    const existingEmailOwner = await firebaseAdmin.auth().getUserByEmail(emailNorm);
+    if (existingEmailOwner.uid !== verifiedEmailUid && existingEmailOwner.uid !== ownerFirebaseUid) {
+      const err = new Error('Email is already owned by another Firebase user.');
+      err.status = 409;
+      err.code = 'firebase_email_conflict';
+      throw err;
+    }
+  } catch (err) {
+    if (err.code !== 'auth/user-not-found') throw err;
+  }
+
+  await firebaseAdmin.auth().deleteUser(emailFirebaseUser.uid);
+  await firebaseAdmin.auth().updateUser(ownerFirebaseUid, {
+    email: emailNorm,
+    emailVerified: true,
+  });
+
+  return { reconciled: true, firebaseUid: ownerFirebaseUid };
+}
+
 // Per-identifier rate limiter using auth_otp_attempts. Returns true if allowed,
 // false if the identifier has exceeded `limit` attempts within `windowMs`.
 async function checkAndRecordIdentifierAttempt(identifier, kind, ip, limit, windowMs) {
@@ -289,6 +432,20 @@ function normalizeNameKey(value) {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/\s+/g, ' ');
+}
+
+// Privacy-preserving provider display for customer-facing surfaces: first name + last initial
+// ("Juan P."). Never expose a provider's full name/contact to a client \u2014 that's the
+// anti-disintermediation guardrail. Mirrors maskProviderName() in frontend/success.html.
+function maskProviderName(raw) {
+  const name = String(raw || '').trim();
+  if (!name) return null;
+  const parts = name.split(/\s+/).filter(Boolean);
+  if (!parts.length) return null;
+  const first = parts[0];
+  const last = parts.length > 1 ? parts[parts.length - 1] : '';
+  const lastInitial = last ? `${last[0].toUpperCase()}.` : '';
+  return [first, lastInitial].filter(Boolean).join(' ');
 }
 
 const BOOKING_TYPE_LABELS = {
@@ -898,13 +1055,30 @@ const publicFormLimit = rateLimit({
   legacyHeaders: false,
   message: { error: 'too_many_requests' },
 });
+
+const emailLinkPollLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 300,
+  skip: () => process.env.NODE_ENV === 'test' || process.env.DISABLE_RATE_LIMITS === '1',
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'too_many_requests' },
+});
 const stripe = new StripePackage(process.env.STRIPE_SECRET_KEY);
+// Detected once at boot from the secret-key prefix. Used to (a) refuse to start production on a
+// test key, (b) stamp each order with the Stripe mode it was created under, and (c) keep the
+// hourly preauth cron from touching orders that belong to the other mode (defense against a
+// shared DB where test + live orders coexist).
+const STRIPE_LIVEMODE = String(process.env.STRIPE_SECRET_KEY || '').startsWith('sk_live');
 const GOOGLE_SCRIPT_WEBHOOK_URL = process.env.SHEETS_WEBHOOK_URL || '';
 const ADMIN_API_TOKEN = process.env.ADMIN_API_TOKEN || '';
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET || '';
 const FRONTEND_BASE_URL = (process.env.FRONTEND_BASE_URL || process.env.PUBLIC_BASE_URL || 'https://servi-preauth.pages.dev').replace(/\/+$/, '');
 const GMAIL_USER = process.env.GMAIL_USER || '';
 const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD || '';
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
+const anthropic = ANTHROPIC_API_KEY ? new Anthropic({ apiKey: ANTHROPIC_API_KEY }) : null;
+const PARSE_SYSTEM_PROMPT = buildParseSystemPrompt();
 const emailTransporter = (GMAIL_USER && GMAIL_APP_PASSWORD)
   ? nodemailer.createTransport({
       host: 'smtp.gmail.com',
@@ -920,6 +1094,12 @@ const emailTransporter = (GMAIL_USER && GMAIL_APP_PASSWORD)
 
 if (!process.env.STRIPE_SECRET_KEY) {
   throw new Error('STRIPE_SECRET_KEY must be configured before starting the server');
+}
+console.log('[startup] Stripe mode:', STRIPE_LIVEMODE ? 'LIVE' : 'TEST');
+// Fail fast if production is misconfigured with a test key — a live cron acting on test-mode
+// orders (or vice versa) is exactly the cross-mode failure this guard prevents.
+if (process.env.NODE_ENV === 'production' && !STRIPE_LIVEMODE) {
+  throw new Error('Refusing to start: NODE_ENV=production but STRIPE_SECRET_KEY is a test key');
 }
 if (!ADMIN_API_TOKEN) {
   throw new Error('ADMIN_API_TOKEN must be configured before starting the server');
@@ -987,6 +1167,40 @@ function buildFrontendLinks(orderId) {
     payUrl: buildFrontendUrl('/pay.html', { order: safeId }),
     successUrl: buildFrontendUrl('/success.html', { order: safeId }),
     bookUrl: buildFrontendUrl('/book.html', { orderId: safeId })
+  };
+}
+
+function paymentFlowForOrderRow(row) {
+  const kind = String(row?.kind || '').toLowerCase();
+  return (row?.customer_id || kind === 'book' || kind === 'adjustment') ? 'book' : 'pay';
+}
+
+function buildOrderPaymentUrl(row, retryToken = null) {
+  const flow = paymentFlowForOrderRow(row);
+  const baseUrl = flow === 'book'
+    ? buildFrontendUrl('/book.html', { orderId: row.id })
+    : buildFrontendUrl('/pay.html', { order: row.id });
+  if (!baseUrl || !retryToken) return baseUrl;
+  const urlObj = new URL(baseUrl);
+  urlObj.searchParams.set('rt', retryToken);
+  return urlObj.toString();
+}
+
+async function issueFreshOrderPaymentLink(row) {
+  const token = randomBytes(12).toString('base64url');
+  const upd = await pool.query(
+    `UPDATE all_bookings
+        SET retry_token = $1,
+            retry_token_created_at = NOW()
+      WHERE id = $2
+      RETURNING retry_token_created_at`,
+    [token, row.id]
+  );
+  const flow = paymentFlowForOrderRow(row);
+  return {
+    url: buildOrderPaymentUrl(row, token),
+    flow,
+    issuedAt: upd.rows[0]?.retry_token_created_at || new Date().toISOString(),
   };
 }
 
@@ -1570,8 +1784,13 @@ app.use(express.static(FRONTEND_DIR));
       allow_cash_once,
       category: categoryRaw,
       isAsap,
-      is_asap
+      is_asap,
+      serviceRequestId: serviceRequestIdCamel,
+      service_request_id: serviceRequestIdSnake,
+      requestId,
+      request_id: requestIdSnake
     } = req.body;
+    const sourceRequestId = String(serviceRequestIdCamel ?? serviceRequestIdSnake ?? requestId ?? requestIdSnake ?? '').trim();
     const categoryInput = String(categoryRaw || '').trim().toLowerCase() || null;
     const VALID_CATEGORIES = new Set(['cleaning','repair','wellness','maintenance','supply','custom']);
     const category = categoryInput && VALID_CATEGORIES.has(categoryInput) ? categoryInput : (categoryInput || null);
@@ -1629,7 +1848,69 @@ app.use(express.static(FRONTEND_DIR));
     String(isAsap ?? is_asap ?? '').toLowerCase() === 'true' ||
     isAsap === '1' ||
     is_asap === '1';
+  let claimedSourceRequestId = null;
+  let orderInserted = false;
+  let orderId = null;
   try {
+    let sourceRequest = null;
+    if (sourceRequestId) {
+      const { rows: requestRows } = await pool.query(
+        `SELECT id, client_phone, client_email, converted_order_id
+           FROM service_requests
+          WHERE id = $1
+          LIMIT 1`,
+        [sourceRequestId]
+      );
+      sourceRequest = requestRows[0] || null;
+      if (!sourceRequest) {
+        return res.status(404).send({
+          error: 'service_request_not_found',
+          message: 'La solicitud original ya no existe.'
+        });
+      }
+      const requestPhoneDigits = normalizePhoneDigits(sourceRequest.client_phone);
+      if (requestPhoneDigits && phoneDigits && requestPhoneDigits !== phoneDigits) {
+        return res.status(409).send({
+          error: 'service_request_phone_conflict',
+          message: 'La solicitud original pertenece a otro WhatsApp.'
+        });
+      }
+      const requestEmail = normalizeEmail(sourceRequest.client_email || '');
+      if (requestEmail && clientEmailNormalized && requestEmail !== clientEmailNormalized) {
+        return res.status(409).send({
+          error: 'service_request_email_conflict',
+          message: 'La solicitud original pertenece a otro email.'
+        });
+      }
+      if (sourceRequest.converted_order_id) {
+        const { rows: existingRows } = await pool.query(
+          `SELECT id, public_code, customer_id, kind, status
+             FROM all_bookings
+            WHERE id = $1
+            LIMIT 1`,
+          [sourceRequest.converted_order_id]
+        );
+        const existing = existingRows[0] || null;
+        if (!existing) {
+          return res.status(409).send({
+            error: 'converted_order_missing',
+            message: 'La solicitud ya fue convertida, pero no se encontró la orden vinculada.'
+          });
+        }
+        const freshLink = await issueFreshOrderPaymentLink(existing);
+        const links = buildFrontendLinks(existing.id);
+        return res.send({
+          orderId: existing.id,
+          publicCode: existing.public_code || null,
+          payUrl: freshLink.url,
+          successUrl: links.successUrl,
+          bookUrl: links.bookUrl,
+          flow: freshLink.flow,
+          issuedAt: freshLink.issuedAt,
+          alreadyConverted: true
+        });
+      }
+    }
     const captureMethod = String(capture).toLowerCase() === 'automatic' ? 'automatic' : 'manual';
     const savedPhoneRecord = phoneDigits ? await findSavedClientByPhoneDigits(phoneDigits) : null;
     const storedPhoneNameKey = savedPhoneRecord ? normalizeNameKey(savedPhoneRecord.customer_name) : '';
@@ -1770,8 +2051,56 @@ app.use(express.static(FRONTEND_DIR));
     }
 
     // Create the order row (allow NULL customer_id for now)
-    const orderId = randomUUID();
+    orderId = randomUUID();
     const publicCode = await generateUniqueCode();
+    if (sourceRequest) {
+      const claim = await pool.query(
+        `UPDATE service_requests
+            SET converted_order_id = $1,
+                status = CASE WHEN status ~* '^cancel' THEN status ELSE 'contacted' END,
+                updated_at = NOW()
+          WHERE id = $2
+            AND COALESCE(converted_order_id, '') = ''
+          RETURNING id`,
+        [orderId, sourceRequest.id]
+      );
+      if (!claim.rowCount) {
+        const { rows: rereadRows } = await pool.query(
+          `SELECT converted_order_id FROM service_requests WHERE id = $1 LIMIT 1`,
+          [sourceRequest.id]
+        );
+        const convertedOrderId = rereadRows[0]?.converted_order_id || null;
+        if (convertedOrderId) {
+          const { rows: existingRows } = await pool.query(
+            `SELECT id, public_code, customer_id, kind, status
+               FROM all_bookings
+              WHERE id = $1
+              LIMIT 1`,
+            [convertedOrderId]
+          );
+          const existing = existingRows[0] || null;
+          if (existing) {
+            const freshLink = await issueFreshOrderPaymentLink(existing);
+            const links = buildFrontendLinks(existing.id);
+            return res.send({
+              orderId: existing.id,
+              publicCode: existing.public_code || null,
+              payUrl: freshLink.url,
+              successUrl: links.successUrl,
+              bookUrl: links.bookUrl,
+              flow: freshLink.flow,
+              issuedAt: freshLink.issuedAt,
+              alreadyConverted: true
+            });
+          }
+        }
+        return res.status(409).send({
+          error: 'service_request_already_converted',
+          message: 'La solicitud original ya fue convertida por otro enlace.'
+        });
+      }
+      claimedSourceRequestId = sourceRequest.id;
+    }
     const links = buildFrontendLinks(orderId);
     const linkPayload = {
       payUrl: links.payUrl,
@@ -1812,13 +2141,14 @@ app.use(express.static(FRONTEND_DIR));
         stripe_fee_tax_rate,
         processing_fee_type,
         urgency_multiplier,
-        alpha_value
+        alpha_value,
+        stripe_livemode
       )
       VALUES (
         $1,$2,$3,$4,$5,$6,$7,
         $8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
         $19,'pending',$20,'primary',
-        $21,$22,$23,$24,$25,$26,$27,$28
+        $21,$22,$23,$24,$25,$26,$27,$28,$29
       )
       ON CONFLICT (id) DO NOTHING`,
       [
@@ -1849,9 +2179,11 @@ app.use(express.static(FRONTEND_DIR));
         stripeFeeVatRate,
         processingFeeType,
         urgencyMultiplier,
-        alphaValue
+        alphaValue,
+        STRIPE_LIVEMODE
       ]
     );
+    orderInserted = true;
 
     // also persist service_date/service_datetime (you already do)
   await pool.query(
@@ -2048,6 +2380,21 @@ app.use(express.static(FRONTEND_DIR));
 
 
   } catch (err) {
+    if (claimedSourceRequestId && orderId && !orderInserted) {
+      try {
+        await pool.query(
+          `UPDATE service_requests
+              SET converted_order_id = NULL,
+                  status = CASE WHEN status = 'contacted' THEN 'pending' ELSE status END,
+                  updated_at = NOW()
+            WHERE id = $1
+              AND converted_order_id = $2`,
+          [claimedSourceRequestId, orderId]
+        );
+      } catch (cleanupErr) {
+        console.warn('[create-payment-intent] source request claim cleanup failed:', cleanupErr?.message || cleanupErr);
+      }
+    }
     console.error('Error creating payment intent:', err);
     const status = err.status || 400;
     const payload = {
@@ -3008,6 +3355,10 @@ app.post('/create-standalone-setup', async (req, res) => {
 
 app.post('/tasks/preauth-due', adminRateLimit, requireAdminAuth, async (req, res) => {
   try {
+    // force:true bypasses ONLY the 24h window bounds (for manual/testing dispatch). All
+    // eligibility filters (kind='book', saved card + customer, no existing PI, not cash) still
+    // apply — force never pre-authorizes an order that isn't otherwise ready.
+    const force = req.body?.force === true || String(req.body?.force).toLowerCase() === 'true';
     const { rows } = await pool.query(`
       /* Pick saved-card "book" orders that are entering the 24h preauth window */
       WITH service_ts AS (
@@ -3038,14 +3389,17 @@ app.post('/tasks/preauth-due', adminRateLimit, requireAdminAuth, async (req, res
           AND saved_payment_method_id IS NOT NULL
           AND payment_intent_id IS NULL
           AND COALESCE(cash_selected, FALSE) = FALSE
+          /* Only act on orders created under THIS backend's Stripe mode. NULL = legacy/pre-column
+             rows, still processed (after DB separation each DB holds one mode's data anyway); the
+             cross-mode skip guard in the catch block backstops any residual mismatch. */
+          AND (stripe_livemode = $2 OR stripe_livemode IS NULL)
       )
       SELECT id, amount, customer_id, saved_payment_method_id, parent_id_of_adjustment, kind, provider_id, provider_name, client_name, client_email, service_date, service_datetime
       FROM service_ts
-      WHERE svc_at >= NOW()
-        AND svc_at <  NOW() + INTERVAL '24 hours'
+      WHERE ($1::boolean OR (svc_at >= NOW() AND svc_at < NOW() + INTERVAL '24 hours'))
       ORDER BY svc_at ASC
       LIMIT 50
-    `);
+    `, [force, STRIPE_LIVEMODE]);
 
 
     const results = [];
@@ -3087,6 +3441,21 @@ app.post('/tasks/preauth-due', adminRateLimit, requireAdminAuth, async (req, res
       } catch (e) {
         const failure = describeStripeFailure(e);
         const logMsg = failure?.friendly || failure?.message || e?.message;
+
+        // Cross-mode mismatch (e.g. a test-mode PM reached by a live-mode key on a shared DB):
+        // this is a misconfiguration, NOT a customer payment failure. Skip without marking the
+        // order Declined or firing a retry webhook, and leave it Scheduled so the correct-mode
+        // cron (or post-DB-separation cleanup) can handle it. Match narrowly so a genuine
+        // deleted-card resource_missing still flows through handlePreauthFailure below.
+        const failureCode = failure?.failure_code || e?.code || '';
+        const isCrossMode = failureCode === 'resource_missing'
+          && /similar object exists in (test|live) mode/i.test(logMsg || '');
+        if (isCrossMode) {
+          console.warn('[preauth-due] skipped cross-mode order (left Scheduled):', row.id, logMsg);
+          results.push({ orderId: row.id, skipped: 'mode_mismatch' });
+          continue;
+        }
+
         console.error('[preauth-due] failed for', row.id, logMsg);
         try {
           await handlePreauthFailure(row, { error: e, failure });
@@ -3102,7 +3471,19 @@ app.post('/tasks/preauth-due', adminRateLimit, requireAdminAuth, async (req, res
       }
     }
 
-    res.json({ ok: true, processed: results.length, results });
+    // Opportunistic housekeeping on the existing hourly trigger: prune session-revocation
+    // rows whose underlying JWTs have already expired (the token is dead, so the tombstone
+    // is no longer needed). Keeps revoked_sessions from growing unbounded. Best-effort.
+    let revokedPruned = 0;
+    try {
+      const pruneRes = await pool.query('DELETE FROM revoked_sessions WHERE expires_at < NOW()');
+      revokedPruned = pruneRes.rowCount || 0;
+      if (revokedPruned) console.log('[preauth-due] pruned expired revoked_sessions rows:', revokedPruned);
+    } catch (pruneErr) {
+      console.warn('[preauth-due] revoked_sessions prune failed (non-blocking):', pruneErr?.message || pruneErr);
+    }
+
+    res.json({ ok: true, processed: results.length, results, revokedPruned });
   } catch (e) {
     console.error('preauth-due error:', e);
     res.status(500).json({ ok: false, error: e.message || 'internal' });
@@ -3592,13 +3973,14 @@ app.post('/create-adjustment', adminRateLimit, requireAdminAuth, async (req, res
           stripe_fixed_fee,
           stripe_fee_tax_rate,
           processing_fee_type,
-          alpha_value
+          alpha_value,
+          stripe_livemode
         )
         VALUES (
           $1,$2,$3,$4,$5,$6,$7,$8,
           $9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
           'Pending',$19,'adjustment',$20,$21,$22,
-          $23,$24,$25,$26,$27,$28,$29,$30
+          $23,$24,$25,$26,$27,$28,$29,$30,$31
         )
       `,
       [
@@ -3631,7 +4013,8 @@ app.post('/create-adjustment', adminRateLimit, requireAdminAuth, async (req, res
         stripeFixedFeeCents,
         stripeFeeVatRate,
         'standard',
-        alphaValue ?? null
+        alphaValue ?? null,
+        STRIPE_LIVEMODE
       ]
     );
 
@@ -4598,8 +4981,12 @@ app.post('/confirm-with-saved', async (req, res) => {
     let piId = row.payment_intent_id || null;
     const isSetup = piId && String(piId).startsWith('seti_');
 
-    // >72h: keep scheduled flow; no PI until 24h window
-    if (hoursAhead > EARLY_PREAUTH_THRESHOLD_HOURS && !force) {
+    // >24h: keep scheduled flow; NO PaymentIntent until the 24h preauth window. A normal user
+    // confirm (no force/createOnly) records the saved card + sets status='Scheduled' and returns
+    // the "programado" 409; the hourly cron places the actual hold ~24h before service. `force`
+    // bypasses this entirely and the inner `createOnly` branch still serves admin/testing early
+    // PI creation for the 24h–72h range — those manual triggers are unchanged.
+    if (hoursAhead > PREAUTH_WINDOW_HOURS && !force) {
       if (!savedPmId && row.customer_id) {
         const list = await stripe.paymentMethods.list({
           customer: row.customer_id,
@@ -5048,10 +5435,36 @@ app.post('/api/uploads', publicFormLimit, upload.single('file'), async (req, res
   }
 });
 
+// --- Public: AI parse of a free-text service request (Claude Haiku) ---
+// The frontend keeps a keyword heuristic fallback, so any error here is non-fatal.
+app.post('/api/parse-request', publicFormLimit, async (req, res) => {
+  try {
+    const { text, lang } = req.body || {};
+    const cleanText = typeof text === 'string' ? text.trim().slice(0, MAX_TEXT) : '';
+    if (!cleanText) return res.status(400).json({ error: 'missing_text' });
+    if (!anthropic) return res.status(503).json({ error: 'ai_unavailable' });
+    const langCode = lang === 'en' ? 'en' : 'es';
+
+    const msg = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 700,
+      system: [{ type: 'text', text: PARSE_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
+      messages: [{ role: 'user', content: buildParseUserPrompt(cleanText, langCode) }],
+    });
+    const raw = (msg.content || []).map((b) => b.text || '').join('');
+    return res.json(parseModelResponse(raw));
+  } catch (err) {
+    console.error('[POST /api/parse-request]', err && err.message);
+    return res.status(502).json({ error: 'parse_failed' });
+  }
+});
+
 // --- Public: Submit a service request ---
 app.post('/api/service-requests', publicFormLimit, async (req, res) => {
   try {
-    const { category, description, preferredDate, preferredTime, isAsap, serviceAddress, serviceAddressDetails, clientName, clientPhone, clientEmail, customerId, lang, attachments, clientRequestId } = req.body || {};
+    const { category, description, preferredDate, preferredTime, isAsap, serviceAddress, serviceAddressDetails, clientName, clientPhone, clientEmail, customerId, lang, attachments, clientRequestId,
+      requestMode, matchedService, matchedSubKey, aiSummary, aiConfidence, aiSource, detailAnswers,
+      preferredProviderId, preferred_provider_id, preferredProviderName, preferred_provider_name } = req.body || {};
     if (!category || !clientName || !clientPhone) {
       return res.status(400).json({ error: 'missing_required_fields', message: 'category, clientName, and clientPhone are required' });
     }
@@ -5062,7 +5475,8 @@ app.post('/api/service-requests', publicFormLimit, async (req, res) => {
 
     const authHeader = req.headers.authorization || '';
     const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
-    const userPayload = token ? verifySessionToken(token) : null;
+    // Async verifier so a revoked/logged-out session can't submit a booking with an old JWT.
+    const userPayload = token ? await verifySessionTokenAsync(token) : null;
     let effectiveCustomerId = customerId || null;
     if (userPayload?.user_id) effectiveCustomerId = userPayload.user_id;
 
@@ -5098,16 +5512,39 @@ app.post('/api/service-requests', publicFormLimit, async (req, res) => {
     }
 
     // If the request comes from an authenticated user, enforce both identifiers verified.
+    // Verification status starts from the SERVI account row, then is upgraded when
+    // Firebase confirms the same identifier. Phone and email can be split across
+    // Firebase users if a provider was not linked, so one Firebase record must not
+    // downgrade the other already-verified identifier.
     if (userPayload?.user_id) {
       const { rows: vRows } = await pool.query(
-        'SELECT phone, phone_verified, email_verified, email_skipped_at FROM auth_users WHERE id = $1',
+        'SELECT phone, email, firebase_uid, phone_verified, email_verified FROM auth_users WHERE id = $1',
         [userPayload.user_id]
       );
       const v = vRows[0];
-      if (v && !v.phone_verified) {
+      let phoneVerified = !!v?.phone_verified;
+      let emailVerified = !!v?.email_verified;
+      if (v?.firebase_uid) {
+        try {
+          const fbUser = await firebaseAdmin.auth().getUser(v.firebase_uid);
+          const dbPhoneNorm = v.phone ? normalizePhoneToE164(v.phone) : null;
+          const fbPhoneNorm = fbUser.phoneNumber ? normalizePhoneToE164(fbUser.phoneNumber) : null;
+          const dbEmailNorm = v.email ? normalizeEmail(v.email) : null;
+          const fbEmailNorm = fbUser.email ? normalizeEmail(fbUser.email) : null;
+          if (dbPhoneNorm && fbPhoneNorm && dbPhoneNorm === fbPhoneNorm) {
+            phoneVerified = true;
+          }
+          if (dbEmailNorm && fbEmailNorm && dbEmailNorm === fbEmailNorm && fbUser.emailVerified === true) {
+            emailVerified = true;
+          }
+        } catch (fbErr) {
+          console.warn('[service-requests] Firebase lookup failed, falling back to DB flags:', fbErr.message);
+        }
+      }
+      if (v && !phoneVerified) {
         return res.status(409).json({ error: 'phone_required', message: 'Verifica tu número de teléfono para confirmar tu solicitud.' });
       }
-      if (v && !v.email_verified) {
+      if (v && !emailVerified) {
         const phoneDigits = normalizePhoneDigits(v.phone || clientPhone);
         const hasPriorActivity = await hasPriorServiceActivity({
           userId: userPayload.user_id,
@@ -5126,12 +5563,40 @@ app.post('/api/service-requests', publicFormLimit, async (req, res) => {
     const addressDetailsStr = serviceAddressDetails && typeof serviceAddressDetails === 'object'
       ? JSON.stringify(serviceAddressDetails)
       : null;
+    const detailAnswersStr = detailAnswers && typeof detailAnswers === 'object'
+      ? JSON.stringify(detailAnswers)
+      : null;
+    const aiConfidenceNum = (typeof aiConfidence === 'number' && Number.isFinite(aiConfidence)) ? aiConfidence : null;
+
+    // Trusted Specialists: a customer can prefer a specific specialist for this rebooking. It's a
+    // PREFERENCE, not a guarantee — we only carry it forward if the provider is currently verified;
+    // otherwise we drop it silently and admin matches another verified specialist.
+    let prefProviderId = String(preferredProviderId ?? preferred_provider_id ?? '').trim() || null;
+    let prefProviderName = String(preferredProviderName ?? preferred_provider_name ?? '').trim() || null;
+    if (prefProviderId) {
+      try {
+        const { rows: pp } = await pool.query('SELECT status, name FROM providers WHERE provider_id = $1 LIMIT 1', [prefProviderId]);
+        if (!pp[0] || pp[0].status !== 'verified') {
+          console.warn(`[service-requests] dropping preferred provider ${prefProviderId} (not verified/missing)`);
+          prefProviderId = null;
+          prefProviderName = null;
+        } else if (!prefProviderName) {
+          prefProviderName = pp[0].name || null;
+        }
+      } catch (ppErr) {
+        console.warn('[service-requests] preferred provider lookup failed:', ppErr.message);
+        prefProviderId = null;
+        prefProviderName = null;
+      }
+    }
+
     const id = randomUUID();
     try {
       await pool.query(
-        `INSERT INTO service_requests (id, category, description, preferred_date, preferred_time, is_asap, service_address, service_address_details, client_name, client_phone, client_email, client_request_id, customer_id, lang, attachments)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
-        [id, category, description || null, preferredDate || null, preferredTime || null, !!isAsap, serviceAddress || null, addressDetailsStr, clientName, clientPhone, clientEmail || null, clientRequestIdNorm || null, effectiveCustomerId, lang || 'es', attachmentsStr]
+        `INSERT INTO service_requests (id, category, description, preferred_date, preferred_time, is_asap, service_address, service_address_details, client_name, client_phone, client_email, client_request_id, customer_id, lang, attachments, request_mode, matched_service, matched_sub_key, ai_summary, ai_confidence, ai_source, detail_answers, preferred_provider_id, preferred_provider_name)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)`,
+        [id, category, description || null, preferredDate || null, preferredTime || null, !!isAsap, serviceAddress || null, addressDetailsStr, clientName, clientPhone, clientEmail || null, clientRequestIdNorm || null, effectiveCustomerId, lang || 'es', attachmentsStr,
+          requestMode || null, matchedService || null, matchedSubKey || null, aiSummary || null, aiConfidenceNum, aiSource || null, detailAnswersStr, prefProviderId, prefProviderName]
       );
     } catch (insertErr) {
       if (insertErr.code === '23505' && clientRequestIdNorm) {
@@ -5139,6 +5604,15 @@ app.post('/api/service-requests', publicFormLimit, async (req, res) => {
         if (sameRequester(duplicateRequest)) return existingRequestResponse(duplicateRequest);
       }
       throw insertErr;
+    }
+    // Trusted Specialists: record the rebook against the logged-in user's trusted row (best-effort).
+    if (userPayload?.user_id && prefProviderId) {
+      pool.query(
+        `UPDATE user_trusted_specialists
+            SET times_booked = times_booked + 1, last_booked_at = NOW(), updated_at = NOW()
+          WHERE user_id = $1 AND provider_id = $2`,
+        [userPayload.user_id, prefProviderId]
+      ).catch((e) => console.warn('[service-requests] trusted bump failed:', e.message));
     }
     // Notify Google Sheets
     postToGoogleWebhook({ type: 'service_request.created', requestId: id, category, clientName, clientPhone, clientEmail: clientEmail || '', serviceAddress: serviceAddress || '', isAsap: !!isAsap, preferredDate: preferredDate || '', preferredTime: preferredTime || '' });
@@ -5210,18 +5684,12 @@ app.get('/api/auth/me', async (req, res) => {
   if (!payload?.user_id) return res.status(401).json({ error: 'unauthorized' });
   try {
     const { rows } = await pool.query(
-      'SELECT id, email, name, phone, auth_provider, phone_verified, email_verified, terms_accepted_at, email_skipped_at FROM auth_users WHERE id = $1',
+      'SELECT id, email, name, phone, firebase_uid, auth_provider, phone_verified, email_verified, terms_accepted_at, email_skipped_at FROM auth_users WHERE id = $1',
       [payload.user_id]
     );
     const user = rows[0];
     if (!user) return res.status(404).json({ error: 'not_found' });
-    return res.json({ user: {
-      id: user.id, email: user.email, name: user.name,
-      phone: user.phone || null, auth_provider: user.auth_provider || null,
-      phone_verified: !!user.phone_verified, email_verified: !!user.email_verified,
-      terms_accepted_at: user.terms_accepted_at || null,
-      email_skipped_at: user.email_skipped_at || null,
-    }});
+    return res.json({ user: await publicUserPayload(user) });
   } catch (err) {
     console.error('[GET /api/auth/me]', err);
     return res.status(500).json({ error: 'internal_error' });
@@ -5297,6 +5765,248 @@ app.post('/api/auth/check-identifier', publicFormLimit, async (req, res) => {
   }
 });
 
+// POST /api/auth/email-link-flow/start — start cross-device email-link login handoff.
+// The email link carries only flow_id; the polling token stays in the originating browser.
+app.post('/api/auth/email-link-flow/start', publicFormLimit, async (req, res) => {
+  try {
+    const emailNorm = normalizeEmail(req.body?.email || '');
+    if (!emailNorm) return res.status(400).json({ error: 'invalid_email' });
+    const purpose = req.body?.purpose === 'signup_verification' ? 'signup_verification' : 'login';
+    let ownerFirebaseUid = null;
+    let ownerUserId = null;
+
+    const ip = (req.headers['x-forwarded-for'] || req.ip || '').toString().split(',')[0].trim() || null;
+    const allowed = await checkAndRecordIdentifierAttempt(emailNorm, 'email_link_flow', ip, 10, 60 * 60 * 1000);
+    if (!allowed) return res.status(429).json({ error: 'rate_limited' });
+
+    const authHeader = req.headers.authorization || '';
+    const ownerIdToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+    if (ownerIdToken) {
+      try {
+        const ownerDecoded = await verifyFirebaseIdToken(ownerIdToken, true);
+        if (!ownerDecoded.phone_number) {
+          return res.status(400).json({ error: 'owner_phone_required' });
+        }
+        ownerFirebaseUid = ownerDecoded.uid;
+      } catch (verifyErr) {
+        return res.status(401).json({ error: 'invalid_owner_token' });
+      }
+    }
+
+    if (purpose === 'login') {
+      const { rows } = await pool.query(
+        'SELECT id, firebase_uid, email_verified FROM auth_users WHERE email = $1 LIMIT 1',
+        [emailNorm]
+      );
+      if (!rows.length) return res.status(404).json({ error: 'account_not_found' });
+      if (rows[0].email_verified !== true) return res.status(409).json({ error: 'email_not_verified' });
+      ownerUserId = rows[0].id;
+      ownerFirebaseUid = ownerFirebaseUid || rows[0].firebase_uid || null;
+    } else if (ownerFirebaseUid) {
+      const { rows } = await pool.query(
+        'SELECT id FROM auth_users WHERE firebase_uid = $1 LIMIT 1',
+        [ownerFirebaseUid]
+      );
+      ownerUserId = rows[0]?.id || null;
+    }
+
+    const flowId = randomUUID();
+    const pollToken = randomBytes(32).toString('base64url');
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+    await pool.query('DELETE FROM auth_email_link_flows WHERE expires_at < NOW()');
+    await pool.query(
+      `INSERT INTO auth_email_link_flows (id, email, purpose, poll_token_hash, owner_firebase_uid, owner_user_id, expires_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [flowId, emailNorm, purpose, hashEmailLinkPollToken(pollToken), ownerFirebaseUid, ownerUserId, expiresAt]
+    );
+
+    return res.json({ flow_id: flowId, poll_token: pollToken, purpose, expires_at: expiresAt.toISOString() });
+  } catch (err) {
+    console.error('[POST /api/auth/email-link-flow/start]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// POST /api/auth/email-link-flow/complete — called by the browser/device that opened
+// the Firebase email link after Firebase verifies the link and issues an ID token.
+app.post('/api/auth/email-link-flow/complete', publicFormLimit, async (req, res) => {
+  try {
+    const flowId = String(req.body?.flow_id || '').trim();
+    const authHeader = req.headers.authorization || '';
+    const idToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+    if (!flowId || !idToken) return res.status(400).json({ error: 'missing_fields' });
+
+    let decoded;
+    try {
+      decoded = await verifyFirebaseIdToken(idToken, true);
+    } catch (verifyErr) {
+      return res.status(401).json({ error: 'invalid_token' });
+    }
+    const emailNorm = normalizeEmail(decoded.email || '');
+    if (!emailNorm || decoded.email_verified !== true) {
+      return res.status(400).json({ error: 'email_not_verified' });
+    }
+
+    const { rows: flowRows } = await pool.query(
+      `SELECT id, email, purpose, owner_firebase_uid, owner_user_id FROM auth_email_link_flows
+       WHERE id = $1 AND expires_at > NOW()
+       LIMIT 1`,
+      [flowId]
+    );
+    const flow = flowRows[0];
+    if (!flow) return res.status(404).json({ error: 'flow_not_found' });
+    if (normalizeEmail(flow.email) !== emailNorm) {
+      return res.status(403).json({ error: 'email_mismatch' });
+    }
+
+    let { rows: userRows } = await pool.query(
+      'SELECT * FROM auth_users WHERE email = $1 LIMIT 1',
+      [emailNorm]
+    );
+    let user = userRows[0];
+    if (!user || flow.purpose === 'signup_verification') {
+      let completedFirebaseUid = decoded.uid;
+      if (flow.owner_firebase_uid && decoded.uid !== flow.owner_firebase_uid) {
+        try {
+          const reconcile = await reconcileVerifiedEmailToFirebaseOwner({
+            emailNorm,
+            verifiedEmailUid: decoded.uid,
+            ownerFirebaseUid: flow.owner_firebase_uid,
+          });
+          completedFirebaseUid = reconcile.firebaseUid;
+        } catch (reconcileErr) {
+          return res.status(reconcileErr.status || 409).json({ error: reconcileErr.code || 'firebase_reconcile_failed' });
+        }
+      }
+      await pool.query(
+        `UPDATE auth_email_link_flows
+         SET firebase_uid = $1, completed_at = NOW()
+         WHERE id = $2`,
+        [completedFirebaseUid, flowId]
+      );
+      return res.json({ completed: true, purpose: 'signup_verification' });
+    }
+
+    const canonicalFirebaseUid = flow.owner_firebase_uid || user.firebase_uid || decoded.uid;
+    if (user.firebase_uid && canonicalFirebaseUid && user.firebase_uid !== canonicalFirebaseUid) {
+      return res.status(409).json({ error: 'firebase_uid_conflict' });
+    }
+    if (canonicalFirebaseUid && decoded.uid !== canonicalFirebaseUid) {
+      try {
+        await reconcileVerifiedEmailToFirebaseOwner({
+          emailNorm,
+          verifiedEmailUid: decoded.uid,
+          ownerFirebaseUid: canonicalFirebaseUid,
+        });
+      } catch (reconcileErr) {
+        return res.status(reconcileErr.status || 409).json({ error: reconcileErr.code || 'firebase_reconcile_failed' });
+      }
+    }
+
+    await pool.query(
+      `UPDATE auth_users
+       SET firebase_uid = CASE WHEN firebase_uid IS NULL THEN $1 ELSE firebase_uid END,
+           auth_provider = COALESCE(auth_provider, $2),
+           email_verified = true,
+           email_skipped_at = NULL,
+           last_login = NOW()
+       WHERE id = $3`,
+      [canonicalFirebaseUid, decoded.firebase?.sign_in_provider || 'email', user.id]
+    );
+    ({ rows: userRows } = await pool.query(
+      'SELECT id, email, name, phone, firebase_uid, auth_provider, phone_verified, email_verified, terms_accepted_at, email_skipped_at FROM auth_users WHERE id = $1',
+      [user.id]
+    ));
+    user = userRows[0];
+
+    const sessionUser = await publicUserPayload(user);
+    const sessionToken = signSessionToken({
+      user_id: user.id,
+      email: user.email,
+      name: user.name || null,
+      phone: user.phone || null,
+    });
+
+    await pool.query(
+      `UPDATE auth_email_link_flows
+       SET session_token = $1, user_payload = $2, firebase_uid = $3, completed_at = NOW()
+       WHERE id = $4`,
+      [sessionToken, JSON.stringify(sessionUser), canonicalFirebaseUid, flowId]
+    );
+    logAuthEvent(req, user.id, 'login', {
+      provider: 'email_link_handoff',
+      email_verified: true,
+      phone_verified: !!user.phone_verified,
+    });
+
+    return res.json({ completed: true });
+  } catch (err) {
+    console.error('[POST /api/auth/email-link-flow/complete]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// POST /api/auth/email-link-flow/poll — original browser polls with its private token
+// and receives the SERVI session once the email link was completed on any device.
+app.post('/api/auth/email-link-flow/poll', emailLinkPollLimit, async (req, res) => {
+  try {
+    const flowId = String(req.body?.flow_id || '').trim();
+    const pollToken = String(req.body?.poll_token || '');
+    if (!flowId || !pollToken) return res.status(400).json({ error: 'missing_fields' });
+
+    const { rows } = await pool.query(
+      `SELECT email, purpose, poll_token_hash, session_token, user_payload, completed_at
+       FROM auth_email_link_flows
+       WHERE id = $1 AND expires_at > NOW()
+       LIMIT 1`,
+      [flowId]
+    );
+    const flow = rows[0];
+    if (!flow) return res.status(404).json({ error: 'flow_not_found' });
+    if (flow.poll_token_hash !== hashEmailLinkPollToken(pollToken)) {
+      return res.status(403).json({ error: 'invalid_poll_token' });
+    }
+    if (!flow.completed_at || !flow.session_token || !flow.user_payload) {
+      if (flow.completed_at && flow.purpose === 'signup_verification') {
+        return res.json({
+          completed: true,
+          purpose: 'signup_verification',
+          email: flow.email,
+          email_verified: true,
+        });
+      }
+      return res.json({ completed: false, purpose: flow.purpose || 'login' });
+    }
+
+    return res.json({
+      completed: true,
+      purpose: flow.purpose || 'login',
+      token: flow.session_token,
+      user: flow.user_payload,
+    });
+  } catch (err) {
+    console.error('[POST /api/auth/email-link-flow/poll]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+async function emailLinkFlowVerifiedForSignup(flowId, pollToken, emailNorm) {
+  if (!flowId || !pollToken || !emailNorm) return false;
+  const { rows } = await pool.query(
+    `SELECT email, purpose, poll_token_hash, completed_at
+     FROM auth_email_link_flows
+     WHERE id = $1 AND expires_at > NOW()
+     LIMIT 1`,
+    [String(flowId).trim()]
+  );
+  const flow = rows[0];
+  if (!flow) return false;
+  if (flow.purpose !== 'signup_verification') return false;
+  if (!flow.completed_at) return false;
+  if (flow.poll_token_hash !== hashEmailLinkPollToken(String(pollToken))) return false;
+  return normalizeEmail(flow.email || '') === emailNorm;
+}
+
 // --- Firebase Auth: verify ID token and sync user record ---
 app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
   try {
@@ -5309,6 +6019,44 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
     try {
       decoded = await verifyFirebaseIdToken(idToken, true);
     } catch (verifyErr) {
+      const signupFlowId = req.body?.email_link_flow_id;
+      const signupPollToken = req.body?.email_link_poll_token;
+      if (req.body?.signup_complete === true && signupFlowId && signupPollToken) {
+        try {
+          const { rows: flowRows } = await pool.query(
+            `SELECT email, purpose, poll_token_hash, owner_firebase_uid, completed_at
+             FROM auth_email_link_flows
+             WHERE id = $1 AND expires_at > NOW()
+             LIMIT 1`,
+            [String(signupFlowId).trim()]
+          );
+          const flow = flowRows[0];
+          if (
+            flow &&
+            flow.purpose === 'signup_verification' &&
+            flow.completed_at &&
+            flow.owner_firebase_uid &&
+            flow.poll_token_hash === hashEmailLinkPollToken(String(signupPollToken))
+          ) {
+            const ownerUser = await firebaseAdmin.auth().getUser(flow.owner_firebase_uid);
+            if (ownerUser.phoneNumber) {
+              decoded = {
+                uid: ownerUser.uid,
+                email: normalizeEmail(ownerUser.email || flow.email),
+                email_verified: ownerUser.emailVerified === true || normalizeEmail(ownerUser.email || '') === normalizeEmail(flow.email || ''),
+                phone_number: ownerUser.phoneNumber,
+                name: ownerUser.displayName || null,
+                firebase: { sign_in_provider: 'phone' },
+              };
+            }
+          }
+        } catch (fallbackErr) {
+          console.warn('[POST /api/auth/firebase] completed signup flow fallback failed:', fallbackErr.message);
+        }
+      }
+      if (decoded) {
+        console.warn('[POST /api/auth/firebase] accepted completed signup flow after Firebase token verification failed:', verifyErr.code);
+      } else {
       console.error('[POST /api/auth/firebase] token verification failed:', verifyErr.code, verifyErr.message);
       if (verifyErr.code === 'auth/id-token-revoked') {
         return res.status(401).json({ error: 'token_revoked', message: 'Session has been revoked. Please sign in again.' });
@@ -5317,6 +6065,7 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
         return res.status(401).json({ error: 'user_disabled', message: 'This account has been disabled.' });
       }
       return res.status(401).json({ error: 'invalid_token', message: 'Firebase token verification failed' });
+      }
     }
 
     const firebaseUid = decoded.uid;
@@ -5338,6 +6087,36 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
     const signupComplete = req.body.signup_complete === true;
     const termsAccepted = req.body.terms_accepted === true;
     const emailSkipped = req.body.email_skipped === true && firstIdentifierType === 'phone' && !emailNormFromToken;
+    const emailVerifiedByCompletedLinkFlow = signupComplete
+      ? await emailLinkFlowVerifiedForSignup(req.body.email_link_flow_id, req.body.email_link_poll_token, emailNormFromToken)
+      : false;
+    if (signupComplete && emailVerifiedByCompletedLinkFlow && emailNormFromToken && decodedPhoneNorm) {
+      try {
+        const { rows: completedFlowRows } = await pool.query(
+          `SELECT firebase_uid
+           FROM auth_email_link_flows
+           WHERE id = $1
+             AND email = $2
+             AND purpose = 'signup_verification'
+             AND poll_token_hash = $3
+             AND completed_at IS NOT NULL
+             AND expires_at > NOW()
+           LIMIT 1`,
+          [String(req.body.email_link_flow_id || '').trim(), emailNormFromToken, hashEmailLinkPollToken(String(req.body.email_link_poll_token || ''))]
+        );
+        const emailFlowFirebaseUid = completedFlowRows[0]?.firebase_uid || null;
+        if (emailFlowFirebaseUid && emailFlowFirebaseUid !== firebaseUid) {
+          await reconcileVerifiedEmailToFirebaseOwner({
+            emailNorm: emailNormFromToken,
+            verifiedEmailUid: emailFlowFirebaseUid,
+            ownerFirebaseUid: firebaseUid,
+          });
+        }
+      } catch (reconcileErr) {
+        console.warn('[POST /api/auth/firebase] signup email/phone Firebase reconciliation failed:', reconcileErr.code || reconcileErr.message);
+        return res.status(reconcileErr.status || 409).json({ error: reconcileErr.code || 'firebase_reconcile_failed' });
+      }
+    }
 
     // Confirm-Phone login flow: the user typed their email, then re-typed their full phone
     // to receive an OTP. The Firebase token carries the verified phone; the client passes the
@@ -5370,10 +6149,33 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
       ({ rows } = await pool.query('SELECT * FROM auth_users WHERE email = $1', [emailNorm]));
       user = rows[0];
       if (user) {
-        await pool.query(
-          'UPDATE auth_users SET firebase_uid = $1, auth_provider = $2, last_login = NOW() WHERE id = $3',
-          [firebaseUid, provider, user.id]
-        );
+        if (user.firebase_uid && user.firebase_uid !== firebaseUid) {
+          if (!emailVerifiedByFirebase) {
+            return res.status(409).json({
+              error: 'firebase_uid_conflict',
+              message: 'This email account is already linked to a different Firebase user.',
+            });
+          }
+          try {
+            await reconcileVerifiedEmailToFirebaseOwner({
+              emailNorm,
+              verifiedEmailUid: firebaseUid,
+              ownerFirebaseUid: user.firebase_uid,
+            });
+            console.log('[POST /api/auth/firebase] reconciled verified email Firebase UID to owner:', user.id);
+          } catch (reconcileErr) {
+            console.warn('[POST /api/auth/firebase] Firebase UID reconciliation failed:', reconcileErr.code || reconcileErr.message);
+            return res.status(reconcileErr.status || 409).json({
+              error: reconcileErr.code || 'firebase_uid_conflict',
+              message: 'This email account is already linked to a different Firebase user.',
+            });
+          }
+        } else {
+          await pool.query(
+            'UPDATE auth_users SET firebase_uid = $1, auth_provider = $2, last_login = NOW() WHERE id = $3',
+            [firebaseUid, provider, user.id]
+          );
+        }
         if (name && !user.name) await pool.query('UPDATE auth_users SET name = $1 WHERE id = $2', [name, user.id]);
         if (phoneNormFromToken && !user.phone) {
           await pool.query('UPDATE auth_users SET phone = $1 WHERE id = $2', [phoneNormFromToken, user.id]);
@@ -5409,7 +6211,7 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
       const phoneNorm = decodedPhoneNorm;
       const cleanName = name ? String(name).trim() : '';
       const finalPhoneVerified = phoneVerifiedByFirebase;
-      const finalEmailVerified = emailVerifiedByFirebase;
+      const finalEmailVerified = emailVerifiedByFirebase || emailVerifiedByCompletedLinkFlow;
       const phoneFirstMaySkipEmail = firstIdentifierType === 'phone' && (finalEmailVerified || emailSkipped);
       const nonPhoneFirstHasVerifiedEmail = firstIdentifierType !== 'phone' && finalEmailVerified;
       if (!signupComplete || !cleanName || !termsAccepted || !phoneNorm || !finalPhoneVerified || !(phoneFirstMaySkipEmail || nonPhoneFirstHasVerifiedEmail)) {
@@ -5428,7 +6230,7 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
            firstIdentifierType,
            emailSkipped]
         );
-        user = { id, email: emailNorm, name: cleanName, phone: phoneNorm, phone_verified: finalPhoneVerified, email_verified: finalEmailVerified, email_skipped_at: emailSkipped ? new Date().toISOString() : null };
+        user = { id, email: emailNorm, name: cleanName, phone: phoneNorm, firebase_uid: firebaseUid, auth_provider: provider, phone_verified: finalPhoneVerified, email_verified: finalEmailVerified, email_skipped_at: emailSkipped ? new Date().toISOString() : null };
         console.log('[POST /api/auth/firebase] new user created:', id, emailNorm || phoneNorm);
       } catch (insertErr) {
         if (insertErr.code === '23505') {
@@ -5496,19 +6298,44 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
       phone: user.phone || phone || null,
     });
 
+    if (req.body.email_link_flow_id && emailNormFromToken && emailVerifiedByFirebase) {
+      try {
+        const sessionUser = await publicUserPayload({
+          ...user,
+          name: user.name || name || null,
+          phone: user.phone || phone || null,
+          phone_verified: !!verifiedState.phone_verified,
+          email_verified: !!verifiedState.email_verified,
+          terms_accepted_at: verifiedState.terms_accepted_at || null,
+          email_skipped_at: verifiedState.email_skipped_at || null,
+        });
+        await pool.query(
+          `UPDATE auth_email_link_flows
+           SET session_token = $1, user_payload = $2, firebase_uid = $3, completed_at = NOW()
+           WHERE id = $4
+             AND email = $5
+             AND expires_at > NOW()`,
+          [token, JSON.stringify(sessionUser), user.firebase_uid || firebaseUid, String(req.body.email_link_flow_id).trim(), emailNormFromToken]
+        );
+      } catch (flowErr) {
+        console.warn('[POST /api/auth/firebase] email-link flow completion failed:', flowErr.message);
+      }
+    }
+
     // A12: audit log
     logAuthEvent(req, user.id, 'login', { provider, email_verified: !!verifiedState.email_verified, phone_verified: !!verifiedState.phone_verified });
 
     return res.json({
       token,
-      user: {
-        id: user.id, email: user.email, name: user.name || name,
+      user: await publicUserPayload({
+        ...user,
+        name: user.name || name,
         phone: user.phone || phone || null,
         phone_verified: !!verifiedState.phone_verified,
         email_verified: !!verifiedState.email_verified,
         terms_accepted_at: verifiedState.terms_accepted_at || null,
         email_skipped_at: verifiedState.email_skipped_at || null,
-      },
+      }),
     });
   } catch (err) {
     console.error('[POST /api/auth/firebase]', err);
@@ -5536,7 +6363,19 @@ app.post('/api/auth/add-email', publicFormLimit, async (req, res) => {
       try { decoded = await verifyFirebaseIdToken(firebase_id_token, true); }
       catch (e) { return res.status(401).json({ error: 'invalid_token' }); }
       if (decoded.uid !== currentFirebaseUid) {
-        return res.status(401).json({ error: 'firebase_user_mismatch' });
+        const decodedEmailNorm = normalizeEmail(decoded.email || '');
+        if (decodedEmailNorm !== emailNorm || decoded.email_verified !== true) {
+          return res.status(401).json({ error: 'firebase_user_mismatch' });
+        }
+        try {
+          await reconcileVerifiedEmailToFirebaseOwner({
+            emailNorm,
+            verifiedEmailUid: decoded.uid,
+            ownerFirebaseUid: currentFirebaseUid,
+          });
+        } catch (reconcileErr) {
+          return res.status(reconcileErr.status || 409).json({ error: reconcileErr.code || 'firebase_user_mismatch' });
+        }
       }
       if (!decoded.email || decoded.email.toLowerCase() !== emailNorm) {
         return res.status(400).json({ error: 'email_mismatch', message: 'Token email does not match supplied email.' });
@@ -5588,10 +6427,17 @@ app.post('/api/auth/add-phone', publicFormLimit, async (req, res) => {
     const phoneNorm = normalizePhoneToE164(phone);
     if (!phoneNorm) return res.status(400).json({ error: 'invalid_phone' });
 
-    // Verify Firebase token proves ownership of this phone number
+    const { rows: userRows } = await pool.query('SELECT firebase_uid FROM auth_users WHERE id = $1', [payload.user_id]);
+    const currentFirebaseUid = userRows[0]?.firebase_uid || null;
+    if (!currentFirebaseUid) return res.status(401).json({ error: 'firebase_user_missing' });
+
+    // Verify Firebase token proves this same SERVI user owns this phone number.
     let decoded;
     try { decoded = await verifyFirebaseIdToken(firebase_id_token, true); }
     catch (e) { return res.status(401).json({ error: 'invalid_token' }); }
+    if (decoded.uid !== currentFirebaseUid) {
+      return res.status(401).json({ error: 'firebase_user_mismatch' });
+    }
     if (!decoded.phone_number || decoded.phone_number !== phoneNorm) {
       return res.status(400).json({ error: 'phone_mismatch', message: 'Token phone does not match supplied phone.' });
     }
@@ -5779,7 +6625,7 @@ app.patch('/api/auth/me', publicFormLimit, async (req, res) => {
     if (!sets.length) return res.status(400).json({ error: 'no_fields' });
     params.push(payload.user_id);
     await pool.query(`UPDATE auth_users SET ${sets.join(', ')} WHERE id = $${params.length}`, params);
-    const { rows } = await pool.query('SELECT id, email, name, phone, auth_provider, phone_verified, email_verified, terms_accepted_at, email_skipped_at FROM auth_users WHERE id = $1', [payload.user_id]);
+    const { rows } = await pool.query('SELECT id, email, name, phone, firebase_uid, auth_provider, phone_verified, email_verified, terms_accepted_at, email_skipped_at FROM auth_users WHERE id = $1', [payload.user_id]);
     const u = rows[0];
 
     // A12: audit identifier changes
@@ -5787,13 +6633,7 @@ app.patch('/api/auth/me', publicFormLimit, async (req, res) => {
       logAuthEvent(req, payload.user_id, 'profile_change', { fields: changes });
     }
 
-    return res.json({ user: {
-      id: u.id, email: u.email, name: u.name, phone: u.phone || null,
-      auth_provider: u.auth_provider || null,
-      phone_verified: !!u.phone_verified, email_verified: !!u.email_verified,
-      terms_accepted_at: u.terms_accepted_at || null,
-      email_skipped_at: u.email_skipped_at || null,
-    }});
+    return res.json({ user: await publicUserPayload(u) });
   } catch (err) {
     if (err.code === '23505') return res.status(409).json({ error: 'conflict', message: 'Ese dato ya está en uso.' });
     console.error('[PATCH /api/auth/me]', err);
@@ -5883,39 +6723,53 @@ app.delete('/api/auth/me', publicFormLimit, async (req, res) => {
   const payload = await requireUserAuth(req, res);
   if (!payload) return;
   const userId = payload.user_id;
+  // Delete the user's rows atomically so a mid-sequence failure can't orphan addresses /
+  // saved_servi_users or leave a half-deleted account.
+  const client = await pool.connect();
+  let firebaseUid = null;
   try {
-    const { rows } = await pool.query('SELECT firebase_uid, stripe_customer_id FROM auth_users WHERE id = $1', [userId]);
+    await client.query('BEGIN');
+    const { rows } = await client.query('SELECT firebase_uid, stripe_customer_id FROM auth_users WHERE id = $1 FOR UPDATE', [userId]);
     if (!rows.length) {
+      await client.query('ROLLBACK');
       console.warn('[DELETE /api/auth/me] user row not found for id:', userId);
       return res.status(404).json({ error: 'user_not_found' });
     }
-    const firebaseUid = rows[0]?.firebase_uid;
+    firebaseUid = rows[0]?.firebase_uid || null;
     const stripeCustomerId = rows[0]?.stripe_customer_id;
 
-    await pool.query('DELETE FROM user_addresses WHERE user_id = $1', [userId]);
+    await client.query('DELETE FROM user_addresses WHERE user_id = $1', [userId]);
     if (stripeCustomerId) {
-      await pool.query('DELETE FROM saved_servi_users WHERE customer_id = $1', [stripeCustomerId]);
+      await client.query('DELETE FROM saved_servi_users WHERE customer_id = $1', [stripeCustomerId]);
     }
-    const delRes = await pool.query('DELETE FROM auth_users WHERE id = $1', [userId]);
+    const delRes = await client.query('DELETE FROM auth_users WHERE id = $1', [userId]);
+    await client.query('COMMIT');
     console.log('[DELETE /api/auth/me] deleted user row, rowCount=', delRes.rowCount, 'userId=', userId);
-
-    // A6: revoke this session's JWT so it can't be replayed before natural expiry
-    await revokeSessionJti(payload.jti, userId, 'account_delete');
-
-    if (firebaseUid) {
-      try {
-        await firebaseAdmin.auth().deleteUser(firebaseUid);
-        console.log('[DELETE /api/auth/me] Firebase user deleted:', firebaseUid);
-      } catch (fbErr) {
-        console.warn('[DELETE /api/auth/me] Firebase user deletion failed (non-blocking):', fbErr.code || fbErr.message);
-      }
-    }
-
-    return res.json({ ok: true });
   } catch (err) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    // Log the full Postgres detail server-side; never echo err.code/detail to the client.
     console.error('[DELETE /api/auth/me] error code=', err.code, 'detail=', err.detail, 'message=', err.message);
-    return res.status(500).json({ error: 'internal_error', code: err.code || null, detail: err.detail || null });
+    return res.status(500).json({ error: 'internal_error' });
+  } finally {
+    client.release();
   }
+
+  // Post-commit cleanup — best-effort, must not resurrect or fail the now-deleted account.
+  // A6: revoke this session's JWT so it can't be replayed before natural expiry.
+  try {
+    await revokeSessionJti(payload.jti, userId, 'account_delete');
+  } catch (revErr) {
+    console.warn('[DELETE /api/auth/me] session revoke failed (non-blocking):', revErr.message);
+  }
+  if (firebaseUid) {
+    try {
+      await firebaseAdmin.auth().deleteUser(firebaseUid);
+      console.log('[DELETE /api/auth/me] Firebase user deleted:', firebaseUid);
+    } catch (fbErr) {
+      console.warn('[DELETE /api/auth/me] Firebase user deletion failed (non-blocking):', fbErr.code || fbErr.message);
+    }
+  }
+  return res.json({ ok: true });
 });
 
 // POST /api/auth/logout — revoke the current SERVI session JWT server-side.
@@ -5976,7 +6830,7 @@ app.post('/api/auth/refresh', publicFormLimit, async (req, res) => {
   try {
     // Re-fetch user from DB (don't trust JWT claims for user data)
     const { rows } = await pool.query(
-      'SELECT id, email, name, phone, auth_provider, phone_verified, email_verified, terms_accepted_at, email_skipped_at FROM auth_users WHERE id = $1',
+      'SELECT id, email, name, phone, firebase_uid, auth_provider, phone_verified, email_verified, terms_accepted_at, email_skipped_at FROM auth_users WHERE id = $1',
       [payload.user_id]
     );
     if (!rows.length) return res.status(404).json({ error: 'user_not_found' });
@@ -5992,17 +6846,41 @@ app.post('/api/auth/refresh', publicFormLimit, async (req, res) => {
 
     return res.json({
       token: newToken,
-      user: {
-        id: u.id, email: u.email, name: u.name, phone: u.phone || null,
-        auth_provider: u.auth_provider || null,
-        phone_verified: !!u.phone_verified,
-        email_verified: !!u.email_verified,
-        terms_accepted_at: u.terms_accepted_at || null,
-        email_skipped_at: u.email_skipped_at || null,
-      }
+      user: await publicUserPayload(u)
     });
   } catch (err) {
     console.error('[POST /api/auth/refresh]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// GET /api/auth/activity — recent sign-in activity for the logged-in user
+app.get('/api/auth/activity', async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const { rows } = await pool.query(
+      `SELECT event_type, ip, user_agent, metadata, created_at
+         FROM auth_events
+        WHERE user_id = $1 AND event_type IN ('login', 'logout')
+        ORDER BY created_at DESC
+        LIMIT 20`,
+      [payload.user_id]
+    );
+    const events = rows.map((r) => {
+      let meta = r.metadata;
+      if (typeof meta === 'string') { try { meta = JSON.parse(meta); } catch { meta = null; } }
+      return {
+        type: r.event_type,
+        device: summarizeUserAgent(r.user_agent),
+        ip: maskIp(r.ip),
+        provider: meta?.provider || null,
+        created_at: r.created_at,
+      };
+    });
+    return res.json({ ok: true, events });
+  } catch (err) {
+    console.error('[GET /api/auth/activity]', err);
     return res.status(500).json({ error: 'internal_error' });
   }
 });
@@ -6128,6 +7006,308 @@ app.patch('/api/auth/addresses/:id/default', publicFormLimit, async (req, res) =
     return res.json({ ok: true });
   } catch (err) {
     console.error('[PATCH /api/auth/addresses/:id/default]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// ─── Trusted Specialists ──────────────────────────────────────────────────────
+// A satisfied client rates a completed service 👍, which unlocks the option to save that
+// specialist as "trusted" for the service category and rebook them in one tap next time.
+// This reduces disintermediation: rebooking through SERVI stays easier/safer than going direct.
+// All routes are scoped to the authenticated user; provider contact details are NEVER returned.
+
+function normalizeTrustCategory(raw) {
+  return String(raw || '').trim().toLowerCase().slice(0, 60) || null;
+}
+
+// POST /api/auth/orders/:id/rating — 👍/👎 a completed order. A 👍 unlocks the trust prompt.
+app.post('/api/auth/orders/:id/rating', publicFormLimit, async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const rating = String(req.body?.rating || '').trim().toLowerCase();
+    if (rating !== 'up' && rating !== 'down') {
+      return res.status(400).json({ error: 'invalid_rating', message: "rating must be 'up' or 'down'" });
+    }
+    const comment = req.body?.comment != null ? String(req.body.comment).slice(0, 500) : null;
+
+    // Ownership: the order must match this user's identifiers (customer id / email / phone).
+    const { conds, ids } = await resolveUserOrderMatch(payload.user_id);
+    if (!conds.length) return res.status(404).json({ error: 'order_not_found' });
+    const { rows } = await pool.query(
+      `SELECT * FROM all_bookings WHERE id = $${ids.length + 1} AND (${conds.join(' OR ')}) LIMIT 1`,
+      [...ids, req.params.id]
+    );
+    const order = rows[0];
+    if (!order) return res.status(404).json({ error: 'order_not_found' });
+
+    const policy = computeOrderActionPolicy(order);
+    if (!policy.canRate) return res.status(409).json({ error: 'not_rateable', message: 'Este servicio aún no se puede calificar.' });
+
+    const providerId = order.provider_id || null;
+    const category = order.category || null;
+    const id = randomUUID();
+    await pool.query(
+      `INSERT INTO service_ratings (id, user_id, order_id, provider_id, category, rating, comment)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
+       ON CONFLICT (user_id, order_id)
+       DO UPDATE SET rating = EXCLUDED.rating, comment = EXCLUDED.comment, updated_at = NOW()`,
+      [id, payload.user_id, req.params.id, providerId, category, rating, comment]
+    );
+
+    // Should we offer to add this specialist? Only on a 👍, with a real provider, not already trusted.
+    let promptTrust = false;
+    if (rating === 'up' && providerId && category) {
+      const { rows: existing } = await pool.query(
+        'SELECT 1 FROM user_trusted_specialists WHERE user_id = $1 AND provider_id = $2 AND category = $3 LIMIT 1',
+        [payload.user_id, providerId, category]
+      );
+      promptTrust = existing.length === 0;
+    }
+    return res.json({
+      ok: true,
+      rating,
+      promptTrust,
+      provider: providerId ? { id: providerId, maskedName: maskProviderName(order.provider_name), category } : null,
+    });
+  } catch (err) {
+    console.error('[POST /api/auth/orders/:id/rating]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// GET /api/auth/orders/:id/rating — prefill an existing rating (edit).
+app.get('/api/auth/orders/:id/rating', async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const { rows } = await pool.query(
+      'SELECT rating, comment FROM service_ratings WHERE user_id = $1 AND order_id = $2 LIMIT 1',
+      [payload.user_id, req.params.id]
+    );
+    return res.json({ rating: rows[0]?.rating || null, comment: rows[0]?.comment || null });
+  } catch (err) {
+    console.error('[GET /api/auth/orders/:id/rating]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// GET /api/auth/trusted-specialists[?category=] — the user's trusted specialists, with
+// in-SERVI trust stats. Returns ONLY safe fields — never provider phone/email/full name.
+app.get('/api/auth/trusted-specialists', async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const category = req.query.category ? normalizeTrustCategory(req.query.category) : null;
+    const sqlParams = [payload.user_id];
+    let where = 't.user_id = $1';
+    if (category) { sqlParams.push(category); where += ` AND t.category = $${sqlParams.length}`; }
+
+    // Safe columns only: p.status (→ availability) and p.name (masked here). Never p.*.
+    const { rows } = await pool.query(
+      `SELECT t.id, t.provider_id, t.category, t.provider_name, t.is_preferred, t.nickname,
+              t.times_booked, t.last_booked_at, t.created_at,
+              p.status AS provider_status, p.name AS provider_live_name
+         FROM user_trusted_specialists t
+         LEFT JOIN providers p ON p.provider_id = t.provider_id
+        WHERE ${where}
+        ORDER BY t.category ASC, t.is_preferred DESC, t.last_booked_at DESC NULLS LAST, t.created_at DESC`,
+      sqlParams
+    );
+
+    // In-SERVI trust stats: how many services this provider completed for THIS user, and the
+    // user's 👍 ratio with them. These signals only exist on-platform — the lock-in.
+    const providerIds = [...new Set(rows.map((r) => r.provider_id).filter(Boolean))];
+    const completedByProvider = {};
+    const thumbsByProvider = {};
+    if (providerIds.length) {
+      const { conds, ids } = await resolveUserOrderMatch(payload.user_id);
+      if (conds.length) {
+        const { rows: cRows } = await pool.query(
+          `SELECT provider_id, COUNT(*)::int AS n
+             FROM all_bookings
+            WHERE (${conds.join(' OR ')})
+              AND status ILIKE 'captured%'
+              AND provider_id = ANY($${ids.length + 1})
+            GROUP BY provider_id`,
+          [...ids, providerIds]
+        );
+        cRows.forEach((r) => { completedByProvider[r.provider_id] = r.n; });
+      }
+      const { rows: tRows } = await pool.query(
+        `SELECT provider_id,
+                COUNT(*) FILTER (WHERE rating = 'up')::int AS ups,
+                COUNT(*)::int AS total
+           FROM service_ratings
+          WHERE user_id = $1 AND provider_id = ANY($2)
+          GROUP BY provider_id`,
+        [payload.user_id, providerIds]
+      );
+      tRows.forEach((r) => { thumbsByProvider[r.provider_id] = { ups: r.ups, total: r.total }; });
+    }
+
+    const specialists = rows.map((r) => {
+      const liveName = r.provider_live_name || r.provider_name;
+      const thumbs = thumbsByProvider[r.provider_id] || { ups: 0, total: 0 };
+      return {
+        id: r.id,
+        providerId: r.provider_id,
+        category: r.category,
+        maskedName: maskProviderName(liveName),
+        nickname: r.nickname || null,
+        isPreferred: !!r.is_preferred,
+        available: r.provider_status === 'verified',
+        completedForYou: completedByProvider[r.provider_id] || 0,
+        thumbsUp: thumbs.ups,
+        ratingsCount: thumbs.total,
+        timesBooked: r.times_booked || 0,
+        lastBookedAt: r.last_booked_at || null,
+        createdAt: r.created_at,
+      };
+    });
+    return res.json({ specialists });
+  } catch (err) {
+    console.error('[GET /api/auth/trusted-specialists]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// POST /api/auth/trusted-specialists — save a specialist as trusted for a category.
+// Primary path: from the rating hook, which sends order_id; we read the authoritative
+// provider_id + category from that owned order (a client can't trust a provider they never used).
+app.post('/api/auth/trusted-specialists', publicFormLimit, async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const body = req.body || {};
+    const orderId = body.order_id != null ? String(body.order_id).trim() : '';
+    const nickname = body.nickname != null ? String(body.nickname).slice(0, 80) : null;
+    const wantPreferred = !!body.is_preferred;
+
+    let providerId = body.provider_id != null ? String(body.provider_id).trim() : '';
+    let category = normalizeTrustCategory(body.category);
+    let sourceOrderId = orderId || null;
+
+    // Resolve ownership + authoritative provider/category. With an order_id, derive from the order.
+    const { conds, ids } = await resolveUserOrderMatch(payload.user_id);
+    if (!conds.length) return res.status(404).json({ error: 'order_not_found' });
+    const matchClause = `(${conds.join(' OR ')})`;
+
+    if (orderId) {
+      const { rows } = await pool.query(
+        `SELECT provider_id, category FROM all_bookings WHERE id = $${ids.length + 1} AND ${matchClause} LIMIT 1`,
+        [...ids, orderId]
+      );
+      if (!rows[0]) return res.status(404).json({ error: 'order_not_found' });
+      providerId = rows[0].provider_id || '';
+      category = normalizeTrustCategory(rows[0].category);
+    } else {
+      // No order_id: require the user to actually have a captured order with this provider+category.
+      if (!providerId || !category) return res.status(400).json({ error: 'missing_fields', message: 'order_id or (provider_id + category) required' });
+      const { rows } = await pool.query(
+        `SELECT id FROM all_bookings
+          WHERE ${matchClause} AND provider_id = $${ids.length + 1} AND LOWER(COALESCE(category,'')) = $${ids.length + 2}
+            AND status ILIKE 'captured%' LIMIT 1`,
+        [...ids, providerId, category]
+      );
+      if (!rows[0]) return res.status(403).json({ error: 'no_matching_order', message: 'No tienes un servicio completado con este especialista en esta categoría.' });
+      sourceOrderId = rows[0].id;
+    }
+
+    if (!providerId) return res.status(400).json({ error: 'no_provider_on_order', message: 'Esta orden no tiene un especialista asignado.' });
+    if (!category) return res.status(400).json({ error: 'missing_category' });
+
+    // Provider must be a currently-verified specialist.
+    const { rows: pRows } = await pool.query('SELECT status, name FROM providers WHERE provider_id = $1 LIMIT 1', [providerId]);
+    if (!pRows[0] || pRows[0].status !== 'verified') {
+      return res.status(409).json({ error: 'provider_unavailable', message: 'Este especialista no está disponible actualmente.' });
+    }
+    const providerName = pRows[0].name || null;
+
+    if (wantPreferred) {
+      await pool.query(
+        'UPDATE user_trusted_specialists SET is_preferred = FALSE WHERE user_id = $1 AND category = $2',
+        [payload.user_id, category]
+      );
+    }
+    const id = randomUUID();
+    await pool.query(
+      `INSERT INTO user_trusted_specialists (id, user_id, provider_id, category, provider_name, is_preferred, source_order_id, nickname)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       ON CONFLICT (user_id, provider_id, category)
+       DO UPDATE SET provider_name = EXCLUDED.provider_name,
+                     nickname = COALESCE(EXCLUDED.nickname, user_trusted_specialists.nickname),
+                     is_preferred = user_trusted_specialists.is_preferred OR EXCLUDED.is_preferred,
+                     updated_at = NOW()`,
+      [id, payload.user_id, providerId, category, providerName, wantPreferred, sourceOrderId, nickname]
+    );
+    return res.status(201).json({ ok: true, providerId, category, maskedName: maskProviderName(providerName) });
+  } catch (err) {
+    console.error('[POST /api/auth/trusted-specialists]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// PATCH /api/auth/trusted-specialists/:id — edit the client's own nickname for a specialist.
+app.patch('/api/auth/trusted-specialists/:id', publicFormLimit, async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    if (!Object.prototype.hasOwnProperty.call(req.body || {}, 'nickname')) {
+      return res.status(400).json({ error: 'no_fields' });
+    }
+    const nickname = req.body.nickname != null ? String(req.body.nickname).slice(0, 80) : null;
+    const { rowCount } = await pool.query(
+      'UPDATE user_trusted_specialists SET nickname = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3',
+      [nickname, req.params.id, payload.user_id]
+    );
+    if (!rowCount) return res.status(404).json({ error: 'not_found' });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('[PATCH /api/auth/trusted-specialists/:id]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// DELETE /api/auth/trusted-specialists/:id
+app.delete('/api/auth/trusted-specialists/:id', async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const { rowCount } = await pool.query(
+      'DELETE FROM user_trusted_specialists WHERE id = $1 AND user_id = $2',
+      [req.params.id, payload.user_id]
+    );
+    if (!rowCount) return res.status(404).json({ error: 'not_found' });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('[DELETE /api/auth/trusted-specialists/:id]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// PATCH /api/auth/trusted-specialists/:id/preferred — make this the default pick within its
+// category (clear-then-set, mirroring addresses /:id/default).
+app.patch('/api/auth/trusted-specialists/:id/preferred', publicFormLimit, async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const { rows } = await pool.query(
+      'SELECT category FROM user_trusted_specialists WHERE id = $1 AND user_id = $2 LIMIT 1',
+      [req.params.id, payload.user_id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'not_found' });
+    await pool.query(
+      'UPDATE user_trusted_specialists SET is_preferred = FALSE WHERE user_id = $1 AND category = $2',
+      [payload.user_id, rows[0].category]
+    );
+    await pool.query(
+      'UPDATE user_trusted_specialists SET is_preferred = TRUE, updated_at = NOW() WHERE id = $1 AND user_id = $2',
+      [req.params.id, payload.user_id]
+    );
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('[PATCH /api/auth/trusted-specialists/:id/preferred]', err);
     return res.status(500).json({ error: 'internal_error' });
   }
 });
@@ -6279,6 +7459,12 @@ function computeOrderActionPolicy(row) {
     }
   }
 
+  // Rateable = the service is done (Captured proxy) AND we know who did it (real provider_id)
+  // AND the service date isn't still in the future. A captured order with no date counts as done.
+  const hasDate = !!(row?.service_datetime || row?.service_date);
+  const servicePassed = !hasDate || hoursUntilService(row) <= 0;
+  const canRate = isCaptured && !!row?.provider_id && servicePassed;
+
   return {
     canCancel,
     cancelTier,
@@ -6287,6 +7473,7 @@ function computeOrderActionPolicy(row) {
     canRequestReschedule: editable,  // creates an admin-reviewed request
     canReorder: isPast && !!row?.category,
     isCaptured,
+    canRate,
   };
 }
 
@@ -6320,7 +7507,11 @@ async function resolveUserOrderMatch(userId) {
 
 // Statuses where the customer can still pay/authorize online. Case-insensitive,
 // because the admin create path stores 'pending' while Apps Script stores 'Pending'.
-const PAYABLE_ONLINE_STATUSES = new Set(['pending', 'pending (3ds)', 'setup required', 'setup created']);
+// 'blocked' is included for the AUTHENTICATED-OWNER surface only (both call sites below
+// are auth-only): visits-without-card and long-lead-guests-without-card are parked at
+// status='Blocked', kind='setup_required' at admin-create time. A logged-in owner can
+// self-serve them (save a card → setup → book → cron). Guests never evaluate this.
+const PAYABLE_ONLINE_STATUSES = new Set(['pending', 'new', 'pending (3ds)', 'setup required', 'setup created', 'blocked']);
 
 function isOrderPayableOnline(row) {
   if (!row) return false;
@@ -6328,14 +7519,16 @@ function isOrderPayableOnline(row) {
   const status = String(row.status || '').trim().toLowerCase();
   if (!PAYABLE_ONLINE_STATUSES.has(status)) return false;
   const kind = String(row.kind || '').toLowerCase();
+  // 'Blocked' is the admin-parked state for setup-style orders only — never let any other
+  // Blocked row become spuriously payable.
+  if (status === 'blocked' && !(kind === 'setup' || kind === 'setup_required')) return false;
   const hasPrice = row.pricing_total_amount != null || row.amount != null;
   return hasPrice || kind === 'setup' || kind === 'setup_required';
 }
 
 // Which checkout page a payable order should open (mirrors useBookFlow in admin regenerate-link).
 function orderPayFlow(row) {
-  const kind = String(row?.kind || '').toLowerCase();
-  return (row?.customer_id || kind === 'book' || kind === 'adjustment') ? 'book' : 'pay';
+  return paymentFlowForOrderRow(row);
 }
 
 // GET /api/auth/orders — the authenticated user's own orders + pending requests.
@@ -6353,7 +7546,7 @@ app.get('/api/auth/orders', async (req, res) => {
     // Real orders (exclude child adjustment rows — they roll up into their parent).
     const { rows: orderRows } = await pool.query(
       `SELECT id, public_code, kind, status, category, service_description,
-              service_date, service_datetime, is_asap, service_address, provider_name,
+              service_date, service_datetime, is_asap, service_address, provider_id, provider_name,
               amount, provider_amount, booking_fee_amount, processing_fee_amount,
               vat_amount, pricing_total_amount, final_captured_amount,
               cash_selected, customer_id, payment_intent_id, created_at
@@ -6369,6 +7562,17 @@ app.get('/api/auth/orders', async (req, res) => {
     // Heal stale statuses from Stripe (missed webhooks) before computing payable/bucket — only
     // the bounded subset that could actually advance, to keep Stripe calls minimal.
     await reconcileOrderRows(orderRows);
+
+    // Existing 👍/👎 ratings for these orders, so the UI doesn't re-prompt a rated order.
+    const ratingByOrder = {};
+    const orderIds = orderRows.map((r) => r.id);
+    if (orderIds.length) {
+      const { rows: rRows } = await pool.query(
+        'SELECT order_id, rating FROM service_ratings WHERE user_id = $1 AND order_id = ANY($2)',
+        [payload.user_id, orderIds]
+      );
+      rRows.forEach((r) => { ratingByOrder[r.order_id] = r.rating; });
+    }
 
     // Pending intake requests that have not yet been turned into an order.
     const { rows: reqRows } = await pool.query(
@@ -6396,7 +7600,11 @@ app.get('/api/auth/orders', async (req, res) => {
       preferredTime: null,
       isAsap: !!r.is_asap,
       address: r.service_address || null,
+      providerId: r.provider_id || null,
       providerName: r.provider_name || null,
+      providerMaskedName: maskProviderName(r.provider_name),
+      rating: ratingByOrder[r.id] || null,
+      rated: !!ratingByOrder[r.id],
       cashSelected: !!r.cash_selected,
       payable: isOrderPayableOnline(r),
       payFlow: orderPayFlow(r),
@@ -6430,7 +7638,11 @@ app.get('/api/auth/orders', async (req, res) => {
         preferredTime: r.preferred_time || null,
         isAsap: !!r.is_asap,
         address: r.service_address || null,
+        providerId: null,
         providerName: null,
+        providerMaskedName: null,
+        rating: null,
+        rated: false,
         cashSelected: false,
         payable: false,
         payFlow: null,
@@ -6486,6 +7698,28 @@ app.post('/api/auth/orders/:id/payment-link', publicFormLimit, async (req, res) 
     // below returns 409 and the client refreshes instead of minting a link for a paid order.
     await reconcileOrderStatusFromStripe(row);
     if (!isOrderPayableOnline(row)) return res.status(409).json({ error: 'not_payable' });
+
+    // Owner self-service: bind a setup-style order with no customer to the user's CANONICAL
+    // Stripe customer BEFORE redirect. This is the customer section-payments reads, so a card
+    // saved on pay.html lands where the account can see it (no divergent throwaway customer from
+    // ensureCustomerForOrder), and any card the user already saved is reused (getOrderPayload's
+    // setup_required branch flips to kind='book', skipping re-entry). Never rebinds an existing
+    // customer; never creates a PaymentIntent or places a hold.
+    const linkKind = String(row.kind || '').toLowerCase();
+    if (!row.customer_id && (linkKind === 'setup' || linkKind === 'setup_required')) {
+      try {
+        const canonicalCustomerId = await getStripeCustomerForUser(payload.user_id);
+        if (canonicalCustomerId) {
+          await pool.query(
+            `UPDATE all_bookings SET customer_id = $1 WHERE id = $2 AND customer_id IS NULL`,
+            [canonicalCustomerId, row.id]
+          );
+          row.customer_id = canonicalCustomerId;
+        }
+      } catch (custErr) {
+        console.warn('[POST /api/auth/orders/:id/payment-link] customer bind failed', row.id, custErr?.message || custErr);
+      }
+    }
 
     const token = randomBytes(12).toString('base64url');
     await pool.query(
@@ -6992,6 +8226,27 @@ app.patch('/api/partner-applications/:id', adminRateLimit, requireAdminAuth, asy
   }
 });
 
+const ADMIN_CHANGE_ATTENTION_SQL = `
+  (
+    status = 'pending'
+    OR (
+      status = 'applied'
+      AND lower(COALESCE(requested_by, '')) = 'cliente'
+      AND reviewed_at IS NULL
+    )
+  )
+`;
+const ADMIN_CHANGE_ATTENTION_OC_SQL = `
+  (
+    oc.status = 'pending'
+    OR (
+      oc.status = 'applied'
+      AND lower(COALESCE(oc.requested_by, '')) = 'cliente'
+      AND oc.reviewed_at IS NULL
+    )
+  )
+`;
+
 // --- Admin dashboard: Orders list ---
 app.get('/api/admin/orders', adminRateLimit, requireAdminAuth, async (req, res) => {
   try {
@@ -7024,7 +8279,7 @@ app.get('/api/admin/orders', adminRateLimit, requireAdminAuth, async (req, res) 
               amount, provider_amount, booking_fee_amount, processing_fee_amount, vat_amount, pricing_total_amount,
               status, provider_id, provider_name, customer_id, payment_intent_id, cash_selected,
               parent_id_of_adjustment, created_at,
-              EXISTS (SELECT 1 FROM order_changes oc WHERE oc.order_id = all_bookings.id AND oc.status = 'pending') AS has_pending_change
+              EXISTS (SELECT 1 FROM order_changes oc WHERE oc.order_id = all_bookings.id AND ${ADMIN_CHANGE_ATTENTION_OC_SQL}) AS has_pending_change
          FROM all_bookings ${where}
          ORDER BY ${sortCol} ${sortDir}
          LIMIT $${params.length - 1} OFFSET $${params.length}`,
@@ -7248,7 +8503,7 @@ app.get('/api/admin/stats', adminRateLimit, requireAdminAuth, async (req, res) =
       pool.query(`SELECT count(*)::int AS c, COALESCE(sum(final_captured_amount),0)::int AS revenue FROM all_bookings WHERE status = 'Captured'`),
       pool.query(`SELECT count(*)::int AS c FROM service_reports WHERE status = 'new'`),
       pool.query(`SELECT count(*)::int AS c FROM partner_applications WHERE status = 'pending'`),
-      pool.query(`SELECT count(*)::int AS c FROM order_changes WHERE status = 'pending'`),
+      pool.query(`SELECT count(*)::int AS c FROM order_changes WHERE ${ADMIN_CHANGE_ATTENTION_SQL}`),
     ]);
     return res.json({
       requestsToday: requests.rows[0]?.c || 0,
@@ -7482,7 +8737,7 @@ app.post('/api/admin/changes/:changeId/apply', adminRateLimit, requireAdminAuth,
     }
 
     await client.query(
-      `UPDATE order_changes SET status='applied', applied_note=$1, processed_at=NOW() WHERE id=$2`,
+      `UPDATE order_changes SET status='applied', applied_note=$1, processed_at=NOW(), reviewed_at=NOW() WHERE id=$2`,
       [appliedNote, change.id]
     );
     await client.query('COMMIT');
@@ -7501,7 +8756,7 @@ app.post('/api/admin/changes/:changeId/reject', adminRateLimit, requireAdminAuth
     const { reason } = req.body || {};
     const note = String(reason || 'Rechazado por admin').slice(0, 500);
     const { rowCount } = await pool.query(
-      `UPDATE order_changes SET status='rejected', applied_note=$1, processed_at=NOW() WHERE id=$2 AND status='pending'`,
+      `UPDATE order_changes SET status='rejected', applied_note=$1, processed_at=NOW(), reviewed_at=NOW() WHERE id=$2 AND status='pending'`,
       [note, req.params.changeId]
     );
     if (!rowCount) return res.status(404).json({ error: 'change_not_found_or_not_pending' });
@@ -7512,11 +8767,30 @@ app.post('/api/admin/changes/:changeId/reject', adminRateLimit, requireAdminAuth
   }
 });
 
+app.post('/api/admin/changes/:changeId/review', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const { rowCount } = await pool.query(
+      `UPDATE order_changes
+          SET reviewed_at = NOW()
+        WHERE id = $1
+          AND status = 'applied'
+          AND lower(COALESCE(requested_by, '')) = 'cliente'
+          AND reviewed_at IS NULL`,
+      [req.params.changeId]
+    );
+    if (!rowCount) return res.status(404).json({ error: 'change_not_found_or_already_reviewed' });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('[POST /api/admin/changes/:changeId/review]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
 // Inline edit of order fields (B3). Writes an audit row to order_changes.
 app.patch('/api/admin/orders/:id', adminRateLimit, requireAdminAuth, async (req, res) => {
   try {
     const { id } = req.params;
-    const allowed = ['service_description','service_address','service_datetime','provider_amount','provider_name','client_name','client_email','client_phone'];
+    const allowed = ['service_description','service_address','service_datetime','provider_amount','provider_id','provider_name','client_name','client_email','client_phone'];
     const body = req.body || {};
     const updates = {};
     for (const k of allowed) {
@@ -7542,6 +8816,26 @@ app.patch('/api/admin/orders/:id', adminRateLimit, requireAdminAuth, async (req,
       if (isNaN(t.getTime())) return res.status(400).json({ error: 'invalid_service_datetime' });
       updates.service_date = String(updates.service_datetime).slice(0, 10);
       updates.is_asap = false;
+    }
+
+    // Assigning a real provider (Trusted Specialists foundation). An empty value clears the
+    // assignment; a non-empty value must reference a row in `providers`. When the admin assigns
+    // a provider_id but leaves provider_name blank, denormalize the name from the providers row
+    // so the customer-facing surfaces stay in sync.
+    if ('provider_id' in updates) {
+      const pid = updates.provider_id == null ? '' : String(updates.provider_id).trim();
+      if (!pid) {
+        updates.provider_id = null;
+      } else {
+        const { rows: pRows } = await pool.query(
+          'SELECT provider_id, name FROM providers WHERE provider_id = $1 LIMIT 1',
+          [pid]
+        );
+        if (!pRows[0]) return res.status(400).json({ error: 'invalid_provider', message: `Provider "${pid}" no existe.` });
+        updates.provider_id = pid;
+        const nameProvided = 'provider_name' in updates && String(updates.provider_name || '').trim();
+        if (!nameProvided && pRows[0].name) updates.provider_name = pRows[0].name;
+      }
     }
 
     // Recompute pricing if provider_amount changed (visita keeps fixed pricing)
@@ -7623,6 +8917,18 @@ app.get('/api/admin/providers', adminRateLimit, requireAdminAuth, async (req, re
       `SELECT * FROM providers ${where} ORDER BY created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params
     );
+    // How many customers trust each provider (across categories) — an ops "most-trusted" signal.
+    const provIds = rows.map((r) => r.provider_id).filter(Boolean);
+    if (provIds.length) {
+      const { rows: tRows } = await pool.query(
+        `SELECT provider_id, COUNT(DISTINCT user_id)::int AS n
+           FROM user_trusted_specialists WHERE provider_id = ANY($1) GROUP BY provider_id`,
+        [provIds]
+      );
+      const byId = {};
+      tRows.forEach((r) => { byId[r.provider_id] = r.n; });
+      rows.forEach((r) => { r.trusted_by_count = byId[r.provider_id] || 0; });
+    }
     const { rows: countRows } = await pool.query(
       `SELECT count(*)::int AS total FROM providers ${where}`,
       countParams

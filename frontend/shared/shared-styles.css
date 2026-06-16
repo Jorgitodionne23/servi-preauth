@@ -1,32 +1,36 @@
-/* ─── SERVI Design System ─────────────────────────────────────────────────── */
+/* ─── SERVI Design System — "Refined Minimal+" ────────────────────────────── */
 /* Uber-inspired: minimalist, typography-driven, generous whitespace           */
-/* Fonts: Syne (headlines), DM Sans (body) — loaded via <link> in HTML        */
+/* Fonts: Outfit (headlines), Plus Jakarta Sans (body) — loaded via <link>     */
 
 /* Landing theme tokens (activated on bodies with class="landing-page"). */
 @import url('./landing-theme.css');
 
 /* ─── Custom Properties ─────────────────────────────────────────────────── */
 :root {
-  --font-heading: 'Syne', sans-serif;
-  --font-body: 'DM Sans', 'Helvetica Neue', Arial, sans-serif;
-  --color-bg: #f7f7f7;
-  --color-bg-dark: #0a0a0a;
-  --color-text: #0a0a0a;
-  --color-text-secondary: #666;
-  --color-text-muted: #888;
-  --color-accent: #95ccd5;
-  --color-accent-hover: #74b8c4;
-  --color-border: #e8e8e8;
-  --color-border-input: #e0e0e0;
+  --font-heading: 'Outfit', sans-serif;
+  --font-body: 'Plus Jakarta Sans', 'Helvetica Neue', Arial, sans-serif;
+  --color-bg: #fafbfb;
+  --color-bg-dark: #0c0f10;
+  --color-text: #101213;
+  --color-text-secondary: #5b6166;
+  --color-text-muted: #8d9498;
+  --color-accent: #7fc4cf;
+  --color-accent-hover: #3f8e9d;
+  --color-accent-deep: #3f8e9d;   /* contrast-passing teal for text/icons on white */
+  --color-accent-tint: #eaf5f7;   /* teal wash for chips/soft surfaces */
+  --color-accent-ink: #16414a;    /* dark teal for text on tint */
+  --color-border: #e7eaea;
+  --color-border-input: #dde1e1;
   --color-card-bg: #fff;
-  --color-surface: #f5f5f5;
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 24px;
+  --color-surface: #f3f6f6;
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
   --radius-pill: 9999px;
-  --shadow-card-hover: 0 20px 40px rgba(0,0,0,0.08);
-  --shadow-dropdown: 0 8px 24px rgba(0,0,0,0.12);
+  --shadow-card: 0 1px 2px rgba(16,18,19,0.04), 0 8px 24px -16px rgba(16,18,19,0.10);
+  --shadow-card-hover: 0 24px 48px -20px rgba(16,18,19,0.18);
+  --shadow-dropdown: 0 8px 24px rgba(16,18,19,0.12);
   --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
   --morph-ease: cubic-bezier(0.4, 0, 0.2, 1);
   --duration-fast: 0.2s;
@@ -45,8 +49,8 @@ body {
   background:
     radial-gradient(ellipse 200% 130% at 50% -5%,
       #ffffff 0%,
-      #f7f7f7 40%,
-      #e9e9e9 100%) fixed;
+      #fafbfb 40%,
+      #edf0f0 100%) fixed;
   min-height: 100vh;
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
@@ -66,25 +70,27 @@ button { font-family: var(--font-body); }
 .heading-xl {
   font-family: var(--font-heading);
   font-size: 68px;
-  font-weight: 700;
+  font-weight: 800;
   line-height: 1.02;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.03em;
 }
 .heading-lg {
   font-family: var(--font-heading);
   font-size: 40px;
   font-weight: 700;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
 }
 .heading-md {
   font-family: var(--font-heading);
   font-size: 24px;
   font-weight: 700;
+  letter-spacing: -0.01em;
 }
 .heading-sm {
   font-family: var(--font-heading);
   font-size: 20px;
   font-weight: 700;
+  letter-spacing: -0.01em;
 }
 .text-body { font-size: 17px; color: var(--color-text-secondary); line-height: 1.7; }
 .text-sm { font-size: 15px; color: #777; line-height: 1.6; }
@@ -142,9 +148,9 @@ button { font-family: var(--font-body); }
   gap: 10px;
 }
 .btn-primary:hover {
-  background: #222;
-  transform: translateY(-1px);
-  box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+  background: #1d2123;
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px -10px rgba(16,18,19,0.40);
 }
 .btn-primary--lg { padding: 18px 36px; font-size: 16px; }
 
@@ -160,7 +166,7 @@ button { font-family: var(--font-body); }
   transition: all 0.25s;
   font-family: var(--font-body);
 }
-.btn-secondary:hover { border-color: var(--color-text); background: var(--color-surface); }
+.btn-secondary:hover { border-color: var(--color-text); background: var(--color-surface); transform: translateY(-2px); }
 
 .btn-white {
   background: #fff;
@@ -177,8 +183,8 @@ button { font-family: var(--font-body); }
 .btn-white:hover { background: #f0f0f0; }
 
 .btn-partner {
-  background: linear-gradient(135deg, #95ccd5 0%, #74b8c4 100%);
-  color: #111;
+  background: linear-gradient(135deg, var(--color-accent) 0%, var(--color-accent-deep) 130%);
+  color: #fff;
   border: none;
   padding: 16px 32px;
   border-radius: var(--radius-md);
@@ -192,9 +198,9 @@ button { font-family: var(--font-body); }
   gap: 10px;
 }
 .btn-partner:hover {
-  background: linear-gradient(135deg, #74b8c4 0%, #5eaab6 100%);
-  transform: translateY(-1px);
-  box-shadow: 0 8px 24px rgba(149,204,213,0.40);
+  background: linear-gradient(135deg, #6ab8c4 0%, #357f8d 130%);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px -10px rgba(63,142,157,0.45);
 }
 .btn-partner--lg { padding: 18px 36px; font-size: 16px; }
 
@@ -220,12 +226,12 @@ button { font-family: var(--font-body); }
   border-radius: var(--radius-md);
   font-size: 15px;
   font-family: var(--font-body);
-  transition: border-color var(--duration-fast);
+  transition: border-color var(--duration-fast), box-shadow var(--duration-fast);
   outline: none;
   background: #fff;
 }
-.input-field:focus { border-color: var(--color-text); }
-.input-field::placeholder { color: #aaa; }
+.input-field:focus { border-color: var(--color-accent-deep); box-shadow: 0 0 0 4px var(--color-accent-tint); }
+.input-field::placeholder { color: #a8aeb1; }
 textarea.input-field { resize: vertical; min-height: 100px; }
 
 /* ─── Cards ──────────────────────────────────────────────────────────────── */
@@ -234,10 +240,11 @@ textarea.input-field { resize: vertical; min-height: 100px; }
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   padding: 28px 24px;
-  transition: all 0.3s cubic-bezier(0.25,0.46,0.45,0.94);
+  box-shadow: var(--shadow-card);
+  transition: transform 0.35s var(--ease-spring), box-shadow 0.35s var(--ease-spring), border-color 0.35s var(--ease-spring);
 }
 .card:hover {
-  border-color: var(--color-text);
+  border-color: #d8dddd;
   transform: translateY(-4px);
   box-shadow: var(--shadow-card-hover);
 }
@@ -245,14 +252,15 @@ textarea.input-field { resize: vertical; min-height: 100px; }
 
 .testimonial-card {
   background: var(--color-card-bg);
-  border-radius: 20px;
+  border-radius: var(--radius-lg);
   padding: 32px;
   border: 1px solid var(--color-border);
-  transition: all 0.3s;
+  box-shadow: var(--shadow-card);
+  transition: transform 0.35s var(--ease-spring), box-shadow 0.35s var(--ease-spring);
 }
 .testimonial-card:hover {
-  box-shadow: 0 16px 48px rgba(0,0,0,0.06);
-  transform: translateY(-2px);
+  box-shadow: var(--shadow-card-hover);
+  transform: translateY(-3px);
 }
 
 /* ─── Category Cards ─────────────────────────────────────────────────────── */
@@ -602,6 +610,14 @@ textarea.input-field { resize: vertical; min-height: 100px; }
 
 .animate-fadeUp { animation: fadeUp 0.8s ease both; }
 .animate-fadeIn { animation: fadeIn 0.5s ease both; }
+
+/* Pre-paint hide for GSAP scroll reveals (see motion.js). The `reveal-armed`
+   class is set in each page's <head> before first paint and removed by motion.js
+   once it takes over (or by a failsafe timeout if the motion layer never loads),
+   so content is never permanently trapped hidden. Prevents the flash where
+   reveal targets paint visible, then GSAP hides + re-animates them. */
+html.reveal-armed [data-reveal],
+html.reveal-armed [data-reveal-stagger] > * { opacity: 0; }
 
 /* ─── Responsive ─────────────────────────────────────────────────────────── */
 @media (max-width: 900px) {

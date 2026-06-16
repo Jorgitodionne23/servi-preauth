@@ -6,57 +6,260 @@
   <title>SERVI — Video demostrativo</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,700;1,9..40,400&family=Syne:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/shared/shared-styles.css">
   <link rel="stylesheet" href="/shared/landing-theme.css">
+  <!-- GSAP core + ScrollTrigger (blocking, so they're ready for the body-end component script) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <style>
-    .video-placeholder {
-      background:#f0f0f0;
-      border:2px dashed #d0d0d0;
-      border-radius:16px;
-      aspect-ratio:16/9;
-      display:flex;
-      flex-direction:column;
-      align-items:center;
-      justify-content:center;
-      gap:16px;
-      color:#999;
-      margin-bottom:32px;
-      max-width:640px;
-    }
-    .play-circle {
-      width:72px;height:72px;border-radius:50%;background:#e0e0e0;display:flex;align-items:center;justify-content:center;
-    }
+  <style data-wt>
+  .wt{ --wt-ink:#0c3a42; margin:10px 0 0; }
+
+  /* step rail */
+  .wt__rail{ width:112px; display:flex; flex-direction:column; gap:9px; margin:0; overflow:visible; padding-bottom:0; scrollbar-width:none; align-self:center; justify-self:end; }
+  .wt__rail::-webkit-scrollbar{ display:none; }
+  .wt__step{ width:100%; min-width:0; height:48px; display:inline-flex; align-items:center; gap:8px; cursor:pointer;
+    border:1.5px solid var(--color-border); background:#fff; border-radius:var(--radius-pill);
+    padding:8px 6px; font:600 12.5px/1 var(--font-body); color:var(--color-text);
+    white-space:normal; text-align:left; transition:border-color .18s var(--morph-ease), background .18s var(--morph-ease), color .18s var(--morph-ease), transform .18s var(--morph-ease); }
+  .wt__step:hover{ border-color:#bcbcbc; }
+  .wt__step:active{ transform:translateY(1px); }
+  .wt__step:focus-visible{ outline:2px solid var(--color-accent); outline-offset:2px; }
+  .wt__step .n{ width:23px; height:23px; border-radius:50%; display:grid; place-items:center;
+    flex:0 0 auto; background:var(--color-surface); color:var(--color-text-secondary); font:700 12px/1 var(--font-heading); transition:.18s; }
+  .wt__step .label{ min-width:0; line-height:1.15; text-wrap:balance; }
+  .wt__step.is-active{ background:var(--color-text); border-color:var(--color-text); color:#fff; }
+  .wt__step.is-active .n{ background:var(--color-accent); color:var(--wt-ink); }
+  .wt__step.is-done .n{ background:color-mix(in srgb, var(--color-accent) 30%, #fff); color:var(--wt-ink); }
+
+  /* stage */
+  .wt__stage{ display:grid; grid-template-columns:minmax(0,1fr) 316px minmax(0,1fr); column-gap:clamp(24px,2.8vw,34px); align-items:center; width:100%; margin:0 auto; }
+
+  /* phone — mirrors the site's .phone-mock language (dark bezel, island, glare) */
+  .wt__phone{ position:relative; width:316px; max-width:100%; margin:0 auto; aspect-ratio:300/610;
+    border-radius:48px; padding:12px; background:linear-gradient(155deg,#2b2b30 0%,#0a0a0a 62%);
+    box-shadow:0 2px 2px rgba(255,255,255,.16) inset, 0 36px 70px -22px rgba(17,17,17,.5), 0 14px 32px -18px rgba(28,107,119,.32); }
+  .wt__screen{ position:relative; height:100%; border-radius:37px; background:var(--color-bg); overflow:hidden; display:flex; flex-direction:column; }
+  .wt__island{ position:absolute; top:14px; left:50%; transform:translateX(-50%); width:84px; height:23px; background:#0a0a0a; border-radius:14px; z-index:6; }
+  .wt__glare{ position:absolute; inset:0; border-radius:37px; pointer-events:none; z-index:7;
+    background:linear-gradient(135deg, rgba(255,255,255,.14) 0%, rgba(255,255,255,0) 40%); }
+  .wt__bar{ flex:0 0 auto; display:flex; align-items:center; gap:9px; padding:32px 16px 9px; border-bottom:1px solid rgba(0,0,0,.05); background:#fff; z-index:2; }
+  .wt__logo{ width:44px; height:44px; border-radius:50%; background:linear-gradient(180deg,#fff 0%,#f4f5f1 100%); border:1px solid rgba(0,0,0,.08);
+    box-shadow:0 8px 18px -14px rgba(0,0,0,.55), 0 1px 1px rgba(255,255,255,.8) inset; font-family:var(--font-heading); font-weight:800; font-size:10px; letter-spacing:.01em;
+    color:var(--color-text); display:inline-flex; align-items:center; justify-content:center; line-height:1; flex:0 0 auto; }
+  .wt__logo-dot{ color:#000; display:inline-block; width:.34em; height:.20em; border-radius:.34em .34em 0 0; background:currentColor; margin-left:1px; line-height:1; vertical-align:baseline; overflow:hidden; text-indent:100%; transform:translateY(.1em); }
+  .wt__live{ margin-left:auto; display:inline-flex; align-items:center; gap:5px; font:500 11px/1 var(--font-body); color:#3a9a86; }
+  .wt__live i{ width:6px; height:6px; border-radius:50%; background:#34b27b; box-shadow:0 0 6px #34b27b; display:inline-block; }
+
+  .wt__chat{ flex:1; overflow-y:auto; padding:12px 12px 16px; display:flex; flex-direction:column; gap:9px; scrollbar-width:thin; }
+  .wt__chat::-webkit-scrollbar{ width:4px; } .wt__chat::-webkit-scrollbar-thumb{ background:#d8d8d8; border-radius:3px; }
+
+  .wt__b{ max-width:82%; padding:8px 12px; border-radius:16px; font:500 12.5px/1.42 var(--font-body); white-space:pre-line;
+    opacity:0; transform:translateY(8px); animation:wtRise .3s var(--ease-spring) forwards; }
+  .wt__b b{ font-weight:700; }
+  .wt__b--servi{ align-self:flex-start; background:#fff; color:var(--color-text); border:1px solid #ececec; border-bottom-left-radius:5px; }
+  .wt__b--sys{ align-self:flex-start; background:color-mix(in srgb, var(--color-accent) 14%, #fff);
+    border:1px solid color-mix(in srgb, var(--color-accent) 36%, #fff); border-left:3px solid var(--color-accent);
+    color:var(--wt-ink); border-bottom-left-radius:5px; }
+  .wt__b--you{ align-self:flex-end; background:var(--color-accent); color:var(--wt-ink); border-bottom-right-radius:5px; font-weight:600; }
+  .wt__sep{ align-self:center; font:600 10px/1 var(--font-body); letter-spacing:.04em; color:var(--color-text-muted);
+    background:rgba(0,0,0,.05); padding:4px 12px; border-radius:var(--radius-pill); margin:4px 0 1px;
+    opacity:0; animation:wtRise .3s var(--ease-spring) forwards; }
+  .wt__tile{ align-self:flex-end; width:156px; height:104px; border-radius:14px; border-bottom-right-radius:5px; overflow:hidden;
+    border:1px solid color-mix(in srgb, var(--color-accent) 30%, #fff); background:var(--color-surface);
+    opacity:0; transform:translateY(8px); animation:wtRise .3s var(--ease-spring) forwards; }
+  .wt__tile img{ display:block; width:100%; height:100%; object-fit:cover; }
+  .wt__tile--photo img{ object-position:center 44%; }   /* keep pipe · drip · bucket in frame */
+  .wt__tile--map img{ object-position:66% 36%; }         /* keep the location pin in frame */
+  .wt__typing{ align-self:flex-start; display:inline-flex; gap:4px; background:#fff; border:1px solid #ececec; border-bottom-left-radius:5px; padding:11px 13px; border-radius:16px; }
+  .wt__typing i{ width:6px; height:6px; border-radius:50%; background:#b8b8b8; display:inline-block; animation:wtBlink 1.1s infinite; }
+  .wt__typing i:nth-child(2){ animation-delay:.16s; } .wt__typing i:nth-child(3){ animation-delay:.32s; }
+  @keyframes wtRise{ to{ opacity:1; transform:translateY(0);} }
+  @keyframes wtBlink{ 0%,60%,100%{opacity:.3;} 30%{opacity:1;} }
+
+  /* sidecar: rule + controls */
+  .wt__side{ width:min(100%,344px); justify-self:start; display:flex; flex-direction:column; gap:18px; }
+  .wt__rule{ width:100%; box-sizing:border-box; background:#fff; border:1px solid var(--color-border); border-left:3px solid var(--color-accent); border-radius:var(--radius-lg); padding:20px 22px; }
+  .wt__rule-tag{ font:700 11px/1 var(--font-body); letter-spacing:.13em; text-transform:uppercase; color:var(--color-accent-hover); margin:0 0 10px; }
+  .wt__rule-text{ font:500 16.5px/1.5 var(--font-body); color:var(--color-text); margin:0; }
+  .wt__more{ display:inline-flex; align-items:center; gap:6px; margin-top:15px; text-decoration:none;
+    font:700 13px/1 var(--font-body); color:var(--color-text); border-bottom:2px solid var(--color-accent); padding-bottom:3px; transition:color .15s; }
+  .wt__more:hover{ color:var(--color-accent-hover); }
+  .wt__more[hidden]{ display:none; }
+
+  /* controls live at the bottom of the phone screen as a native-style bottom bar;
+     chat (flex:1) naturally gives up the height this bar needs */
+  .wt__controls{ flex:0 0 auto; width:100%; box-sizing:border-box; display:flex; align-items:center;
+    justify-content:space-between; gap:6px; padding:9px 10px; background:#fff; border-top:1px solid rgba(0,0,0,.07); }
+  .wt__btn{ flex:1 1 0; min-width:0; box-sizing:border-box; justify-content:center; white-space:nowrap; overflow:hidden;
+    border:1.5px solid var(--color-border); background:#fff; border-radius:var(--radius-pill);
+    padding:9px 10px; cursor:pointer; font:600 12.5px/1 var(--font-body); color:var(--color-text);
+    display:inline-flex; align-items:center; gap:5px; transition:border-color .15s, background .15s; }
+  .wt__btn:hover{ border-color:#bcbcbc; }
+  .wt__btn:focus-visible{ outline:2px solid var(--color-accent); outline-offset:2px; }
+  .wt__btn--primary{ background:var(--color-text); border-color:var(--color-text); color:#fff; }
+  .wt__btn--primary:hover{ background:#000; }
+  .wt__btn:disabled{ opacity:.4; cursor:default; }
+  /* replay is icon-only (↺) → it shrinks to its glyph so Anterior/Siguiente get the room */
+  .wt__controls .wt__btn--primary{ flex:0 0 auto; padding:9px 13px; font-size:15px; gap:0; }
+  .wt__controls .wt__btn--primary #wtReplayLbl{ display:none; }
+  /* closing CTA */
+  .wt__cta{ margin-top:48px; background:var(--color-bg-dark); border-radius:var(--radius-lg); padding:26px 28px;
+    display:flex; align-items:center; justify-content:space-between; gap:18px; flex-wrap:wrap; }
+  .wt__cta-text p{ margin:0; font-family:var(--font-heading); font-weight:700; font-size:18px; color:#fff; }
+  .wt__cta-text span{ display:block; margin-top:5px; font:400 13px/1.5 var(--font-body); color:rgba(255,255,255,.6); }
+  .wt__cta-btn{ display:inline-flex; align-items:center; gap:8px; white-space:nowrap; text-decoration:none;
+    background:var(--color-accent); color:var(--wt-ink); border-radius:var(--radius-pill);
+    padding:13px 24px; font:700 15px/1 var(--font-body); transition:background .15s, transform .15s; }
+  .wt__cta-btn:hover{ background:var(--color-accent-hover); transform:translateY(-1px); }
+
+  @media (prefers-reduced-motion: reduce){
+    .wt__b,.wt__sep,.wt__tile{ animation:none; opacity:1; transform:none; }
+    .wt__typing i{ animation:none; }
+  }
+
+  /* ── phone column wrapper (shared by both modes) ── */
+  .wt__phone-col{ position:relative; display:flex; align-items:center; justify-content:center; }
+  .wt__phone-wrap{ position:relative; width:316px; max-width:100%; margin:0 auto; }
+  .wt__glow{ display:none; }
+
+  /* ════════ DESKTOP SCROLL / 3D MODE — toggled on by JS via .wt--scroll ════════ */
+  .wt--scroll .wt__side{ justify-content:center; }
+  .wt--scroll .wt__rule{ min-height:190px; }
+  .wt--scroll .wt__rule-inner{ will-change:transform,opacity; }
+
+  /* lit, floating phone with real depth */
+  .wt--scroll .wt__phone-col{ perspective:1500px; perspective-origin:50% 44%; }
+  /* base width bumped 6% (316→335) so the scale-to-1.0 zoom lands at the same
+     final size as the old scale-1.06 did, but with pixel-perfect (un-upscaled) text */
+  .wt--scroll .wt__phone-wrap{ z-index:1; width:335px; transform-style:preserve-3d; will-change:transform; }
+  .wt--scroll .wt__phone{ width:335px; }
+  .wt--scroll .wt__glow{ display:block; position:absolute; left:50%; top:50%; width:560px; height:560px;
+    transform:translate(-50%,-50%); z-index:0; pointer-events:none; opacity:0; will-change:opacity,transform;
+    background:radial-gradient(circle at 50% 42%,
+      color-mix(in srgb, var(--color-accent) 60%, #fff) 0%,
+      color-mix(in srgb, var(--color-accent) 24%, transparent) 40%, transparent 70%);
+    filter:blur(16px); }
+  @media (prefers-reduced-motion:no-preference){
+    .wt--scroll .wt__phone{ animation:wtFloat 6.5s ease-in-out infinite; }
+  }
+  @keyframes wtFloat{ 0%,100%{ transform:translate3d(0,0,0) rotateZ(0deg); } 50%{ transform:translate3d(0,-7px,0) rotateZ(-.45deg); } }
+
+  /* chat thread — ONE continuous thread (all messages, in order). It scrolls
+     up as new bubbles arrive at the bottom, so earlier steps stay on screen
+     and fall off the top like a real chat. Reveal + scroll are pure functions
+     of scroll progress (driven per-frame from JS). */
+  .wt--scroll .wt__chat{ position:relative; overflow:hidden; padding:0; display:block; }
+  .wt--scroll .wt__thread{ position:absolute; top:0; left:0; right:0; padding:14px 12px 16px;
+    display:flex; flex-direction:column; gap:9px; will-change:transform; }
+  .wt--scroll .wt__b, .wt--scroll .wt__sep, .wt--scroll .wt__tile{ animation:none; opacity:0; transform:none; }
+
+  /* vertical 3D carousel rail */
+  .wt--scroll .wt__rail{ position:relative; display:block; width:164px; height:440px; gap:0; padding:0;
+    background:none; border:0; box-shadow:none; overflow:visible; align-self:center; justify-self:end;
+    perspective:1300px; perspective-origin:50% 50%; }
+  .wt--scroll .wt__step{ position:absolute; left:0; right:0; top:50%; height:auto; min-height:54px; margin:0;
+    transform-style:preserve-3d; backface-visibility:hidden; will-change:transform,opacity;
+    box-shadow:0 10px 26px -18px rgba(16,18,19,.45);
+    transition:background .35s var(--morph-ease), color .35s var(--morph-ease),
+      border-color .35s var(--morph-ease), box-shadow .35s var(--morph-ease); }
+  .wt--scroll .wt__step .label{ font-size:13.5px; }
+  .wt--scroll .wt__step.is-active{
+    box-shadow:0 30px 56px -22px rgba(16,18,19,.6),
+      0 8px 20px -12px color-mix(in srgb, var(--color-accent) 55%, transparent); }
+
+  /* short desktop viewports — shrink the phone so the pinned scene never clips */
+  @media (min-width:1061px) and (max-height:780px){
+    .wt--scroll .wt__phone-wrap{ width:301px; }
+    .wt--scroll .wt__phone{ width:301px; }
+    .wt--scroll .wt__rail{ height:384px; }
+  }
+
+  @media (max-width:1060px){
+    .wt{ margin-top:4px; }
+    .wt__stage{ grid-template-columns:1fr; gap:18px; max-width:430px; margin:0 auto; }
+    .wt__side{ display:contents; }
+    /* rail removed on mobile — the in-phone controls handle step navigation */
+    .wt__rail{ display:none; }
+    .wt__phone-col{ order:2; width:min(316px,100%); justify-self:center; }
+    .wt__rule{ order:3; border-left-width:0; border-top:3px solid var(--color-accent); padding:18px 18px 19px; }
+  }
+
+  @media (max-width:390px){
+    .wt__btn{ padding:9px 7px; font-size:12px; gap:4px; }
+  }
   </style>
 </head>
 <body class="landing-page">
 <script src="/config.js"></script>
 <script src="/shared/i18n.js"></script>
 <script src="/shared/shared-auth.js"></script>
+<script src="/shared/contact-cta.js"></script>
 <div id="navbar"></div>
 <script src="/shared/morphing-nav.js"></script>
 
 <section style="padding-top:120px;padding-bottom:60px">
-  <div class="container" style="max-width:800px">
+  <div class="container" style="max-width:1120px">
     <a href="/handbook.html" class="nav-link" style="display:inline-flex;align-items:center;gap:6px;margin-bottom:24px">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
       <span data-i18n="handbook.title">Partners Handbook</span>
     </a>
 
     <h1 class="heading-lg" style="margin-bottom:12px" data-i18n="handbookVideo.title">Video demostrativo</h1>
-    <p class="text-body" style="margin-bottom:40px;color:#666" data-i18n="handbookVideo.subtitle">Aprende cómo tomar tu primera solicitud con SERVI.</p>
+    <p class="text-body" style="margin-bottom:40px;color:#666" data-i18n="handbookVideo.subtitle">Aprende cómo tomar tu primera solicitud con SERVI. Toca el paso que necesites.</p>
 
-    <h2 class="heading-md" style="margin-bottom:24px" data-i18n="handbookVideo.sectionTitle">Cómo tomar una solicitud</h2>
+    <div class="wt" id="wt">
+      <div class="wt__stage">
+        <div class="wt__rail" id="wtRail" role="tablist" aria-label="Pasos del servicio"></div>
 
-    <div class="video-placeholder">
-      <div class="play-circle">
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="#999" stroke="none"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        <div class="wt__phone-col">
+          <div class="wt__glow" aria-hidden="true"></div>
+          <div class="wt__phone-wrap">
+            <div class="wt__phone">
+              <div class="wt__island" aria-hidden="true"></div>
+              <div class="wt__glare" aria-hidden="true"></div>
+              <div class="wt__screen">
+                <div class="wt__bar">
+                  <span class="wt__logo">SERVI<span class="wt__logo-dot">.</span></span>
+                  <span class="wt__live"><i></i><span id="wtLive">en línea</span></span>
+                </div>
+                <div class="wt__chat" id="wtChat" aria-live="polite"></div>
+                <div class="wt__controls">
+                  <button class="wt__btn" id="wtPrev" type="button">‹ <span id="wtPrevLbl">Anterior</span></button>
+                  <button class="wt__btn wt__btn--primary" id="wtReplay" type="button">↺ <span id="wtReplayLbl">Reproducir</span></button>
+                  <button class="wt__btn" id="wtNext" type="button"><span id="wtNextLbl">Siguiente</span> ›</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="wt__side">
+          <div class="wt__rule">
+            <div class="wt__rule-inner" id="wtRuleInner">
+              <p class="wt__rule-tag" id="wtRuleTag"></p>
+              <p class="wt__rule-text" id="wtRuleText"></p>
+              <a class="wt__more" id="wtMore" href="#">
+                <span id="wtMoreLabel"></span>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+              </a>
+            </div>
+          </div>
+        </div>
       </div>
-      <span style="font-family:'DM Sans',sans-serif;font-size:14px" data-i18n="handbookVideo.videoSoon">Video próximamente</span>
-    </div>
 
-    <p class="text-body" data-i18n="handbookVideo.body">Una vez registrado como proveedor, mira este video para aprender cómo tomar tu primera solicitud con SERVI.</p>
+      <div class="wt__cta">
+        <div class="wt__cta-text">
+          <p id="wtCtaTitle"></p>
+          <span id="wtCtaSub"></span>
+        </div>
+        <a class="wt__cta-btn" href="https://wa.me/525525112588" target="_blank" rel="noopener">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51l-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347M12.05 21.785h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884"/></svg>
+          <span id="wtCtaBtn"></span>
+        </a>
+      </div>
+    </div>
   </div>
 </section>
 
@@ -65,19 +268,19 @@
     <h3 class="heading-md" style="margin-bottom:24px" data-i18n="handbook.moreTitle">Más del Handbook</h3>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px">
       <a href="/handbook/guia-comunitaria.html" style="background:#fff;border:1px solid #e8e8e8;border-radius:12px;padding:20px;text-decoration:none;color:inherit;transition:all 0.2s;display:block">
-        <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:15px" data-i18n="handbook.links.guide">Guía Comunitaria</div>
+        <div style="font-family:'Outfit',sans-serif;font-weight:700;font-size:15px" data-i18n="handbook.links.guide">Guía Comunitaria</div>
       </a>
       <a href="/handbook/prepararte-cita.html" style="background:#fff;border:1px solid #e8e8e8;border-radius:12px;padding:20px;text-decoration:none;color:inherit;transition:all 0.2s;display:block">
-        <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:15px" data-i18n="handbook.links.prep">¿Cómo prepararte para tu cita?</div>
+        <div style="font-family:'Outfit',sans-serif;font-weight:700;font-size:15px" data-i18n="handbook.links.prep">¿Cómo prepararte para tu cita?</div>
       </a>
       <a href="/handbook/cambio-precios.html" style="background:#fff;border:1px solid #e8e8e8;border-radius:12px;padding:20px;text-decoration:none;color:inherit;transition:all 0.2s;display:block">
-        <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:15px" data-i18n="handbook.links.pricing">Los tipos de cambios en precio</div>
+        <div style="font-family:'Outfit',sans-serif;font-weight:700;font-size:15px" data-i18n="handbook.links.pricing">Los tipos de cambios en precio</div>
       </a>
       <a href="/handbook/calificacion.html" style="background:#fff;border:1px solid #e8e8e8;border-radius:12px;padding:20px;text-decoration:none;color:inherit;transition:all 0.2s;display:block">
-        <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:15px" data-i18n="handbook.links.rating">¿Cómo se calcula tu calificación?</div>
+        <div style="font-family:'Outfit',sans-serif;font-weight:700;font-size:15px" data-i18n="handbook.links.rating">¿Cómo se calcula tu calificación?</div>
       </a>
       <a href="/handbook/pagos.html" style="background:#fff;border:1px solid #e8e8e8;border-radius:12px;padding:20px;text-decoration:none;color:inherit;transition:all 0.2s;display:block">
-        <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:15px" data-i18n="handbook.links.payments">¿Cómo funcionan los pagos?</div>
+        <div style="font-family:'Outfit',sans-serif;font-weight:700;font-size:15px" data-i18n="handbook.links.payments">¿Cómo funcionan los pagos?</div>
       </a>
     </div>
   </div>
@@ -85,5 +288,543 @@
 
 <div id="footer"></div>
 <script src="/shared/shared-footer.js"></script>
+
+<script data-wt>
+(function () {
+  // Tile images shown inside the chat (the "issue photo" and the "on my way" map).
+  // PRODUCTION: drop the two provided PNGs into your assets folder and swap these
+  // to hosted paths, e.g.
+  //   var IMG = { leak: '/assets/handbook/servi-tile-leak.png', map: '/assets/handbook/servi-tile-map.png' };
+  // (data URIs are inlined here so the standalone preview renders.)
+  var IMG = { leak: '/assets/handbook/servi-tile-leak.png', map: '/assets/handbook/servi-tile-map.png' };
+
+  // ── Built-in bilingual content (fallback). The component prefers
+  //    window.__t.handbookVideo.wt when i18n.js provides it. ──
+  var WT = {
+    es: {
+      eyebrow: "Guía interactiva",
+      online: "en línea", replay: "Reproducir", prev: "Anterior", next: "Siguiente",
+      ctaBtn: "Escríbenos",
+      ctaTitle: "¿Te quedaste con una duda justo antes de un servicio?",
+      ctaSub: "Te respondemos al momento.",
+      steps: [
+        { short:"Recibe", title:"Recibe la solicitud", ruleTag:"Primero",
+          rule:"Te llegará un mensaje de SERVI con los datos del cliente. Mantén tu cuenta activa para recibir solicitudes y cobrar.",
+          msgs:[
+            { t:"sys",   text:"🔔 <b>NUEVA SOLICITUD SERVI</b>\n• Dirección\n• Fecha y hora\n• Detalles del trabajo" },
+            { t:"servi", text:"¡Responde rápido para acordar un precio y mandárselo al cliente!" } ] },
+        { short:"Cotiza", title:"Manda tu precio", ruleTag:"Regla de oro",
+          rule:"Revisa bien los datos del trabajo y manda un precio justo y claro lo antes posible: entre más rápido cotices, más chance tienes de quedarte el servicio.",
+          link:{ href:"/handbook/calificacion.html", key:"rating" },
+          msgs:[
+            { t:"servi", text:"¿Cuánto cobrarías por este trabajo? Mándanos tu precio. 💬" },
+            { t:"you",   text:"Tomando en cuenta el trabajo, mi precio sería:" },
+            { t:"you",   text:"$$$" },
+            { t:"servi", text:"¡Listo! Se lo pasamos al cliente. 🙌" } ] },
+        { short:"Acepta", title:"Acepta el servicio", ruleTag:"Regla de oro",
+          rule:"Cuando tu cotización gana, SERVI te asigna el servicio. Confírmalo y prepárate: el trabajo ya es tuyo.",
+          msgs:[
+            { t:"sys",   text:"✅ <b>SERVICIO ASIGNADO</b>\n¡Este servicio es tuyo!" },
+            { t:"you",   text:"¡Genial!" } ] },
+        { short:"Prepárate", title:"Prepárate para la cita", ruleTag:"Antes de la cita",
+          rule:"Una vez que el servicio es tuyo, confirma los detalles con SERVI y alista tus herramientas y materiales con tiempo: llegar preparado evita demoras y deja la mejor impresión.",
+          link:{ href:"/handbook/prepararte-cita.html", key:"prep" },
+          msgs:[
+            { t:"sep",   text:"Antes del día de la cita" },
+            { t:"you",   text:"¿Algún detalle que deba saber del cliente?" },
+            { t:"servi", text:"Te paso todo: acceso, piso y lo que pidió. 📋" },
+            { t:"you",   text:"¡Perfecto! Ya tengo mis herramientas y materiales listos. 🧰" } ] },
+        { short:"Llega", title:"Llega y empieza", ruleTag:"Comunicación",
+          rule:"Avísanos cuando empieces y cuando termines. Comunicarte con SERVI es parte del trabajo.",
+          msgs:[
+            { t:"sep",   text:"Día de la cita" },
+            { t:"servi", text:"🔔 Recordatorio: tienes un servicio hoy" },
+            { t:"map" },
+            { t:"you",   text:"¡En camino!" },
+            { t:"you",   text:"¡Llegué y empezando!" } ] },
+        { short:"Cambio de precio", title:"Si el precio cambia", ruleTag:"Importante",
+          rule:"Nunca sigas sin confirmar. SERVI confirma el precio nuevo con el cliente antes de que continúes.",
+          link:{ href:"/handbook/cambio-precios.html", key:"pricing" },
+          msgs:[
+            { t:"photo", emoji:"🔧" },
+            { t:"you",   text:"Necesito un cambio de precio" },
+            { t:"you",   text:"Precio nuevo: $$$" },
+            { t:"servi", text:"Un momento… confirmamos con el cliente." },
+            { t:"sys",   text:"✅ <b>Confirmado.</b> Precio ajustado a $$$.\n¡Puedes continuar!" } ] },
+        { short:"Termina", title:"Marca el trabajo terminado", ruleTag:"Importante",
+          rule:"Cuando acabes, avísanos y manda una foto del trabajo terminado: así confirmamos con el cliente que todo quedó bien y se libera tu pago.",
+          msgs:[
+            { t:"you",   text:"¡Terminé! Aquí está el trabajo listo. 👇" },
+            { t:"photo", emoji:"✨" },
+            { t:"servi", text:"¡Quedó increíble! Confirmamos con el cliente. ✅" },
+            { t:"sys",   text:"✅ <b>TRABAJO CONFIRMADO</b>\nEl cliente quedó conforme.\n¡Tu pago se libera!" } ] },
+        { short:"Cobra", title:"Termina y cobra", ruleTag:"Regla de oro",
+          rule:"El pago siempre va por la plataforma. No cobres directamente al cliente.",
+          link:{ href:"/handbook/pagos.html", key:"payments" },
+          msgs:[
+            { t:"servi", text:"🧾 Nosotros le cobramos al cliente por ti." },
+            { t:"servi", text:"💸 Te transferimos tu pago al método que prefieras. ¡Y gestionamos tu reseña! 🚀" } ] },
+      ],
+      links: { rating:"¿Cómo se calcula tu calificación?", prep:"¿Cómo prepararte para tu cita?",
+               pricing:"Los tipos de cambios en precio", payments:"¿Cómo funcionan los pagos?" }
+    },
+    en: {
+      eyebrow: "Interactive guide",
+      online: "online", replay: "Replay", prev: "Back", next: "Next",
+      ctaBtn: "Message us",
+      ctaTitle: "Still stuck right before a job?",
+      ctaSub: "We reply right away.",
+      steps: [
+        { short:"Receive", title:"Receive the request", ruleTag:"First",
+          rule:"SERVI messages you with the client's details. Keep your account active to receive requests and get paid.",
+          msgs:[
+            { t:"sys",   text:"🔔 <b>NEW SERVI REQUEST</b>\n• Address\n• Date & time\n• Job details" },
+            { t:"servi", text:"Reply fast to agree on a price and send it to the client!" } ] },
+        { short:"Quote", title:"Send your price", ruleTag:"Golden rule",
+          rule:"Review the job details carefully and send a fair, clear price as soon as you can: the quicker you quote, the better your chance of winning the job.",
+          link:{ href:"/handbook/calificacion.html", key:"rating" },
+          msgs:[
+            { t:"servi", text:"How much would you charge for this job? Send us your price. 💬" },
+            { t:"you",   text:"Based on the work, my price would be:" },
+            { t:"you",   text:"$$$" },
+            { t:"servi", text:"Got it! We'll pass it to the client. 🙌" } ] },
+        { short:"Accept", title:"Accept the job", ruleTag:"Golden rule",
+          rule:"When your quote wins, SERVI assigns you the job. Confirm it and get ready: the work is yours.",
+          msgs:[
+            { t:"sys",   text:"✅ <b>JOB ASSIGNED</b>\nThis job is yours!" },
+            { t:"you",   text:"Great!" } ] },
+        { short:"Prepare", title:"Prep for the appointment", ruleTag:"Before the visit",
+          rule:"Once the job is yours, confirm the details with SERVI and get your tools and materials ready ahead of time: arriving prepared avoids delays and makes the best impression.",
+          link:{ href:"/handbook/prepararte-cita.html", key:"prep" },
+          msgs:[
+            { t:"sep",   text:"Before the appointment day" },
+            { t:"you",   text:"Any client details I should know?" },
+            { t:"servi", text:"Sending you everything: access, floor, and what they asked for. 📋" },
+            { t:"you",   text:"Perfect! My tools and materials are ready. 🧰" } ] },
+        { short:"Arrive", title:"Arrive & start", ruleTag:"Communication",
+          rule:"Tell us when you start and when you finish. Communicating with SERVI is part of the job.",
+          msgs:[
+            { t:"sep",   text:"Day of the appointment" },
+            { t:"servi", text:"🔔 Reminder: you have a job today" },
+            { t:"map" },
+            { t:"you",   text:"On my way!" },
+            { t:"you",   text:"Arrived and starting!" } ] },
+        { short:"Price change", title:"If the price changes", ruleTag:"Important",
+          rule:"Never continue without confirming. SERVI confirms the new price with the client before you go on.",
+          link:{ href:"/handbook/cambio-precios.html", key:"pricing" },
+          msgs:[
+            { t:"photo", emoji:"🔧" },
+            { t:"you",   text:"I need a price change" },
+            { t:"you",   text:"New price: $$$" },
+            { t:"servi", text:"One moment… we're confirming with the client." },
+            { t:"sys",   text:"✅ <b>Confirmed.</b> Price adjusted to $$$.\nYou can continue!" } ] },
+        { short:"Finalize", title:"Mark the job done", ruleTag:"Important",
+          rule:"When you finish, let us know and send a photo of the completed work: that's how we confirm with the client that everything's right and your payment is released.",
+          msgs:[
+            { t:"you",   text:"All done! Here's the finished job. 👇" },
+            { t:"photo", emoji:"✨" },
+            { t:"servi", text:"It looks amazing! We'll confirm with the client. ✅" },
+            { t:"sys",   text:"✅ <b>JOB CONFIRMED</b>\nThe client is happy.\nYour payment is being released!" } ] },
+        { short:"Get paid", title:"Finish & get paid", ruleTag:"Golden rule",
+          rule:"Payment always goes through the platform. Never charge the client directly.",
+          link:{ href:"/handbook/pagos.html", key:"payments" },
+          msgs:[
+            { t:"servi", text:"🧾 We charge the client for you." },
+            { t:"servi", text:"💸 We transfer your pay to your preferred method. And we handle your review! 🚀" } ] },
+      ],
+      links: { rating:"How your rating is calculated", prep:"How to prepare for your appointment",
+               pricing:"Types of price changes", payments:"How payments work" }
+    }
+  };
+
+  function lang(){ return (window.__lang === 'en') ? 'en' : 'es'; }
+  function data(){
+    var fromI18n = window.__t && window.__t.handbookVideo && window.__t.handbookVideo.wt;
+    return fromI18n || WT[lang()];
+  }
+  function linkLabel(key){
+    var fromI18n = window.__t && window.__t.handbook && window.__t.handbook.links && window.__t.handbook.links[key];
+    return fromI18n || (WT[lang()].links[key]) || '';
+  }
+
+  var $ = function (id){ return document.getElementById(id); };
+  var wtRoot = $('wt');
+  var chat = $('wtChat'), rail = $('wtRail');
+  var prefersReduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var hasGSAP = !!(window.gsap && window.ScrollTrigger);
+  if (hasGSAP) gsap.registerPlugin(ScrollTrigger);
+
+  // ── tiny math helpers ──
+  function clamp(v, a, b){ return v < a ? a : (v > b ? b : v); }
+  function smooth(t){ t = clamp(t, 0, 1); return t * t * (3 - 2 * t); }   // smoothstep — kills the linear/robotic feel
+  function lerp(a, b, t){ return a + (b - a) * t; }
+
+  // ── one builder for every chat node (shared by both modes) ──
+  function makeMsgEl(m){
+    var el, en = lang() === 'en';
+    if (m.t === 'sep'){ el = document.createElement('div'); el.className = 'wt__sep'; el.textContent = m.text; }
+    else if (m.t === 'map'){ el = document.createElement('div'); el.className = 'wt__tile wt__tile--map';
+      el.innerHTML = '<img src="' + IMG.map + '" alt="' + (en ? 'Map — on the way' : 'Mapa — en camino') + '">'; }
+    else if (m.t === 'photo'){ el = document.createElement('div'); el.className = 'wt__tile wt__tile--photo';
+      el.innerHTML = '<img src="' + IMG.leak + '" alt="' + (en ? 'Photo of the issue' : 'Foto del problema') + '">'; }
+    else { el = document.createElement('div'); el.className = 'wt__b wt__b--' + m.t; el.innerHTML = m.text; }
+    return el;
+  }
+
+  function applyStrings(){
+    var d = data();
+    $('wtLive').textContent = d.online;
+    $('wtPrevLbl').textContent = d.prev;
+    $('wtReplayLbl').textContent = d.replay;
+    $('wtNextLbl').textContent = d.next;
+    $('wtCtaTitle').textContent = d.ctaTitle;
+    $('wtCtaSub').textContent = d.ctaSub;
+    $('wtCtaBtn').textContent = d.ctaBtn;
+  }
+  function setRule(i){
+    var s = data().steps[i];
+    $('wtRuleTag').textContent = s.ruleTag;
+    $('wtRuleText').textContent = s.rule;
+    var more = $('wtMore');
+    if (s.link){ more.hidden = false; more.href = s.link.href; $('wtMoreLabel').textContent = linkLabel(s.link.key); }
+    else { more.hidden = true; }
+  }
+
+  /* ===================================================================
+     STATIC MODE — mobile tap-to-advance + reduced-motion desktop.
+     Keeps the original message-reveal state machine; no scroll logic.
+  =================================================================== */
+  function staticMode(opts){
+    opts = opts || {};
+    var animate = !!opts.animate && !prefersReduce;
+    var current = 0, timers = [];
+    wtRoot.classList.remove('wt--scroll');
+    wtRoot.classList.add('wt--static');
+
+    function clearTimers(){ timers.forEach(clearTimeout); timers = []; }
+    function buildRail(){
+      var d = data(); rail.innerHTML = '';
+      d.steps.forEach(function (s, i){
+        var b = document.createElement('button');
+        b.className = 'wt__step'; b.setAttribute('role', 'tab'); b.type = 'button';
+        b.innerHTML = '<span class="n">' + (i + 1) + '</span><span class="label">' + s.short + '</span>';
+        b.addEventListener('click', function (){ goTo(i); });
+        rail.appendChild(b);
+      });
+    }
+    function paintRail(){
+      Array.prototype.forEach.call(rail.children, function (el, i){
+        el.classList.toggle('is-active', i === current);
+        el.classList.toggle('is-done', i < current);
+        if (i === current) el.setAttribute('aria-selected', 'true'); else el.removeAttribute('aria-selected');
+      });
+    }
+    function addMsg(m){ chat.appendChild(makeMsgEl(m)); chat.scrollTop = chat.scrollHeight; }
+    function showTyping(){ var t = document.createElement('div'); t.className = 'wt__typing'; t.id = 'wtTyping'; t.innerHTML = '<i></i><i></i><i></i>'; chat.appendChild(t); chat.scrollTop = chat.scrollHeight; }
+    function hideTyping(){ var t = $('wtTyping'); if (t) t.remove(); }
+    function play(){
+      clearTimers(); hideTyping(); chat.innerHTML = '';
+      var msgs = data().steps[current].msgs;
+      if (!animate){ msgs.forEach(addMsg); return; }
+      var delay = 240;
+      msgs.forEach(function (m){
+        if (m.t === 'servi' || m.t === 'sys'){
+          timers.push(setTimeout(showTyping, delay)); delay += 600;
+          timers.push(setTimeout(function (){ hideTyping(); addMsg(m); }, delay)); delay += 360;
+        } else {
+          timers.push(setTimeout(function (){ addMsg(m); }, delay)); delay += 460;
+        }
+      });
+    }
+    function goTo(i){
+      var total = data().steps.length;
+      current = clamp(i, 0, total - 1);
+      paintRail(); setRule(current);
+      $('wtPrev').disabled = current === 0;
+      $('wtNext').disabled = current === total - 1;
+      play();
+    }
+
+    var onPrev = function (){ goTo(current - 1); };
+    var onNext = function (){ goTo(current + 1); };
+    var onReplay = play;
+    $('wtPrev').addEventListener('click', onPrev);
+    $('wtNext').addEventListener('click', onNext);
+    $('wtReplay').addEventListener('click', onReplay);
+
+    buildRail(); goTo(0);
+
+    return function cleanup(){
+      clearTimers(); hideTyping();
+      $('wtPrev').removeEventListener('click', onPrev);
+      $('wtNext').removeEventListener('click', onNext);
+      $('wtReplay').removeEventListener('click', onReplay);
+      wtRoot.classList.remove('wt--static');
+    };
+  }
+
+  /* ===================================================================
+     SCROLL MODE — desktop GSAP + ScrollTrigger, scrubbable 3D.
+     Everything is a PURE function of scroll progress => flawless
+     forward/back scrubbing, zero DOM mutation, no duplicated nodes.
+  =================================================================== */
+  function scrollMode(){
+    var steps = data().steps, N = steps.length;
+    wtRoot.classList.remove('wt--static');
+    wtRoot.classList.add('wt--scroll');
+
+    // 3D rail buttons (clickable → scroll to that step)
+    rail.innerHTML = '';
+    var railEls = [];
+    steps.forEach(function (s, i){
+      var b = document.createElement('button');
+      b.className = 'wt__step'; b.setAttribute('role', 'tab'); b.type = 'button';
+      b.innerHTML = '<span class="n">' + (i + 1) + '</span><span class="label">' + s.short + '</span>';
+      b.addEventListener('click', function (){ scrollToStep(i); });
+      rail.appendChild(b); railEls.push(b);
+    });
+
+    // ONE continuous chat thread — every message from every step, in order,
+    // built ONCE. Never crossfaded/replaced: the thread just scrolls up as new
+    // bubbles arrive (real-chat behaviour). cumEnd[k] = running message count
+    // through step k, so we know where each step's messages live in the thread.
+    chat.innerHTML = '';
+    var thread = document.createElement('div'); thread.className = 'wt__thread';
+    var msgEls = [], cumEnd = [], runCount = 0;
+    steps.forEach(function (s){
+      s.msgs.forEach(function (m){ var el = makeMsgEl(m); thread.appendChild(el); msgEls.push(el); });
+      runCount += s.msgs.length; cumEnd.push(runCount);
+    });
+    chat.appendChild(thread);
+    var T = msgEls.length;
+
+    var phoneWrap = wtRoot.querySelector('.wt__phone-wrap');
+    var glow = wtRoot.querySelector('.wt__glow');
+    var ruleInner = $('wtRuleInner');
+
+    // base transforms
+    gsap.set(railEls, { yPercent: -50, transformOrigin: '50% 50%' });
+    gsap.set(phoneWrap, { transformOrigin: '50% 46%' });
+
+    // Per-frame setters. NOTE: in GSAP, separate quickSetters for 'scale' AND
+    // another transform axis (z/y/rotation) on the SAME element don't compose —
+    // the scale silently drops. So every element that needs scale is driven with
+    // gsap.set() (which composes correctly). Bubbles + thread only translate, so
+    // quickSetters stay there — fastest, and no composition issue.
+    var mO = msgEls.map(function (el){ return gsap.quickSetter(el, 'opacity'); });
+    var mY = msgEls.map(function (el){ return gsap.quickSetter(el, 'y', 'px'); });
+    var threadY = gsap.quickSetter(thread, 'y', 'px');
+
+    // ── chat thread geometry (re-measured on every ScrollTrigger refresh) ──
+    // S[i] = how far the thread must scroll up so message i rests just above the
+    // bottom of the visible chat (0 while the thread still fits — messages stay
+    // top-aligned, then it starts scrolling once they overflow, like a real chat).
+    var BOT_PAD = 16, RISE = 8, S = [];
+    function measureThread(){
+      var fold = chat.clientHeight - BOT_PAD;
+      S = [];
+      for (var i = 0; i < T; i++){
+        var b = msgEls[i].offsetTop + msgEls[i].offsetHeight;
+        S.push(Math.max(0, b - fold));
+      }
+    }
+    // Continuous "revealed message count" as a function of the active-float af:
+    // at af=k all messages through step k are shown; step k+1's messages reveal
+    // across the ramp into k+1. Step 0 reveals during the zoom lead-in (via act).
+    function revealCount(af, act){
+      if (af <= 0) return cumEnd[0] * act;          // lead-in: step 0 fades in with the zoom
+      var k = Math.floor(af);
+      if (k >= N - 1) return cumEnd[N - 1];
+      return cumEnd[k] + (cumEnd[k + 1] - cumEnd[k]) * (af - k);
+    }
+    // Scroll offset that keeps the newest arriving bubble anchored at the bottom,
+    // interpolated so the thread glides up smoothly as each message lands.
+    function scrollOffset(r){
+      if (!T) return 0;
+      var i = Math.floor(r);
+      if (i >= T) return S[T - 1] || 0;
+      var prev = i > 0 ? S[i - 1] : 0;
+      return lerp(prev, S[i] || 0, smooth(r - i));
+    }
+
+    // ── non-linear scroll choreography ──────────────────────────────
+    // Step 0 holds while the phone zooms IN (a real lead-in); then every
+    // step gets an equal ramp→dwell, so under a scrub no step flies past
+    // and the snap rests dead-centre on each. Fixes: early steps skipping,
+    // and the zoom finishing long before step 0 hands off to step 1.
+    // RAMP is now PER MESSAGE, so every bubble gets the same scroll distance no
+    // matter how many its step has (a 5-msg step no longer bursts in across the
+    // same window a 2-msg step uses). cumEnd[k]-cumEnd[k-1] = step k's msg count.
+    var LEAD = 0.16, RAMP_PER_MSG = 0.07, DWELL = 0.07;   // progress units (un-normalised)
+    var KF = [[0, 0]], STOPS = [];
+    (function buildTimeline(){
+      var t = LEAD; KF.push([t, 0]); STOPS.push(t);      // step 0: zoom-in + dwell
+      for (var k = 1; k < N; k++){
+        t += RAMP_PER_MSG * (cumEnd[k] - cumEnd[k - 1]); KF.push([t, k]);  // ramp into step k, paced by its msg count
+        t += DWELL; KF.push([t, k]); STOPS.push(t);      // dwell on step k
+      }
+      var total = t || 1;
+      for (var i = 0; i < KF.length; i++) KF[i][0] /= total;
+      for (var s = 0; s < STOPS.length; s++) STOPS[s] /= total;
+    })();
+    function afFromP(p){
+      if (p <= KF[0][0]) return KF[0][1];
+      for (var i = 1; i < KF.length; i++){
+        if (p <= KF[i][0]){
+          var a = KF[i - 1], b = KF[i], span = b[0] - a[0];
+          return a[1] + (b[1] - a[1]) * (span > 0 ? (p - a[0]) / span : 1);
+        }
+      }
+      return KF[KF.length - 1][1];
+    }
+    var ZOOM_END = STOPS[0] * 0.6;   // phone fully zoomed by ~60% into step 0's lead
+
+    var SPACING = 78, DEPTH = 150, lastActive = -1;
+
+    function render(p){
+      var af = afFromP(p);              // continuous "active float" position (non-linear choreography)
+      var active = Math.round(af);
+
+      // (2) ACTIVATION — phone zooms in EARLY (well before step 0 hands off), light blooms
+      var act = smooth(clamp(p / ZOOM_END, 0, 1));
+      // End the zoom at exactly scale 1.0 so the screen text is rasterised at its
+      // native pixel size (any value >1 upscales the bitmap and softens glyphs).
+      // The phone's base width is bumped 6% in CSS to keep the final on-screen size.
+      gsap.set(phoneWrap, { scale: lerp(0.85, 1.0, act), z: lerp(-90, 0, act) });
+      gsap.set(glow, { opacity: lerp(0, 0.6, act), scale: lerp(0.8, 1.05, act) });
+
+      // (3) 3D VERTICAL CAROUSEL — neighbours scale down + fall back into depth
+      for (var k = 0; k < N; k++){
+        var off = k - af, ad = Math.abs(off);
+        gsap.set(railEls[k], {
+          y: off * SPACING,
+          z: -ad * DEPTH,
+          scale: Math.max(0.6, 1 - ad * 0.14),
+          rotationX: off * -5,
+          opacity: Math.max(0.1, 1 - ad * 0.42)
+        });
+      }
+
+      // (4) CONTINUOUS CHAT THREAD — messages accumulate like a real chat. Each
+      // bubble fades in once, in order; older ones stay put and the whole thread
+      // scrolls up so the newest sits at the bottom (and old ones fall off top).
+      var r = revealCount(af, act);
+      threadY(-scrollOffset(r));
+      for (var gi = 0; gi < T; gi++){
+        var a = smooth(clamp(r - gi, 0, 1));   // 0 until reveal reaches it → 1 once landed
+        mO[gi](a);
+        mY[gi]((1 - a) * RISE);                // tiny upward settle as it appears
+      }
+
+      // discrete work — only when the centred step actually changes
+      if (active !== lastActive){
+        for (var ri = 0; ri < N; ri++){
+          railEls[ri].classList.toggle('is-active', ri === active);
+          railEls[ri].classList.toggle('is-done', ri < active);
+          if (ri === active) railEls[ri].setAttribute('aria-selected', 'true'); else railEls[ri].removeAttribute('aria-selected');
+        }
+        setRule(active);                          // text set immediately => never stale under fast scrub
+        if (ruleInner) gsap.fromTo(ruleInner, { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.45, ease: 'power3.out', overwrite: true });
+        $('wtPrev').disabled = active === 0;
+        $('wtNext').disabled = active === N - 1;
+        lastActive = active;
+      }
+    }
+
+    // (1)+(5) scrubbable master timeline, pinned, desktop-only.
+    // A linear proxy tween (0→1) feeds render(); scrub:0.8 adds the premium lag.
+    var proxy = { p: 0 };
+    var stageEl = wtRoot.querySelector('.wt__stage');
+    // Pin the stage CENTRED in the space below the fixed navbar, so the phone
+    // ends up with even gaps above (to the header) and below (to the page edge)
+    // instead of nailing the stage-top to a fixed offset (which sat it too high
+    // on taller viewports). Recomputed on every refresh (resize/orientation).
+    function pinStart(){
+      var headerBottom = 96;                       // navbar: top:16 + height:80
+      var hdr = document.querySelector('.site-header');
+      if (hdr) headerBottom = hdr.getBoundingClientRect().bottom;
+      var avail = window.innerHeight - headerBottom;
+      var stageH = stageEl.offsetHeight;           // layout height (ignores scale)
+      // Nudge slightly above dead-centre — visually the navbar makes a true
+      // centre read a touch low, so lift the phone a bit toward the header.
+      var top = headerBottom + Math.max(0, (avail - stageH) / 2) - 28;
+      return 'top ' + Math.round(Math.max(headerBottom, top)) + 'px';
+    }
+    var tl = gsap.timeline({
+      scrollTrigger: {
+        trigger: stageEl,
+        start: pinStart,             // centre the stage in the area below the navbar
+        end: function (){ return '+=' + Math.round(N * Math.min(900, window.innerHeight * 0.95)); },
+        pin: stageEl,
+        pinSpacing: true,
+        anticipatePin: 1,
+        scrub: 0.8,
+        snap: { snapTo: STOPS, duration: { min: 0.2, max: 0.6 }, delay: 0.05, ease: 'power2.inOut', directional: false },
+        invalidateOnRefresh: true,
+        onRefresh: function (){ measureThread(); render(proxy.p); }   // re-measure thread when layout/viewport changes
+      }
+    });
+    tl.to(proxy, { p: 1, ease: 'none', onUpdate: function (){ render(proxy.p); } });
+
+    function scrollToStep(i){
+      var st = tl.scrollTrigger; if (!st) return;
+      i = clamp(i, 0, N - 1);
+      var y = st.start + STOPS[i] * (st.end - st.start);   // land on this step's dwell centre
+      window.scrollTo({ top: Math.round(y), behavior: 'smooth' });
+    }
+    // repurpose the existing controls as scroll jumps
+    var onPrev = function (){ scrollToStep(lastActive - 1); };
+    var onNext = function (){ scrollToStep(lastActive + 1); };
+    var onReplay = function (){ scrollToStep(0); };
+    $('wtPrev').addEventListener('click', onPrev);
+    $('wtNext').addEventListener('click', onNext);
+    $('wtReplay').addEventListener('click', onReplay);
+
+    measureThread();
+    render(0);
+    ScrollTrigger.refresh();
+    // fonts can land after first layout and shift bubble heights — re-measure once ready
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(function (){ ScrollTrigger.refresh(); });
+
+    return function cleanup(){
+      $('wtPrev').removeEventListener('click', onPrev);
+      $('wtNext').removeEventListener('click', onNext);
+      $('wtReplay').removeEventListener('click', onReplay);
+      if (tl.scrollTrigger) tl.scrollTrigger.kill();
+      tl.kill();
+      gsap.set([phoneWrap, glow], { clearProps: 'all' });
+      wtRoot.classList.remove('wt--scroll');
+    };
+  }
+
+  /* ===================================================================
+     MODE ORCHESTRATION — desktop scroll vs static, swapped by media
+     query (gsap.matchMedia handles resize + teardown), rebuilt on
+     language change.  gsap.matchMedia() is the modern, non-deprecated
+     successor to ScrollTrigger.matchMedia() and meets the same
+     desktop-only (min-width:1061px) guardrail.
+  =================================================================== */
+  if (hasGSAP){
+    var mm = null;
+    function build(){
+      if (mm) mm.revert();                 // tears down old triggers + runs each mode's cleanup
+      applyStrings();
+      mm = gsap.matchMedia();
+      mm.add('(min-width:1061px) and (prefers-reduced-motion:no-preference)', function (){ return scrollMode(); });
+      mm.add('(min-width:1061px) and (prefers-reduced-motion:reduce)',        function (){ return staticMode({ animate: false }); });
+      mm.add('(max-width:1060px)',                                            function (){ return staticMode({ animate: true }); });
+    }
+    window.addEventListener('langchange', build);
+    build();
+  } else {
+    // GSAP unavailable (CDN blocked) — degrade gracefully to the static experience everywhere
+    var fbCleanup = null;
+    function fbBuild(){ if (fbCleanup) fbCleanup(); applyStrings(); fbCleanup = staticMode({ animate: !prefersReduce }); }
+    window.addEventListener('langchange', fbBuild);
+    fbBuild();
+  }
+})();
+/* end component script (data-wt) */
+</script>
 </body>
 </html>

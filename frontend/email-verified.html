@@ -6,7 +6,7 @@
   <title>Correo verificado — SERVI</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,700;1,9..40,400&family=Syne:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/shared/shared-styles.css">
   <link rel="stylesheet" href="/shared/landing-theme.css">
   <style>
@@ -23,7 +23,7 @@
         radial-gradient(circle at 82% 6%, rgba(255, 255, 255, 0.95), transparent 24%),
         linear-gradient(180deg, #ffffff 0%, var(--color-bg, #f7f7f7) 44%, #eeeeee 100%);
       color: var(--color-text, #111111);
-      font-family: var(--font-body, 'DM Sans', sans-serif);
+      font-family: var(--font-body, 'Plus Jakarta Sans', sans-serif);
       position: relative;
       overflow-x: hidden;
     }
@@ -89,7 +89,7 @@
       animation: spin 0.82s linear infinite;
     }
     .verification-card h1 {
-      font-family: var(--font-heading, 'Syne', sans-serif);
+      font-family: var(--font-heading, 'Outfit', sans-serif);
       font-size: clamp(30px, 8vw, 42px);
       font-weight: 800;
       color: var(--color-text, #111111);
@@ -259,6 +259,9 @@
   </section>
 </main>
 
+<script>
+  window.__serviEmailVerifiedPage = true;
+</script>
 <script src="/shared/shared-auth.js"></script>
 <script>
   window.__handleEmailLinkAsScreen = function() {
@@ -322,6 +325,20 @@
       try { await window.__emailLinkProcessingPromise; } catch (_) {}
     } else if (window.__syncPromise) {
       try { await window.__syncPromise; } catch (_) {}
+    }
+
+    if (window.__emailLinkProcessingStatus === 'missing-email' || window.__emailLinkProcessingStatus === 'error') {
+      window.__renderEmailVerifiedScreen({ loading: false, es: es, canClose: !!window.opener });
+      var errorMsgEl = document.getElementById('verification-message');
+      if (errorMsgEl) {
+        errorMsgEl.textContent = es ? 'No pudimos confirmar este enlace. Solicita un nuevo enlace e intenta de nuevo.' : 'We could not confirm this link. Request a new link and try again.';
+        errorMsgEl.style.color = '#c55d49';
+      }
+      var errorTitleEl = document.getElementById('verification-title');
+      if (errorTitleEl) {
+        errorTitleEl.textContent = es ? 'Verificación pendiente' : 'Verification pending';
+      }
+      return;
     }
 
     var pendingAccountEmailAction = localStorage.getItem('servi_email_verification_mode');

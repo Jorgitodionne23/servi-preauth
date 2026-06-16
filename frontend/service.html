@@ -6,7 +6,7 @@
   <title>SERVI — Servicio</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,700;1,9..40,400&family=Syne:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/shared/shared-styles.css">
   <link rel="stylesheet" href="/shared/landing-theme.css">
   <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -49,7 +49,7 @@
       font-weight: 700;
       margin: 24px 0 4px;
       line-height: 1.25;
-      font-family: var(--font-heading, 'Syne', sans-serif);
+      font-family: var(--font-heading, 'Outfit', sans-serif);
     }
     .svc-subcat-label {
       font-size: 14px;
@@ -95,7 +95,7 @@
       background: #fafafa;
       cursor: pointer;
       transition: border-color 0.15s, background 0.15s;
-      font-family: var(--font-body, 'DM Sans', sans-serif);
+      font-family: var(--font-body, 'Plus Jakarta Sans', sans-serif);
       color: inherit;
     }
     .svc-other-chip:hover {
@@ -156,7 +156,7 @@
       cursor: pointer;
       text-align: center;
       transition: all 0.15s;
-      font-family: var(--font-body, 'DM Sans', sans-serif);
+      font-family: var(--font-body, 'Plus Jakarta Sans', sans-serif);
       color: inherit;
     }
     .svc-when-chip.active {
@@ -164,24 +164,27 @@
       background: #111;
       color: #fff;
     }
+    .svc-schedule-panel { margin-top: 10px; }
     .svc-schedule-row {
       display: flex;
       gap: 8px;
-      margin-top: 10px;
     }
+    .svc-schedule-row .svc-sidebar__input { min-width: 0; }
     .svc-schedule-row input {
       flex: 1;
       padding: 9px 12px;
       border: 1.5px solid #e0e0e0;
       border-radius: 10px;
       font-size: 13px;
-      font-family: var(--font-body, 'DM Sans', sans-serif);
+      font-family: var(--font-body, 'Plus Jakarta Sans', sans-serif);
       background: #fafafa;
       color: #111;
       outline: none;
       transition: border-color 0.15s;
     }
     .svc-schedule-row input:focus { border-color: #111; background: #fff; }
+    .svc-time-select { flex: 0 0 42%; }
+    .svc-exact-time-row { margin-top: 8px; }
 
     .svc-sidebar__input {
       width: 100%;
@@ -189,7 +192,7 @@
       border: 1.5px solid #e0e0e0;
       border-radius: 10px;
       font-size: 14px;
-      font-family: var(--font-body, 'DM Sans', sans-serif);
+      font-family: var(--font-body, 'Plus Jakarta Sans', sans-serif);
       background: #fafafa;
       color: #111;
       outline: none;
@@ -262,6 +265,20 @@
     .svc-addr-opt__title { font-size: 14px; font-weight: 600; color: #111; }
     .svc-addr-opt__sub { font-size: 12.5px; color: #777; line-height: 1.4; }
     .svc-addr-opt--new .svc-addr-opt__title { color: #111; }
+    /* Trusted specialist selector */
+    .svc-trusted-opts { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+    .svc-trusted-opt {
+      display: flex; align-items: flex-start; gap: 10px; padding: 11px 13px;
+      border: 1.5px solid #e3e3e3; border-radius: 12px; cursor: pointer;
+      transition: border-color .15s ease, box-shadow .15s ease;
+    }
+    .svc-trusted-opt:hover { border-color: #bbb; }
+    .svc-trusted-opt input { margin-top: 2px; width: 16px; height: 16px; accent-color: #111; flex: 0 0 auto; }
+    .svc-trusted-opt:has(input:checked) { border-color: #111; box-shadow: 0 0 0 3px rgba(0,0,0,.05); }
+    .svc-trusted-opt__body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .svc-trusted-opt__name { font-size: 14px; font-weight: 600; color: #111; }
+    .svc-trusted-opt__sub { font-size: 12.5px; color: #2b6d77; line-height: 1.4; }
+    .svc-trusted-note { font-size: 11.5px; color: #888; line-height: 1.45; margin-top: 8px; }
     .svc-newaddr { margin-top: 2px; }
     .svc-addr-save {
       display: flex; align-items: center; gap: 9px; margin-top: 12px;
@@ -308,7 +325,7 @@
       padding: 10px 12px;
       font-size: 13px;
       font-weight: 800;
-      font-family: var(--font-body, 'DM Sans', sans-serif);
+      font-family: var(--font-body, 'Plus Jakarta Sans', sans-serif);
       cursor: pointer;
     }
     .svc-email-gate__btn:disabled {
@@ -343,7 +360,7 @@
       background: #fff;
       color: #222;
       cursor: pointer;
-      font-family: var(--font-body, 'DM Sans', sans-serif);
+      font-family: var(--font-body, 'Plus Jakarta Sans', sans-serif);
       font-size: 13px;
       font-weight: 700;
       display: inline-flex;
@@ -411,7 +428,7 @@
       font-size: 15px;
       font-weight: 600;
       cursor: pointer;
-      font-family: var(--font-body, 'DM Sans', sans-serif);
+      font-family: var(--font-body, 'Plus Jakarta Sans', sans-serif);
       transition: opacity 0.15s;
       margin-top: 4px;
     }
@@ -437,7 +454,7 @@
       font-size: 14px;
       font-weight: 600;
       cursor: pointer;
-      font-family: var(--font-body, 'DM Sans', sans-serif);
+      font-family: var(--font-body, 'Plus Jakarta Sans', sans-serif);
     }
 
     .svc-success {
@@ -504,7 +521,7 @@
       font-size: 16px;
       font-weight: 800;
       margin-bottom: 12px;
-      font-family: var(--font-heading, 'Syne', sans-serif);
+      font-family: var(--font-heading, 'Outfit', sans-serif);
     }
     .svc-camera-video {
       width: 100%;
@@ -527,7 +544,7 @@
       background: #fff;
       color: #111;
       cursor: pointer;
-      font-family: var(--font-body, 'DM Sans', sans-serif);
+      font-family: var(--font-body, 'Plus Jakarta Sans', sans-serif);
       font-size: 14px;
       font-weight: 700;
     }
@@ -558,7 +575,7 @@
       font-size: 15px;
       font-weight: 600;
       cursor: pointer;
-      font-family: var(--font-body, 'DM Sans', sans-serif);
+      font-family: var(--font-body, 'Plus Jakarta Sans', sans-serif);
     }
 
     .svc-mobile-form {
@@ -579,7 +596,9 @@
       .svc-layout {
         grid-template-columns: 1fr;
       }
-      .svc-sidebar { display: none; }
+      /* Hide only the desktop sidebar (direct child of the layout grid);
+         the sidebar nested inside .svc-mobile-form must stay visible on mobile. */
+      .svc-layout > .svc-sidebar { display: none; }
       .svc-mobile-bar { display: block; }
       .svc-mobile-form { display: block; }
     }
@@ -665,6 +684,16 @@
       if (index !== -1) return index;
     }
     return -1;
+  }
+
+  function getLocalizedServiceName(subData) {
+    const serviceIndex = getServiceIndex(subData);
+    if (serviceIndex === -1) return serviceName;
+    const localizedServices = subData.services && subData.services[getLocale()];
+    const fallbackServices = subData.services && (subData.services.es || subData.services.en);
+    return (localizedServices && localizedServices[serviceIndex])
+      || (fallbackServices && fallbackServices[serviceIndex])
+      || serviceName;
   }
 
   function buildUnsplashUrl(photoId) {
@@ -853,6 +882,67 @@
   }
   function svcFieldsPrefix(prefix) { return 'svca_' + prefix; }
 
+  // ─── Trusted specialist (rebooking preference) ───────────────────────────────
+  let _svcTrusted = [];                 // available trusted specialists for this category
+  let _svcTrustedLoaded = false;
+  let _svcPreferredProviderId = null;   // null = "no preference — first available"
+  const _svcPreferParam = params.get('prefer') || '';
+
+  async function loadServiceTrustedSpecialists() {
+    // Already fetched (e.g. a language switch rebuilt the panels) — just re-render the selector.
+    if (_svcTrustedLoaded) { ['desk', 'mob'].forEach(renderTrustedSelector); return; }
+    const token = svcSessionToken();
+    if (!token || !window.__user || !catKey) return;
+    const API = (window.CONFIG && window.CONFIG.API_BASE) || '';
+    try {
+      const res = await fetch(API + '/api/auth/trusted-specialists?category=' + encodeURIComponent(catKey), {
+        headers: { Authorization: 'Bearer ' + token }
+      });
+      if (!res.ok) return;
+      const d = await res.json();
+      // Only offer specialists who are currently bookable (verified).
+      _svcTrusted = (Array.isArray(d.specialists) ? d.specialists : []).filter(s => s.available);
+      _svcTrustedLoaded = true;
+      if (_svcTrusted.length) {
+        // Pre-select: ?prefer= deep-link wins, else the user's preferred pick for this category.
+        let pick = _svcPreferParam ? _svcTrusted.find(s => s.providerId === _svcPreferParam) : null;
+        if (!pick) pick = _svcTrusted.find(s => s.isPreferred) || _svcTrusted[0];
+        _svcPreferredProviderId = pick ? pick.providerId : null;
+      }
+      ['desk', 'mob'].forEach(renderTrustedSelector);
+    } catch (_) {}
+  }
+
+  function renderTrustedSelector(prefix) {
+    const host = document.getElementById('svc-trusted-' + prefix);
+    if (!host) return;
+    if (!_svcTrusted.length) { host.style.display = 'none'; host.innerHTML = ''; return; }
+    const es = lang() === 'es';
+    const title = es ? 'Tu especialista de confianza' : 'Your trusted specialist';
+    const noPref = es ? 'Sin preferencia — primer disponible' : 'No preference — first available';
+    const note = es
+      ? 'Es una preferencia, no una garantía. Si no está disponible, te conectamos con otro especialista verificado.'
+      : "This is a preference, not a guarantee. If they're unavailable we'll connect you with another verified specialist.";
+    const opt = (value, name, sub, checked) =>
+      `<label class="svc-trusted-opt"><input type="radio" name="svc-trusted-${prefix}" value="${esc(value)}"${checked ? ' checked' : ''} onchange="window._svcPickTrusted(this.value)"><span class="svc-trusted-opt__body"><span class="svc-trusted-opt__name">${esc(name)}</span>${sub ? `<span class="svc-trusted-opt__sub">${esc(sub)}</span>` : ''}</span></label>`;
+    const optsHtml = _svcTrusted.map(s => {
+      const name = (s.maskedName || '★') + (s.isPreferred ? (es ? ' · Preferido' : ' · Preferred') : '');
+      const sub = s.completedForYou > 0
+        ? (es ? `Completó ${s.completedForYou} servicio${s.completedForYou === 1 ? '' : 's'} para ti` : `Completed ${s.completedForYou} service${s.completedForYou === 1 ? '' : 's'} for you`)
+        : '';
+      return opt(s.providerId, name, sub, _svcPreferredProviderId === s.providerId);
+    }).join('');
+    host.style.display = 'block';
+    host.innerHTML =
+      `<span class="svc-sidebar__label">${esc(title)}</span>` +
+      `<div class="svc-trusted-opts">${optsHtml}${opt('', noPref, '', _svcPreferredProviderId === null)}</div>` +
+      `<div class="svc-trusted-note">${esc(note)}</div>`;
+  }
+
+  window._svcPickTrusted = function (providerId) {
+    _svcPreferredProviderId = providerId || null;
+  };
+
   async function loadSavedAddresses() {
     const token = svcSessionToken();
     if (!token || !window.__user) return;
@@ -890,12 +980,12 @@
       const newChecked = _svcAddrChoice[prefix] === 'new' ? ' checked' : '';
       host.innerHTML =
         `<div class="svc-addr-picker">${opts}` +
-        `<label class="svc-addr-opt svc-addr-opt--new"><input type="radio" name="svc-addr-pick-${prefix}" value="new"${newChecked} onchange="window._svcAddrPick('${prefix}', this.value)"><span class="svc-addr-opt__body"><span class="svc-addr-opt__title">➕ ${esc(es ? 'Usar otra dirección' : 'Use another address')}</span></span></label></div>` +
-        `<div class="svc-newaddr" id="svc-newaddr-${prefix}" style="${newChecked ? '' : 'display:none'}">${window.ServiAddress.fieldsHTML(fp, { showLabel: true, showDefault: false })}${saveBox}</div>`;
+        `<label class="svc-addr-opt svc-addr-opt--new"><input type="radio" name="svc-addr-pick-${prefix}" value="new"${newChecked} onchange="window._svcAddrPick('${prefix}', this.value)"><span class="svc-addr-opt__body"><span class="svc-addr-opt__title"> ${esc(es ? 'Usar otra dirección' : 'Use another address')}</span></span></label></div>` +
+        `<div class="svc-newaddr" id="svc-newaddr-${prefix}" style="${newChecked ? '' : 'display:none'}">${window.ServiAddress.fieldsHTML(fp, { compact: true, showDefault: false })}${saveBox}</div>`;
       window.ServiAddress.init(fp, {});
     } else {
       _svcAddrChoice[prefix] = 'new';
-      host.innerHTML = `<div class="svc-newaddr">${window.ServiAddress.fieldsHTML(fp, { showLabel: true, showDefault: false })}${saveBox}</div>`;
+      host.innerHTML = `<div class="svc-newaddr">${window.ServiAddress.fieldsHTML(fp, { compact: true, showDefault: false })}${saveBox}</div>`;
       window.ServiAddress.init(fp, {});
     }
   }
@@ -1076,6 +1166,7 @@
   let serviceSubmitCompleted = false;
   let serviceEmailGatePending = false;
   let serviceEmailResumeInFlight = false;
+  const SVC_TIME_PREFS = ['exact', 'morning', 'afternoon', 'evening', 'whenever'];
 
   function createClientRequestId() {
     if (window.crypto && typeof window.crypto.randomUUID === 'function') {
@@ -1096,8 +1187,38 @@
     document.querySelectorAll('.svc-when-chip').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.when === type);
     });
-    const schedRows = document.querySelectorAll('.svc-schedule-row');
-    schedRows.forEach(r => { r.style.display = type === 'schedule' ? 'flex' : 'none'; });
+    const schedPanels = document.querySelectorAll('.svc-schedule-panel');
+    schedPanels.forEach(r => { r.style.display = type === 'schedule' ? 'block' : 'none'; });
+  }
+
+  function getScheduleTimeOptions() {
+    const s = sp();
+    return [
+      { value: 'exact', label: s.timeExact || (lang() === 'es' ? 'Hora exacta' : 'Exact time') },
+      { value: 'morning', label: s.timeMorning || (lang() === 'es' ? 'Mañana' : 'Morning') },
+      { value: 'afternoon', label: s.timeAfternoon || (lang() === 'es' ? 'Tarde' : 'Afternoon') },
+      { value: 'evening', label: s.timeEvening || (lang() === 'es' ? 'Noche' : 'Evening') },
+      { value: 'whenever', label: s.timeWhenever || (lang() === 'es' ? 'Cuando sea' : 'Whenever') },
+    ];
+  }
+
+  function scheduleTimeLabel(pref) {
+    const match = getScheduleTimeOptions().find(opt => opt.value === pref);
+    return match ? match.label : '';
+  }
+
+  function setScheduleTimePreference(prefix, pref) {
+    const next = SVC_TIME_PREFS.includes(pref) ? pref : 'exact';
+    const select = document.getElementById(`svc-time-pref-${prefix}`);
+    if (select) select.value = next;
+    const exactRow = document.getElementById(`svc-exact-time-row-${prefix}`);
+    if (exactRow) exactRow.style.display = next === 'exact' ? 'block' : 'none';
+  }
+
+  function getScheduleTimePreference(prefix) {
+    const select = document.getElementById(`svc-time-pref-${prefix}`);
+    const value = select && select.value;
+    return SVC_TIME_PREFS.includes(value) ? value : 'exact';
   }
 
   function validateAndCollect(prefix) {
@@ -1144,8 +1265,13 @@
         dateInput.classList.remove('error');
         if (dateErr) dateErr.classList.remove('visible');
         preferredDate = dateInput.value;
-        const timeInput = document.getElementById(`svc-time-${prefix}`);
-        if (timeInput && timeInput.value) preferredTime = timeInput.value;
+        const timePref = getScheduleTimePreference(prefix);
+        if (timePref === 'exact') {
+          const timeInput = document.getElementById(`svc-time-${prefix}`);
+          if (timeInput && timeInput.value) preferredTime = timeInput.value;
+        } else {
+          preferredTime = scheduleTimeLabel(timePref);
+        }
       }
     }
 
@@ -1153,7 +1279,9 @@
 
     const detailsInput = document.getElementById(`svc-details-${prefix}`);
     const extraDetails = detailsInput ? detailsInput.value.trim() : '';
-    const description = serviceName + (extraDetails ? ' — ' + extraDetails : '');
+    const catalog = getCatalogData();
+    const currentServiceName = catalog ? getLocalizedServiceName(catalog.subData) : serviceName;
+    const description = currentServiceName + (extraDetails ? ' — ' + extraDetails : '');
 
     return {
       address: addressString,
@@ -1181,6 +1309,9 @@
       attachments: attachments.map(a => a.url),
       lang: lang(),
     };
+    // Carry the trusted-specialist preference (a preference, not a guarantee). The backend
+    // re-validates the provider is verified and fills the real name; we send only the id.
+    if (_svcPreferredProviderId) payload.preferredProviderId = _svcPreferredProviderId;
     if (!window.__user) {
       showAuthGate(prefix, () => sendRequest(prefix, payload));
       return;
@@ -1221,6 +1352,9 @@
       }
       serviceSubmitCompleted = true;
       serviceEmailGatePending = false;
+      if (payload.serviceAddressDetails && window.ServiAddress && window.ServiAddress.rememberLastUsed) {
+        window.ServiAddress.rememberLastUsed(payload.serviceAddressDetails);
+      }
       showSuccess(prefix);
     } catch (err) {
       serviceSubmitInFlight = false;
@@ -1387,16 +1521,17 @@
     if (mobileBar) mobileBar.style.display = 'none';
   }
 
-  function buildSidebarContent(prefix) {
+  function buildSidebarContent(prefix, displayServiceName) {
     const s = sp();
     const savedAddr = localStorage.getItem('dash_hero_address') || '';
     const today = new Date().toISOString().slice(0, 10);
 
     return `
       <div id="svc-sidebar-${prefix}">
-        <div class="svc-sidebar__service-name">${esc(serviceName)}</div>
+        <div class="svc-sidebar__service-name">${esc(displayServiceName || serviceName)}</div>
         <div class="svc-sidebar__price-label">${esc(s.priceLabel || 'Precio a confirmar')}</div>
         <div class="svc-sidebar__price-note">${esc(s.priceNote || '')}</div>
+        <div id="svc-trusted-${prefix}" class="svc-trusted" style="display:none"></div>
         <hr class="svc-sidebar__divider">
 
         <span class="svc-sidebar__label">${esc(s.whenLabel || '¿Cuándo lo necesitas?')}</span>
@@ -1406,11 +1541,22 @@
           <button class="svc-when-chip" type="button" data-when="schedule"
                   onclick="window._svcToggleWhen('schedule')">${esc(s.whenSchedule || 'Programar')}</button>
         </div>
-        <div class="svc-schedule-row" style="display:none">
-          <input type="date" class="svc-sidebar__input" id="svc-date-${prefix}" min="${today}"
-                 placeholder="${esc(s.datePlaceholder || 'Fecha')}">
-          <input type="time" class="svc-sidebar__input" id="svc-time-${prefix}"
-                 placeholder="${esc(s.timePlaceholder || 'Hora (opcional)')}">
+        <div class="svc-schedule-panel" style="display:none">
+          <div class="svc-schedule-row">
+            <input type="date" class="svc-sidebar__input" id="svc-date-${prefix}" min="${today}"
+                   placeholder="${esc(s.datePlaceholder || 'Fecha')}">
+            <select class="svc-sidebar__input svc-time-select" id="svc-time-pref-${prefix}"
+                    onchange="window._svcSetTimePreference('${prefix}', this.value)"
+                    aria-label="${esc(s.timePreferenceLabel || (lang() === 'es' ? 'Preferencia de hora' : 'Time preference'))}">
+              ${getScheduleTimeOptions().map(opt => `
+                <option value="${esc(opt.value)}"${opt.value === 'exact' ? ' selected' : ''}>${esc(opt.label)}</option>
+              `).join('')}
+            </select>
+          </div>
+          <div class="svc-exact-time-row" id="svc-exact-time-row-${prefix}">
+            <input type="time" class="svc-sidebar__input" id="svc-time-${prefix}"
+                   placeholder="${esc(s.timePlaceholder || 'Hora (opcional)')}">
+          </div>
         </div>
         <div class="svc-error-msg" id="svc-date-err-${prefix}">${esc(s.dateError || 'Por favor selecciona una fecha')}</div>
 
@@ -1457,6 +1603,10 @@
 
   window._svcToggleWhen = function(type) {
     toggleWhen(type);
+  };
+
+  window._svcSetTimePreference = function(prefix, pref) {
+    setScheduleTimePreference(prefix, pref);
   };
 
   window._svcSubmit = function(prefix) {
@@ -1515,8 +1665,6 @@
     const main = document.getElementById('svc-main');
     if (!main) return;
 
-    if (serviceName) document.title = `SERVI — ${serviceName}`;
-
     const catalog = getCatalogData();
     const s = sp();
 
@@ -1532,11 +1680,14 @@
     }
 
     const { subData } = catalog;
+    const serviceIndex = getServiceIndex(subData);
+    const displayServiceName = getLocalizedServiceName(subData);
+    if (displayServiceName) document.title = `SERVI — ${displayServiceName}`;
     const heroImage = getServiceHeroImage(subData);
     const subLabel = getLocalizedText(subData.label);
     const catLabel = getCategoryLabel();
     const otherServices = (subData.services[getLocale()] || subData.services.es || [])
-      .filter(sv => sv !== serviceName);
+      .filter((_, index) => index !== serviceIndex);
 
     main.innerHTML = `
       <div class="svc-page">
@@ -1550,9 +1701,9 @@
 
         <div class="svc-layout">
           <div class="svc-left">
-            <img class="svc-hero-img" src="${esc(heroImage.src)}" alt="${esc(serviceName)}"
+            <img class="svc-hero-img" src="${esc(heroImage.src)}" alt="${esc(displayServiceName)}"
                  onerror="${esc(heroImage.onerror)}">
-            <h1 class="svc-title">${esc(serviceName)}</h1>
+            <h1 class="svc-title">${esc(displayServiceName)}</h1>
             <div class="svc-subcat-label">${esc(subLabel)} · ${esc(catLabel)}</div>
 
             <div class="svc-included-section">
@@ -1576,13 +1727,13 @@
 
             <div class="svc-mobile-form">
               <div class="svc-sidebar" id="svc-sidebar-wrap-mob">
-                ${buildSidebarContent('mob')}
+                ${buildSidebarContent('mob', displayServiceName)}
               </div>
             </div>
           </div>
 
           <div class="svc-sidebar" id="svc-sidebar-wrap-desk">
-            ${buildSidebarContent('desk')}
+            ${buildSidebarContent('desk', displayServiceName)}
           </div>
         </div>
       </div>
@@ -1612,7 +1763,7 @@
 
   function svcWaitForUserThenLoad(attempts) {
     attempts = attempts == null ? 24 : attempts; // ~6s of 250ms polls
-    if (window.__user) { loadSavedAddresses(); return; }
+    if (window.__user) { loadSavedAddresses(); loadServiceTrustedSpecialists(); return; }
     if (attempts <= 0) return;
     setTimeout(() => svcWaitForUserThenLoad(attempts - 1), 250);
   }

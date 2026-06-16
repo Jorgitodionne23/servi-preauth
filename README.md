@@ -38,7 +38,7 @@ Backend, payments, and admin tooling for **SERVI** — an on-demand home service
 
 ```
 backend/
-  index.mjs          — all server routes and business logic (~6.5k lines)
+  index.mjs          — all server routes and business logic (~7.7k lines)
   db.pg.mjs          — PostgreSQL schema (CREATE TABLE IF NOT EXISTS) + connection pool
   pricing.mjs        — alpha-curve booking fee + Stripe processing fee with VAT
 
@@ -85,7 +85,7 @@ There is no committed `.env.example` — copy the table below into your local `.
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `STRIPE_SECRET_KEY` | Yes | Stripe secret key (`sk_live_...` in prod, `sk_test_...` locally) |
-| `STRIPE_WEBHOOK_SECRET` | Yes | Stripe webhook signing secret (`whsec_...`) — for local dev, get it from `stripe listen --forward-to localhost:3000/webhook` |
+| `STRIPE_WEBHOOK_SECRET` | Yes | Stripe webhook signing secret (`whsec_...`) — for local dev, get it from `stripe listen --forward-to localhost:4242/webhook` (or run `npm run stripe:listen`) |
 | `DATABASE_URL` | Yes | Neon PostgreSQL connection string |
 | `ADMIN_API_TOKEN` | Yes | Shared secret for `/api/admin/*` Bearer auth |
 | `FRONTEND_BASE_URL` | Yes | Cloudflare Pages URL — used to build payment links |
@@ -111,7 +111,7 @@ npm install
 npm start
 ```
 
-The server starts on port `3000`. Express also serves the static `frontend/` folder on the same port, so the frontend points at `window.location.origin` in dev.
+The server starts on port `4242` (override with `PORT`). Express also serves the static `frontend/` folder on the same port, so the frontend points at `window.location.origin` in dev.
 
 ### Useful scripts
 

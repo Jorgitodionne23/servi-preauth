@@ -1,8 +1,10 @@
 // db.pg.mjs — Postgres client (Neon/Supabase)
 import pg from 'pg';
+import { APP_TIME_ZONE } from './timezone.mjs';
 const { Pool } = pg;
 
 const allowInsecure = String(process.env.ALLOW_INSECURE_DB_TLS || '').toLowerCase() === 'true';
+const postgresOptions = [process.env.PGOPTIONS, `-c timezone=${APP_TIME_ZONE}`].filter(Boolean).join(' ');
 
 if (allowInsecure && process.env.NODE_ENV === 'production') {
   throw new Error('ALLOW_INSECURE_DB_TLS=true is not permitted in production (NODE_ENV=production). Remove this flag before deploying.');
@@ -10,6 +12,7 @@ if (allowInsecure && process.env.NODE_ENV === 'production') {
 
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
+  options: postgresOptions,
   ...(process.env.DATABASE_URL?.startsWith('postgres://') || process.env.DATABASE_URL?.startsWith('postgresql://')
       ? { ssl: allowInsecure ? { rejectUnauthorized: false } : undefined }
       : {})
@@ -24,6 +27,7 @@ if (!allowInsecure) {
 } else {
   console.warn('[db] ALLOW_INSECURE_DB_TLS=true → accepting database TLS certificates without verification');
 }
+console.log(`[time] Node TZ=${process.env.TZ}; Postgres options=${postgresOptions}`);
 
 export async function initDb() {
   await pool.query(`
@@ -102,6 +106,11 @@ export async function initDb() {
     ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS adjustment_reason TEXT;
     ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS retry_token TEXT;
     ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS retry_token_created_at TIMESTAMPTZ;
+
+    -- Stripe environment (test vs live) the order was created under. Stamped at creation from the
+    -- backend's own key mode; lets the preauth cron skip orders that belong to the other mode
+    -- (defense against a shared DB holding both test and live orders). NULL = legacy/pre-column.
+    ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS stripe_livemode BOOLEAN;
 
     -- Customer-initiated cancellation audit (late-cancel fee captured from the hold)
     ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS cancellation_fee_amount INTEGER;
@@ -286,10 +295,14 @@ export async function initDb() {
       notes TEXT,
       applied_note TEXT,
       created_at TIMESTAMPTZ DEFAULT NOW(),
-      processed_at TIMESTAMPTZ
+      processed_at TIMESTAMPTZ,
+      reviewed_at TIMESTAMPTZ
     );
+    ALTER TABLE order_changes ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ;
     CREATE INDEX IF NOT EXISTS idx_order_changes_order ON order_changes(order_id);
     CREATE INDEX IF NOT EXISTS idx_order_changes_status ON order_changes(status);
+    CREATE INDEX IF NOT EXISTS idx_order_changes_review
+      ON order_changes(status, requested_by, reviewed_at);
 
     -- Lightweight Ops Radar alert metadata. Alerts are computed from current order
     -- state; this table only stores operator handling state such as snoozes.
@@ -332,6 +345,13 @@ export async function initDb() {
       converted_order_id TEXT,
       admin_notes TEXT,
       lang TEXT DEFAULT 'es',
+      request_mode TEXT,
+      matched_service TEXT,
+      matched_sub_key TEXT,
+      ai_summary TEXT,
+      ai_confidence NUMERIC,
+      ai_source TEXT,
+      detail_answers JSONB,
       created_at TIMESTAMPTZ DEFAULT NOW(),
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
@@ -347,6 +367,17 @@ export async function initDb() {
     ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS attachments TEXT;
     ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS client_request_id TEXT;
     ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS service_address_details TEXT; -- JSON of structured address
+    ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS request_mode TEXT;
+    ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS matched_service TEXT;
+    ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS matched_sub_key TEXT;
+    ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS ai_summary TEXT;
+    ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS ai_confidence NUMERIC;
+    ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS ai_source TEXT;
+    ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS detail_answers JSONB;
+    -- Trusted Specialists (Phase 2): the specialist the customer prefers for this rebooking.
+    -- A preference, not a guarantee — admin honors it when the provider is available.
+    ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS preferred_provider_id TEXT;
+    ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS preferred_provider_name TEXT;
     CREATE UNIQUE INDEX IF NOT EXISTS idx_service_requests_client_request_id
       ON service_requests(client_request_id)
       WHERE client_request_id IS NOT NULL;
@@ -440,6 +471,29 @@ export async function initDb() {
     ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS email_verify_token TEXT;
     ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS email_verify_token_expires_at TIMESTAMPTZ;
 
+    CREATE TABLE IF NOT EXISTS auth_email_link_flows (
+      id TEXT PRIMARY KEY,
+      email TEXT NOT NULL,
+      purpose TEXT NOT NULL DEFAULT 'login',
+      poll_token_hash TEXT NOT NULL,
+      session_token TEXT,
+      user_payload JSONB,
+      firebase_uid TEXT,
+      completed_at TIMESTAMPTZ,
+      expires_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    ALTER TABLE auth_email_link_flows
+      ADD COLUMN IF NOT EXISTS purpose TEXT NOT NULL DEFAULT 'login';
+    ALTER TABLE auth_email_link_flows
+      ADD COLUMN IF NOT EXISTS owner_firebase_uid TEXT;
+    ALTER TABLE auth_email_link_flows
+      ADD COLUMN IF NOT EXISTS owner_user_id TEXT;
+
+    CREATE INDEX IF NOT EXISTS auth_email_link_flows_expires_idx
+      ON auth_email_link_flows(expires_at);
+
     -- Backfill: existing phone-OTP users are phone-verified
     UPDATE auth_users SET phone_verified = true, first_identifier_type = 'phone'
     WHERE phone IS NOT NULL AND firebase_uid IS NOT NULL AND phone_verified = false;
@@ -491,6 +545,46 @@ export async function initDb() {
 
     CREATE INDEX IF NOT EXISTS idx_user_favorite_services_user_created
       ON user_favorite_services (user_id, created_at DESC);
+
+    -- Trusted Specialists — per-order 👍/👎 by the authenticated customer. A 👍 unlocks
+    -- the "add to Trusted Specialists" prompt. One rating per (user, order); editable (upsert).
+    CREATE TABLE IF NOT EXISTS service_ratings (
+      id          TEXT PRIMARY KEY,
+      user_id     TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+      order_id    TEXT NOT NULL,                       -- all_bookings.id (no hard FK: orders persist independently)
+      provider_id TEXT,                                -- snapshot of the order's provider at rating time
+      category    TEXT,                                -- snapshot of the order's category
+      rating      TEXT NOT NULL CHECK (rating IN ('up','down')),
+      comment     TEXT,                                -- optional, capped in the handler
+      created_at  TIMESTAMPTZ DEFAULT NOW(),
+      updated_at  TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (user_id, order_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_service_ratings_provider ON service_ratings (provider_id);
+    CREATE INDEX IF NOT EXISTS idx_service_ratings_user ON service_ratings (user_id, created_at DESC);
+
+    -- Trusted Specialists — a client's saved specialists, scoped per service category.
+    -- Multiple rows can share (user_id, category); is_preferred marks the default pick within a
+    -- category (enforced singular by the handler, mirroring is_default on user_addresses). No hard
+    -- FK to providers/all_bookings so a removed provider or pruned order never deletes the intent;
+    -- validity is re-checked at read/booking time.
+    CREATE TABLE IF NOT EXISTS user_trusted_specialists (
+      id              TEXT PRIMARY KEY,
+      user_id         TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+      provider_id     TEXT NOT NULL,
+      category        TEXT NOT NULL,
+      provider_name   TEXT,
+      is_preferred    BOOLEAN DEFAULT FALSE,
+      source_order_id TEXT,
+      nickname        TEXT,
+      times_booked    INTEGER DEFAULT 0,
+      last_booked_at  TIMESTAMPTZ,
+      created_at      TIMESTAMPTZ DEFAULT NOW(),
+      updated_at      TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (user_id, provider_id, category)
+    );
+    CREATE INDEX IF NOT EXISTS idx_uts_user_category
+      ON user_trusted_specialists (user_id, category, is_preferred DESC, last_booked_at DESC NULLS LAST);
 
     -- Stripe webhook event ledger: dedupes retried deliveries by event.id.
     -- A row inserted here means "we have started processing this event"; processed_at

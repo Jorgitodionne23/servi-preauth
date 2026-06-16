@@ -8,12 +8,13 @@
   <title>Reservar - SERVI</title>
 
   <script src="./config.js"></script>
+  <script src="./shared/contact-cta.js"></script>
   <script src="https://js.stripe.com/v3/"></script>
 
   <!-- Same font as pay.html -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@800&display=swap" rel="stylesheet">
 
   <meta http-equiv="Cache-Control" content="no-store" />
 
@@ -44,8 +45,35 @@
     }
 
     .logo {
-      max-width: 150px;
+      color: #fff;
+      cursor: pointer;
+      display: inline-block;
+      font-family: "Outfit", "Inter", system-ui, sans-serif;
+      font-size: 30px;
+      font-weight: 800;
+      letter-spacing: -0.01em;
+      line-height: 1;
       margin-bottom: 20px;
+      position: relative;
+      text-decoration: none;
+      top: -1px;
+      white-space: nowrap;
+    }
+
+    .logo-dot {
+      background: currentColor;
+      border-radius: 0.34em 0.34em 0 0;
+      color: currentColor;
+      display: inline-block;
+      font-size: inherit;
+      height: 0.20em;
+      line-height: 1;
+      margin-left: 2px;
+      margin-bottom: 0;
+      overflow: hidden;
+      text-indent: 100%;
+      vertical-align: baseline;
+      width: 0.34em;
     }
 
     .container {
@@ -368,9 +396,8 @@
     </div>
   </div>
   <div class="page">
-    <!-- Same header logo as pay.html -->
-    <a href="/index.html" rel="noopener">
-      <img src="logo-servi-white.png" alt="SERVI Logo" class="logo" />
+    <a href="/index.html" class="logo" rel="noopener" aria-label="SERVI">
+      SERVI<span class="logo-dot" aria-hidden="true">.</span>
     </a>
 
     <div class="container">
@@ -734,7 +761,9 @@
     function redirectToSuccess(orderId) {
       if (!orderId) return;
       setPreventBackLock(orderId);
-      window.location.replace(`/success.html?order=${encodeURIComponent(orderId)}`);
+      const params = new URLSearchParams(window.location.search);
+      const sourceParam = params.get('from') === 'account' ? '&from=account' : '';
+      window.location.replace(`/success.html?order=${encodeURIComponent(orderId)}${sourceParam}`);
     }
 
     function redirectIfCompleted(order) {
@@ -839,6 +868,8 @@
           ? 'rt'
           : null;
       const retryToken = tokenParamName ? params.get(tokenParamName) || '' : '';
+      const fromAccount = params.get('from') === 'account';
+      const accountSuccessParam = fromAccount ? '&from=account' : '';
       const shouldRequestOverride =
         params.get('allowExpired') === '1' || Boolean(retryToken);
 
@@ -1082,7 +1113,7 @@
               retryToken || null
             );
           }
-          location.href = `/success.html?order=${encodeURIComponent(orderId)}`;
+          location.href = `/success.html?order=${encodeURIComponent(orderId)}${accountSuccessParam}`;
           return;
         }
 
@@ -1113,7 +1144,7 @@
             ? 'Tu ajuste quedó programado. Realizaremos la preautorización 24 horas antes de la fecha.'
             : 'Tu servicio quedó programado. Realizaremos la preautorización 24 horas antes de la fecha.';
           alert(payload?.message || scheduledMsg);
-          location.href = `/success.html?order=${encodeURIComponent(orderId)}`;
+          location.href = `/success.html?order=${encodeURIComponent(orderId)}${accountSuccessParam}`;
           return;
         }
 
@@ -1130,7 +1161,7 @@
             if (piId || pmId) {
               await syncProcessingFee(orderId, piId, pmId, retryToken || null);
             }
-            location.href = `/success.html?order=${encodeURIComponent(orderId)}`;
+            location.href = `/success.html?order=${encodeURIComponent(orderId)}${accountSuccessParam}`;
           }
           return;
         }

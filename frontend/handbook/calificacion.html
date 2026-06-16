@@ -6,18 +6,18 @@
   <title>SERVI — ¿Cómo se calcula tu calificación?</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,700;1,9..40,400&family=Syne:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/shared/shared-styles.css">
   <link rel="stylesheet" href="/shared/landing-theme.css">
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <style>
     .rating-card { background:#fff; border:1px solid #e8e8e8; border-radius:16px; padding:28px 24px; margin-bottom:20px; }
-    .formula-box { background:#f8f8f8; border-radius:12px; padding:20px 24px; text-align:center; margin:20px 0; font-family:'Syne',sans-serif; font-weight:700; font-size:15px; display:flex; align-items:center; justify-content:center; gap:12px; flex-wrap:wrap; }
+    .formula-box { background:#f8f8f8; border-radius:12px; padding:20px 24px; text-align:center; margin:20px 0; font-family:'Outfit',sans-serif; font-weight:700; font-size:15px; display:flex; align-items:center; justify-content:center; gap:12px; flex-wrap:wrap; }
     .formula-tag { background:#0a0a0a; color:#fff; border-radius:8px; padding:8px 16px; font-size:13px; }
     .formula-tag.accent { background:var(--color-accent); }
     .tip-item { display:flex; gap:14px; align-items:flex-start; padding:14px 0; border-bottom:1px solid #f0f0f0; }
     .tip-item:last-child { border-bottom:none; }
-    .tip-num { min-width:28px;height:28px;border-radius:50%;background:color-mix(in srgb, var(--color-accent) 16%, transparent);color:var(--color-accent);display:flex;align-items:center;justify-content:center;font-family:'Syne',sans-serif;font-weight:700;font-size:13px; }
+    .tip-num { min-width:28px;height:28px;border-radius:50%;background:color-mix(in srgb, var(--color-accent) 16%, transparent);color:var(--color-accent);display:flex;align-items:center;justify-content:center;font-family:'Outfit',sans-serif;font-weight:700;font-size:13px; }
   </style>
 </head>
 <body class="landing-page">
@@ -81,6 +81,11 @@
         <p class="text-body" data-i18n="handbookRating.improveItems.4">Responde rápido a las solicitudes</p>
       </div>
     </div>
+
+    <div class="rating-card">
+      <h2 class="heading-md" style="margin-bottom:12px" data-i18n="handbookRating.trustedTitle">Clientes de confianza = trabajo recurrente</h2>
+      <p class="text-body" data-i18n-html="handbookRating.trustedBody">Cuando un cliente queda satisfecho, puede guardarte como su <strong>especialista de confianza</strong>. La próxima vez que pida ese servicio, SERVI te prioriza a ti. Buenas calificaciones se convierten en trabajo recurrente y estable — y SERVI se encarga del pago, la agenda y el soporte, para que tú solo te enfoques en el servicio.</p>
+    </div>
   </div>
 </section>
 
@@ -89,19 +94,19 @@
     <h3 class="heading-md" style="margin-bottom:24px" data-i18n="handbook.moreTitle">Más del Handbook</h3>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px">
       <a href="/handbook/guia-comunitaria.html" style="background:#fff;border:1px solid #e8e8e8;border-radius:12px;padding:20px;text-decoration:none;color:inherit;transition:all 0.2s;display:block">
-        <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:15px" data-i18n="handbook.links.guide">Guía Comunitaria</div>
+        <div style="font-family:'Outfit',sans-serif;font-weight:700;font-size:15px" data-i18n="handbook.links.guide">Guía Comunitaria</div>
       </a>
       <a href="/handbook/prepararte-cita.html" style="background:#fff;border:1px solid #e8e8e8;border-radius:12px;padding:20px;text-decoration:none;color:inherit;transition:all 0.2s;display:block">
-        <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:15px" data-i18n="handbook.links.prep">¿Cómo prepararte para tu cita?</div>
+        <div style="font-family:'Outfit',sans-serif;font-weight:700;font-size:15px" data-i18n="handbook.links.prep">¿Cómo prepararte para tu cita?</div>
       </a>
       <a href="/handbook/video-demostrativo.html" style="background:#fff;border:1px solid #e8e8e8;border-radius:12px;padding:20px;text-decoration:none;color:inherit;transition:all 0.2s;display:block">
-        <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:15px" data-i18n="handbook.links.video">Video demostrativo</div>
+        <div style="font-family:'Outfit',sans-serif;font-weight:700;font-size:15px" data-i18n="handbook.links.video">Video demostrativo</div>
       </a>
       <a href="/handbook/cambio-precios.html" style="background:#fff;border:1px solid #e8e8e8;border-radius:12px;padding:20px;text-decoration:none;color:inherit;transition:all 0.2s;display:block">
-        <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:15px" data-i18n="handbook.links.pricing">Los tipos de cambios en precio</div>
+        <div style="font-family:'Outfit',sans-serif;font-weight:700;font-size:15px" data-i18n="handbook.links.pricing">Los tipos de cambios en precio</div>
       </a>
       <a href="/handbook/pagos.html" style="background:#fff;border:1px solid #e8e8e8;border-radius:12px;padding:20px;text-decoration:none;color:inherit;transition:all 0.2s;display:block">
-        <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:15px" data-i18n="handbook.links.payments">¿Cómo funcionan los pagos?</div>
+        <div style="font-family:'Outfit',sans-serif;font-weight:700;font-size:15px" data-i18n="handbook.links.payments">¿Cómo funcionan los pagos?</div>
       </a>
     </div>
   </div>

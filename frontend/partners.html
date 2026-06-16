@@ -6,9 +6,10 @@
   <title>SERVI — Partners</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,700;1,9..40,400&family=Syne:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/shared/shared-styles.css">
   <link rel="stylesheet" href="/shared/landing-theme.css">
+  <script>/* Hide scroll-reveal targets before first paint to prevent flicker; failsafe reveals them if the motion layer never loads (see motion.js + shared-styles.css). */(function(){var d=document.documentElement;d.classList.add('reveal-armed');setTimeout(function(){d.classList.remove('reveal-armed');},2000);})();</script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <style>
     .partner-hero {
@@ -41,6 +42,12 @@
       margin-bottom: 12px;
       color: var(--color-text);
     }
+    .benefits-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 20px;
+      align-items: stretch;
+    }
     .how-step { text-align: center; }
     .how-step-num {
       width: 52px; height: 52px;
@@ -53,6 +60,13 @@
       font-size: 18px;
       margin: 0 auto 18px;
     }
+    .partner-inline-link {
+      color: var(--color-accent);
+      font-weight: 700;
+      text-decoration-thickness: 1.5px;
+      text-underline-offset: 3px;
+    }
+    .partner-inline-link:hover { color: var(--color-accent-hover); }
     .handbook-cta {
       background: var(--color-card-bg);
       border: 1px solid var(--color-border);
@@ -72,6 +86,10 @@
     @media (max-width: 768px) {
       .partner-hero { padding: 120px 0 60px; }
       .handbook-cta { padding: 28px; }
+      .benefits-grid { grid-template-columns: 1fr; }
+    }
+    @media (min-width: 769px) and (max-width: 1100px) {
+      .benefits-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
   </style>
 </head>
@@ -99,8 +117,8 @@
 <!-- What is a SERVI Partner? -->
 <section id="what" class="section">
   <div class="container">
-    <h2 class="heading-lg" style="margin-bottom:48px" data-i18n="partnersPage.whatTitle">¿Qué es ser un SERVI Partner?</h2>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:20px">
+    <h2 class="heading-lg" style="margin-bottom:48px" data-i18n="partnersPage.whatTitle" data-reveal>¿Qué es ser un SERVI Partner?</h2>
+    <div class="benefits-grid">
       <div class="benefit-card">
         <div style="font-size:28px;margin-bottom:12px">&#128275;</div>
         <h3 data-i18n="partnersPage.benefits.freedomTitle">Libertad con estructura</h3>
@@ -130,8 +148,8 @@
 <!-- How to become a Partner -->
 <section id="how" class="section">
   <div class="container">
-    <h2 class="heading-lg" style="margin-bottom:56px" data-i18n="partnersPage.howTitle">¿Cómo ser SERVI Partner?</h2>
-    <div class="grid-3" style="gap:40px">
+    <h2 class="heading-lg" style="margin-bottom:56px" data-i18n="partnersPage.howTitle" data-reveal>¿Cómo ser SERVI Partner?</h2>
+    <div class="grid-3" style="gap:40px" data-reveal-stagger>
       <div class="how-step">
         <div class="how-step-num">1</div>
         <h3 class="heading-sm" style="margin-bottom:10px" data-i18n="partnersPage.steps.step1Title">Requisitos mínimos</h3>
@@ -145,7 +163,7 @@
       <div class="how-step">
         <div class="how-step-num">3</div>
         <h3 class="heading-sm" style="margin-bottom:10px" data-i18n="partnersPage.steps.step3Title">Completa tu aplicación</h3>
-        <p class="text-sm" data-i18n-html="partnersPage.steps.step3Body"><a href="/partners/registro.html" style="color:#2a9fd6;font-weight:600">Haz clic aquí</a> para comenzar tu registro.</p>
+        <p class="text-sm" data-i18n-html="partnersPage.steps.step3Body"><a href="/partners/registro.html" class="partner-inline-link">Haz clic aquí</a> para comenzar tu registro.</p>
       </div>
     </div>
   </div>
@@ -156,7 +174,7 @@
 <!-- Handbook CTA -->
 <section class="section">
   <div class="container" style="max-width:700px">
-    <div class="handbook-cta">
+    <div class="handbook-cta" data-reveal>
       <h2 class="heading-md" style="margin-bottom:12px" data-i18n="partnersPage.handbookCtaTitle">¿Ya eres SERVI Partner?</h2>
       <p class="text-body" style="margin-bottom:24px" data-i18n="partnersPage.handbookCtaBody">Échale un vistazo a nuestro manual hecho para aquellos partners verificados. ¡Estúdialo bien antes de tu primera cita!</p>
       <a href="/handbook.html" class="btn-primary" style="text-decoration:none" data-i18n="partnersPage.handbookCtaButton">Ver Handbook</a>
@@ -166,5 +184,9 @@
 
 <div id="footer"></div>
 <script src="/shared/shared-footer.js"></script>
+<!-- Motion layer (visual only) -->
+<script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/ScrollTrigger.min.js" defer></script>
+<script src="/shared/motion.js" defer></script>
 </body>
 </html>

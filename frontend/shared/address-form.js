@@ -37,6 +37,8 @@
       typeOffice: 'Oficina', typeOther: 'Otro',
       labelLabel: 'Etiqueta (opcional)', labelPh: 'Casa, Trabajo, Mamá…',
       street: 'Calle', streetPh: 'Av. Vasco de Quiroga',
+      streetAddress: 'Dirección', streetAddressPh: 'Av. Vasco de Quiroga 3800',
+      unitOptional: 'Apto, suite, torre, etc. (opcional)', unitOptionalPh: 'Torre B-402',
       ext: 'No. exterior', extPh: '3800', int: 'No. interior / depto', intPh: 'Torre B-402',
       neighborhood: 'Colonia', neighborhoodPh: 'Santa Fe',
       municipality: 'Alcaldía / municipio', municipalityPh: 'Cuajimalpa de Morelos',
@@ -51,17 +53,21 @@
       detailsHint: 'Entre más claro, más rápido y puntual llega tu especialista.',
       between: 'Entre calles', betweenPh: 'Entre Av. Reforma y Calle 5',
       references: 'Referencias para llegar', referencesPh: 'Casa azul con portón negro, junto a la tienda OXXO…',
+      referencesCompact: 'Referencias y acceso', referencesCompactPh: 'Casa azul con portón negro, código de acceso, qué decir en caseta…',
       access: 'Instrucciones de acceso', accessPh: 'Código de portón, qué decir en caseta, dónde estacionarse…',
       contactName: '¿Quién recibe? (opcional)', contactNamePh: 'Nombre de quien atiende',
       contactPhone: 'Teléfono de contacto (opcional)', contactPhonePh: '55 1234 5678',
       defaultLabel: 'Usar como predeterminada',
       reqStreet: 'La calle es obligatoria.',
+      lastUsedLabel: 'Última dirección usada', lastUsedUse: 'Usar',
     },
     en: {
       typeLabel: 'Address type', typeHouse: 'House', typeApartment: 'Apartment',
       typeOffice: 'Office', typeOther: 'Other',
       labelLabel: 'Label (optional)', labelPh: 'Home, Work, Mom’s…',
       street: 'Street', streetPh: 'Av. Vasco de Quiroga',
+      streetAddress: 'Street address', streetAddressPh: '3800 Av. Vasco de Quiroga',
+      unitOptional: 'Apt, suite, tower, etc.', unitOptionalPh: 'Tower B-402',
       ext: 'Exterior no.', extPh: '3800', int: 'Interior / unit no.', intPh: 'Tower B-402',
       neighborhood: 'Neighborhood', neighborhoodPh: 'Santa Fe',
       municipality: 'Borough / municipality', municipalityPh: 'Cuajimalpa de Morelos',
@@ -76,11 +82,13 @@
       detailsHint: 'The clearer it is, the faster and more punctual your specialist arrives.',
       between: 'Between streets', betweenPh: 'Between Av. Reforma and Calle 5',
       references: 'How to find it', referencesPh: 'Blue house with a black gate, next to the OXXO store…',
+      referencesCompact: 'How to find it & access', referencesCompactPh: 'Blue house with black gate, access code, what to tell the doorman…',
       access: 'Access instructions', accessPh: 'Gate code, what to tell the doorman, where to park…',
       contactName: 'Who receives? (optional)', contactNamePh: 'Name of who will be there',
       contactPhone: 'Contact phone (optional)', contactPhonePh: '55 1234 5678',
       defaultLabel: 'Set as default',
       reqStreet: 'Street is required.',
+      lastUsedLabel: 'Last address used', lastUsedUse: 'Use',
     },
   };
   function t() { return DICT[lang()]; }
@@ -159,9 +167,10 @@
       '.servi-addr .sa-input.sa-err{border-color:#e5484d;box-shadow:0 0 0 3px rgba(229,72,77,.12)}' +
       '.servi-addr textarea.sa-input{resize:vertical;min-height:60px;line-height:1.45}' +
       '.servi-addr .sa-type{display:flex;gap:8px;flex-wrap:wrap}' +
-      '.servi-addr .sa-type label{flex:1 1 0;min-width:78px;display:flex;align-items:center;justify-content:center;gap:6px;' +
+      '.servi-addr .sa-type label{flex:1 1 112px;min-width:0;display:flex;align-items:center;justify-content:center;gap:6px;' +
         'border:1.5px solid #e2e2e2;border-radius:12px;padding:10px 8px;font-size:13.5px;font-weight:600;' +
-        'color:#555;cursor:pointer;background:#fff;transition:all .15s ease;text-align:center}' +
+        'color:#555;cursor:pointer;background:#fff;transition:all .15s ease;text-align:center;' +
+        'line-height:1.2;white-space:normal;overflow-wrap:anywhere}' +
       '.servi-addr .sa-type label:hover{border-color:#bbb}' +
       '.servi-addr .sa-type input{position:absolute;opacity:0;pointer-events:none}' +
       '.servi-addr .sa-type input:checked + label,.servi-addr .sa-type label.sa-on{' +
@@ -185,6 +194,15 @@
       '.servi-addr .sa-more-hint{font-size:12.5px;color:#888;margin:-2px 0 2px}' +
       '.servi-addr .sa-checkbox{display:flex;align-items:center;gap:9px;font-size:13.5px;color:#444;cursor:pointer}' +
       '.servi-addr .sa-checkbox input{width:16px;height:16px;accent-color:#111}' +
+      '.servi-addr .sa-lastused{align-items:center;gap:12px;justify-content:space-between;' +
+        'border:1.5px solid #e2e2e2;border-radius:12px;background:#fafafa;padding:10px 13px}' +
+      '.servi-addr .sa-lastused__info{display:flex;flex-direction:column;gap:2px;min-width:0}' +
+      '.servi-addr .sa-lastused__label{font-size:11px;font-weight:700;letter-spacing:.04em;' +
+        'text-transform:uppercase;color:#999}' +
+      '.servi-addr .sa-lastused__text{font-size:13.5px;color:#333;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
+      '.servi-addr .sa-lastused__use{flex:0 0 auto;border:1.5px solid #111;border-radius:10px;background:#111;' +
+        'color:#fff;font:inherit;font-size:13px;font-weight:600;padding:8px 15px;cursor:pointer;transition:opacity .15s ease}' +
+      '.servi-addr .sa-lastused__use:hover{opacity:.85}' +
       '@media (max-width:560px){.servi-addr .sa-row,.servi-addr .sa-row.sa-3{grid-template-columns:1fr}}';
     var el = document.createElement('style');
     el.id = 'servi-addr-styles';
@@ -193,20 +211,25 @@
   }
 
   // ─── Field set HTML ────────────────────────────────────────────────────────
-  // opts: { showLabel=true, showDefault=false, openDetails=false }
+  // opts: { showLabel=true, showDefault=false, openDetails=false, compact=false }
+  // compact mode (used by the small service.html booking panel): keeps the
+  // Address type selector but drops label, municipality, state/city dropdowns and
+  // the contact/between/access detail fields — leaving street, ext/int, colonia,
+  // CP, geolocation and a single "referencias / cómo llegar" notes field.
   function fieldsHTML(prefix, opts) {
     opts = opts || {};
     ensureStyles();
     var x = t();
     var p = prefix;
-    var showLabel = opts.showLabel !== false;
+    var compact = !!opts.compact;
+    var showLabel = !compact && opts.showLabel !== false;
     var typeOpts = [
       ['house', x.typeHouse, '🏠'], ['apartment', x.typeApartment, '🏢'],
       ['office', x.typeOffice, '💼'], ['other', x.typeOther, '📍'],
     ];
     var typeHTML = typeOpts.map(function (o, i) {
       var id = p + '_type_' + o[0];
-      return '<span style="position:relative;flex:1 1 0;min-width:78px">' +
+      return '<span style="position:relative;flex:1 1 112px;min-width:0">' +
         '<input type="radio" name="' + p + '_type" id="' + id + '" value="' + o[0] + '"' + (i === 0 ? ' checked' : '') + '>' +
         '<label for="' + id + '"><span aria-hidden="true">' + o[2] + '</span>' + esc(o[1]) + '</label></span>';
     }).join('');
@@ -223,6 +246,9 @@
 
     var html = '<div class="servi-addr" id="' + p + '_root">';
 
+    // "Last address used" quick-fill chip (populated by renderLastUsed for logged-in users)
+    html += '<div class="sa-lastused" id="' + p + '_lastused" style="display:none"></div>';
+
     // Address type
     html += '<div class="sa-field"><span class="sa-label">' + esc(x.typeLabel) + '</span>' +
       '<div class="sa-type" id="' + p + '_typewrap">' + typeHTML + '</div></div>';
@@ -232,18 +258,29 @@
       html += fld(p + '_label', x.labelLabel, input(p + '_label', x.labelPh));
     }
 
-    // Street + ext
+    // Street + ext/unit
     html += '<div class="sa-row"><div class="sa-field" style="grid-column:1 / -1">' +
-      '<label class="sa-label" for="' + p + '_street">' + esc(x.street) + ' *</label>' +
-      input(p + '_street', x.streetPh, ' autocomplete="address-line1"') + '</div></div>';
-    html += '<div class="sa-row">' +
-      fld(p + '_ext', x.ext, input(p + '_ext', x.extPh, ' inputmode="numeric"')) +
-      fld(p + '_int', x.int, input(p + '_int', x.intPh)) + '</div>';
+      '<label class="sa-label" for="' + p + '_street">' + esc(compact ? x.streetAddress : x.street) + ' *</label>' +
+      input(p + '_street', compact ? x.streetAddressPh : x.streetPh, ' autocomplete="address-line1"') + '</div></div>';
+    if (compact) {
+      html += fld(p + '_int', x.unitOptional, input(p + '_int', x.unitOptionalPh, ' autocomplete="address-line2"'));
+    } else {
+      html += '<div class="sa-row">' +
+        fld(p + '_ext', x.ext, input(p + '_ext', x.extPh, ' inputmode="numeric"')) +
+        fld(p + '_int', x.int, input(p + '_int', x.intPh)) + '</div>';
+    }
 
-    // Colonia + municipality
-    html += '<div class="sa-row">' +
-      fld(p + '_neighborhood', x.neighborhood, input(p + '_neighborhood', x.neighborhoodPh)) +
-      fld(p + '_municipality', x.municipality, input(p + '_municipality', x.municipalityPh)) + '</div>';
+    if (compact) {
+      // Colonia + CP (compact drops municipality + state/city dropdowns)
+      html += '<div class="sa-row">' +
+        fld(p + '_neighborhood', x.neighborhood, input(p + '_neighborhood', x.neighborhoodPh)) +
+        fld(p + '_postal', x.postal, input(p + '_postal', x.postalPh, ' inputmode="numeric" autocomplete="postal-code"')) + '</div>';
+    } else {
+      // Colonia + municipality
+      html += '<div class="sa-row">' +
+        fld(p + '_neighborhood', x.neighborhood, input(p + '_neighborhood', x.neighborhoodPh)) +
+        fld(p + '_municipality', x.municipality, input(p + '_municipality', x.municipalityPh)) + '</div>';
+    }
 
     // Geolocation
     html += '<button class="sa-geo" type="button" id="' + p + '_geo">' +
@@ -253,26 +290,33 @@
       '<span id="' + p + '_geolabel">' + esc(x.locationBtn) + '</span></button>' +
       '<div class="sa-geo-status" id="' + p + '_geostatus" aria-live="polite"></div>';
 
-    // State / city / postal
-    html += '<div class="sa-row sa-3">' +
-      fld(p + '_state', x.state, '<select class="sa-input" id="' + p + '_state"></select>') +
-      fld(p + '_city', x.city, '<select class="sa-input" id="' + p + '_city"></select>') +
-      fld(p + '_postal', x.postal, input(p + '_postal', x.postalPh, ' inputmode="numeric" autocomplete="postal-code"')) +
-      '</div>';
+    if (!compact) {
+      // State / city / postal
+      html += '<div class="sa-row sa-3">' +
+        fld(p + '_state', x.state, '<select class="sa-input" id="' + p + '_state"></select>') +
+        fld(p + '_city', x.city, '<select class="sa-input" id="' + p + '_city"></select>') +
+        fld(p + '_postal', x.postal, input(p + '_postal', x.postalPh, ' inputmode="numeric" autocomplete="postal-code"')) +
+        '</div>';
+    }
 
     // Collapsible "find me" details
+    var detailsBody = '<div class="sa-more-hint">' + esc(x.detailsHint) + '</div>';
+    if (compact) {
+      detailsBody += fld(p + '_references', x.referencesCompact, area(p + '_references', x.referencesCompactPh));
+    } else {
+      detailsBody +=
+        fld(p + '_between', x.between, input(p + '_between', x.betweenPh)) +
+        fld(p + '_references', x.references, area(p + '_references', x.referencesPh)) +
+        fld(p + '_access', x.access, area(p + '_access', x.accessPh)) +
+        '<div class="sa-row">' +
+        fld(p + '_contactName', x.contactName, input(p + '_contactName', x.contactNamePh)) +
+        fld(p + '_contactPhone', x.contactPhone, input(p + '_contactPhone', x.contactPhonePh, ' inputmode="tel" autocomplete="tel"')) +
+        '</div>';
+    }
     html += '<details class="sa-more"' + (opts.openDetails ? ' open' : '') + '>' +
       '<summary>' + esc(x.detailsToggle) +
       '<svg class="sa-chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>' +
-      '</summary><div class="sa-more-body">' +
-      '<div class="sa-more-hint">' + esc(x.detailsHint) + '</div>' +
-      fld(p + '_between', x.between, input(p + '_between', x.betweenPh)) +
-      fld(p + '_references', x.references, area(p + '_references', x.referencesPh)) +
-      fld(p + '_access', x.access, area(p + '_access', x.accessPh)) +
-      '<div class="sa-row">' +
-      fld(p + '_contactName', x.contactName, input(p + '_contactName', x.contactNamePh)) +
-      fld(p + '_contactPhone', x.contactPhone, input(p + '_contactPhone', x.contactPhonePh, ' inputmode="tel" autocomplete="tel"')) +
-      '</div></div></details>';
+      '</summary><div class="sa-more-body">' + detailsBody + '</div></details>';
 
     // Default checkbox (account book only)
     if (opts.showDefault) {
@@ -357,6 +401,52 @@
     }, { enableHighAccuracy: true, maximumAge: 300000, timeout: 12000 });
   }
 
+  // ─── "Last address used" store + chip ──────────────────────────────────────
+  // Remembers the structured address from a user's most recent booking and
+  // offers it as a one-click quick-fill on every address field set. Scoped to
+  // the logged-in user so it never leaks across accounts on a shared device.
+  var LAST_KEY = 'servi_last_address';
+  function currentUid() { try { return (window.__user && window.__user.id) || ''; } catch (e) { return ''; } }
+  function isLoggedIn() { try { return !!(window.__user && window.__user.id); } catch (e) { return false; } }
+
+  function rememberLastUsed(address) {
+    if (!address || !address.street) return;
+    try {
+      localStorage.setItem(LAST_KEY, JSON.stringify({ uid: currentUid(), ts: Date.now(), address: address }));
+    } catch (e) {}
+  }
+  function getLastUsed() {
+    try {
+      var d = JSON.parse(localStorage.getItem(LAST_KEY) || 'null');
+      if (!d || !d.address || !d.address.street) return null;
+      var uid = currentUid();
+      if (d.uid && uid && d.uid !== uid) return null; // belongs to another account
+      return d.address;
+    } catch (e) { return null; }
+  }
+
+  function renderLastUsed(prefix) {
+    var host = document.getElementById(prefix + '_lastused');
+    if (!host) return;
+    function hide() { host.style.display = 'none'; host.innerHTML = ''; }
+    if (!isLoggedIn()) return hide();
+    var a = getLastUsed();
+    if (!a || !a.street) return hide();
+    if (getVal(prefix + '_street')) return hide(); // don't intrude on a pre-filled / edited form
+    var x = t();
+    var full = format(a) || a.street;
+    var head = (full.split(' · ')[0]) || a.street;
+    host.innerHTML =
+      '<div class="sa-lastused__info">' +
+        '<span class="sa-lastused__label">' + esc(x.lastUsedLabel) + '</span>' +
+        '<span class="sa-lastused__text" title="' + esc(full) + '">' + esc(head) + '</span>' +
+      '</div>' +
+      '<button type="button" class="sa-lastused__use">' + esc(x.lastUsedUse) + '</button>';
+    host.style.display = 'flex';
+    var btn = host.querySelector('.sa-lastused__use');
+    if (btn) btn.addEventListener('click', function () { fill(prefix, a); hide(); });
+  }
+
   // ─── init / fill / collect / clear ─────────────────────────────────────────
   function getTypeWrap(prefix) { return document.getElementById(prefix + '_typewrap'); }
 
@@ -374,6 +464,7 @@
     }
     setGeo(prefix, { state: '', city: '' });
     if (opts.address) fill(prefix, opts.address);
+    renderLastUsed(prefix);
   }
 
   function setVal(id, v) { var el = document.getElementById(id); if (el) el.value = v == null ? '' : v; }
@@ -491,6 +582,9 @@
     validate: validate,
     format: format,
     geolocate: geolocate,
+    rememberLastUsed: rememberLastUsed,
+    getLastUsed: getLastUsed,
+    renderLastUsed: renderLastUsed,
     populateStates: populateStates,
     populateCities: populateCities,
     setGeo: setGeo,

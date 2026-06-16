@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SERVI — Smart Request</title>
+  <meta name="description" content="Describe, muestra o graba lo que necesitas y SERVI prepara tu solicitud.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/shared/shared-styles.css">
+  <link rel="stylesheet" href="/shared/landing-theme.css">
+  <link rel="stylesheet" href="/smart-request/sr-styles.css">
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body class="sr-page-has-site-header">
+<script src="/config.js"></script>
+<script src="/shared/i18n.js"></script>
+<script src="/shared/shared-auth.js"></script>
+<script src="/shared/address-form.js"></script>
+<script>
+  window.SR_USE_SITE_HEADER = true;
+  window.getDashAddress = function () {
+    try {
+      const saved = localStorage.getItem('dash_hero_address');
+      if (saved && saved.trim() && saved.trim() !== 'Santa Fe, CDMX') return saved.trim();
+    } catch (_) {}
+    return 'CDMX';
+  };
+</script>
+
+<div id="sr-overlay">
+  <div id="navbar"></div>
+  <div id="sr-root"></div>
+</div>
+
+<script src="/shared/morphing-nav.js"></script>
+<script src="/smart-request/catalog.js"></script>
+<script src="/smart-request/heuristic.js"></script>
+<script src="/smart-request/parse.js"></script>
+<script src="/smart-request/sr-icons.js"></script>
+<script src="/smart-request/sr-app.js"></script>
+<script>
+  (function () {
+    const params = new URLSearchParams(window.location.search);
+    const rawReturnTo = params.get('return') || '/';
+    const returnTo = rawReturnTo.startsWith('/') && !rawReturnTo.startsWith('//') ? rawReturnTo : '/';
+    const opts = {};
+    const mode = params.get('mode');
+    const text = params.get('text');
+
+    if (mode) opts.mode = mode;
+    if (text) opts.text = text;
+
+    // Inline-capture handoff from the index.html hero (media / attachments).
+    try {
+      var raw = sessionStorage.getItem('sr_handoff');
+      if (raw) { sessionStorage.removeItem('sr_handoff'); Object.assign(opts, JSON.parse(raw)); }
+    } catch (_) {}
+
+    function openFromUrl() {
+      window.openSmartRequest && window.openSmartRequest(opts);
+    }
+
+    const originalClose = window.closeSmartRequest;
+    window.closeSmartRequest = function () {
+      if (typeof originalClose === 'function') originalClose();
+      window.location.href = returnTo;
+    };
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', openFromUrl);
+    } else {
+      openFromUrl();
+    }
+  })();
+</script>
+</body>
+</html>
