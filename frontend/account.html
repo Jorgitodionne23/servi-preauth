@@ -252,6 +252,7 @@
     .security-panel-head {
       display: flex;
       justify-content: space-between;
+      align-items: flex-start;
       gap: 18px;
       padding: 18px 20px 14px;
       border-bottom: 1px solid rgba(17, 17, 17, 0.07);
@@ -274,6 +275,54 @@
     .security-status.ok { background: var(--account-accent-soft); color: #327883; }
     .security-status.warn { background: rgba(255, 251, 235, 0.95); color: #a16207; }
     .security-rows { display: flex; flex-direction: column; }
+    .security-panel-toggle {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-height: 34px;
+      padding: 7px 12px;
+      border: 1px solid var(--color-border);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.76);
+      color: var(--color-text);
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+      cursor: pointer;
+      transition: background 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
+    }
+    .security-panel-toggle:hover { background: var(--color-surface); border-color: rgba(17, 17, 17, 0.18); }
+    .security-panel-toggle:active { transform: translateY(1px); }
+    .security-panel-toggle::after {
+      content: "";
+      width: 7px;
+      height: 7px;
+      border-right: 1.5px solid currentColor;
+      border-bottom: 1.5px solid currentColor;
+      transform: rotate(45deg) translateY(-1px);
+      transition: transform 0.2s ease;
+    }
+    #security-activity-panel .security-rows {
+      max-height: min(420px, 52dvh);
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      scrollbar-gutter: stable;
+    }
+    #security-activity-panel .security-rows::-webkit-scrollbar { width: 10px; }
+    #security-activity-panel .security-rows::-webkit-scrollbar-track { background: transparent; }
+    #security-activity-panel .security-rows::-webkit-scrollbar-thumb {
+      background: rgba(17, 17, 17, 0.16);
+      border: 3px solid rgba(255, 255, 255, 0.66);
+      border-radius: 999px;
+    }
+    #security-activity-panel.is-collapsed .security-rows,
+    #security-activity-panel.is-collapsed #security-activity-error {
+      display: none;
+    }
+    #security-activity-panel.is-collapsed .security-panel-toggle::after {
+      transform: rotate(-45deg);
+    }
     .security-row {
       display: grid;
       grid-template-columns: 32px 1fr auto;
@@ -854,6 +903,14 @@
                     <div class="security-panel-title" id="security-activity-title">Actividad de inicio de sesión</div>
                     <div class="security-panel-sub" id="security-activity-sub">Revisa los accesos recientes a tu cuenta. Si ves algo que no reconoces, contáctanos.</div>
                   </div>
+                  <button
+                    class="security-panel-toggle"
+                    id="security-activity-toggle"
+                    type="button"
+                    aria-controls="security-activity-list"
+                    aria-expanded="true"
+                    onclick="toggleSecurityActivityPanel()"
+                  >Ocultar</button>
                 </div>
                 <div class="security-rows" id="security-activity-list"></div>
                 <div class="security-inline-error" id="security-activity-error"></div>
@@ -1033,6 +1090,8 @@ const TX = {
     securityActivityEmpty: 'Sin actividad reciente.',
     securityActivityFailed: 'No pudimos cargar la actividad. Intenta de nuevo.',
     securityActivityLoading: 'Cargando actividad...',
+    securityActivityShow: 'Mostrar',
+    securityActivityHide: 'Ocultar',
     emailWarnTitle: 'Verifica tu correo',
     emailWarnText: 'Verifica tu correo para proteger tu cuenta y confirmar solicitudes. Si no ves el enlace, revisa spam o correo no deseado.',
     emailWarnNoEmail: 'Agrega un correo para proteger tu cuenta y confirmar solicitudes. Si no ves el enlace, revisa spam o correo no deseado.',
@@ -1160,6 +1219,8 @@ const TX = {
     securityActivityEmpty: 'No recent activity.',
     securityActivityFailed: 'We could not load activity. Try again.',
     securityActivityLoading: 'Loading activity...',
+    securityActivityShow: 'Show',
+    securityActivityHide: 'Hide',
     emailWarnTitle: 'Verify your email',
     emailWarnText: 'Verify your email to protect your account and confirm requests. If you do not see the link, check your spam or junk folder.',
     emailWarnNoEmail: 'Add an email to protect your account and confirm requests. If you do not see the link, check your spam or junk folder.',
@@ -1697,14 +1758,34 @@ function renderConnectedSocialApps() {
 // ─── Login activity ───────────────────────────────────────────────────────────
 let _activityLoaded = false;
 let _activityEvents = [];
+let _activityPanelOpen = true;
+
+function syncSecurityActivityPanel() {
+  const t = tr();
+  const panel = document.getElementById('security-activity-panel');
+  const toggle = document.getElementById('security-activity-toggle');
+  if (!panel || !toggle) return;
+  panel.classList.toggle('is-collapsed', !_activityPanelOpen);
+  toggle.setAttribute('aria-expanded', String(_activityPanelOpen));
+  toggle.textContent = _activityPanelOpen ? t.securityActivityHide : t.securityActivityShow;
+}
+
+function toggleSecurityActivityPanel() {
+  _activityPanelOpen = !_activityPanelOpen;
+  syncSecurityActivityPanel();
+}
 
 async function loadLoginActivity() {
   const t = tr();
   const list = document.getElementById('security-activity-list');
   const errEl = document.getElementById('security-activity-error');
   if (!list) return;
-  if (errEl) errEl.textContent = '';
-  list.innerHTML = `<div class="security-inline-note">${t.securityActivityLoading}</div>`;
+  syncSecurityActivityPanel();
+  if (errEl) {
+    errEl.textContent = '';
+    errEl.classList.remove('visible');
+  }
+  list.innerHTML = `<div class="security-inline-note visible">${t.securityActivityLoading}</div>`;
   try {
     const res = await fetch(API + '/api/auth/activity', { headers: authHeaders() });
     if (!res.ok) throw new Error('activity_failed');
@@ -1714,7 +1795,10 @@ async function loadLoginActivity() {
     renderLoginActivity();
   } catch (_) {
     list.innerHTML = '';
-    if (errEl) errEl.textContent = t.securityActivityFailed;
+    if (errEl) {
+      errEl.textContent = t.securityActivityFailed;
+      errEl.classList.add('visible');
+    }
   }
 }
 
@@ -1722,8 +1806,9 @@ function renderLoginActivity() {
   const t = tr();
   const list = document.getElementById('security-activity-list');
   if (!list || !_activityLoaded) return;
+  syncSecurityActivityPanel();
   if (!_activityEvents.length) {
-    list.innerHTML = `<div class="security-inline-note">${t.securityActivityEmpty}</div>`;
+    list.innerHTML = `<div class="security-inline-note visible">${t.securityActivityEmpty}</div>`;
     return;
   }
   list.innerHTML = _activityEvents.map((ev) => {
@@ -3032,6 +3117,7 @@ function applyTranslations() {
   set('security-email-title', t.securityEmailTitle);
   set('security-social-title', t.securitySocialTitle); set('security-social-sub', t.securitySocialSub);
   set('security-activity-title', t.securityActivityTitle); set('security-activity-sub', t.securityActivitySub);
+  syncSecurityActivityPanel();
   renderLoginActivity();
   set('title-addresses', t.titleAddresses); set('sub-addresses', t.subAddresses);
   set('title-favorites', t.titleFavorites); set('sub-favorites', t.subFavorites);
