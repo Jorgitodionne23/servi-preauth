@@ -1065,6 +1065,11 @@ const emailLinkPollLimit = rateLimit({
   message: { error: 'too_many_requests' },
 });
 const stripe = new StripePackage(process.env.STRIPE_SECRET_KEY);
+// Detected once at boot from the secret-key prefix. Used to (a) refuse to start production on a
+// test key, (b) stamp each order with the Stripe mode it was created under, and (c) keep the
+// hourly preauth cron from touching orders that belong to the other mode (defense against a
+// shared DB where test + live orders coexist).
+const STRIPE_LIVEMODE = String(process.env.STRIPE_SECRET_KEY || '').startsWith('sk_live');
 const GOOGLE_SCRIPT_WEBHOOK_URL = process.env.SHEETS_WEBHOOK_URL || '';
 const ADMIN_API_TOKEN = process.env.ADMIN_API_TOKEN || '';
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET || '';
@@ -1089,6 +1094,12 @@ const emailTransporter = (GMAIL_USER && GMAIL_APP_PASSWORD)
 
 if (!process.env.STRIPE_SECRET_KEY) {
   throw new Error('STRIPE_SECRET_KEY must be configured before starting the server');
+}
+console.log('[startup] Stripe mode:', STRIPE_LIVEMODE ? 'LIVE' : 'TEST');
+// Fail fast if production is misconfigured with a test key — a live cron acting on test-mode
+// orders (or vice versa) is exactly the cross-mode failure this guard prevents.
+if (process.env.NODE_ENV === 'production' && !STRIPE_LIVEMODE) {
+  throw new Error('Refusing to start: NODE_ENV=production but STRIPE_SECRET_KEY is a test key');
 }
 if (!ADMIN_API_TOKEN) {
   throw new Error('ADMIN_API_TOKEN must be configured before starting the server');
@@ -2130,13 +2141,14 @@ app.use(express.static(FRONTEND_DIR));
         stripe_fee_tax_rate,
         processing_fee_type,
         urgency_multiplier,
-        alpha_value
+        alpha_value,
+        stripe_livemode
       )
       VALUES (
         $1,$2,$3,$4,$5,$6,$7,
         $8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
         $19,'pending',$20,'primary',
-        $21,$22,$23,$24,$25,$26,$27,$28
+        $21,$22,$23,$24,$25,$26,$27,$28,$29
       )
       ON CONFLICT (id) DO NOTHING`,
       [
@@ -2167,7 +2179,8 @@ app.use(express.static(FRONTEND_DIR));
         stripeFeeVatRate,
         processingFeeType,
         urgencyMultiplier,
-        alphaValue
+        alphaValue,
+        STRIPE_LIVEMODE
       ]
     );
     orderInserted = true;
@@ -3376,13 +3389,17 @@ app.post('/tasks/preauth-due', adminRateLimit, requireAdminAuth, async (req, res
           AND saved_payment_method_id IS NOT NULL
           AND payment_intent_id IS NULL
           AND COALESCE(cash_selected, FALSE) = FALSE
+          /* Only act on orders created under THIS backend's Stripe mode. NULL = legacy/pre-column
+             rows, still processed (after DB separation each DB holds one mode's data anyway); the
+             cross-mode skip guard in the catch block backstops any residual mismatch. */
+          AND (stripe_livemode = $2 OR stripe_livemode IS NULL)
       )
       SELECT id, amount, customer_id, saved_payment_method_id, parent_id_of_adjustment, kind, provider_id, provider_name, client_name, client_email, service_date, service_datetime
       FROM service_ts
       WHERE ($1::boolean OR (svc_at >= NOW() AND svc_at < NOW() + INTERVAL '24 hours'))
       ORDER BY svc_at ASC
       LIMIT 50
-    `, [force]);
+    `, [force, STRIPE_LIVEMODE]);
 
 
     const results = [];
@@ -3424,6 +3441,21 @@ app.post('/tasks/preauth-due', adminRateLimit, requireAdminAuth, async (req, res
       } catch (e) {
         const failure = describeStripeFailure(e);
         const logMsg = failure?.friendly || failure?.message || e?.message;
+
+        // Cross-mode mismatch (e.g. a test-mode PM reached by a live-mode key on a shared DB):
+        // this is a misconfiguration, NOT a customer payment failure. Skip without marking the
+        // order Declined or firing a retry webhook, and leave it Scheduled so the correct-mode
+        // cron (or post-DB-separation cleanup) can handle it. Match narrowly so a genuine
+        // deleted-card resource_missing still flows through handlePreauthFailure below.
+        const failureCode = failure?.failure_code || e?.code || '';
+        const isCrossMode = failureCode === 'resource_missing'
+          && /similar object exists in (test|live) mode/i.test(logMsg || '');
+        if (isCrossMode) {
+          console.warn('[preauth-due] skipped cross-mode order (left Scheduled):', row.id, logMsg);
+          results.push({ orderId: row.id, skipped: 'mode_mismatch' });
+          continue;
+        }
+
         console.error('[preauth-due] failed for', row.id, logMsg);
         try {
           await handlePreauthFailure(row, { error: e, failure });
@@ -3941,13 +3973,14 @@ app.post('/create-adjustment', adminRateLimit, requireAdminAuth, async (req, res
           stripe_fixed_fee,
           stripe_fee_tax_rate,
           processing_fee_type,
-          alpha_value
+          alpha_value,
+          stripe_livemode
         )
         VALUES (
           $1,$2,$3,$4,$5,$6,$7,$8,
           $9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
           'Pending',$19,'adjustment',$20,$21,$22,
-          $23,$24,$25,$26,$27,$28,$29,$30
+          $23,$24,$25,$26,$27,$28,$29,$30,$31
         )
       `,
       [
@@ -3980,7 +4013,8 @@ app.post('/create-adjustment', adminRateLimit, requireAdminAuth, async (req, res
         stripeFixedFeeCents,
         stripeFeeVatRate,
         'standard',
-        alphaValue ?? null
+        alphaValue ?? null,
+        STRIPE_LIVEMODE
       ]
     );
 

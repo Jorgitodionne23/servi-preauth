@@ -107,6 +107,11 @@ export async function initDb() {
     ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS retry_token TEXT;
     ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS retry_token_created_at TIMESTAMPTZ;
 
+    -- Stripe environment (test vs live) the order was created under. Stamped at creation from the
+    -- backend's own key mode; lets the preauth cron skip orders that belong to the other mode
+    -- (defense against a shared DB holding both test and live orders). NULL = legacy/pre-column.
+    ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS stripe_livemode BOOLEAN;
+
     -- Customer-initiated cancellation audit (late-cancel fee captured from the hold)
     ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS cancellation_fee_amount INTEGER;
     ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS canceled_at TIMESTAMPTZ;
