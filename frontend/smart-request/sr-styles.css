@@ -72,8 +72,10 @@ body {
 .sr-lang button { border: none; background: #fff; padding: 5px 11px; font-size: 12px; font-weight: 700; font-family: var(--font-body); color: var(--text-muted); cursor: pointer; }
 .sr-lang button.on { background: var(--ink-800, #101213); color: #fff; }
 
+.sr-backbar { max-width: 1100px; margin: 0 auto; padding: 14px 24px 0; }
+.sr-page-has-site-header .sr-backbar { padding-top: 112px; }
 .sr-main { padding: 0 24px 80px; }
-.sr-page-has-site-header .sr-main { padding-top: 120px; }
+.sr-page-has-site-header .sr-main { padding-top: 32px; }
 .sr-page-has-site-header .site-header__logo { font-family: 'Outfit', sans-serif; }
 .sr-stage { max-width: 1060px; margin: 0 auto; }
 .sr-stage--narrow { max-width: 660px; padding-top: clamp(36px, 6vh, 72px); }
@@ -303,6 +305,10 @@ body {
 
 /* ── Responsive ───────────────────────────────────────────────────────────── */
 @media (max-width: 920px) { .sr-dash { grid-template-columns: 1fr; } .sr-pane-left { margin-top: 0; } .sr-rail { position: static; } }
+@media (max-width: 900px) {
+  .sr-page-has-site-header .sr-backbar { padding-top: 98px; }
+  .sr-page-has-site-header .sr-main { padding-top: 28px; }
+}
 @media (max-width: 560px) {
   .sr-modes { grid-template-columns: 1fr; }
   .sr-top__loc { display: none; }

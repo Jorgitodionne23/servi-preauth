@@ -399,7 +399,7 @@
   function topbarHTML() {
     if (window.SR_USE_SITE_HEADER) {
       // Site nav is shown by the host page; render only a back/leave affordance.
-      return '<div class="sr-backbar" style="max-width:1100px;margin:0 auto;padding:14px 24px 0">' +
+      return '<div class="sr-backbar">' +
         '<button type="button" data-action="sr-close" aria-label="' + (curLang() === 'es' ? 'Volver' : 'Back') + '" ' +
         'style="display:inline-flex;align-items:center;gap:6px;background:none;border:none;cursor:pointer;font:inherit;font-weight:600;color:var(--text-secondary);padding:6px 0">' +
         I.back(16) + '<span>' + (curLang() === 'es' ? 'Volver' : 'Back') + '</span></button></div>';
