@@ -290,10 +290,14 @@ export async function initDb() {
       notes TEXT,
       applied_note TEXT,
       created_at TIMESTAMPTZ DEFAULT NOW(),
-      processed_at TIMESTAMPTZ
+      processed_at TIMESTAMPTZ,
+      reviewed_at TIMESTAMPTZ
     );
+    ALTER TABLE order_changes ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ;
     CREATE INDEX IF NOT EXISTS idx_order_changes_order ON order_changes(order_id);
     CREATE INDEX IF NOT EXISTS idx_order_changes_status ON order_changes(status);
+    CREATE INDEX IF NOT EXISTS idx_order_changes_review
+      ON order_changes(status, requested_by, reviewed_at);
 
     -- Lightweight Ops Radar alert metadata. Alerts are computed from current order
     -- state; this table only stores operator handling state such as snoozes.

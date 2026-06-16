@@ -144,7 +144,7 @@
     </div>
 
     <!-- WhatsApp CTA -->
-    <a href="https://wa.me/525525112588" class="button" target="_blank" rel="noopener noreferrer">
+    <a id="primary-action" href="https://wa.me/525525112588" class="button" target="_blank" rel="noopener noreferrer">
       Ver o modificar tu solicitud
     </a>
   </div>
@@ -170,6 +170,7 @@
     let orderId = qs.get('order') || qs.get('orderId') || localStorage.getItem('orderId');
     const retryToken = qs.get('rt') || '';
     const allowExpired = qs.get('allowExpired') === '1';
+    const fromAccount = qs.get('from') === 'account';
 
     const targetOrderId = document.getElementById('order-id');
     const amountEl = document.getElementById('amount');
@@ -192,11 +193,19 @@
     const dateRow = document.getElementById('date-row');
     const dateValueEl = document.getElementById('date-value');
     const summaryBox = document.querySelector('.summary-box');
+    const primaryActionEl = document.getElementById('primary-action');
 
     const PREVIEW_KEY = 'serviSuccessPreview';
     const PREVIEW_CACHE_PREFIX = `${PREVIEW_KEY}:`;
     const PREVENT_BACK_KEY = 'serviPreventBack';
     const currencyCache = {};
+
+    if (fromAccount && primaryActionEl) {
+      primaryActionEl.href = '/account.html?section=orders';
+      primaryActionEl.removeAttribute('target');
+      primaryActionEl.removeAttribute('rel');
+      primaryActionEl.textContent = 'Ver mis pedidos';
+    }
 
     function fmtAmount(cents, currency = 'MXN') {
       try {

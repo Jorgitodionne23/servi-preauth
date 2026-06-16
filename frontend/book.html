@@ -735,7 +735,9 @@
     function redirectToSuccess(orderId) {
       if (!orderId) return;
       setPreventBackLock(orderId);
-      window.location.replace(`/success.html?order=${encodeURIComponent(orderId)}`);
+      const params = new URLSearchParams(window.location.search);
+      const sourceParam = params.get('from') === 'account' ? '&from=account' : '';
+      window.location.replace(`/success.html?order=${encodeURIComponent(orderId)}${sourceParam}`);
     }
 
     function redirectIfCompleted(order) {
@@ -840,6 +842,8 @@
           ? 'rt'
           : null;
       const retryToken = tokenParamName ? params.get(tokenParamName) || '' : '';
+      const fromAccount = params.get('from') === 'account';
+      const accountSuccessParam = fromAccount ? '&from=account' : '';
       const shouldRequestOverride =
         params.get('allowExpired') === '1' || Boolean(retryToken);
 
@@ -1083,7 +1087,7 @@
               retryToken || null
             );
           }
-          location.href = `/success.html?order=${encodeURIComponent(orderId)}`;
+          location.href = `/success.html?order=${encodeURIComponent(orderId)}${accountSuccessParam}`;
           return;
         }
 
@@ -1114,7 +1118,7 @@
             ? 'Tu ajuste quedó programado. Realizaremos la preautorización 24 horas antes de la fecha.'
             : 'Tu servicio quedó programado. Realizaremos la preautorización 24 horas antes de la fecha.';
           alert(payload?.message || scheduledMsg);
-          location.href = `/success.html?order=${encodeURIComponent(orderId)}`;
+          location.href = `/success.html?order=${encodeURIComponent(orderId)}${accountSuccessParam}`;
           return;
         }
 
@@ -1131,7 +1135,7 @@
             if (piId || pmId) {
               await syncProcessingFee(orderId, piId, pmId, retryToken || null);
             }
-            location.href = `/success.html?order=${encodeURIComponent(orderId)}`;
+            location.href = `/success.html?order=${encodeURIComponent(orderId)}${accountSuccessParam}`;
           }
           return;
         }

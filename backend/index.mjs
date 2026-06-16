@@ -7814,6 +7814,27 @@ app.patch('/api/partner-applications/:id', adminRateLimit, requireAdminAuth, asy
   }
 });
 
+const ADMIN_CHANGE_ATTENTION_SQL = `
+  (
+    status = 'pending'
+    OR (
+      status = 'applied'
+      AND lower(COALESCE(requested_by, '')) = 'cliente'
+      AND reviewed_at IS NULL
+    )
+  )
+`;
+const ADMIN_CHANGE_ATTENTION_OC_SQL = `
+  (
+    oc.status = 'pending'
+    OR (
+      oc.status = 'applied'
+      AND lower(COALESCE(oc.requested_by, '')) = 'cliente'
+      AND oc.reviewed_at IS NULL
+    )
+  )
+`;
+
 // --- Admin dashboard: Orders list ---
 app.get('/api/admin/orders', adminRateLimit, requireAdminAuth, async (req, res) => {
   try {
@@ -7846,7 +7867,7 @@ app.get('/api/admin/orders', adminRateLimit, requireAdminAuth, async (req, res) 
               amount, provider_amount, booking_fee_amount, processing_fee_amount, vat_amount, pricing_total_amount,
               status, provider_id, provider_name, customer_id, payment_intent_id, cash_selected,
               parent_id_of_adjustment, created_at,
-              EXISTS (SELECT 1 FROM order_changes oc WHERE oc.order_id = all_bookings.id AND oc.status = 'pending') AS has_pending_change
+              EXISTS (SELECT 1 FROM order_changes oc WHERE oc.order_id = all_bookings.id AND ${ADMIN_CHANGE_ATTENTION_OC_SQL}) AS has_pending_change
          FROM all_bookings ${where}
          ORDER BY ${sortCol} ${sortDir}
          LIMIT $${params.length - 1} OFFSET $${params.length}`,
@@ -8070,7 +8091,7 @@ app.get('/api/admin/stats', adminRateLimit, requireAdminAuth, async (req, res) =
       pool.query(`SELECT count(*)::int AS c, COALESCE(sum(final_captured_amount),0)::int AS revenue FROM all_bookings WHERE status = 'Captured'`),
       pool.query(`SELECT count(*)::int AS c FROM service_reports WHERE status = 'new'`),
       pool.query(`SELECT count(*)::int AS c FROM partner_applications WHERE status = 'pending'`),
-      pool.query(`SELECT count(*)::int AS c FROM order_changes WHERE status = 'pending'`),
+      pool.query(`SELECT count(*)::int AS c FROM order_changes WHERE ${ADMIN_CHANGE_ATTENTION_SQL}`),
     ]);
     return res.json({
       requestsToday: requests.rows[0]?.c || 0,
@@ -8304,7 +8325,7 @@ app.post('/api/admin/changes/:changeId/apply', adminRateLimit, requireAdminAuth,
     }
 
     await client.query(
-      `UPDATE order_changes SET status='applied', applied_note=$1, processed_at=NOW() WHERE id=$2`,
+      `UPDATE order_changes SET status='applied', applied_note=$1, processed_at=NOW(), reviewed_at=NOW() WHERE id=$2`,
       [appliedNote, change.id]
     );
     await client.query('COMMIT');
@@ -8323,13 +8344,32 @@ app.post('/api/admin/changes/:changeId/reject', adminRateLimit, requireAdminAuth
     const { reason } = req.body || {};
     const note = String(reason || 'Rechazado por admin').slice(0, 500);
     const { rowCount } = await pool.query(
-      `UPDATE order_changes SET status='rejected', applied_note=$1, processed_at=NOW() WHERE id=$2 AND status='pending'`,
+      `UPDATE order_changes SET status='rejected', applied_note=$1, processed_at=NOW(), reviewed_at=NOW() WHERE id=$2 AND status='pending'`,
       [note, req.params.changeId]
     );
     if (!rowCount) return res.status(404).json({ error: 'change_not_found_or_not_pending' });
     return res.json({ ok: true });
   } catch (err) {
     console.error('[POST /api/admin/changes/:changeId/reject]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+app.post('/api/admin/changes/:changeId/review', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const { rowCount } = await pool.query(
+      `UPDATE order_changes
+          SET reviewed_at = NOW()
+        WHERE id = $1
+          AND status = 'applied'
+          AND lower(COALESCE(requested_by, '')) = 'cliente'
+          AND reviewed_at IS NULL`,
+      [req.params.changeId]
+    );
+    if (!rowCount) return res.status(404).json({ error: 'change_not_found_or_already_reviewed' });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('[POST /api/admin/changes/:changeId/review]', err);
     return res.status(500).json({ error: 'internal_error' });
   }
 });

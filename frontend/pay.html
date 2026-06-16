@@ -551,6 +551,7 @@
     const orderParam = qs.get('order') || qs.get('orderId');
     const retryToken = qs.get('rt') || '';
     const allowExpired = qs.get('allowExpired') === '1';
+    const fromAccount = qs.get('from') === 'account';
 
     const PREVIEW_KEY = 'serviSuccessPreview';
     const PREVIEW_CACHE_PREFIX = `${PREVIEW_KEY}:`;
@@ -701,7 +702,8 @@
     const redirectToSuccess = (orderId) => {
       if (!orderId) return;
       setPreventBackLock(orderId);
-      window.location.replace(`success.html?order=${encodeURIComponent(orderId)}`);
+      const sourceParam = fromAccount ? '&from=account' : '';
+      window.location.replace(`success.html?order=${encodeURIComponent(orderId)}${sourceParam}`);
     };
 
     const mountCardElement = () => {

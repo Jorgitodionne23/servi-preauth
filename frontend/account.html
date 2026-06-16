@@ -2233,7 +2233,7 @@ function buildPayUrl(id, flow, rt) {
   const q = encodeURIComponent(id);
   const page = flow === 'book' ? '/book.html' : '/pay.html';
   // pay.html reads ?order=, book.html reads ?orderId= — send both for compatibility.
-  return page + '?order=' + q + '&orderId=' + q + '&rt=' + encodeURIComponent(rt);
+  return page + '?order=' + q + '&orderId=' + q + '&rt=' + encodeURIComponent(rt) + '&from=account';
 }
 
 // Mints a fresh payment link server-side (rotates the retry_token so the 2h window

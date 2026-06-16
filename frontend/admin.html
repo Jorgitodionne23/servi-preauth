@@ -2737,6 +2737,9 @@ const CHANGE_STATUS_BADGE = {
   rejected: 'badge-canceled',
   failed: 'badge-rejected'
 };
+function changeNeedsReview(c) {
+  return c && c.status === 'applied' && String(c.requested_by || '').toLowerCase() === 'cliente' && !c.reviewed_at;
+}
 
 async function loadOrderChanges(orderId) {
   const target = document.getElementById('op-changes-list');
@@ -2748,7 +2751,9 @@ async function loadOrderChanges(orderId) {
     if (!items.length) { target.innerHTML = '<div style="color:#555;font-size:12px">Sin cambios solicitados</div>'; return; }
     target.innerHTML = items.map(c => {
       const label = CHANGE_TYPE_LABEL[c.change_type] || c.change_type;
-      const badgeCls = CHANGE_STATUS_BADGE[c.status] || 'badge-pending';
+      const needsReview = changeNeedsReview(c);
+      const badgeCls = needsReview ? 'badge-pending' : (CHANGE_STATUS_BADGE[c.status] || 'badge-pending');
+      const badgeText = needsReview ? 'por revisar' : c.status;
       const orig = c.original_service_datetime || c.original_service_address || c.original_status || '';
       const req = c.requested_service_datetime || c.requested_service_address || '';
       const diffLine = (orig || req)
@@ -2761,11 +2766,15 @@ async function loadOrderChanges(orderId) {
              <button class="action-btn" style="background:#1e3a2a;color:#10b981;border:1px solid #166534" onclick="applyChange('${c.id}','${orderId}')">Aplicar</button>
              <button class="action-btn" onclick="rejectChange('${c.id}','${orderId}')">Rechazar</button>
            </div>`
+        : needsReview
+        ? `<div style="display:flex;gap:6px;margin-top:8px">
+             <button class="action-btn" style="background:#1e3a2a;color:#10b981;border:1px solid #166534" onclick="reviewChange('${c.id}','${orderId}')">Marcar revisado</button>
+           </div>`
         : '';
       return `<div class="sp-adj">
         <div style="display:flex;justify-content:space-between;align-items:center">
           <span style="font-weight:600">${escapeHtml(label)}</span>
-          <span class="badge ${badgeCls}">${escapeHtml(c.status)}</span>
+          <span class="badge ${badgeCls}">${escapeHtml(badgeText)}</span>
         </div>
         <div style="font-size:11px;color:#666;margin-top:3px">${escapeHtml(c.id)} · ${fmtDate(c.created_at)} ${fmtTime(c.created_at)} · ${escapeHtml(c.requested_by||'—')}</div>
         ${diffLine}
@@ -2840,6 +2849,7 @@ async function submitChange(orderId) {
     toast('Cambio registrado', 'ok');
     closeChangeModal({ target: { id: 'ch-mod-bg' } });
     loadOrderChanges(orderId);
+    loadOrders(); loadStats();
   } catch (e) {
     err.textContent = e.message; err.style.display = 'block';
   }
@@ -2852,7 +2862,7 @@ async function applyChange(changeId, orderId) {
     if (!res.ok) throw new Error(d.message || d.error || `HTTP ${res.status}`);
     toast('Cambio aplicado', 'ok');
     openOrderDetail(orderId);
-    loadOrders();
+    loadOrders(); loadStats();
   } catch (e) { toast('Error: ' + e.message, 'err'); }
 }
 async function rejectChange(changeId, orderId) {
@@ -2863,6 +2873,17 @@ async function rejectChange(changeId, orderId) {
     if (!res.ok) throw new Error(d.message || d.error || `HTTP ${res.status}`);
     toast('Cambio rechazado', 'ok');
     loadOrderChanges(orderId);
+    loadOrders(); loadStats();
+  } catch (e) { toast('Error: ' + e.message, 'err'); }
+}
+async function reviewChange(changeId, orderId) {
+  try {
+    const res = await fetch(API + '/api/admin/changes/' + encodeURIComponent(changeId) + '/review', { method: 'POST', headers: headers() });
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.message || d.error || `HTTP ${res.status}`);
+    toast('Cambio revisado', 'ok');
+    loadOrderChanges(orderId);
+    loadOrders(); loadStats();
   } catch (e) { toast('Error: ' + e.message, 'err'); }
 }
 
