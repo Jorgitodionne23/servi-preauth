@@ -434,6 +434,20 @@ function normalizeNameKey(value) {
     .replace(/\s+/g, ' ');
 }
 
+// Privacy-preserving provider display for customer-facing surfaces: first name + last initial
+// ("Juan P."). Never expose a provider's full name/contact to a client \u2014 that's the
+// anti-disintermediation guardrail. Mirrors maskProviderName() in frontend/success.html.
+function maskProviderName(raw) {
+  const name = String(raw || '').trim();
+  if (!name) return null;
+  const parts = name.split(/\s+/).filter(Boolean);
+  if (!parts.length) return null;
+  const first = parts[0];
+  const last = parts.length > 1 ? parts[parts.length - 1] : '';
+  const lastInitial = last ? `${last[0].toUpperCase()}.` : '';
+  return [first, lastInitial].filter(Boolean).join(' ');
+}
+
 const BOOKING_TYPE_LABELS = {
   RANGO: 'Rango de Precio',
   VISITA: 'Visita para cotizar'
@@ -5412,7 +5426,8 @@ app.post('/api/parse-request', publicFormLimit, async (req, res) => {
 app.post('/api/service-requests', publicFormLimit, async (req, res) => {
   try {
     const { category, description, preferredDate, preferredTime, isAsap, serviceAddress, serviceAddressDetails, clientName, clientPhone, clientEmail, customerId, lang, attachments, clientRequestId,
-      requestMode, matchedService, matchedSubKey, aiSummary, aiConfidence, aiSource, detailAnswers } = req.body || {};
+      requestMode, matchedService, matchedSubKey, aiSummary, aiConfidence, aiSource, detailAnswers,
+      preferredProviderId, preferred_provider_id, preferredProviderName, preferred_provider_name } = req.body || {};
     if (!category || !clientName || !clientPhone) {
       return res.status(400).json({ error: 'missing_required_fields', message: 'category, clientName, and clientPhone are required' });
     }
@@ -5515,13 +5530,36 @@ app.post('/api/service-requests', publicFormLimit, async (req, res) => {
       ? JSON.stringify(detailAnswers)
       : null;
     const aiConfidenceNum = (typeof aiConfidence === 'number' && Number.isFinite(aiConfidence)) ? aiConfidence : null;
+
+    // Trusted Specialists: a customer can prefer a specific specialist for this rebooking. It's a
+    // PREFERENCE, not a guarantee — we only carry it forward if the provider is currently verified;
+    // otherwise we drop it silently and admin matches another verified specialist.
+    let prefProviderId = String(preferredProviderId ?? preferred_provider_id ?? '').trim() || null;
+    let prefProviderName = String(preferredProviderName ?? preferred_provider_name ?? '').trim() || null;
+    if (prefProviderId) {
+      try {
+        const { rows: pp } = await pool.query('SELECT status, name FROM providers WHERE provider_id = $1 LIMIT 1', [prefProviderId]);
+        if (!pp[0] || pp[0].status !== 'verified') {
+          console.warn(`[service-requests] dropping preferred provider ${prefProviderId} (not verified/missing)`);
+          prefProviderId = null;
+          prefProviderName = null;
+        } else if (!prefProviderName) {
+          prefProviderName = pp[0].name || null;
+        }
+      } catch (ppErr) {
+        console.warn('[service-requests] preferred provider lookup failed:', ppErr.message);
+        prefProviderId = null;
+        prefProviderName = null;
+      }
+    }
+
     const id = randomUUID();
     try {
       await pool.query(
-        `INSERT INTO service_requests (id, category, description, preferred_date, preferred_time, is_asap, service_address, service_address_details, client_name, client_phone, client_email, client_request_id, customer_id, lang, attachments, request_mode, matched_service, matched_sub_key, ai_summary, ai_confidence, ai_source, detail_answers)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
+        `INSERT INTO service_requests (id, category, description, preferred_date, preferred_time, is_asap, service_address, service_address_details, client_name, client_phone, client_email, client_request_id, customer_id, lang, attachments, request_mode, matched_service, matched_sub_key, ai_summary, ai_confidence, ai_source, detail_answers, preferred_provider_id, preferred_provider_name)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)`,
         [id, category, description || null, preferredDate || null, preferredTime || null, !!isAsap, serviceAddress || null, addressDetailsStr, clientName, clientPhone, clientEmail || null, clientRequestIdNorm || null, effectiveCustomerId, lang || 'es', attachmentsStr,
-          requestMode || null, matchedService || null, matchedSubKey || null, aiSummary || null, aiConfidenceNum, aiSource || null, detailAnswersStr]
+          requestMode || null, matchedService || null, matchedSubKey || null, aiSummary || null, aiConfidenceNum, aiSource || null, detailAnswersStr, prefProviderId, prefProviderName]
       );
     } catch (insertErr) {
       if (insertErr.code === '23505' && clientRequestIdNorm) {
@@ -5529,6 +5567,15 @@ app.post('/api/service-requests', publicFormLimit, async (req, res) => {
         if (sameRequester(duplicateRequest)) return existingRequestResponse(duplicateRequest);
       }
       throw insertErr;
+    }
+    // Trusted Specialists: record the rebook against the logged-in user's trusted row (best-effort).
+    if (userPayload?.user_id && prefProviderId) {
+      pool.query(
+        `UPDATE user_trusted_specialists
+            SET times_booked = times_booked + 1, last_booked_at = NOW(), updated_at = NOW()
+          WHERE user_id = $1 AND provider_id = $2`,
+        [userPayload.user_id, prefProviderId]
+      ).catch((e) => console.warn('[service-requests] trusted bump failed:', e.message));
     }
     // Notify Google Sheets
     postToGoogleWebhook({ type: 'service_request.created', requestId: id, category, clientName, clientPhone, clientEmail: clientEmail || '', serviceAddress: serviceAddress || '', isAsap: !!isAsap, preferredDate: preferredDate || '', preferredTime: preferredTime || '' });
@@ -6926,6 +6973,308 @@ app.patch('/api/auth/addresses/:id/default', publicFormLimit, async (req, res) =
   }
 });
 
+// ─── Trusted Specialists ──────────────────────────────────────────────────────
+// A satisfied client rates a completed service 👍, which unlocks the option to save that
+// specialist as "trusted" for the service category and rebook them in one tap next time.
+// This reduces disintermediation: rebooking through SERVI stays easier/safer than going direct.
+// All routes are scoped to the authenticated user; provider contact details are NEVER returned.
+
+function normalizeTrustCategory(raw) {
+  return String(raw || '').trim().toLowerCase().slice(0, 60) || null;
+}
+
+// POST /api/auth/orders/:id/rating — 👍/👎 a completed order. A 👍 unlocks the trust prompt.
+app.post('/api/auth/orders/:id/rating', publicFormLimit, async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const rating = String(req.body?.rating || '').trim().toLowerCase();
+    if (rating !== 'up' && rating !== 'down') {
+      return res.status(400).json({ error: 'invalid_rating', message: "rating must be 'up' or 'down'" });
+    }
+    const comment = req.body?.comment != null ? String(req.body.comment).slice(0, 500) : null;
+
+    // Ownership: the order must match this user's identifiers (customer id / email / phone).
+    const { conds, ids } = await resolveUserOrderMatch(payload.user_id);
+    if (!conds.length) return res.status(404).json({ error: 'order_not_found' });
+    const { rows } = await pool.query(
+      `SELECT * FROM all_bookings WHERE id = $${ids.length + 1} AND (${conds.join(' OR ')}) LIMIT 1`,
+      [...ids, req.params.id]
+    );
+    const order = rows[0];
+    if (!order) return res.status(404).json({ error: 'order_not_found' });
+
+    const policy = computeOrderActionPolicy(order);
+    if (!policy.canRate) return res.status(409).json({ error: 'not_rateable', message: 'Este servicio aún no se puede calificar.' });
+
+    const providerId = order.provider_id || null;
+    const category = order.category || null;
+    const id = randomUUID();
+    await pool.query(
+      `INSERT INTO service_ratings (id, user_id, order_id, provider_id, category, rating, comment)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
+       ON CONFLICT (user_id, order_id)
+       DO UPDATE SET rating = EXCLUDED.rating, comment = EXCLUDED.comment, updated_at = NOW()`,
+      [id, payload.user_id, req.params.id, providerId, category, rating, comment]
+    );
+
+    // Should we offer to add this specialist? Only on a 👍, with a real provider, not already trusted.
+    let promptTrust = false;
+    if (rating === 'up' && providerId && category) {
+      const { rows: existing } = await pool.query(
+        'SELECT 1 FROM user_trusted_specialists WHERE user_id = $1 AND provider_id = $2 AND category = $3 LIMIT 1',
+        [payload.user_id, providerId, category]
+      );
+      promptTrust = existing.length === 0;
+    }
+    return res.json({
+      ok: true,
+      rating,
+      promptTrust,
+      provider: providerId ? { id: providerId, maskedName: maskProviderName(order.provider_name), category } : null,
+    });
+  } catch (err) {
+    console.error('[POST /api/auth/orders/:id/rating]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// GET /api/auth/orders/:id/rating — prefill an existing rating (edit).
+app.get('/api/auth/orders/:id/rating', async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const { rows } = await pool.query(
+      'SELECT rating, comment FROM service_ratings WHERE user_id = $1 AND order_id = $2 LIMIT 1',
+      [payload.user_id, req.params.id]
+    );
+    return res.json({ rating: rows[0]?.rating || null, comment: rows[0]?.comment || null });
+  } catch (err) {
+    console.error('[GET /api/auth/orders/:id/rating]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// GET /api/auth/trusted-specialists[?category=] — the user's trusted specialists, with
+// in-SERVI trust stats. Returns ONLY safe fields — never provider phone/email/full name.
+app.get('/api/auth/trusted-specialists', async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const category = req.query.category ? normalizeTrustCategory(req.query.category) : null;
+    const sqlParams = [payload.user_id];
+    let where = 't.user_id = $1';
+    if (category) { sqlParams.push(category); where += ` AND t.category = $${sqlParams.length}`; }
+
+    // Safe columns only: p.status (→ availability) and p.name (masked here). Never p.*.
+    const { rows } = await pool.query(
+      `SELECT t.id, t.provider_id, t.category, t.provider_name, t.is_preferred, t.nickname,
+              t.times_booked, t.last_booked_at, t.created_at,
+              p.status AS provider_status, p.name AS provider_live_name
+         FROM user_trusted_specialists t
+         LEFT JOIN providers p ON p.provider_id = t.provider_id
+        WHERE ${where}
+        ORDER BY t.category ASC, t.is_preferred DESC, t.last_booked_at DESC NULLS LAST, t.created_at DESC`,
+      sqlParams
+    );
+
+    // In-SERVI trust stats: how many services this provider completed for THIS user, and the
+    // user's 👍 ratio with them. These signals only exist on-platform — the lock-in.
+    const providerIds = [...new Set(rows.map((r) => r.provider_id).filter(Boolean))];
+    const completedByProvider = {};
+    const thumbsByProvider = {};
+    if (providerIds.length) {
+      const { conds, ids } = await resolveUserOrderMatch(payload.user_id);
+      if (conds.length) {
+        const { rows: cRows } = await pool.query(
+          `SELECT provider_id, COUNT(*)::int AS n
+             FROM all_bookings
+            WHERE (${conds.join(' OR ')})
+              AND status ILIKE 'captured%'
+              AND provider_id = ANY($${ids.length + 1})
+            GROUP BY provider_id`,
+          [...ids, providerIds]
+        );
+        cRows.forEach((r) => { completedByProvider[r.provider_id] = r.n; });
+      }
+      const { rows: tRows } = await pool.query(
+        `SELECT provider_id,
+                COUNT(*) FILTER (WHERE rating = 'up')::int AS ups,
+                COUNT(*)::int AS total
+           FROM service_ratings
+          WHERE user_id = $1 AND provider_id = ANY($2)
+          GROUP BY provider_id`,
+        [payload.user_id, providerIds]
+      );
+      tRows.forEach((r) => { thumbsByProvider[r.provider_id] = { ups: r.ups, total: r.total }; });
+    }
+
+    const specialists = rows.map((r) => {
+      const liveName = r.provider_live_name || r.provider_name;
+      const thumbs = thumbsByProvider[r.provider_id] || { ups: 0, total: 0 };
+      return {
+        id: r.id,
+        providerId: r.provider_id,
+        category: r.category,
+        maskedName: maskProviderName(liveName),
+        nickname: r.nickname || null,
+        isPreferred: !!r.is_preferred,
+        available: r.provider_status === 'verified',
+        completedForYou: completedByProvider[r.provider_id] || 0,
+        thumbsUp: thumbs.ups,
+        ratingsCount: thumbs.total,
+        timesBooked: r.times_booked || 0,
+        lastBookedAt: r.last_booked_at || null,
+        createdAt: r.created_at,
+      };
+    });
+    return res.json({ specialists });
+  } catch (err) {
+    console.error('[GET /api/auth/trusted-specialists]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// POST /api/auth/trusted-specialists — save a specialist as trusted for a category.
+// Primary path: from the rating hook, which sends order_id; we read the authoritative
+// provider_id + category from that owned order (a client can't trust a provider they never used).
+app.post('/api/auth/trusted-specialists', publicFormLimit, async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const body = req.body || {};
+    const orderId = body.order_id != null ? String(body.order_id).trim() : '';
+    const nickname = body.nickname != null ? String(body.nickname).slice(0, 80) : null;
+    const wantPreferred = !!body.is_preferred;
+
+    let providerId = body.provider_id != null ? String(body.provider_id).trim() : '';
+    let category = normalizeTrustCategory(body.category);
+    let sourceOrderId = orderId || null;
+
+    // Resolve ownership + authoritative provider/category. With an order_id, derive from the order.
+    const { conds, ids } = await resolveUserOrderMatch(payload.user_id);
+    if (!conds.length) return res.status(404).json({ error: 'order_not_found' });
+    const matchClause = `(${conds.join(' OR ')})`;
+
+    if (orderId) {
+      const { rows } = await pool.query(
+        `SELECT provider_id, category FROM all_bookings WHERE id = $${ids.length + 1} AND ${matchClause} LIMIT 1`,
+        [...ids, orderId]
+      );
+      if (!rows[0]) return res.status(404).json({ error: 'order_not_found' });
+      providerId = rows[0].provider_id || '';
+      category = normalizeTrustCategory(rows[0].category);
+    } else {
+      // No order_id: require the user to actually have a captured order with this provider+category.
+      if (!providerId || !category) return res.status(400).json({ error: 'missing_fields', message: 'order_id or (provider_id + category) required' });
+      const { rows } = await pool.query(
+        `SELECT id FROM all_bookings
+          WHERE ${matchClause} AND provider_id = $${ids.length + 1} AND LOWER(COALESCE(category,'')) = $${ids.length + 2}
+            AND status ILIKE 'captured%' LIMIT 1`,
+        [...ids, providerId, category]
+      );
+      if (!rows[0]) return res.status(403).json({ error: 'no_matching_order', message: 'No tienes un servicio completado con este especialista en esta categoría.' });
+      sourceOrderId = rows[0].id;
+    }
+
+    if (!providerId) return res.status(400).json({ error: 'no_provider_on_order', message: 'Esta orden no tiene un especialista asignado.' });
+    if (!category) return res.status(400).json({ error: 'missing_category' });
+
+    // Provider must be a currently-verified specialist.
+    const { rows: pRows } = await pool.query('SELECT status, name FROM providers WHERE provider_id = $1 LIMIT 1', [providerId]);
+    if (!pRows[0] || pRows[0].status !== 'verified') {
+      return res.status(409).json({ error: 'provider_unavailable', message: 'Este especialista no está disponible actualmente.' });
+    }
+    const providerName = pRows[0].name || null;
+
+    if (wantPreferred) {
+      await pool.query(
+        'UPDATE user_trusted_specialists SET is_preferred = FALSE WHERE user_id = $1 AND category = $2',
+        [payload.user_id, category]
+      );
+    }
+    const id = randomUUID();
+    await pool.query(
+      `INSERT INTO user_trusted_specialists (id, user_id, provider_id, category, provider_name, is_preferred, source_order_id, nickname)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       ON CONFLICT (user_id, provider_id, category)
+       DO UPDATE SET provider_name = EXCLUDED.provider_name,
+                     nickname = COALESCE(EXCLUDED.nickname, user_trusted_specialists.nickname),
+                     is_preferred = user_trusted_specialists.is_preferred OR EXCLUDED.is_preferred,
+                     updated_at = NOW()`,
+      [id, payload.user_id, providerId, category, providerName, wantPreferred, sourceOrderId, nickname]
+    );
+    return res.status(201).json({ ok: true, providerId, category, maskedName: maskProviderName(providerName) });
+  } catch (err) {
+    console.error('[POST /api/auth/trusted-specialists]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// PATCH /api/auth/trusted-specialists/:id — edit the client's own nickname for a specialist.
+app.patch('/api/auth/trusted-specialists/:id', publicFormLimit, async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    if (!Object.prototype.hasOwnProperty.call(req.body || {}, 'nickname')) {
+      return res.status(400).json({ error: 'no_fields' });
+    }
+    const nickname = req.body.nickname != null ? String(req.body.nickname).slice(0, 80) : null;
+    const { rowCount } = await pool.query(
+      'UPDATE user_trusted_specialists SET nickname = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3',
+      [nickname, req.params.id, payload.user_id]
+    );
+    if (!rowCount) return res.status(404).json({ error: 'not_found' });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('[PATCH /api/auth/trusted-specialists/:id]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// DELETE /api/auth/trusted-specialists/:id
+app.delete('/api/auth/trusted-specialists/:id', async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const { rowCount } = await pool.query(
+      'DELETE FROM user_trusted_specialists WHERE id = $1 AND user_id = $2',
+      [req.params.id, payload.user_id]
+    );
+    if (!rowCount) return res.status(404).json({ error: 'not_found' });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('[DELETE /api/auth/trusted-specialists/:id]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// PATCH /api/auth/trusted-specialists/:id/preferred — make this the default pick within its
+// category (clear-then-set, mirroring addresses /:id/default).
+app.patch('/api/auth/trusted-specialists/:id/preferred', publicFormLimit, async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const { rows } = await pool.query(
+      'SELECT category FROM user_trusted_specialists WHERE id = $1 AND user_id = $2 LIMIT 1',
+      [req.params.id, payload.user_id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'not_found' });
+    await pool.query(
+      'UPDATE user_trusted_specialists SET is_preferred = FALSE WHERE user_id = $1 AND category = $2',
+      [payload.user_id, rows[0].category]
+    );
+    await pool.query(
+      'UPDATE user_trusted_specialists SET is_preferred = TRUE, updated_at = NOW() WHERE id = $1 AND user_id = $2',
+      [req.params.id, payload.user_id]
+    );
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('[PATCH /api/auth/trusted-specialists/:id/preferred]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
 // GET /api/auth/favorites
 app.get('/api/auth/favorites', async (req, res) => {
   const payload = await requireUserAuth(req, res);
@@ -7073,6 +7422,12 @@ function computeOrderActionPolicy(row) {
     }
   }
 
+  // Rateable = the service is done (Captured proxy) AND we know who did it (real provider_id)
+  // AND the service date isn't still in the future. A captured order with no date counts as done.
+  const hasDate = !!(row?.service_datetime || row?.service_date);
+  const servicePassed = !hasDate || hoursUntilService(row) <= 0;
+  const canRate = isCaptured && !!row?.provider_id && servicePassed;
+
   return {
     canCancel,
     cancelTier,
@@ -7081,6 +7436,7 @@ function computeOrderActionPolicy(row) {
     canRequestReschedule: editable,  // creates an admin-reviewed request
     canReorder: isPast && !!row?.category,
     isCaptured,
+    canRate,
   };
 }
 
@@ -7153,7 +7509,7 @@ app.get('/api/auth/orders', async (req, res) => {
     // Real orders (exclude child adjustment rows — they roll up into their parent).
     const { rows: orderRows } = await pool.query(
       `SELECT id, public_code, kind, status, category, service_description,
-              service_date, service_datetime, is_asap, service_address, provider_name,
+              service_date, service_datetime, is_asap, service_address, provider_id, provider_name,
               amount, provider_amount, booking_fee_amount, processing_fee_amount,
               vat_amount, pricing_total_amount, final_captured_amount,
               cash_selected, customer_id, payment_intent_id, created_at
@@ -7169,6 +7525,17 @@ app.get('/api/auth/orders', async (req, res) => {
     // Heal stale statuses from Stripe (missed webhooks) before computing payable/bucket — only
     // the bounded subset that could actually advance, to keep Stripe calls minimal.
     await reconcileOrderRows(orderRows);
+
+    // Existing 👍/👎 ratings for these orders, so the UI doesn't re-prompt a rated order.
+    const ratingByOrder = {};
+    const orderIds = orderRows.map((r) => r.id);
+    if (orderIds.length) {
+      const { rows: rRows } = await pool.query(
+        'SELECT order_id, rating FROM service_ratings WHERE user_id = $1 AND order_id = ANY($2)',
+        [payload.user_id, orderIds]
+      );
+      rRows.forEach((r) => { ratingByOrder[r.order_id] = r.rating; });
+    }
 
     // Pending intake requests that have not yet been turned into an order.
     const { rows: reqRows } = await pool.query(
@@ -7196,7 +7563,11 @@ app.get('/api/auth/orders', async (req, res) => {
       preferredTime: null,
       isAsap: !!r.is_asap,
       address: r.service_address || null,
+      providerId: r.provider_id || null,
       providerName: r.provider_name || null,
+      providerMaskedName: maskProviderName(r.provider_name),
+      rating: ratingByOrder[r.id] || null,
+      rated: !!ratingByOrder[r.id],
       cashSelected: !!r.cash_selected,
       payable: isOrderPayableOnline(r),
       payFlow: orderPayFlow(r),
@@ -7230,7 +7601,11 @@ app.get('/api/auth/orders', async (req, res) => {
         preferredTime: r.preferred_time || null,
         isAsap: !!r.is_asap,
         address: r.service_address || null,
+        providerId: null,
         providerName: null,
+        providerMaskedName: null,
+        rating: null,
+        rated: false,
         cashSelected: false,
         payable: false,
         payFlow: null,
@@ -8378,7 +8753,7 @@ app.post('/api/admin/changes/:changeId/review', adminRateLimit, requireAdminAuth
 app.patch('/api/admin/orders/:id', adminRateLimit, requireAdminAuth, async (req, res) => {
   try {
     const { id } = req.params;
-    const allowed = ['service_description','service_address','service_datetime','provider_amount','provider_name','client_name','client_email','client_phone'];
+    const allowed = ['service_description','service_address','service_datetime','provider_amount','provider_id','provider_name','client_name','client_email','client_phone'];
     const body = req.body || {};
     const updates = {};
     for (const k of allowed) {
@@ -8404,6 +8779,26 @@ app.patch('/api/admin/orders/:id', adminRateLimit, requireAdminAuth, async (req,
       if (isNaN(t.getTime())) return res.status(400).json({ error: 'invalid_service_datetime' });
       updates.service_date = String(updates.service_datetime).slice(0, 10);
       updates.is_asap = false;
+    }
+
+    // Assigning a real provider (Trusted Specialists foundation). An empty value clears the
+    // assignment; a non-empty value must reference a row in `providers`. When the admin assigns
+    // a provider_id but leaves provider_name blank, denormalize the name from the providers row
+    // so the customer-facing surfaces stay in sync.
+    if ('provider_id' in updates) {
+      const pid = updates.provider_id == null ? '' : String(updates.provider_id).trim();
+      if (!pid) {
+        updates.provider_id = null;
+      } else {
+        const { rows: pRows } = await pool.query(
+          'SELECT provider_id, name FROM providers WHERE provider_id = $1 LIMIT 1',
+          [pid]
+        );
+        if (!pRows[0]) return res.status(400).json({ error: 'invalid_provider', message: `Provider "${pid}" no existe.` });
+        updates.provider_id = pid;
+        const nameProvided = 'provider_name' in updates && String(updates.provider_name || '').trim();
+        if (!nameProvided && pRows[0].name) updates.provider_name = pRows[0].name;
+      }
     }
 
     // Recompute pricing if provider_amount changed (visita keeps fixed pricing)
@@ -8485,6 +8880,18 @@ app.get('/api/admin/providers', adminRateLimit, requireAdminAuth, async (req, re
       `SELECT * FROM providers ${where} ORDER BY created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params
     );
+    // How many customers trust each provider (across categories) — an ops "most-trusted" signal.
+    const provIds = rows.map((r) => r.provider_id).filter(Boolean);
+    if (provIds.length) {
+      const { rows: tRows } = await pool.query(
+        `SELECT provider_id, COUNT(DISTINCT user_id)::int AS n
+           FROM user_trusted_specialists WHERE provider_id = ANY($1) GROUP BY provider_id`,
+        [provIds]
+      );
+      const byId = {};
+      tRows.forEach((r) => { byId[r.provider_id] = r.n; });
+      rows.forEach((r) => { r.trusted_by_count = byId[r.provider_id] || 0; });
+    }
     const { rows: countRows } = await pool.query(
       `SELECT count(*)::int AS total FROM providers ${where}`,
       countParams

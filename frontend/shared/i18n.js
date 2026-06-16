@@ -700,6 +700,8 @@ const T = {
         "Pide feedback al finalizar",
         "Responde rápido a las solicitudes",
       ],
+      trustedTitle: "Clientes de confianza = trabajo recurrente",
+      trustedBody: "Cuando un cliente queda satisfecho, puede guardarte como su <strong>especialista de confianza</strong>. La próxima vez que pida ese servicio, SERVI te prioriza a ti. Buenas calificaciones se convierten en trabajo recurrente y estable — y SERVI se encarga del pago, la agenda y el soporte, para que tú solo te enfoques en el servicio.",
     },
     handbookPayments: {
       title: "¿Cómo funcionan los pagos?",
@@ -1447,6 +1449,8 @@ const T = {
         "Ask for feedback at the end",
         "Respond quickly to requests",
       ],
+      trustedTitle: "Trusted clients = recurring work",
+      trustedBody: "When a client is happy, they can save you as their <strong>trusted specialist</strong>. The next time they request that service, SERVI prioritizes you. Good ratings turn into steady, recurring work — and SERVI handles payment, scheduling, and support, so you can focus on the job.",
     },
     handbookPayments: {
       title: "How payments work",

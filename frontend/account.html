@@ -440,6 +440,63 @@
     .addr-btn.delete-btn:hover { border-color: var(--account-danger); color: var(--account-danger); background: var(--account-danger-soft); }
     .add-address-form { background: rgba(255, 255, 255, 0.58); border: 1.5px dashed rgba(149, 204, 213, 0.58); border-radius: 16px; padding: 20px; display: none; }
     .add-address-form.open { display: block; }
+    /* Trusted Specialists */
+    .specialist-cat-group { margin-bottom: 22px; }
+    .specialist-cat-group:last-child { margin-bottom: 0; }
+    .specialist-cat-head { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-text-muted); margin: 0 2px 10px; }
+    .specialist-list { display: flex; flex-direction: column; gap: 14px; }
+    .specialist-card {
+      border: 1.5px solid var(--color-border);
+      border-radius: 16px;
+      padding: 16px 18px;
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      transition: border-color var(--duration-fast), background var(--duration-fast);
+      background: rgba(255, 255, 255, 0.68);
+    }
+    .specialist-card.preferred { border-color: var(--color-accent); background: var(--account-accent-soft); }
+    .specialist-card.unavailable { opacity: 0.72; }
+    .specialist-avatar {
+      flex: 0 0 auto; width: 46px; height: 46px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px; font-weight: 800; letter-spacing: 0.02em;
+      background: var(--account-accent-soft); color: var(--color-accent);
+      border: 1.5px solid var(--color-accent);
+    }
+    .specialist-card.unavailable .specialist-avatar { background: var(--color-surface); color: var(--color-text-muted); border-color: var(--color-border-input); }
+    .specialist-body { flex: 1; min-width: 0; }
+    .specialist-name { font-size: 15px; font-weight: 800; color: var(--color-text); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .specialist-nick { font-size: 12.5px; color: var(--color-text-secondary); margin-top: 1px; }
+    .specialist-stats { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 8px; font-size: 12.5px; color: var(--color-text-secondary); }
+    .specialist-stats span { display: inline-flex; align-items: center; gap: 5px; }
+    .specialist-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+    .badge-unavailable {
+      background: var(--account-danger-soft); color: var(--account-danger);
+      font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 20px;
+      text-transform: uppercase; letter-spacing: 0.05em;
+    }
+    /* In-drawer rating + trust hook */
+    .rate-block { border: 1.5px solid var(--color-border); border-radius: 14px; padding: 16px; background: rgba(255,255,255,0.6); }
+    .rate-question { font-size: 14px; font-weight: 700; color: var(--color-text); margin-bottom: 12px; }
+    .rate-btns { display: flex; gap: 10px; }
+    .rate-btn {
+      flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      padding: 12px 14px; border-radius: 12px; cursor: pointer; font-family: var(--font-body);
+      font-size: 14px; font-weight: 700; border: 1.5px solid var(--color-border-input);
+      background: rgba(255,255,255,0.92); color: var(--color-text); transition: all var(--duration-fast);
+    }
+    .rate-btn .rate-emoji { font-size: 18px; }
+    .rate-btn.up:hover { border-color: var(--color-accent); background: var(--account-accent-soft); }
+    .rate-btn.down:hover { border-color: var(--color-text-muted); background: var(--color-surface); }
+    .rate-btn[disabled] { opacity: 0.55; cursor: default; }
+    .rate-thanks { font-size: 13.5px; font-weight: 700; color: var(--color-accent); }
+    .trust-hook { margin-top: 14px; border: 1.5px solid var(--color-accent); border-radius: 14px; padding: 16px; background: var(--account-accent-soft); }
+    .trust-hook-title { font-size: 14.5px; font-weight: 800; color: var(--color-text); }
+    .trust-hook-body { font-size: 13px; color: var(--color-text-secondary); margin-top: 5px; line-height: 1.5; }
+    .trust-hook-note { font-size: 11.5px; color: var(--color-text-muted); margin-top: 8px; line-height: 1.45; }
+    .trust-hook-actions { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+    .trust-hook-done { font-size: 14px; font-weight: 800; color: var(--color-accent); display: flex; align-items: center; gap: 6px; }
     .address-location-btn {
       width: 100%;
       margin: 0 0 16px;
@@ -941,6 +998,17 @@
           </div>
         </section>
 
+        <!-- Trusted Specialists -->
+        <section class="account-section" id="section-specialists">
+          <div class="account-card">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;gap:12px">
+              <div class="section-title" id="title-specialists">Especialistas de confianza</div>
+            </div>
+            <div class="section-sub" id="sub-specialists">Tus especialistas guardados para volver a reservar rápido y seguro, con la protección de SERVI.</div>
+            <div class="specialist-list" id="specialist-list"></div>
+          </div>
+        </section>
+
         <!-- Favorite Services -->
         <section class="account-section" id="section-favorites">
           <div class="account-card">
@@ -1049,6 +1117,23 @@ const TX = {
     titleInfo: 'Información personal', subInfo: 'Actualiza tu nombre, correo y teléfono.',
     titleSecurity: 'Seguridad', subSecurity: 'Información de acceso a tu cuenta.',
     titleAddresses: 'Mis direcciones', subAddresses: 'Guarda tus domicilios para agilizar tus solicitudes.',
+    navSpecialists: 'Especialistas de confianza',
+    titleSpecialists: 'Especialistas de confianza', subSpecialists: 'Tus especialistas guardados para volver a reservar rápido y seguro, con la protección de SERVI.',
+    specEmpty: 'Aún no tienes especialistas de confianza. Cuando un servicio termine bien, podrás guardar al especialista desde tu pedido.',
+    specPreferred: 'Preferido', specUnavailable: 'No disponible ahora',
+    specCompletedForYou: (n) => n === 1 ? 'Completó 1 servicio para ti' : `Completó ${n} servicios para ti`,
+    specPreferNext: 'Preferir la próxima vez', specBookAgain: 'Reservar de nuevo', specEditNick: 'Apodo', specRemove: 'Quitar',
+    specNickPrompt: 'Ponle un apodo a este especialista (opcional):',
+    specRemoveConfirm: '¿Quitar a este especialista de tu lista de confianza?',
+    specUnavailableNote: 'Este especialista no está disponible por ahora. Cuando reserves, te conectamos con otro especialista verificado.',
+    rateTitle: '¿Quedaste satisfecho con el servicio?', rateUp: 'Sí, excelente', rateDown: 'No del todo',
+    rateThanks: '¡Gracias por tu opinión!',
+    trustTitle: (name) => `¿Agregar a ${name} a tus especialistas de confianza?`,
+    trustBody: 'Vuelve a reservar con un toque, con tu historial, recordatorios y la protección de pago de SERVI.',
+    trustNotGuarantee: 'Es una preferencia, no una garantía. Si no está disponible, te conectamos con otro especialista verificado.',
+    trustAdd: 'Agregar a mis especialistas', trustAdded: '✓ Agregado a tus especialistas de confianza', trustSkip: 'Ahora no',
+    rateError: 'No pudimos guardar tu calificación. Intenta de nuevo.',
+    actRate: 'Calificar',
     titleFavorites: 'Favoritos', subFavorites: 'Tu lista de servicios frecuentes para volver a reservar rápido.',
     browseFavorites: 'Explorar servicios', favoriteBook: 'Reservar', favoriteRemove: 'Quitar',
     favoriteEmptyTitle: 'Aún no tienes favoritos', favoriteEmptyText: 'Guarda servicios desde Explorar para crear tu lista de uso frecuente.',
@@ -1178,6 +1263,23 @@ const TX = {
     titleInfo: 'Personal information', subInfo: 'Update your name, email, and phone.',
     titleSecurity: 'Security', subSecurity: 'Your account access information.',
     titleAddresses: 'My addresses', subAddresses: 'Save your addresses to speed up your requests.',
+    navSpecialists: 'Trusted Specialists',
+    titleSpecialists: 'Trusted Specialists', subSpecialists: 'Your saved specialists for fast, secure rebooking — backed by SERVI protection.',
+    specEmpty: "You don't have any trusted specialists yet. When a service goes well, you can save the specialist from your order.",
+    specPreferred: 'Preferred', specUnavailable: 'Currently unavailable',
+    specCompletedForYou: (n) => n === 1 ? 'Completed 1 service for you' : `Completed ${n} services for you`,
+    specPreferNext: 'Prefer next time', specBookAgain: 'Book again', specEditNick: 'Nickname', specRemove: 'Remove',
+    specNickPrompt: 'Give this specialist a nickname (optional):',
+    specRemoveConfirm: 'Remove this specialist from your trusted list?',
+    specUnavailableNote: "This specialist isn't available right now. When you book, we'll connect you with another verified specialist.",
+    rateTitle: 'Were you happy with the service?', rateUp: 'Yes, great', rateDown: 'Not really',
+    rateThanks: 'Thanks for your feedback!',
+    trustTitle: (name) => `Add ${name} to your Trusted Specialists?`,
+    trustBody: 'Rebook in one tap, with your history, reminders, and SERVI payment protection.',
+    trustNotGuarantee: "This is a preference, not a guarantee. If they're unavailable we'll connect you with another verified specialist.",
+    trustAdd: 'Add to my specialists', trustAdded: '✓ Added to your Trusted Specialists', trustSkip: 'Not now',
+    rateError: "We couldn't save your rating. Please try again.",
+    actRate: 'Rate',
     titleFavorites: 'Favorites', subFavorites: 'Your frequent service list for quick rebooking.',
     browseFavorites: 'Browse services', favoriteBook: 'Book', favoriteRemove: 'Remove',
     favoriteEmptyTitle: 'No favorites yet', favoriteEmptyText: 'Save services from Browse to build your go-to list.',
@@ -1283,7 +1385,7 @@ function guardAuth() {
 }
 
 // ─── Section navigation ───────────────────────────────────────────────────────
-const SECTIONS = ['orders', 'info', 'security', 'addresses', 'favorites', 'payments', 'delete'];
+const SECTIONS = ['orders', 'info', 'security', 'addresses', 'specialists', 'favorites', 'payments', 'delete'];
 let activeSection = 'orders';
 
 function buildNav() {
@@ -1293,6 +1395,7 @@ function buildNav() {
     { id: 'info',      label: t.navInfo,      icon: '👤', danger: false },
     { id: 'security',  label: t.navSecurity,   icon: '🔒', danger: false },
     { id: 'addresses', label: t.navAddresses,  icon: '📍', danger: false },
+    { id: 'specialists', label: t.navSpecialists, icon: '🛡️', danger: false },
     { id: 'favorites', label: t.navFavorites,  icon: '❤️', danger: false },
     { id: 'payments',  label: t.navPayments,   icon: '💳', danger: false },
     { id: 'delete',    label: t.navDelete,     icon: '🗑',  danger: true  },
@@ -1322,6 +1425,7 @@ function switchSection(id) {
   });
   buildNav();
   if (id === 'orders' && !_ordersLoaded) loadOrders();
+  if (id === 'specialists' && !_specialistsLoaded) loadTrustedSpecialists();
   if (id === 'security' && !_activityLoaded) loadLoginActivity();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -2365,6 +2469,191 @@ function reorder(category) {
     : '/browse.html';
 }
 
+// ─── Trusted Specialists ────────────────────────────────────────────────────
+let _specialists = [];
+let _specialistsLoaded = false;
+
+async function loadTrustedSpecialists() {
+  try {
+    const res = await fetch(API + '/api/auth/trusted-specialists', { headers: authHeaders() });
+    if (!res.ok) return;
+    const d = await res.json();
+    _specialists = Array.isArray(d.specialists) ? d.specialists : [];
+    _specialistsLoaded = true;
+    renderTrustedSpecialists();
+  } catch {}
+}
+
+function specialistInitials(name) {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return '★';
+  const a = parts[0][0] || '';
+  const b = parts.length > 1 ? (parts[parts.length - 1][0] || '') : '';
+  return (a + b).toUpperCase();
+}
+
+function renderTrustedSpecialists() {
+  const t = tr();
+  const list = document.getElementById('specialist-list');
+  if (!list) return;
+  if (!_specialists.length) {
+    list.innerHTML = `<p style="font-size:14px;color:#aaa;text-align:center;padding:20px 0">${escapeHtml(t.specEmpty)}</p>`;
+    return;
+  }
+  // Group by category so a user with several specialists across categories sees them organized.
+  const groups = {};
+  _specialists.forEach(s => { (groups[s.category] = groups[s.category] || []).push(s); });
+  list.innerHTML = Object.keys(groups).map(cat => {
+    const meta = categoryMeta(cat);
+    const cards = groups[cat].map(s => specialistCardHtml(s)).join('');
+    return `<div class="specialist-cat-group">
+      <div class="specialist-cat-head">${meta.icon} ${escapeHtml(categoryLabel(cat))}</div>
+      ${cards}
+    </div>`;
+  }).join('');
+}
+
+function specialistCardHtml(s) {
+  const t = tr();
+  const name = s.maskedName || '★';
+  const stats = [];
+  if (s.completedForYou > 0 && typeof t.specCompletedForYou === 'function') stats.push(`<span>✓ ${escapeHtml(t.specCompletedForYou(s.completedForYou))}</span>`);
+  if (s.thumbsUp > 0) stats.push(`<span>👍 ${s.thumbsUp}</span>`);
+  const actions = [];
+  if (s.available) {
+    if (!s.isPreferred) actions.push(`<button class="addr-btn default-btn" onclick="setPreferredSpecialist('${escapeHtml(s.id)}')">${escapeHtml(t.specPreferNext)}</button>`);
+    actions.push(`<button class="addr-btn default-btn" onclick="bookAgainSpecialist('${escapeHtml(s.providerId)}','${escapeHtml(s.category)}')">${escapeHtml(t.specBookAgain)}</button>`);
+  }
+  actions.push(`<button class="addr-btn default-btn" onclick="editSpecialistNickname('${escapeHtml(s.id)}')">${escapeHtml(t.specEditNick)}</button>`);
+  actions.push(`<button class="addr-btn delete-btn" onclick="removeTrustedSpecialist('${escapeHtml(s.id)}')">${escapeHtml(t.specRemove)}</button>`);
+  return `
+    <div class="specialist-card ${s.isPreferred ? 'preferred' : ''} ${s.available ? '' : 'unavailable'}">
+      <div class="specialist-avatar">${escapeHtml(specialistInitials(name))}</div>
+      <div class="specialist-body">
+        <div class="specialist-name">
+          <span>${escapeHtml(name)}</span>
+          ${s.isPreferred ? `<span class="badge-default">${escapeHtml(t.specPreferred)}</span>` : ''}
+          ${s.available ? '' : `<span class="badge-unavailable">${escapeHtml(t.specUnavailable)}</span>`}
+        </div>
+        ${s.nickname ? `<div class="specialist-nick">"${escapeHtml(s.nickname)}"</div>` : ''}
+        ${stats.length ? `<div class="specialist-stats">${stats.join('')}</div>` : ''}
+        ${s.available ? '' : `<div class="specialist-stats" style="color:var(--color-text-muted)"><span>${escapeHtml(t.specUnavailableNote)}</span></div>`}
+        <div class="specialist-actions">${actions.join('')}</div>
+      </div>
+    </div>`;
+}
+
+async function setPreferredSpecialist(id) {
+  try {
+    const res = await fetch(API + '/api/auth/trusted-specialists/' + encodeURIComponent(id) + '/preferred', { method: 'PATCH', headers: authHeaders() });
+    if (res.ok) { _specialistsLoaded = false; await loadTrustedSpecialists(); }
+  } catch {}
+}
+
+async function removeTrustedSpecialist(id) {
+  const t = tr();
+  if (!confirm(t.specRemoveConfirm)) return;
+  try {
+    const res = await fetch(API + '/api/auth/trusted-specialists/' + encodeURIComponent(id), { method: 'DELETE', headers: authHeaders() });
+    if (res.ok) { _specialistsLoaded = false; await loadTrustedSpecialists(); }
+  } catch {}
+}
+
+async function editSpecialistNickname(id) {
+  const t = tr();
+  const cur = (_specialists.find(s => s.id === id) || {}).nickname || '';
+  const nickname = prompt(t.specNickPrompt, cur);
+  if (nickname === null) return;
+  try {
+    const res = await fetch(API + '/api/auth/trusted-specialists/' + encodeURIComponent(id), { method: 'PATCH', headers: authHeaders(), body: JSON.stringify({ nickname: nickname.trim() }) });
+    if (res.ok) { _specialistsLoaded = false; await loadTrustedSpecialists(); }
+  } catch {}
+}
+
+function bookAgainSpecialist(providerId, category) {
+  const cat = String(category || '').toLowerCase();
+  const base = ORDER_KNOWN_CATEGORIES.includes(cat) ? '/service.html?category=' + encodeURIComponent(cat) : '/browse.html';
+  const sep = base.includes('?') ? '&' : '?';
+  window.location.href = base + (providerId ? sep + 'prefer=' + encodeURIComponent(providerId) : '');
+}
+
+// ── In-drawer rating + trust hook ──
+function orderRatingHtml(item) {
+  const t = tr();
+  const id = escapeHtml(item.id);
+  if (item.rated) {
+    return `<div class="rate-block"><div class="rate-thanks">${escapeHtml(t.rateThanks)}</div></div>`;
+  }
+  return `<div class="rate-block" id="rate-block-${id}">
+    <div class="rate-question">${escapeHtml(t.rateTitle)}</div>
+    <div class="rate-btns">
+      <button class="rate-btn up" onclick="submitOrderRating('${id}','up',this)"><span class="rate-emoji">👍</span>${escapeHtml(t.rateUp)}</button>
+      <button class="rate-btn down" onclick="submitOrderRating('${id}','down',this)"><span class="rate-emoji">👎</span>${escapeHtml(t.rateDown)}</button>
+    </div>
+    <div class="trust-hook-mount" id="trust-mount-${id}"></div>
+  </div>`;
+}
+
+async function submitOrderRating(orderId, rating, btn) {
+  const t = tr();
+  const block = document.getElementById('rate-block-' + orderId);
+  const btns = block ? block.querySelectorAll('.rate-btn') : [];
+  btns.forEach(b => { b.disabled = true; });
+  try {
+    const res = await fetch(API + '/api/auth/orders/' + encodeURIComponent(orderId) + '/rating', {
+      method: 'POST', headers: authHeaders(), body: JSON.stringify({ rating })
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(d.message || 'rate_failed');
+    const it = _orders.find(o => o.id === orderId); if (it) { it.rated = true; it.rating = rating; }
+    if (d.promptTrust && d.provider) {
+      const q = block ? block.querySelector('.rate-question') : null;
+      if (q) q.textContent = t.rateThanks;
+      const rb = block ? block.querySelector('.rate-btns') : null;
+      if (rb) rb.style.display = 'none';
+      const mount = document.getElementById('trust-mount-' + orderId);
+      if (mount) mount.innerHTML = trustHookHtml(orderId, d.provider);
+    } else if (block) {
+      block.innerHTML = `<div class="rate-thanks">${escapeHtml(t.rateThanks)}</div>`;
+    }
+  } catch {
+    btns.forEach(b => { b.disabled = false; });
+    showOrderToast(t.rateError);
+  }
+}
+
+function trustHookHtml(orderId, provider) {
+  const t = tr();
+  const name = provider.maskedName || '★';
+  const title = (typeof t.trustTitle === 'function') ? t.trustTitle(name) : t.trustTitle;
+  return `<div class="trust-hook" id="trust-hook-${escapeHtml(orderId)}">
+    <div class="trust-hook-title">${escapeHtml(title)}</div>
+    <div class="trust-hook-body">${escapeHtml(t.trustBody)}</div>
+    <div class="trust-hook-note">${escapeHtml(t.trustNotGuarantee)}</div>
+    <div class="trust-hook-actions">
+      <button class="btn-save" onclick="saveTrustedFromOrder('${escapeHtml(orderId)}',this)">${escapeHtml(t.trustAdd)}</button>
+      <button class="btn-outline" onclick="this.closest('.trust-hook').remove()">${escapeHtml(t.trustSkip)}</button>
+    </div>
+  </div>`;
+}
+
+async function saveTrustedFromOrder(orderId, btn) {
+  const t = tr();
+  const prev = btn.textContent; btn.disabled = true; btn.textContent = '…';
+  try {
+    const res = await fetch(API + '/api/auth/trusted-specialists', {
+      method: 'POST', headers: authHeaders(), body: JSON.stringify({ order_id: orderId })
+    });
+    if (!res.ok) throw new Error('save_failed');
+    const hook = document.getElementById('trust-hook-' + orderId);
+    if (hook) hook.innerHTML = `<div class="trust-hook-done">${escapeHtml(t.trustAdded)}</div>`;
+    _specialistsLoaded = false; // refresh lazily when the section is next opened
+  } catch {
+    btn.disabled = false; btn.textContent = prev;
+    showOrderToast(t.rateError);
+  }
+}
+
 function ordersSkeletonHtml() {
   const one = `
     <div class="order-skeleton">
@@ -2414,6 +2703,8 @@ function orderCardHtml(item, idx) {
   if (orderIsPayable(item)) actions.push(`<button class="order-cta" onclick="event.stopPropagation();startOrderPayment('${escapeHtml(item.id)}','${escapeHtml(item.payFlow || item.kind)}',this)">${escapeHtml(orderCtaLabel(item))}</button>`);
   // "Order again" only on closed/past orders (server-authoritative). Cancel/modify live in the drawer.
   if (orderCanReorder(item)) actions.push(`<button class="addr-btn default-btn" onclick="event.stopPropagation();reorder('${escapeHtml(item.category)}')">${escapeHtml(t.actReorder)}</button>`);
+  // "Rate" on a completed, not-yet-rated order — opens the drawer where the 👍/👎 widget lives.
+  if (item.policy && item.policy.canRate && !item.rated) actions.push(`<button class="addr-btn default-btn" onclick="event.stopPropagation();openOrderDrawer('${escapeHtml(item.id)}')">${escapeHtml(t.actRate)}</button>`);
   const note = orderNote(item);
 
   return `
@@ -2741,6 +3032,7 @@ function orderDrawerHtml(item) {
       <div class="drawer-section-title">${escapeHtml(t.drawerService)}</div>
       ${orderDrawerInfoHtml(item)}
     </div>
+    ${(item.source === 'order' && item.policy && item.policy.canRate) ? `<div class="drawer-section">${orderRatingHtml(item)}</div>` : ''}
     ${summary ? `<div class="drawer-section"><div class="drawer-section-title">${escapeHtml(t.drawerSummary)}</div>${summary}</div>` : ''}
     ${orderDrawerActionsHtml(item)}`;
 }
@@ -3120,6 +3412,7 @@ function applyTranslations() {
   syncSecurityActivityPanel();
   renderLoginActivity();
   set('title-addresses', t.titleAddresses); set('sub-addresses', t.subAddresses);
+  set('title-specialists', t.titleSpecialists); set('sub-specialists', t.subSpecialists);
   set('title-favorites', t.titleFavorites); set('sub-favorites', t.subFavorites);
   set('browse-favorites-btn', t.browseFavorites);
   set('title-payments', t.titlePayments); set('sub-payments', t.subPayments);
@@ -3208,6 +3501,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initSecuritySection();
     loadOrders();
     loadAddresses();
+    loadTrustedSpecialists();
     loadFavoriteServices();
     loadPaymentMethods();
     buildNav();
@@ -3227,6 +3521,7 @@ document.addEventListener('DOMContentLoaded', () => {
     renderConnectedSocialApps();
     buildNav();
     renderAddresses();
+    renderTrustedSpecialists();
     renderFavoriteServices();
     if (_ordersLoaded) renderOrders();
     // Re-render payment methods list with updated language (data is already cached in DOM)

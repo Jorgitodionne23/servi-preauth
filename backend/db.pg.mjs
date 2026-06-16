@@ -369,6 +369,10 @@ export async function initDb() {
     ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS ai_confidence NUMERIC;
     ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS ai_source TEXT;
     ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS detail_answers JSONB;
+    -- Trusted Specialists (Phase 2): the specialist the customer prefers for this rebooking.
+    -- A preference, not a guarantee — admin honors it when the provider is available.
+    ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS preferred_provider_id TEXT;
+    ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS preferred_provider_name TEXT;
     CREATE UNIQUE INDEX IF NOT EXISTS idx_service_requests_client_request_id
       ON service_requests(client_request_id)
       WHERE client_request_id IS NOT NULL;
@@ -536,6 +540,46 @@ export async function initDb() {
 
     CREATE INDEX IF NOT EXISTS idx_user_favorite_services_user_created
       ON user_favorite_services (user_id, created_at DESC);
+
+    -- Trusted Specialists — per-order 👍/👎 by the authenticated customer. A 👍 unlocks
+    -- the "add to Trusted Specialists" prompt. One rating per (user, order); editable (upsert).
+    CREATE TABLE IF NOT EXISTS service_ratings (
+      id          TEXT PRIMARY KEY,
+      user_id     TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+      order_id    TEXT NOT NULL,                       -- all_bookings.id (no hard FK: orders persist independently)
+      provider_id TEXT,                                -- snapshot of the order's provider at rating time
+      category    TEXT,                                -- snapshot of the order's category
+      rating      TEXT NOT NULL CHECK (rating IN ('up','down')),
+      comment     TEXT,                                -- optional, capped in the handler
+      created_at  TIMESTAMPTZ DEFAULT NOW(),
+      updated_at  TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (user_id, order_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_service_ratings_provider ON service_ratings (provider_id);
+    CREATE INDEX IF NOT EXISTS idx_service_ratings_user ON service_ratings (user_id, created_at DESC);
+
+    -- Trusted Specialists — a client's saved specialists, scoped per service category.
+    -- Multiple rows can share (user_id, category); is_preferred marks the default pick within a
+    -- category (enforced singular by the handler, mirroring is_default on user_addresses). No hard
+    -- FK to providers/all_bookings so a removed provider or pruned order never deletes the intent;
+    -- validity is re-checked at read/booking time.
+    CREATE TABLE IF NOT EXISTS user_trusted_specialists (
+      id              TEXT PRIMARY KEY,
+      user_id         TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+      provider_id     TEXT NOT NULL,
+      category        TEXT NOT NULL,
+      provider_name   TEXT,
+      is_preferred    BOOLEAN DEFAULT FALSE,
+      source_order_id TEXT,
+      nickname        TEXT,
+      times_booked    INTEGER DEFAULT 0,
+      last_booked_at  TIMESTAMPTZ,
+      created_at      TIMESTAMPTZ DEFAULT NOW(),
+      updated_at      TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (user_id, provider_id, category)
+    );
+    CREATE INDEX IF NOT EXISTS idx_uts_user_category
+      ON user_trusted_specialists (user_id, category, is_preferred DESC, last_booked_at DESC NULLS LAST);
 
     -- Stripe webhook event ledger: dedupes retried deliveries by event.id.
     -- A row inserted here means "we have started processing this event"; processed_at

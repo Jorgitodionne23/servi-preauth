@@ -357,6 +357,57 @@
       '<div class="sr-next__trust">' + I.shield(14) + esc(tr('trust')) + '</div></div>';
   }
 
+  // ── Trusted specialist (rebooking preference) ──
+  // Fetches the logged-in user's trusted specialists once the request category is known, then
+  // offers to prefer one for this booking. A preference, not a guarantee (re-validated server-side).
+  function srMaybeLoadTrusted() {
+    if (S.phase !== 'build' || S.thinking || !window.__user) return;
+    var cat = S.req && S.req.category;
+    if (!cat || S._trustedFetching || S._trustedCat === cat) return;
+    var token = (function () { try { return (JSON.parse(localStorage.getItem('servi_user_session') || 'null') || {}).token || ''; } catch (_) { return ''; } })();
+    if (!token) { S._trustedCat = cat; return; }
+    S._trustedFetching = true;
+    var API = (window.CONFIG && window.CONFIG.API_BASE) || '';
+    fetch(API + '/api/auth/trusted-specialists?category=' + encodeURIComponent(cat), { headers: { Authorization: 'Bearer ' + token } })
+      .then(function (r) { return r.ok ? r.json() : { specialists: [] }; })
+      .then(function (d) {
+        S._trusted = (d.specialists || []).filter(function (s) { return s.available; });
+        S._trustedCat = cat; S._trustedFetching = false;
+        var pref = S._trusted.filter(function (s) { return s.isPreferred; })[0] || S._trusted[0];
+        S._prefer = pref ? pref.providerId : null;
+        render();
+      })
+      .catch(function () { S._trustedFetching = false; S._trustedCat = cat; });
+  }
+
+  function trustedSelectorHTML() {
+    var list = S._trusted || [];
+    if (!list.length) return '';
+    var es = curLang() === 'es';
+    var title = es ? 'Tu especialista de confianza' : 'Your trusted specialist';
+    var noPref = es ? 'Sin preferencia — primer disponible' : 'No preference — first available';
+    var note = es
+      ? 'Es una preferencia, no una garantía. Si no está disponible, te conectamos con otro especialista verificado.'
+      : "This is a preference, not a guarantee. If they're unavailable we'll connect you with another verified specialist.";
+    function optBtn(id, name, desc, on) {
+      return '<button type="button" class="sr-radio' + (on ? ' sr-radio--on' : '') + '" data-action="prefer:' + esc(id) + '">' +
+        '<span class="sr-radio__ic">' + I.shield(18) + '</span><span class="sr-radio__txt">' +
+        '<span class="sr-radio__label">' + esc(name) + '</span>' +
+        (desc ? '<span class="sr-radio__desc">' + esc(desc) + '</span>' : '') + '</span></button>';
+    }
+    var opts = list.map(function (s) {
+      var name = (s.maskedName || '★') + (s.isPreferred ? (es ? ' · Preferido' : ' · Preferred') : '');
+      var desc = s.completedForYou > 0
+        ? (es ? ('Completó ' + s.completedForYou + ' servicio' + (s.completedForYou === 1 ? '' : 's') + ' para ti') : ('Completed ' + s.completedForYou + ' service' + (s.completedForYou === 1 ? '' : 's') + ' for you'))
+        : '';
+      return optBtn(s.providerId, name, desc, S._prefer === s.providerId);
+    }).join('');
+    opts += optBtn('none', noPref, '', S._prefer == null);
+    return '<div class="sr-card sr-fade-in"><div class="sr-card__head"><h3 class="sr-card__title">' + esc(title) + '</h3></div>' +
+      '<div class="sr-when">' + opts + '</div>' +
+      '<p class="sr-rail__fine" style="margin-top:10px">' + esc(note) + '</p></div>';
+  }
+
   function buildHTML() {
     var left = '<div class="sr-pane-left"><button type="button" class="sr-editlink" data-action="reset">' + I.back(15) + esc(tr('editRequest')) + '</button>' +
       (S.thinking
@@ -366,7 +417,7 @@
         : ((S.mode === 'video') ? mediaReceivedHTML()
             : (S.mode === 'photos' && !S.req.service) ? mediaReceivedHTML()
             : understandingHTML()) + followupsHTML()) +
-      (S.thinking ? '' : whenWhereHTML()) + '</div>';
+      (S.thinking ? '' : whenWhereHTML()) + (S.thinking ? '' : trustedSelectorHTML()) + '</div>';
 
     var canSend = S.address.trim() && (S.when === 'asap' || (S.when === 'schedule' && S.date));
     var right = '<div class="sr-pane-right"><div class="sr-rail">' + summaryHTML() + nextStepsHTML() +
@@ -428,6 +479,7 @@
     } else {
       stopSrPlaceholderRotation();
     }
+    srMaybeLoadTrusted();
   }
 
   // ── service picker modal ──
@@ -618,6 +670,8 @@
       aiSource: S.req.source || null,
       detailAnswers: S.answers,
       clientRequestId: (S._reqId || (S._reqId = clientReqId())),
+      // Trusted-specialist preference (server re-validates the provider is verified).
+      preferredProviderId: S._prefer || undefined,
     };
   }
 
@@ -687,6 +741,7 @@
     S.phase = 'compose'; S.mode = 'text'; S.text = ''; S.atts = []; S.media = []; S.rec = null; S._reqId = null; S.submittedId = null;
     S.thinking = false; S.req = { emoji: '✨', categoryLabel: 'Custom request' }; S.answers = {};
     S.when = 'asap'; S.date = ''; S.time = ''; S.dateLabel = ''; S.address = defaultAddress(); S.addressDetails = null;
+    S._trusted = []; S._trustedCat = null; S._trustedFetching = false; S._prefer = null;
     render();
   }
 
@@ -762,6 +817,7 @@
         break;
       }
       case 'chip': var key = arg, val = t.getAttribute('data-val'); S.answers[key] = (S.answers[key] === val ? '' : val); render(); break;
+      case 'prefer': S._prefer = (arg === 'none' ? null : arg); render(); break;
       case 'submit': submit(); break;
       case 'reset': reset(); break;
       case 'my-orders': window.location.href = '/account.html?section=orders'; break;

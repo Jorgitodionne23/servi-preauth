@@ -265,6 +265,20 @@
     .svc-addr-opt__title { font-size: 14px; font-weight: 600; color: #111; }
     .svc-addr-opt__sub { font-size: 12.5px; color: #777; line-height: 1.4; }
     .svc-addr-opt--new .svc-addr-opt__title { color: #111; }
+    /* Trusted specialist selector */
+    .svc-trusted-opts { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+    .svc-trusted-opt {
+      display: flex; align-items: flex-start; gap: 10px; padding: 11px 13px;
+      border: 1.5px solid #e3e3e3; border-radius: 12px; cursor: pointer;
+      transition: border-color .15s ease, box-shadow .15s ease;
+    }
+    .svc-trusted-opt:hover { border-color: #bbb; }
+    .svc-trusted-opt input { margin-top: 2px; width: 16px; height: 16px; accent-color: #111; flex: 0 0 auto; }
+    .svc-trusted-opt:has(input:checked) { border-color: #111; box-shadow: 0 0 0 3px rgba(0,0,0,.05); }
+    .svc-trusted-opt__body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .svc-trusted-opt__name { font-size: 14px; font-weight: 600; color: #111; }
+    .svc-trusted-opt__sub { font-size: 12.5px; color: #2b6d77; line-height: 1.4; }
+    .svc-trusted-note { font-size: 11.5px; color: #888; line-height: 1.45; margin-top: 8px; }
     .svc-newaddr { margin-top: 2px; }
     .svc-addr-save {
       display: flex; align-items: center; gap: 9px; margin-top: 12px;
@@ -868,6 +882,67 @@
   }
   function svcFieldsPrefix(prefix) { return 'svca_' + prefix; }
 
+  // ─── Trusted specialist (rebooking preference) ───────────────────────────────
+  let _svcTrusted = [];                 // available trusted specialists for this category
+  let _svcTrustedLoaded = false;
+  let _svcPreferredProviderId = null;   // null = "no preference — first available"
+  const _svcPreferParam = params.get('prefer') || '';
+
+  async function loadServiceTrustedSpecialists() {
+    // Already fetched (e.g. a language switch rebuilt the panels) — just re-render the selector.
+    if (_svcTrustedLoaded) { ['desk', 'mob'].forEach(renderTrustedSelector); return; }
+    const token = svcSessionToken();
+    if (!token || !window.__user || !catKey) return;
+    const API = (window.CONFIG && window.CONFIG.API_BASE) || '';
+    try {
+      const res = await fetch(API + '/api/auth/trusted-specialists?category=' + encodeURIComponent(catKey), {
+        headers: { Authorization: 'Bearer ' + token }
+      });
+      if (!res.ok) return;
+      const d = await res.json();
+      // Only offer specialists who are currently bookable (verified).
+      _svcTrusted = (Array.isArray(d.specialists) ? d.specialists : []).filter(s => s.available);
+      _svcTrustedLoaded = true;
+      if (_svcTrusted.length) {
+        // Pre-select: ?prefer= deep-link wins, else the user's preferred pick for this category.
+        let pick = _svcPreferParam ? _svcTrusted.find(s => s.providerId === _svcPreferParam) : null;
+        if (!pick) pick = _svcTrusted.find(s => s.isPreferred) || _svcTrusted[0];
+        _svcPreferredProviderId = pick ? pick.providerId : null;
+      }
+      ['desk', 'mob'].forEach(renderTrustedSelector);
+    } catch (_) {}
+  }
+
+  function renderTrustedSelector(prefix) {
+    const host = document.getElementById('svc-trusted-' + prefix);
+    if (!host) return;
+    if (!_svcTrusted.length) { host.style.display = 'none'; host.innerHTML = ''; return; }
+    const es = lang() === 'es';
+    const title = es ? 'Tu especialista de confianza' : 'Your trusted specialist';
+    const noPref = es ? 'Sin preferencia — primer disponible' : 'No preference — first available';
+    const note = es
+      ? 'Es una preferencia, no una garantía. Si no está disponible, te conectamos con otro especialista verificado.'
+      : "This is a preference, not a guarantee. If they're unavailable we'll connect you with another verified specialist.";
+    const opt = (value, name, sub, checked) =>
+      `<label class="svc-trusted-opt"><input type="radio" name="svc-trusted-${prefix}" value="${esc(value)}"${checked ? ' checked' : ''} onchange="window._svcPickTrusted(this.value)"><span class="svc-trusted-opt__body"><span class="svc-trusted-opt__name">${esc(name)}</span>${sub ? `<span class="svc-trusted-opt__sub">${esc(sub)}</span>` : ''}</span></label>`;
+    const optsHtml = _svcTrusted.map(s => {
+      const name = (s.maskedName || '★') + (s.isPreferred ? (es ? ' · Preferido' : ' · Preferred') : '');
+      const sub = s.completedForYou > 0
+        ? (es ? `Completó ${s.completedForYou} servicio${s.completedForYou === 1 ? '' : 's'} para ti` : `Completed ${s.completedForYou} service${s.completedForYou === 1 ? '' : 's'} for you`)
+        : '';
+      return opt(s.providerId, name, sub, _svcPreferredProviderId === s.providerId);
+    }).join('');
+    host.style.display = 'block';
+    host.innerHTML =
+      `<span class="svc-sidebar__label">${esc(title)}</span>` +
+      `<div class="svc-trusted-opts">${optsHtml}${opt('', noPref, '', _svcPreferredProviderId === null)}</div>` +
+      `<div class="svc-trusted-note">${esc(note)}</div>`;
+  }
+
+  window._svcPickTrusted = function (providerId) {
+    _svcPreferredProviderId = providerId || null;
+  };
+
   async function loadSavedAddresses() {
     const token = svcSessionToken();
     if (!token || !window.__user) return;
@@ -1234,6 +1309,9 @@
       attachments: attachments.map(a => a.url),
       lang: lang(),
     };
+    // Carry the trusted-specialist preference (a preference, not a guarantee). The backend
+    // re-validates the provider is verified and fills the real name; we send only the id.
+    if (_svcPreferredProviderId) payload.preferredProviderId = _svcPreferredProviderId;
     if (!window.__user) {
       showAuthGate(prefix, () => sendRequest(prefix, payload));
       return;
@@ -1453,6 +1531,7 @@
         <div class="svc-sidebar__service-name">${esc(displayServiceName || serviceName)}</div>
         <div class="svc-sidebar__price-label">${esc(s.priceLabel || 'Precio a confirmar')}</div>
         <div class="svc-sidebar__price-note">${esc(s.priceNote || '')}</div>
+        <div id="svc-trusted-${prefix}" class="svc-trusted" style="display:none"></div>
         <hr class="svc-sidebar__divider">
 
         <span class="svc-sidebar__label">${esc(s.whenLabel || '¿Cuándo lo necesitas?')}</span>
@@ -1684,7 +1763,7 @@
 
   function svcWaitForUserThenLoad(attempts) {
     attempts = attempts == null ? 24 : attempts; // ~6s of 250ms polls
-    if (window.__user) { loadSavedAddresses(); return; }
+    if (window.__user) { loadSavedAddresses(); loadServiceTrustedSpecialists(); return; }
     if (attempts <= 0) return;
     setTimeout(() => svcWaitForUserThenLoad(attempts - 1), 250);
   }

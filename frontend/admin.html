@@ -1790,9 +1790,12 @@ function buildSubmissionRow(s) {
   const isCanceled = /^cancel/i.test(String(s.status || ''));
   const border = isCanceled ? '#ef4444' : '#7c3aed';
   const code = isCanceled ? '#ef4444' : '#a78bfa';
-  const badge = isCanceled
+  const trustedBadge = (!isCanceled && s.preferred_provider_id)
+    ? `<br><span class="badge" style="background:#2e1065;color:#ddd6fe;border:1px solid #6d28d9;margin-top:3px">⭐ Pidió a ${escapeHtml((s.preferred_provider_name || s.preferred_provider_id).slice(0, 24))}</span>`
+    : '';
+  const badge = (isCanceled
     ? `<span class="badge badge-canceled">Cancelado · Cliente</span>`
-    : `<span class="badge badge-web">Web · Sin enlace</span>`;
+    : `<span class="badge badge-web">Web · Sin enlace</span>`) + trustedBadge;
   const action = isCanceled
     ? `<span style="color:#888;font-size:11px">Retirado por cliente</span>`
     : `<button class="action-btn" style="background:#3b0764;color:#c4b5fd;border:1px solid #6d28d9"
@@ -1853,7 +1856,8 @@ function openSubmissionLinkModal(subId) {
       </div>
       <div style="margin-bottom:10px">
         <label class="form-label">Proveedor asignado</label>
-        <input class="adm-input" id="sub-provider" placeholder="Nombre del proveedor" style="margin-bottom:0">
+        ${sub.preferred_provider_id ? `<div class="schedule-note" style="margin:0 0 7px;border-color:#6d28d9;background:#2e1065;color:#ddd6fe">⭐ <strong>Cliente recurrente</strong> — pidió a ${escapeHtml(sub.preferred_provider_name || sub.preferred_provider_id)} (${escapeHtml(sub.preferred_provider_id)}). Asígnalo si está disponible.</div>` : ''}
+        <input class="adm-input" id="sub-provider" placeholder="Nombre del proveedor" value="${escapeHtml(sub.preferred_provider_name || '')}" style="margin-bottom:0">
       </div>
       <div style="margin-bottom:10px">
         <label class="form-label">Email del cliente</label>
@@ -1941,6 +1945,7 @@ async function submitSubmissionLink(subId) {
         bookingType,
         capture: 'manual',
         providerName: provider || undefined,
+        providerId: sub.preferred_provider_id || undefined,
         allowCashOnce,
         isAsap: orderIsAsap(sub) && !serviceDateTime,
         category: sub.category || undefined,
@@ -2904,6 +2909,17 @@ function openOrderEdit(orderId) {
           <div><label class="form-label">Email</label><input class="auth-input" id="ed-client_email" value="${escapeHtml(o.client_email||'')}"></div>
           <div><label class="form-label">Proveedor (nombre)</label><input class="auth-input" id="ed-provider_name" value="${escapeHtml(o.provider_name||'')}"></div>
           <div><label class="form-label">Monto proveedor (MXN)</label><input class="auth-input" id="ed-provider_amount" type="number" min="1" value="${providerMxn}"></div>
+          <div style="grid-column:1/-1">
+            <label class="form-label">Asignar especialista verificado</label>
+            <div style="display:flex;gap:8px">
+              <input class="auth-input" id="ed-provider-search" placeholder="Buscar por nombre, especialidad o ID…" style="flex:1" oninput="searchProvidersForEdit()">
+              <select class="auth-input" id="ed-provider_id" style="flex:1" onchange="onEditProviderPick()">
+                <option value="">— Sin asignar —</option>
+                ${o.provider_id ? `<option value="${escapeHtml(o.provider_id)}" selected>${escapeHtml((o.provider_name || o.provider_id) + ' · ' + o.provider_id)}</option>` : ''}
+              </select>
+            </div>
+            <div class="schedule-helper" style="margin:6px 0 0">Asignar un proveedor verificado habilita "Especialistas de confianza" para el cliente tras completar el servicio.</div>
+          </div>
           <div>
             <label class="form-label">Fecha y hora confirmada del servicio</label>
             ${orderIsAsap(o) ? '<div class="schedule-helper" style="margin:0 0 7px">Esta orden está marcada como ASAP. Al guardar una fecha y hora, quedará agendada.</div>' : ''}
@@ -2922,9 +2938,48 @@ function closeOrderEdit(e) {
   if (e && e.target && e.target.id !== 'ed-mod-bg') return;
   const m = document.getElementById('ed-mod-bg'); if (m) m.remove();
 }
+let _edProvTimer = null;
+function searchProvidersForEdit() {
+  clearTimeout(_edProvTimer);
+  _edProvTimer = setTimeout(_doSearchProvidersForEdit, 300);
+}
+async function _doSearchProvidersForEdit() {
+  const q = (document.getElementById('ed-provider-search')?.value || '').trim();
+  const sel = document.getElementById('ed-provider_id');
+  if (!sel) return;
+  const current = sel.value;
+  const currentLabel = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : '';
+  try {
+    const params = new URLSearchParams({ status: 'verified', limit: 25 });
+    if (q) params.set('search', q);
+    const res = await fetch(API + '/api/admin/providers?' + params, { headers: headers() });
+    const d = await res.json();
+    const items = d.items || [];
+    let opts = '<option value="">— Sin asignar —</option>';
+    // Keep the current assignment selectable even if it's outside the search results.
+    if (current && !items.some(p => p.provider_id === current)) {
+      opts += `<option value="${escapeHtml(current)}" selected>${escapeHtml(currentLabel)}</option>`;
+    }
+    items.forEach(p => {
+      const label = `${p.name || '(sin nombre)'}${p.specialty ? ' · ' + p.specialty : ''} · ${p.provider_id}`;
+      opts += `<option value="${escapeHtml(p.provider_id)}"${p.provider_id === current ? ' selected' : ''}>${escapeHtml(label)}</option>`;
+    });
+    sel.innerHTML = opts;
+  } catch (e) { /* silent — search is best-effort */ }
+}
+function onEditProviderPick() {
+  // Auto-fill the provider name field from the picked option when the admin hasn't typed one.
+  const sel = document.getElementById('ed-provider_id');
+  const nameEl = document.getElementById('ed-provider_name');
+  if (!sel || !nameEl) return;
+  if (!sel.value) return;
+  const txt = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : '';
+  const nm = (txt.split(' · ')[0] || '').trim();
+  if (nm && nm !== '(sin nombre)' && !nameEl.value.trim()) nameEl.value = nm;
+}
 async function submitOrderEdit(orderId) {
   const o = _detailOrderCache || {};
-  const fields = ['client_name','client_phone','client_email','provider_name','provider_amount','service_datetime','service_description','service_address'];
+  const fields = ['client_name','client_phone','client_email','provider_id','provider_name','provider_amount','service_datetime','service_description','service_address'];
   const body = {};
   for (const f of fields) {
     const el = document.getElementById('ed-' + f);
@@ -3132,7 +3187,7 @@ async function loadRoster() {
       return `
       <tr onclick="openRosterDetail('${escapeHtml(p.provider_id)}')"${highlight}>
         <td style="font-family:monospace;font-size:12px;color:#10b981">${escapeHtml(p.provider_id)}</td>
-        <td style="font-weight:600">${escapeHtml(p.name || '—')}</td>
+        <td style="font-weight:600">${escapeHtml(p.name || '—')}${p.trusted_by_count > 0 ? ` <span class="badge" style="background:#2e1065;color:#ddd6fe;border:1px solid #6d28d9" title="Clientes que lo marcaron de confianza">⭐ ${p.trusted_by_count}</span>` : ''}</td>
         <td>${escapeHtml(p.phone || '—')}</td>
         <td>${escapeHtml(p.specialty || '—')}</td>
         <td>${escapeHtml(p.city || '—')}</td>
@@ -3163,6 +3218,7 @@ function openRosterDetail(providerId) {
         <div><div class="sp-lbl">Estado</div><div class="sp-val"><span class="badge ${p.status==='removed' ? 'badge-rejected' : 'badge-verified'}">${escapeHtml(p.status)}</span></div></div>
         <div><div class="sp-lbl">Creado</div><div class="sp-val">${fmtDate(p.created_at)}</div></div>
         <div><div class="sp-lbl">Actualizado</div><div class="sp-val">${fmtDate(p.updated_at)}</div></div>
+        <div><div class="sp-lbl">Clientes de confianza</div><div class="sp-val">${p.trusted_by_count > 0 ? '⭐ ' + p.trusted_by_count : '—'}</div></div>
       </div>
     </div>
     <div class="sp-sec">
