@@ -35,8 +35,9 @@ could clash with them. Configure the env vars below by hand and keep this doc in
   blank for the normal production run.
 - `force=true` bypasses **only** the 24h window bounds (handy for testing); all eligibility filters
   still apply.
-- The dispatch uses the `ADMIN_API_TOKEN` GitHub secret for whichever endpoint it hits — if staging
-  uses a different admin token, the override will 401.
+- The dispatch uses `STAGING_ADMIN_API_TOKEN` when the endpoint is `https://servi-staging.onrender.com`;
+  otherwise it uses `ADMIN_API_TOKEN`. If the staging secret is missing or does not match Render's
+  staging `ADMIN_API_TOKEN`, the override will 401.
 
 ## Defense-in-depth (in code, independent of the topology above)
 

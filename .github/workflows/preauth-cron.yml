@@ -40,6 +40,7 @@ jobs:
         id: ping
         env:
           ADMIN_API_TOKEN: ${{ secrets.ADMIN_API_TOKEN }}
+          STAGING_ADMIN_API_TOKEN: ${{ secrets.STAGING_ADMIN_API_TOKEN }}
         run: |
           set -eu
 
@@ -61,8 +62,20 @@ jobs:
             esac
           fi
 
-          if [ -z "${ADMIN_API_TOKEN:-}" ]; then
-            echo "❌ GitHub Actions secret ADMIN_API_TOKEN is missing or empty"
+          AUTH_TOKEN="$ADMIN_API_TOKEN"
+          case "$PREAUTH_ENDPOINT" in
+            https://servi-staging.onrender.com/*)
+              if [ -n "${STAGING_ADMIN_API_TOKEN:-}" ]; then
+                AUTH_TOKEN="$STAGING_ADMIN_API_TOKEN"
+              else
+                echo "❌ STAGING_ADMIN_API_TOKEN is missing; staging uses its own ADMIN_API_TOKEN"
+                exit 1
+              fi
+              ;;
+          esac
+
+          if [ -z "${AUTH_TOKEN:-}" ]; then
+            echo "❌ Admin API token is missing or empty"
             exit 1
           fi
 
@@ -74,7 +87,7 @@ jobs:
             -o /tmp/response.json \
             -w "%{http_code}" \
             -X POST "$PREAUTH_ENDPOINT" \
-            -H "Authorization: Bearer $ADMIN_API_TOKEN" \
+            -H "Authorization: Bearer $AUTH_TOKEN" \
             -H "Content-Type: application/json" \
             -d "$BODY" \
             --connect-timeout 15 \
@@ -158,6 +171,7 @@ jobs:
         if: failure()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -eu
