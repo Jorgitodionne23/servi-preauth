@@ -470,6 +470,7 @@
     /* Confirm modal */
     .confirm-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 9999; backdrop-filter: blur(4px); }
     .confirm-box { background: rgba(255, 255, 255, 0.96); border: 1px solid rgba(255,255,255,0.7); border-radius: 24px; padding: 28px; width: 380px; max-width: 94%; box-shadow: 0 28px 80px rgba(0,0,0,0.18); }
+    .confirm-box.address-confirm-box { width: 640px; max-height: 88vh; overflow-y: auto; }
     .confirm-box h3 { font-family: var(--font-heading); font-size: 18px; font-weight: 800; margin-bottom: 8px; letter-spacing: -0.02em; }
     .confirm-box p { font-size: 14px; color: var(--color-text-secondary); margin-bottom: 18px; line-height: 1.5; }
     .confirm-row { display: flex; gap: 10px; justify-content: flex-end; }
@@ -477,6 +478,8 @@
     .confirm-ok { padding: 10px 18px; border-radius: 12px; border: none; background: #c55d49; color: #fff; font-size: 13px; font-weight: 700; font-family: var(--font-body); cursor: pointer; }
     .confirm-ok:hover { background: #b04e3c; }
     .confirm-ok:disabled { opacity: 0.6; cursor: not-allowed; }
+    .action-address-form { margin: 14px 0 12px; }
+    .action-address-form .servi-addr { gap: 12px; }
     /* ─── Orders / history ─────────────────────────────────────────────── */
     .orders-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
     .orders-new-btn { flex: 0 0 auto; white-space: nowrap; gap: 9px; }
@@ -976,6 +979,7 @@ const TX = {
     cancelError: 'No pudimos cancelar el pedido. Intenta de nuevo.',
     cancelDone: 'Pedido cancelado.', cancelDoneFee: 'Pedido cancelado. Se aplicó la tarifa de cancelación.',
     addrRequired: 'Ingresa una dirección.', addrSaved: 'Dirección actualizada.',
+    addrEditHint: 'Separa calle, número, colonia y referencias para que el especialista encuentre el domicilio sin confusiones.',
     actionError: 'Algo salió mal. Intenta de nuevo.',
     reschedHint: 'Tu solicitud de cambio será revisada por nuestro equipo antes de confirmarse.',
     reschedSubmit: 'Enviar solicitud', reschedRequired: 'Elige una nueva fecha y hora.',
@@ -1102,6 +1106,7 @@ const TX = {
     cancelError: 'We could not cancel the order. Please try again.',
     cancelDone: 'Order canceled.', cancelDoneFee: 'Order canceled. The cancellation fee was applied.',
     addrRequired: 'Enter an address.', addrSaved: 'Address updated.',
+    addrEditHint: 'Separate street, number, neighborhood, and access notes so the specialist can find the address clearly.',
     actionError: 'Something went wrong. Please try again.',
     reschedHint: 'Your change request will be reviewed by our team before it is confirmed.',
     reschedSubmit: 'Send request', reschedRequired: 'Choose a new date and time.',
@@ -2477,11 +2482,11 @@ function showOrderToast(msg) {
 }
 
 // Builds a body-level modal that stacks above the order drawer (z-index 10000).
-function buildActionModal(innerHtml) {
+function buildActionModal(innerHtml, opts = {}) {
   const overlay = document.createElement('div');
   overlay.className = 'confirm-overlay';
   overlay.style.zIndex = '10001';
-  overlay.innerHTML = `<div class="confirm-box">${innerHtml}</div>`;
+  overlay.innerHTML = `<div class="confirm-box ${escapeHtml(opts.boxClass || '')}">${innerHtml}</div>`;
   overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
   document.body.appendChild(overlay);
   return overlay;
@@ -2537,21 +2542,37 @@ function openAddressForm(id) {
   const t = tr();
   const item = _orders.find(o => o.id === id);
   if (!item) return;
+  const prefix = 'action_addr';
+  const currentAddress = { street: item.address || '' };
   buildActionModal(`
     <h3>${escapeHtml(t.actEditAddress)}</h3>
-    <input class="form-input" id="action-addr-input" value="${escapeHtml(item.address || '')}" placeholder="${escapeHtml(t.drawerAddress)}" style="margin-bottom:12px;width:100%">
+    <p>${escapeHtml(t.addrEditHint)}</p>
+    <div class="action-address-form">
+      ${window.ServiAddress ? window.ServiAddress.fieldsHTML(prefix, { showLabel: false, openDetails: true }) : `
+        <input class="form-input" id="action-addr-input" value="${escapeHtml(item.address || '')}" placeholder="${escapeHtml(t.drawerAddress)}" style="margin-bottom:12px;width:100%">
+      `}
+    </div>
     <div id="action-modal-error" style="font-size:13px;color:#c55d49;margin:0 0 12px;min-height:16px"></div>
     <div class="confirm-row">
       <button class="confirm-cancel" onclick="this.closest('.confirm-overlay').remove()">${escapeHtml(t.cancelBtn)}</button>
       <button class="confirm-ok" onclick="submitAddress('${escapeHtml(id)}',this)">${escapeHtml(t.actSave)}</button>
-    </div>`);
-  setTimeout(() => document.getElementById('action-addr-input')?.focus(), 30);
+    </div>`, { boxClass: 'address-confirm-box' });
+  if (window.ServiAddress) window.ServiAddress.init(prefix, { address: currentAddress });
+  setTimeout(() => document.getElementById(window.ServiAddress ? `${prefix}_street` : 'action-addr-input')?.focus(), 30);
 }
 
 async function submitAddress(id, btn) {
   const t = tr();
   const errEl = document.getElementById('action-modal-error');
-  const val = String(document.getElementById('action-addr-input')?.value || '').trim();
+  let val = '';
+  if (window.ServiAddress && document.getElementById('action_addr_root')) {
+    const prefix = 'action_addr';
+    if (!window.ServiAddress.validate(prefix)) { if (errEl) errEl.textContent = t.addrRequired; return; }
+    const address = window.ServiAddress.collect(prefix);
+    val = window.ServiAddress.format(address).trim();
+  } else {
+    val = String(document.getElementById('action-addr-input')?.value || '').trim();
+  }
   if (!val) { if (errEl) errEl.textContent = t.addrRequired; return; }
   const prev = btn.textContent; btn.disabled = true; btn.textContent = '…';
   try {
