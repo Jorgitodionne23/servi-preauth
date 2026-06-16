@@ -10,6 +10,10 @@ on:
         description: 'Pass force=true to the endpoint (bypasses 24h window check)'
         required: false
         default: 'false'
+      endpoint:
+        description: 'Target backend base URL (override to test dev/staging). Leave blank for production.'
+        required: false
+        default: ''
 
 # Prevent overlapping runs: if a slow run is still in flight when the next hour fires,
 # the new one waits rather than racing. Stripe idempotency keys (pi-preauth-${order_id})
@@ -43,6 +47,18 @@ jobs:
           BODY="{}"
           if [ "$FORCE_FLAG" = "true" ]; then
             BODY='{"force":true}'
+          fi
+
+          # Allow a manual dispatch to target a different backend (dev/staging). The scheduled
+          # run never sets this input, so it keeps the production PREAUTH_ENDPOINT default above.
+          ENDPOINT_OVERRIDE="${{ github.event.inputs.endpoint }}"
+          if [ -n "$ENDPOINT_OVERRIDE" ]; then
+            # Accept either a base URL or a full path; normalize to the task endpoint.
+            case "$ENDPOINT_OVERRIDE" in
+              */tasks/preauth-due) PREAUTH_ENDPOINT="$ENDPOINT_OVERRIDE" ;;
+              */) PREAUTH_ENDPOINT="${ENDPOINT_OVERRIDE}tasks/preauth-due" ;;
+              *) PREAUTH_ENDPOINT="${ENDPOINT_OVERRIDE}/tasks/preauth-due" ;;
+            esac
           fi
 
           if [ -z "${ADMIN_API_TOKEN:-}" ]; then

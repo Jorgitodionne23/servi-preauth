@@ -3342,6 +3342,10 @@ app.post('/create-standalone-setup', async (req, res) => {
 
 app.post('/tasks/preauth-due', adminRateLimit, requireAdminAuth, async (req, res) => {
   try {
+    // force:true bypasses ONLY the 24h window bounds (for manual/testing dispatch). All
+    // eligibility filters (kind='book', saved card + customer, no existing PI, not cash) still
+    // apply — force never pre-authorizes an order that isn't otherwise ready.
+    const force = req.body?.force === true || String(req.body?.force).toLowerCase() === 'true';
     const { rows } = await pool.query(`
       /* Pick saved-card "book" orders that are entering the 24h preauth window */
       WITH service_ts AS (
@@ -3375,11 +3379,10 @@ app.post('/tasks/preauth-due', adminRateLimit, requireAdminAuth, async (req, res
       )
       SELECT id, amount, customer_id, saved_payment_method_id, parent_id_of_adjustment, kind, provider_id, provider_name, client_name, client_email, service_date, service_datetime
       FROM service_ts
-      WHERE svc_at >= NOW()
-        AND svc_at <  NOW() + INTERVAL '24 hours'
+      WHERE ($1::boolean OR (svc_at >= NOW() AND svc_at < NOW() + INTERVAL '24 hours'))
       ORDER BY svc_at ASC
       LIMIT 50
-    `);
+    `, [force]);
 
 
     const results = [];
