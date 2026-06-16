@@ -93,19 +93,79 @@
   }
 
   // ════════════════════════════ COMPOSE ════════════════════════════════════
-  var EXAMPLES = ['My kitchen sink is clogged and water’s backing up — need a plumber today',
-    'Deep clean for a 2-bedroom apartment this Saturday', 'Mount a 55" TV on the living-room wall'];
+  var SR_PLACEHOLDER_FALLBACKS = {
+    es: [
+      'Necesito una limpieza profunda para un departamento de 2 recámaras...',
+      'Tengo una fuga en la cocina y necesito un plomero hoy...',
+      'Quiero montar una TV de 55 pulgadas en la sala...',
+      'Necesito mover un sofá grande este fin de semana...',
+      'Busco masaje a domicilio para dos personas...',
+    ],
+    en: [
+      'Deep clean for a 2-bedroom apartment this Saturday...',
+      'My kitchen sink is leaking and I need a plumber today...',
+      'Mount a 55-inch TV on the living room wall...',
+      'Move a large sofa this weekend...',
+      'At-home massage for two people...',
+    ],
+  };
+  var srPlaceholderTimer = null;
+  var srPlaceholderIndex = 0;
   var MODE_TILES = [
     { key: 'video', label: 'Record a video', sub: 'Show the problem', icon: 'video' },
     { key: 'photos', label: 'Add photos', sub: 'Snap or upload', icon: 'camera' },
     { key: 'voice', label: 'Voice note', sub: 'Say it out loud', icon: 'mic' },
   ];
 
+  function srPlaceholderExamples() {
+    var dashHero = (window.__t && window.__t.dashHero) || {};
+    var examples = Array.isArray(dashHero.placeholderExamples) ? dashHero.placeholderExamples.filter(Boolean) : [];
+    if (examples.length) return examples;
+    return SR_PLACEHOLDER_FALLBACKS[curLang()] || SR_PLACEHOLDER_FALLBACKS.es;
+  }
+
+  function srPlaceholderText() {
+    var examples = srPlaceholderExamples();
+    return examples[srPlaceholderIndex % examples.length] || '';
+  }
+
+  function stopSrPlaceholderRotation() {
+    if (!srPlaceholderTimer) return;
+    clearInterval(srPlaceholderTimer);
+    srPlaceholderTimer = null;
+  }
+
+  function setSrPlaceholderExample(ta) {
+    if (!ta || document.activeElement === ta || ta.value.trim()) {
+      if (ta) ta.placeholder = '';
+      return;
+    }
+    ta.placeholder = srPlaceholderText();
+  }
+
+  function startSrPlaceholderRotation() {
+    var ta = document.getElementById('sr-ta');
+    if (!ta) return;
+    var examples = srPlaceholderExamples();
+    stopSrPlaceholderRotation();
+    setSrPlaceholderExample(ta);
+    if (document.activeElement === ta || ta.value.trim() || examples.length < 2) return;
+    srPlaceholderTimer = setInterval(function () {
+      if (document.activeElement === ta || ta.value.trim()) {
+        stopSrPlaceholderRotation();
+        ta.placeholder = '';
+        return;
+      }
+      srPlaceholderIndex = (srPlaceholderIndex + 1) % examples.length;
+      setSrPlaceholderExample(ta);
+    }, 2800);
+  }
+
   function composeHTML() {
     var boxInner;
     if (S.mode === 'text') {
       boxInner =
-        '<textarea class="sr-ta" id="sr-ta" rows="3" spellcheck="false" placeholder="' + esc(tr('placeholder', { ex: EXAMPLES[0] })) + '">' + esc(S.text) + '</textarea>' +
+        '<textarea class="sr-ta" id="sr-ta" rows="3" spellcheck="false" placeholder="' + esc(srPlaceholderText()) + '">' + esc(S.text) + '</textarea>' +
         (S.atts.length ? '<div class="sr-att-row">' + S.atts.map(function (a, i) {
           return '<div class="sr-att' + (a.uploading ? ' uploading' : '') + '">' + (a.sample ? '<div class="sr-att__ph">' + I.camera(16) + '</div>' : '<img src="' + a.url + '" alt="">') +
             '<button type="button" class="sr-att__x" data-action="remove-att:' + i + '">' + I.x(12) + '</button></div>';
@@ -363,7 +423,10 @@
     mountAddressFields();
     if (S.phase === 'compose' && S.mode === 'text') {
       var ta = document.getElementById('sr-ta');
-      if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+      if (ta && ta.value.trim()) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+      startSrPlaceholderRotation();
+    } else {
+      stopSrPlaceholderRotation();
     }
   }
 
@@ -724,15 +787,15 @@
   });
 
   document.addEventListener('input', function (e) {
-    if (e.target.id === 'sr-ta') { S.text = e.target.value; var send = document.querySelector('[data-action="send-text"]'); if (send) { send.disabled = !S.text.trim(); send.classList.toggle('sr-iconbtn--accent', !!S.text.trim()); send.classList.toggle('sr-iconbtn--solid', !S.text.trim()); } var box = document.getElementById('sr-box'); }
+    if (e.target.id === 'sr-ta') { S.text = e.target.value; var send = document.querySelector('[data-action="send-text"]'); if (send) { send.disabled = !S.text.trim(); send.classList.toggle('sr-iconbtn--accent', !!S.text.trim()); send.classList.toggle('sr-iconbtn--solid', !S.text.trim()); } if (S.text.trim()) { stopSrPlaceholderRotation(); e.target.placeholder = ''; } var box = document.getElementById('sr-box'); }
     else if (e.target.id === 'sr-addr') { S.address = e.target.value; }
     else if (e.target.closest && e.target.closest('#' + SR_ADDR_PREFIX + '_root')) { syncAddressFromFields(); }
     else if (e.target.id === 'sr-date') { S.date = e.target.value; var s = document.getElementById('sr-submit'); if (s) s.disabled = !(S.address.trim() && (S.when === 'asap' || S.date)); }
     else if (e.target.id === 'sr-time') { S.time = e.target.value; }
     else if (e.target.hasAttribute && e.target.hasAttribute('data-fup')) { S.answers[e.target.getAttribute('data-fup')] = e.target.value; }
   });
-  document.addEventListener('focusin', function (e) { if (e.target.id === 'sr-ta') { var b = document.getElementById('sr-box'); if (b) b.classList.add('focus'); } });
-  document.addEventListener('focusout', function (e) { if (e.target.id === 'sr-ta') { var b = document.getElementById('sr-box'); if (b) b.classList.remove('focus'); } });
+  document.addEventListener('focusin', function (e) { if (e.target.id === 'sr-ta') { stopSrPlaceholderRotation(); e.target.placeholder = ''; var b = document.getElementById('sr-box'); if (b) b.classList.add('focus'); } });
+  document.addEventListener('focusout', function (e) { if (e.target.id === 'sr-ta') { var b = document.getElementById('sr-box'); if (b) b.classList.remove('focus'); if (!e.target.value.trim()) startSrPlaceholderRotation(); } });
   document.addEventListener('keydown', function (e) {
     if (e.target.id === 'sr-ta' && e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitText(); }
     if (e.key === 'Escape') {
@@ -759,6 +822,7 @@
     }
   };
   window.closeSmartRequest = function () {
+    stopSrPlaceholderRotation();
     stopWave(); if (S.rec && S.rec.timer) clearInterval(S.rec.timer);
     var ov = document.getElementById('sr-overlay'); if (ov) ov.hidden = true;
     document.body.classList.remove('sr-open');
