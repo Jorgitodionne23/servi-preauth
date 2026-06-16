@@ -1857,7 +1857,15 @@ function openSubmissionLinkModal(subId) {
       <div style="margin-bottom:10px">
         <label class="form-label">Proveedor asignado</label>
         ${sub.preferred_provider_id ? `<div class="schedule-note" style="margin:0 0 7px;border-color:#6d28d9;background:#2e1065;color:#ddd6fe">⭐ <strong>Cliente recurrente</strong> — pidió a ${escapeHtml(sub.preferred_provider_name || sub.preferred_provider_id)} (${escapeHtml(sub.preferred_provider_id)}). Asígnalo si está disponible.</div>` : ''}
-        <input class="adm-input" id="sub-provider" placeholder="Nombre del proveedor" value="${escapeHtml(sub.preferred_provider_name || '')}" style="margin-bottom:0">
+        <div style="display:flex;gap:8px;margin-bottom:6px">
+          <input class="adm-input" id="sub-provider-search" placeholder="Buscar por nombre, especialidad o ID…" style="flex:1;margin-bottom:0" oninput="searchProvidersForSub()">
+          <select class="adm-input" id="sub-provider_id" style="flex:1;margin-bottom:0;background:#222" onchange="onSubProviderPick()">
+            <option value="">— Sin asignar —</option>
+            ${sub.preferred_provider_id ? `<option value="${escapeHtml(sub.preferred_provider_id)}" selected>⭐ ${escapeHtml((sub.preferred_provider_name || sub.preferred_provider_id) + ' · ' + sub.preferred_provider_id)}</option>` : ''}
+          </select>
+        </div>
+        <input class="adm-input" id="sub-provider" placeholder="Nombre del proveedor (texto libre)" value="${escapeHtml(sub.preferred_provider_name || '')}" style="margin-bottom:0">
+        <div class="schedule-helper" style="margin:6px 0 0">Asignar un especialista verificado habilita "Especialistas de confianza" para el cliente tras completar el servicio.</div>
       </div>
       <div style="margin-bottom:10px">
         <label class="form-label">Email del cliente</label>
@@ -1898,6 +1906,46 @@ function openSubmissionLinkModal(subId) {
   document.getElementById('sub-amount').focus();
 }
 
+let _subProvTimer = null;
+function searchProvidersForSub() {
+  clearTimeout(_subProvTimer);
+  _subProvTimer = setTimeout(_doSearchProvidersForSub, 300);
+}
+async function _doSearchProvidersForSub() {
+  const q = (document.getElementById('sub-provider-search')?.value || '').trim();
+  const sel = document.getElementById('sub-provider_id');
+  if (!sel) return;
+  const current = sel.value;
+  const currentLabel = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : '';
+  try {
+    const params = new URLSearchParams({ status: 'verified', limit: 25 });
+    if (q) params.set('search', q);
+    const res = await fetch(API + '/api/admin/providers?' + params, { headers: headers() });
+    const d = await res.json();
+    const items = d.items || [];
+    let opts = '<option value="">— Sin asignar —</option>';
+    // Keep the current pick selectable even if it's outside the search results.
+    if (current && !items.some(p => p.provider_id === current)) {
+      opts += `<option value="${escapeHtml(current)}" selected>${escapeHtml(currentLabel)}</option>`;
+    }
+    items.forEach(p => {
+      const label = `${p.name || '(sin nombre)'}${p.specialty ? ' · ' + p.specialty : ''} · ${p.provider_id}`;
+      opts += `<option value="${escapeHtml(p.provider_id)}"${p.provider_id === current ? ' selected' : ''}>${escapeHtml(label)}</option>`;
+    });
+    sel.innerHTML = opts;
+  } catch (e) { /* silent — search is best-effort */ }
+}
+function onSubProviderPick() {
+  // Auto-fill the free-text name field from the picked option when empty.
+  const sel = document.getElementById('sub-provider_id');
+  const nameEl = document.getElementById('sub-provider');
+  if (!sel || !nameEl) return;
+  if (!sel.value) return;
+  const txt = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : '';
+  const nm = (txt.replace(/^⭐\s*/, '').split(' · ')[0] || '').trim();
+  if (nm && nm !== '(sin nombre)' && !nameEl.value.trim()) nameEl.value = nm;
+}
+
 async function submitSubmissionLink(subId) {
   const overlay = document.getElementById('sub-modal-overlay');
   if (!overlay) return;
@@ -1908,6 +1956,7 @@ async function submitSubmissionLink(subId) {
   const amountRaw = parseFloat(document.getElementById('sub-amount').value);
   const bookingTypeKey = document.getElementById('sub-booking-type').value;
   const provider = document.getElementById('sub-provider').value.trim();
+  const providerId = (document.getElementById('sub-provider_id')?.value || '').trim() || sub.preferred_provider_id || undefined;
   const email = document.getElementById('sub-email').value.trim();
   const dtVal = document.getElementById('sub-datetime').value;
   const allowCashOnce = !!document.getElementById('sub-allow-cash')?.checked;
@@ -1945,7 +1994,7 @@ async function submitSubmissionLink(subId) {
         bookingType,
         capture: 'manual',
         providerName: provider || undefined,
-        providerId: sub.preferred_provider_id || undefined,
+        providerId,
         allowCashOnce,
         isAsap: orderIsAsap(sub) && !serviceDateTime,
         category: sub.category || undefined,

@@ -12,7 +12,7 @@
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@800&display=swap" rel="stylesheet">
 
   <style>
       * { box-sizing: border-box; }
@@ -40,8 +40,35 @@
       }
 
       .logo {
-        max-width: 150px;
+        color: #fff;
+        cursor: pointer;
+        display: inline-block;
+        font-family: "Outfit", "Inter", system-ui, sans-serif;
+        font-size: 30px;
+        font-weight: 800;
+        letter-spacing: -0.01em;
+        line-height: 1;
         margin-bottom: 6px;
+        position: relative;
+        text-decoration: none;
+        top: -1px;
+        white-space: nowrap;
+      }
+
+      .logo-dot {
+        background: currentColor;
+        border-radius: 0.34em 0.34em 0 0;
+        color: currentColor;
+        display: inline-block;
+        font-size: inherit;
+        height: 0.20em;
+        line-height: 1;
+        margin-left: 2px;
+        margin-bottom: 0;
+        overflow: hidden;
+        text-indent: 100%;
+        vertical-align: baseline;
+        width: 0.34em;
       }
 
       .container {
@@ -424,8 +451,8 @@
 </head>
 <body>
   <div class="page">
-    <a href="/index.html" rel="noopener">
-      <img src="logo-servi-white.png" alt="SERVI Logo" class="logo" />
+    <a href="/index.html" class="logo" rel="noopener" aria-label="SERVI">
+      SERVI<span class="logo-dot" aria-hidden="true">.</span>
     </a>
 
     <div class="container">
