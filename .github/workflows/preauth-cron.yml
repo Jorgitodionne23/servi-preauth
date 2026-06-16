@@ -4,6 +4,8 @@ on:
   schedule:
     # Runs at minute 5 of every hour (UTC). Offset by 5 min to avoid cold-start race.
     - cron: '5 * * * *'
+    # Staging simulation run. Offset from production so logs and failures are isolated.
+    - cron: '10 * * * *'
   workflow_dispatch:
     inputs:
       force:
@@ -20,7 +22,7 @@ on:
 # already prevent double-charging, but overlapping runs would still waste API calls and
 # pollute logs.
 concurrency:
-  group: preauth-cron
+  group: preauth-cron-${{ github.event_name == 'schedule' && github.event.schedule || 'manual' }}
   cancel-in-progress: false
 
 permissions:
@@ -34,6 +36,7 @@ jobs:
     timeout-minutes: 5
     env:
       PREAUTH_ENDPOINT: https://servi-preauth.onrender.com/tasks/preauth-due
+      STAGING_PREAUTH_ENDPOINT: https://servi-staging.onrender.com/tasks/preauth-due
 
     steps:
       - name: Ping Render — POST /tasks/preauth-due
@@ -45,13 +48,23 @@ jobs:
           set -eu
 
           FORCE_FLAG="${{ github.event.inputs.force }}"
+          if [ -z "$FORCE_FLAG" ]; then
+            FORCE_FLAG="false"
+          fi
           BODY="{}"
           if [ "$FORCE_FLAG" = "true" ]; then
             BODY='{"force":true}'
           fi
 
+          RUN_TARGET="production"
+          if [ "${{ github.event_name }}" = "schedule" ] && [ "${{ github.event.schedule }}" = "10 * * * *" ]; then
+            PREAUTH_ENDPOINT="$STAGING_PREAUTH_ENDPOINT"
+            RUN_TARGET="staging"
+          fi
+
           # Allow a manual dispatch to target a different backend (dev/staging). The scheduled
-          # run never sets this input, so it keeps the production PREAUTH_ENDPOINT default above.
+          # production run keeps the production PREAUTH_ENDPOINT default above; the scheduled
+          # staging run uses STAGING_PREAUTH_ENDPOINT.
           ENDPOINT_OVERRIDE="${{ github.event.inputs.endpoint }}"
           if [ -n "$ENDPOINT_OVERRIDE" ]; then
             # Accept either a base URL or a full path; normalize to the task endpoint.
@@ -60,6 +73,7 @@ jobs:
               */) PREAUTH_ENDPOINT="${ENDPOINT_OVERRIDE}tasks/preauth-due" ;;
               *) PREAUTH_ENDPOINT="${ENDPOINT_OVERRIDE}/tasks/preauth-due" ;;
             esac
+            RUN_TARGET="manual override"
           fi
 
           AUTH_TOKEN="$ADMIN_API_TOKEN"
@@ -79,7 +93,12 @@ jobs:
             exit 1
           fi
 
-          echo "Sending preauth-due request to $PREAUTH_ENDPOINT (force=$FORCE_FLAG)..."
+          {
+            echo "PREAUTH_RUN_TARGET=$RUN_TARGET"
+            echo "PREAUTH_RESOLVED_ENDPOINT=$PREAUTH_ENDPOINT"
+          } >> "$GITHUB_ENV"
+
+          echo "Sending preauth-due request to $PREAUTH_ENDPOINT (target=$RUN_TARGET, force=$FORCE_FLAG)..."
 
           CURL_EXIT=0
           HTTP_STATUS=$(curl -sS \
@@ -118,7 +137,7 @@ jobs:
             exit 1
           fi
 
-          echo "✅ preauth-due completed successfully"
+          echo "✅ preauth-due completed successfully for $RUN_TARGET"
 
       - name: Summarize results
         # Always run so the summary is visible even on partial failure.
@@ -134,6 +153,9 @@ jobs:
 
           {
             echo "### Preauth-due summary"
+            echo ""
+            echo "- Target: \`${PREAUTH_RUN_TARGET:-unknown}\`"
+            echo "- Endpoint: \`${PREAUTH_RESOLVED_ENDPOINT:-unknown}\`"
             echo ""
             echo "| Metric | Value |"
             echo "| --- | --- |"
@@ -159,11 +181,13 @@ jobs:
             exit 0
           fi
           PAYLOAD=$(jq -nc \
-            --arg text "🚨 SERVI preauth-due cron FAILED" \
+            --arg text "🚨 SERVI preauth-due cron FAILED (${PREAUTH_RUN_TARGET:-unknown})" \
             --arg run "$RUN_URL" \
+            --arg target "${PREAUTH_RUN_TARGET:-unknown}" \
+            --arg endpoint "${PREAUTH_RESOLVED_ENDPOINT:-unknown}" \
             '{text: $text, blocks: [
-              {type: "header", text: {type: "plain_text", text: "🚨 SERVI preauth-due cron FAILED"}},
-              {type: "section", text: {type: "mrkdwn", text: ("Run: <" + $run + "|view logs>\nThis means the hourly preauth job did not complete successfully. Saved-card customers entering the 24h window may not have had their cards pre-authorized.")}}
+              {type: "header", text: {type: "plain_text", text: $text}},
+              {type: "section", text: {type: "mrkdwn", text: ("Target: `" + $target + "`\nEndpoint: `" + $endpoint + "`\nRun: <" + $run + "|view logs>\nThis means the hourly preauth job did not complete successfully. Saved-card customers entering the 24h window may not have had their cards pre-authorized.")}}
             ]}')
           curl -sS -X POST -H "Content-Type: application/json" --data "$PAYLOAD" "$SLACK_WEBHOOK_URL" || true
 
@@ -177,7 +201,9 @@ jobs:
           set -eu
           # De-dupe by date+hour so a fully broken backend doesn't spam 24 issues/day.
           BUCKET=$(date -u '+%Y-%m-%d-%H')
-          TITLE="[preauth-cron] failure during $BUCKET UTC"
+          TARGET="${PREAUTH_RUN_TARGET:-unknown}"
+          ENDPOINT="${PREAUTH_RESOLVED_ENDPOINT:-unknown}"
+          TITLE="[preauth-cron][$TARGET] failure during $BUCKET UTC"
           # Skip creating a duplicate issue if one with the same title already exists open.
           EXISTING=$(gh issue list --state open --search "in:title \"$TITLE\"" --json number --jq '.[0].number // ""')
           if [ -n "$EXISTING" ]; then
@@ -188,6 +214,8 @@ jobs:
           The hourly auto-preauth cron failed.
 
           - Run: $RUN_URL
+          - Target: \`$TARGET\`
+          - Endpoint: \`$ENDPOINT\`
           - Hour bucket (UTC): \`$BUCKET\`
 
           ## Impact

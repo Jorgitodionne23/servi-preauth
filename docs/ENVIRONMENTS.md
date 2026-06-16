@@ -27,17 +27,20 @@ could clash with them. Configure the env vars below by hand and keep this doc in
 
 ## The hourly preauth cron
 
-`.github/workflows/preauth-cron.yml` runs hourly and **targets production only** (the
-`PREAUTH_ENDPOINT` default is `servi-preauth.onrender.com`).
+`.github/workflows/preauth-cron.yml` runs hourly for both deployed environments:
 
-- To exercise the cron against **staging**, use **Run workflow** (workflow_dispatch) and set the
-  `endpoint` input to the staging base URL (e.g. `https://servi-staging.onrender.com`). Leave it
-  blank for the normal production run.
+- Production runs at minute `5` of every hour UTC and targets
+  `https://servi-preauth.onrender.com/tasks/preauth-due`.
+- Staging runs at minute `10` of every hour UTC and targets
+  `https://servi-staging.onrender.com/tasks/preauth-due`.
+- To manually exercise a different target, use **Run workflow** (`workflow_dispatch`) and set the
+  `endpoint` input. Leave it blank for production.
 - `force=true` bypasses **only** the 24h window bounds (handy for testing); all eligibility filters
   still apply.
 - The dispatch uses `STAGING_ADMIN_API_TOKEN` when the endpoint is `https://servi-staging.onrender.com`;
-  otherwise it uses `ADMIN_API_TOKEN`. If the staging secret is missing or does not match Render's
-  staging `ADMIN_API_TOKEN`, the override will 401.
+  otherwise it uses `ADMIN_API_TOKEN`. The scheduled staging run also requires
+  `STAGING_ADMIN_API_TOKEN`; if it is missing or does not match Render's staging `ADMIN_API_TOKEN`,
+  the staging cron will fail before touching orders.
 
 ## Defense-in-depth (in code, independent of the topology above)
 
