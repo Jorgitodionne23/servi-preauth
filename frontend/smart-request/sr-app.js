@@ -112,9 +112,9 @@
   var srPlaceholderTimer = null;
   var srPlaceholderIndex = 0;
   var MODE_TILES = [
-    { key: 'video', label: 'Record a video', sub: 'Show the problem', icon: 'video' },
     { key: 'photos', label: 'Add photos', sub: 'Snap or upload', icon: 'camera' },
     { key: 'voice', label: 'Voice note', sub: 'Say it out loud', icon: 'mic' },
+    { key: 'video', label: 'Record a video', sub: 'Show the problem', icon: 'video' },
   ];
 
   function srPlaceholderExamples() {
@@ -245,7 +245,7 @@
       body = '<div class="sr-drop"><div class="sr-drop__icon">' + (isPhotos ? I.camera(26) : I.video(26)) + '</div>' +
         '<p class="sr-drop__title">' + esc(isPhotos ? tr('photosTitle') : tr('videoTitle')) + '</p>' +
         '<div class="sr-drop__btns">' + btn('secondary', 'sm', isPhotos ? tr('choosePhotos') : tr('uploadVideo'), { action: 'media-upload', iconLeft: I.upload(16) }) +
-          (!isPhotos ? btn('secondary', 'sm', tr('recordNow'), { action: 'media-record', iconLeft: I.video(16) }) : '') + '</div>' +
+          (!isPhotos && shouldOpenNativeVideoCapture() ? btn('secondary', 'sm', tr('recordNow'), { action: 'media-record', iconLeft: I.video(16) }) : '') + '</div>' +
         '<button type="button" class="sr-sample" data-action="media-sample">' + esc(tr('trySample')) + '</button></div>';
     }
     var note = isPhotos
