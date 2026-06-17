@@ -598,16 +598,28 @@
       background: rgba(255, 255, 255, 0.82);
       backdrop-filter: blur(16px);
       box-shadow: 0 24px 48px -34px rgba(17, 17, 17, 0.22);
-      padding: 12px 18px; cursor: pointer;
+      padding: 16px 18px; cursor: pointer;
       font-family: var(--font-body);
-      transition: transform var(--duration-fast), box-shadow var(--duration-fast), border-color var(--duration-fast);
+      overflow: hidden;
+      transition: transform var(--duration-fast), box-shadow var(--duration-fast), border-color var(--duration-fast), background var(--duration-fast);
     }
-    .hub-tile:hover { transform: translateY(-2px); border-color: var(--account-accent-ring); box-shadow: 0 26px 52px -30px rgba(17, 17, 17, 0.3); }
+    .hub-tile::after {
+      content: "";
+      position: absolute;
+      inset: auto -20% -42% 36%;
+      height: 86px;
+      background: radial-gradient(circle, rgba(149, 204, 213, 0.18), transparent 66%);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity var(--duration-fast), transform var(--duration-fast);
+    }
+    .hub-tile:hover { transform: translateY(-2px); border-color: var(--account-accent-ring); background: rgba(255, 255, 255, 0.92); box-shadow: 0 26px 52px -30px rgba(17, 17, 17, 0.3); }
+    .hub-tile:hover::after { opacity: 1; transform: translateY(-4px); }
     .hub-tile:focus-visible { outline: none; border-color: var(--color-accent); box-shadow: 0 0 0 4px var(--account-accent-ring); }
     .hub-tile:active { transform: translateY(0); }
     .hub-tile.active { border-color: var(--color-accent); box-shadow: 0 0 0 1.5px var(--color-accent), 0 24px 48px -34px rgba(17, 17, 17, 0.22); }
     .hub-tile-orders { grid-row: span 2; }
-    .hub-tile-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+    .hub-tile-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
     .hub-tile-icon {
       width: 32px; height: 32px; flex: 0 0 32px; border-radius: 10px;
       display: inline-flex; align-items: center; justify-content: center;
@@ -616,21 +628,46 @@
     .hub-tile-icon svg { width: 18px; height: 18px; stroke: currentColor; fill: none; }
     .hub-tile-label { font-family: var(--font-heading); font-size: 15px; font-weight: 800; letter-spacing: -0.01em; color: var(--color-text); line-height: 1.2; }
     .hub-tile-orders .hub-tile-label { font-size: 18px; }
-    .hub-metrics { display: flex; align-items: flex-end; gap: 18px; }
-    .hub-metric { display: flex; flex-direction: column; gap: 4px; }
-    .hub-metric-num { font-family: var(--font-heading); font-weight: 800; letter-spacing: -0.02em; color: var(--color-text); line-height: 0.95; font-size: 26px; }
-    .hub-tile-orders .hub-metric-num.is-primary { font-size: 34px; }
-    .hub-metric-cap { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-text-muted); }
+    .hub-summary { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; min-width: 0; }
+    .hub-metrics { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .hub-metric { display: inline-flex; align-items: center; gap: 5px; min-width: 0; }
+    .hub-metric-num { font-family: var(--font-heading); font-weight: 800; letter-spacing: 0; color: var(--color-text); line-height: 1; font-size: 17px; font-variant-numeric: tabular-nums; }
+    .hub-tile-orders .hub-metric-num.is-primary { font-size: 20px; }
+    .hub-metric-cap { font-size: 11px; font-weight: 750; color: var(--color-text-muted); line-height: 1.25; }
     .hub-spacer { flex: 1 1 auto; min-height: 0; }
-    .hub-status { font-size: 13px; color: var(--color-text-secondary); line-height: 1.45; }
+    .hub-status { display: block; min-width: 0; font-size: 13px; color: var(--color-text-secondary); line-height: 1.45; }
     .hub-status.is-action { color: #a16207; font-weight: 700; }
-    .hub-cta { align-self: flex-start; margin-top: 8px; }
+    .hub-actions { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-top: 12px; }
+    .hub-action {
+      position: relative;
+      z-index: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      min-height: 36px;
+      padding: 9px 13px;
+      border: 1px solid rgba(16, 18, 19, 0.14);
+      border-radius: 12px;
+      background: var(--color-text);
+      color: #fff;
+      font-size: 12.5px;
+      font-weight: 800;
+      line-height: 1;
+      box-shadow: 0 16px 28px -22px rgba(17, 17, 17, 0.72);
+      transition: transform var(--duration-fast), background var(--duration-fast), border-color var(--duration-fast), box-shadow var(--duration-fast);
+    }
+    .hub-action-arrow { font-size: 14px; line-height: 1; transform: translateY(-0.5px); transition: transform var(--duration-fast); }
+    .hub-tile:hover .hub-action { background: var(--color-accent-hover); border-color: var(--color-accent-hover); box-shadow: 0 18px 30px -20px rgba(63, 142, 157, 0.48); }
+    .hub-tile:hover .hub-action-arrow { transform: translate(2px, -0.5px); }
+    .hub-tile.active .hub-action { background: var(--color-accent); border-color: var(--color-accent); color: #fff; }
+    .hub-cta { position: relative; z-index: 1; align-self: flex-start; margin-top: 0; padding: 9px 13px; min-height: 36px; border-radius: 12px; font-size: 12.5px; box-shadow: none; }
     /* skeleton placeholders while a count loads */
     .hub-sk { color: transparent !important; border-radius: 8px;
       background: linear-gradient(100deg, rgba(17,17,17,0.05) 28%, rgba(17,17,17,0.09) 50%, rgba(17,17,17,0.05) 72%);
       background-size: 220% 100%; animation: skShimmer 1.3s ease-in-out infinite; }
-    .hub-metric-num.hub-sk { display: inline-block; width: 48px; height: 28px; }
-    .hub-tile-orders .hub-metric-num.is-primary.hub-sk { width: 64px; height: 38px; }
+    .hub-metric-num.hub-sk { display: inline-block; width: 28px; height: 18px; }
+    .hub-tile-orders .hub-metric-num.is-primary.hub-sk { width: 34px; height: 20px; }
     .hub-status.hub-sk { display: inline-block; width: 150px; height: 13px; }
     /* ─── Orders / history ─────────────────────────────────────────────── */
     .orders-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
@@ -904,6 +941,9 @@
       .orders-hub { grid-template-columns: 1fr; height: auto; }
       .hub-tile-orders { grid-row: auto; }
       .hub-tile { padding: 20px; }
+      .hub-actions { width: 100%; }
+      .hub-action,
+      .hub-cta { flex: 1 1 auto; min-width: 132px; }
       .orders-head { flex-direction: column; align-items: stretch; }
       .orders-new-btn { width: 100%; }
       .orders-segment { display: grid; grid-template-columns: 1fr 1fr; }
@@ -1242,6 +1282,9 @@ const TX = {
     ordersNew: 'Nueva solicitud',
     // Orders hub (promoted workspace)
     hubActiveCap: 'Activos', hubPastCap: 'Historial',
+    hubOrdersView: 'Ver pedidos',
+    hubSpecManage: 'Gestionar especialistas',
+    hubFavView: 'Ver favoritos',
     hubOrdersAction: (n) => n === 1 ? '1 pedido necesita tu atención' : `${n} pedidos necesitan tu atención`,
     hubOrdersInProgress: (n) => n === 1 ? '1 servicio en curso' : `${n} servicios en curso`,
     hubOrdersNone: 'Sin pedidos activos por ahora',
@@ -1426,6 +1469,9 @@ const TX = {
     ordersNew: 'New request',
     // Orders hub (promoted workspace)
     hubActiveCap: 'Active', hubPastCap: 'History',
+    hubOrdersView: 'View orders',
+    hubSpecManage: 'Manage specialists',
+    hubFavView: 'View favorites',
     hubOrdersAction: (n) => n === 1 ? '1 order needs your attention' : `${n} orders need your attention`,
     hubOrdersInProgress: (n) => n === 1 ? '1 service in progress' : `${n} services in progress`,
     hubOrdersNone: 'No active orders right now',
@@ -1695,20 +1741,26 @@ function hubKey(e, section) {
   if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); switchSection(section); }
 }
 
-function hubSmallTile(section, icon, label, loaded, count, readyCopyFn, emptyCopy) {
+function hubActionHtml(label) {
+  return `<span class="hub-action">${escapeHtml(label)}<span class="hub-action-arrow" aria-hidden="true">&rarr;</span></span>`;
+}
+
+function hubSmallTile(section, icon, label, actionLabel, loaded, count, readyCopyFn, emptyCopy) {
   let body;
   if (!loaded) {
-    body = `<div class="hub-metrics"><div class="hub-metric"><span class="hub-metric-num hub-sk">0</span></div></div>
-      <div class="hub-spacer"></div><span class="hub-status hub-sk">·</span>`;
+    body = `<div class="hub-summary"><div class="hub-metrics"><div class="hub-metric"><span class="hub-metric-num hub-sk">0</span></div></div>
+      <span class="hub-status hub-sk">·</span></div>`;
   } else {
     const status = count ? readyCopyFn(count) : emptyCopy;
-    body = `<div class="hub-metrics"><div class="hub-metric"><span class="hub-metric-num">${count}</span></div></div>
-      <div class="hub-spacer"></div><span class="hub-status">${escapeHtml(status)}</span>`;
+    body = `<div class="hub-summary"><div class="hub-metrics"><div class="hub-metric"><span class="hub-metric-num">${count}</span></div></div>
+      <span class="hub-status">${escapeHtml(status)}</span></div>`;
   }
   return `<div class="hub-tile hub-tile-small${activeSection === section ? ' active' : ''}" role="button" tabindex="0"
     aria-label="${escapeHtml(label)}" onclick="switchSection('${section}')" onkeydown="hubKey(event,'${section}')">
     <div class="hub-tile-head"><span class="hub-tile-icon">${icon}</span><span class="hub-tile-label">${escapeHtml(label)}</span></div>
     ${body}
+    <div class="hub-spacer"></div>
+    <div class="hub-actions">${hubActionHtml(actionLabel)}</div>
   </div>`;
 }
 
@@ -1721,8 +1773,8 @@ function renderOrdersHub() {
   let ordersBody;
   if (!_ordersLoaded) {
     ordersBody = `
-      <div class="hub-metrics"><div class="hub-metric"><span class="hub-metric-num is-primary hub-sk">0</span><span class="hub-metric-cap">${escapeHtml(t.hubActiveCap)}</span></div></div>
-      <div class="hub-spacer"></div><span class="hub-status hub-sk">·</span>`;
+      <div class="hub-summary"><div class="hub-metrics"><div class="hub-metric"><span class="hub-metric-num is-primary hub-sk">0</span><span class="hub-metric-cap">${escapeHtml(t.hubActiveCap)}</span></div></div>
+      <span class="hub-status hub-sk">·</span></div>`;
   } else {
     const active = _orders.filter(o => o.bucket !== 'past');
     const past = _orders.filter(o => o.bucket === 'past');
@@ -1731,11 +1783,12 @@ function renderOrdersHub() {
     if (actionable.length) { status = t.hubOrdersAction(actionable.length); statusCls = ' is-action'; }
     else if (active.length) { status = t.hubOrdersInProgress(active.length); }
     ordersBody = `
+      <div class="hub-summary">
       <div class="hub-metrics">
         <div class="hub-metric"><span class="hub-metric-num is-primary">${active.length}</span><span class="hub-metric-cap">${escapeHtml(t.hubActiveCap)}</span></div>
         <div class="hub-metric"><span class="hub-metric-num">${past.length}</span><span class="hub-metric-cap">${escapeHtml(t.hubPastCap)}</span></div>
       </div>
-      <div class="hub-spacer"></div><span class="hub-status${statusCls}">${escapeHtml(status)}</span>`;
+      <span class="hub-status${statusCls}">${escapeHtml(status)}</span></div>`;
   }
 
   hub.innerHTML = `
@@ -1743,10 +1796,14 @@ function renderOrdersHub() {
       aria-label="${escapeHtml(t.navOrders)}" onclick="switchSection('orders')" onkeydown="hubKey(event,'orders')">
       <div class="hub-tile-head"><span class="hub-tile-icon">${HUB_ICONS.orders}</span><span class="hub-tile-label">${escapeHtml(t.navOrders)}</span></div>
       ${ordersBody}
-      <a class="btn-save hub-cta" href="/smart-request.html" onclick="event.stopPropagation()">${escapeHtml(t.ordersNew)}</a>
+      <div class="hub-spacer"></div>
+      <div class="hub-actions">
+        ${hubActionHtml(t.hubOrdersView)}
+        <a class="btn-save hub-cta" href="/smart-request.html" onclick="event.stopPropagation()">${escapeHtml(t.ordersNew)}</a>
+      </div>
     </div>
-    ${hubSmallTile('specialists', HUB_ICONS.specialists, t.navSpecialists, _specialistsLoaded, _specialists.length, t.hubSpecReady, t.hubSpecEmpty)}
-    ${hubSmallTile('favorites', HUB_ICONS.favorites, t.navFavorites, _favoritesLoaded, _favoriteServices.length, t.hubFavReady, t.hubFavEmpty)}`;
+    ${hubSmallTile('specialists', HUB_ICONS.specialists, t.navSpecialists, t.hubSpecManage, _specialistsLoaded, _specialists.length, t.hubSpecReady, t.hubSpecEmpty)}
+    ${hubSmallTile('favorites', HUB_ICONS.favorites, t.navFavorites, t.hubFavView, _favoritesLoaded, _favoriteServices.length, t.hubFavReady, t.hubFavEmpty)}`;
 }
 
 // ─── Pre-fill personal info ───────────────────────────────────────────────────

@@ -278,6 +278,12 @@
     .action-btn--capture  { background:rgba(0,123,255,0.14); color:#5fa3ff; border-color:rgba(0,123,255,0.32); }
     .action-btn--cancel   { background:rgba(220,53,69,0.10); color:var(--danger-soft); border-color:rgba(220,53,69,0.28); }
     .action-btn--refund   { background:rgba(167,139,250,0.12); color:#a78bfa; border-color:rgba(167,139,250,0.3); }
+    .action-btn--schedule { background:#2b2513; color:#f1c40f; border-color:#57491f; }
+    .action-btn--link     { background:#1f2937; color:#93c5fd; border-color:#334155; }
+    .action-btn--cash     { background:#1f1a0d; color:#fbbf24; border-color:#4a3a1a; }
+    .action-btn--provider { background:rgba(40,167,69,0.12); color:#4ade80; border-color:rgba(40,167,69,0.30); }
+    .action-btn--review   { background:rgba(116,184,196,0.10); color:var(--accent); border-color:rgba(116,184,196,0.28); }
+    .action-btn--muted    { background:#20232f; color:#aeb4c8; border-color:#34394d; }
     .action-btns { display:flex; gap:6px; flex-wrap:wrap; }
 
     /* ─── Lightweight admin modal ─────────────────────────────────────────── */
@@ -999,6 +1005,7 @@ let ordersTimer = null;
 let ordersAttentionOnly = false;
 let _lastOpsRadar = null;
 const _subsCache = {};
+const _ordersCache = {};
 
 function headers() { return { 'Authorization': 'Bearer ' + TOKEN, 'Content-Type': 'application/json' }; }
 function escapeHtml(value) {
@@ -1139,10 +1146,17 @@ function scheduleDetailHtml(o) {
       </div>`;
   }
   if (o.service_datetime) {
+    const status = orderStatusKey(o.status);
+    const badgeLabel = status === 'confirmed'
+      ? 'Confirmado'
+      : status === 'scheduled'
+        ? 'Agendado'
+        : 'Hora definida';
+    const badgeCls = (status === 'confirmed' || status === 'scheduled') ? '' : ' schedule-badge--partial';
     return `
       <div class="schedule-card">
         <div class="schedule-card__top">
-          <span class="schedule-badge">Confirmado</span>
+          <span class="schedule-badge${badgeCls}">${badgeLabel}</span>
           <span class="schedule-card__meta">${escapeHtml(ht.label !== '—' ? 'Faltan ' + ht.label : 'Sin contador')}</span>
         </div>
         <div class="schedule-card__main">${escapeHtml(fmtServiceDate(o.service_datetime))}</div>
@@ -1231,6 +1245,61 @@ function orderStatusLabel(status) {
   return exact[s] || titleCase(raw);
 }
 
+function orderStatusKey(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function orderHasPaymentIntent(o) {
+  return /^pi_/.test(String(o?.payment_intent_id || '').trim());
+}
+
+function orderHasExactTime(o) {
+  return Boolean(o?.service_datetime);
+}
+
+function orderServiceTarget(o) {
+  const raw = o?.service_datetime || o?.service_date || '';
+  if (!raw) return null;
+  const dt = isDateOnly(raw) ? new Date(raw + 'T00:00:00') : new Date(raw);
+  return isNaN(dt.getTime()) ? null : dt;
+}
+
+function orderHoursToService(o) {
+  const target = orderServiceTarget(o);
+  if (!target) return null;
+  return (target.getTime() - Date.now()) / 3.6e6;
+}
+
+function orderIsCapturedStatus(status) {
+  return orderStatusKey(status).startsWith('captured');
+}
+
+function orderIsCashStatus(o) {
+  return Boolean(o?.cash_selected) || orderStatusKey(o?.status) === 'pending cash';
+}
+
+function orderIsTerminalStatus(status) {
+  const s = orderStatusKey(status);
+  return s.startsWith('captured')
+    || s.startsWith('cancel')
+    || s === 'refunded'
+    || s === 'pending cash';
+}
+
+function orderIsPaymentFailedStatus(status) {
+  const s = orderStatusKey(status);
+  return s.includes('declined')
+    || s.includes('failed')
+    || s.includes('requires_action')
+    || s.includes('authentication_required')
+    || s.includes('payment update')
+    || s.includes('update payment');
+}
+
+function jsArg(value) {
+  return JSON.stringify(String(value ?? ''));
+}
+
 function opsSeverityLabel(severity) {
   if (severity === 'critical') return 'Crítico';
   if (severity === 'soon') return 'Próximo';
@@ -1295,21 +1364,21 @@ function buildOpsActionBtns(o, { includeSnooze = true } = {}) {
   const ops = o?.ops || {};
   if (!ops.code || ops.code === 'safe') return [];
   const id = o.id;
-  const authorized = Number(o.pricing_total_amount || o.amount || 0);
+  const authorized = authorizedAmountForOrder(o);
   const btns = [];
   if (ops.code === 'preauth_due' || (ops.code === 'starting_soon' && ops.actionLabel === 'Autorizar ahora')) {
-    btns.push(`<button class="action-btn action-btn--capture" onclick="preauthNow('${id}')" title="Intentar autorización con tarjeta guardada">Autorizar ahora</button>`);
+    btns.push(renderActionButton(actionPreauth(id)));
   } else if (ops.code === 'capture_due' || ops.code === 'capture_overdue') {
-    btns.push(`<button class="action-btn action-btn--capture" onclick="captureOrder('${id}', ${authorized})" title="Capturar pago">Capturar</button>`);
+    btns.push(renderActionButton(actionCapture(id, authorized, 'Capturar pago')));
   } else if (ops.code === 'needs_schedule') {
-    btns.push(`<button class="action-btn" style="background:#2b2513;color:#f1c40f;border:1px solid #57491f" onclick="openOrderEdit('${id}')" title="Asignar fecha y hora">Agendar</button>`);
+    btns.push(renderActionButton(actionSchedule(id)));
   } else if (ops.code === 'payment_failed') {
-    btns.push(`<button class="action-btn" style="background:#1f2937;color:#93c5fd;border:1px solid #334155" onclick="regenerateLink('${id}')" title="Enviar enlace actualizado">Enviar enlace</button>`);
+    btns.push(renderActionButton(actionLink(id, 'Enviar enlace', 'Enviar enlace actualizado')));
   } else {
-    btns.push(`<button class="action-btn" onclick="openOrderDetail('${id}')" title="Revisar orden">Revisar</button>`);
+    btns.push(renderActionButton(actionReview(id)));
   }
   if (includeSnooze && !ops.isSnoozed) {
-    btns.push(`<button class="action-btn" style="background:#20232f;color:#aeb4c8;border:1px solid #34394d" onclick="snoozeOps('${id}', '${ops.code}', '15m')" title="Ocultar de Ops Radar por 15 minutos">Snooze</button>`);
+    btns.push(renderActionButton(actionSnooze(id, ops.code)));
   }
   return btns;
 }
@@ -1902,6 +1971,7 @@ async function loadOrders() {
 
     const orderItems = ordersAttentionOnly ? (d.items || []).filter(orderNeedsAttention) : (d.items || []);
     const orderRows = orderItems.map(o => {
+      _ordersCache[o.id] = o;
       const ht = computeHoursToService(o);
       const rowClass = opsRowClass(o, ht.rowClass);
       const cellClass = opsCellClass(o, ht.cellClass);
@@ -1919,7 +1989,7 @@ async function loadOrders() {
         <td>${scheduleRowText(o)}</td>
         <td class="hours-cell ${cellClass}">${escapeHtml(timeLabel)}</td>
         <td><span class="badge ${badgeClass(o.status)}">${escapeHtml(orderStatusLabel(o.status))}</span>${o.has_pending_change ? ' <span class="badge badge-pending" title="Solicitud de cambio pendiente por revisar">⏳ Cambio</span>' : ''}${opsLine}</td>
-        <td onclick="event.stopPropagation()">${buildActionBtns(o)}</td>
+        <td onclick="event.stopPropagation()">${buildPrimaryActionBtns(o)}</td>
       </tr>`;
     }).join('');
 
@@ -2238,44 +2308,306 @@ function copySubLink() {
 }
 
 // ─── Action button builder ───────────────────────────────────────────────────
-function buildActionBtns(o) {
-  const s = (o.status || '').toLowerCase();
-  const id = o.id;
-  const authorized = Number(o.pricing_total_amount || o.amount || 0);
+function authorizedAmountForOrder(o) {
+  return Number(o?.pricing_total_amount || o?.amount || 0);
+}
+
+function makeAction({ key, label, variant = 'review', title = '', handler = '', primary = false }) {
+  return { key, label, variant, title: title || label, handler, primary };
+}
+
+function actionPreauth(id) {
+  return makeAction({
+    key: 'preauth',
+    label: 'Autorizar ahora',
+    variant: 'capture',
+    title: 'Intentar autorización con tarjeta guardada',
+    handler: `preauthNow(${jsArg(id)})`,
+    primary: true
+  });
+}
+
+function actionCapture(id, authorized, title = 'Capturar pago (total o parcial)') {
+  return makeAction({
+    key: 'capture',
+    label: 'Capturar',
+    variant: 'capture',
+    title,
+    handler: `captureOrder(${jsArg(id)}, ${Number(authorized) || 0})`,
+    primary: true
+  });
+}
+
+function actionSchedule(id) {
+  return makeAction({
+    key: 'schedule',
+    label: 'Agendar',
+    variant: 'schedule',
+    title: 'Asignar fecha y hora',
+    handler: `openOrderEditFromAction(${jsArg(id)})`,
+    primary: true
+  });
+}
+
+function actionLink(id, label = 'Enlace', title = 'Regenerar enlace de pago') {
+  return makeAction({
+    key: 'link',
+    label,
+    variant: 'link',
+    title,
+    handler: `regenerateLink(${jsArg(id)})`,
+    primary: true
+  });
+}
+
+function actionReview(id) {
+  return makeAction({
+    key: 'review',
+    label: 'Revisar',
+    variant: 'review',
+    title: 'Revisar orden',
+    handler: `openOrderDetail(${jsArg(id)})`,
+    primary: true
+  });
+}
+
+function actionAssignProvider(id) {
+  return makeAction({
+    key: 'assign_provider',
+    label: 'Asignar proveedor',
+    variant: 'schedule',
+    title: 'Asignar proveedor antes del servicio',
+    handler: `openOrderEditFromAction(${jsArg(id)})`,
+    primary: true
+  });
+}
+
+function actionProviderReminder(id) {
+  return makeAction({
+    key: 'provider_reminder',
+    label: 'Recordar proveedor',
+    variant: 'provider',
+    title: 'Enviar recordatorio por WhatsApp al proveedor',
+    handler: `contactProviderForOrder(${jsArg(id)})`,
+    primary: true
+  });
+}
+
+function actionCancel(id) {
+  return makeAction({
+    key: 'cancel',
+    label: 'Cancelar',
+    variant: 'cancel',
+    title: 'Cancelar orden',
+    handler: `cancelOrder(${jsArg(id)})`
+  });
+}
+
+function actionRefund(id, authorized) {
+  return makeAction({
+    key: 'refund',
+    label: 'Reembolso',
+    variant: 'refund',
+    title: 'Reembolsar',
+    handler: `refundOrder(${jsArg(id)}, ${Number(authorized) || 0})`,
+    primary: true
+  });
+}
+
+function actionCash(id) {
+  return makeAction({
+    key: 'cash',
+    label: 'Efectivo',
+    variant: 'cash',
+    title: 'Marcar como pago en efectivo',
+    handler: `markAsCash(${jsArg(id)})`
+  });
+}
+
+function actionSnooze(id, code) {
+  return makeAction({
+    key: 'snooze',
+    label: 'Snooze',
+    variant: 'muted',
+    title: 'Ocultar de Ops Radar por 15 minutos',
+    handler: `snoozeOps(${jsArg(id)}, ${jsArg(code)}, '15m')`
+  });
+}
+
+function renderActionButton(action) {
+  if (!action) return '';
+  const cls = `action-btn action-btn--${action.variant || 'review'}`;
+  return `<button class="${escapeHtml(cls)}" onclick="${escapeHtml(action.handler)}" title="${escapeHtml(action.title)}">${escapeHtml(action.label)}</button>`;
+}
+
+function renderActionButtons(actions) {
+  const html = (actions || []).filter(Boolean).map(renderActionButton).join('');
+  return html ? `<div class="action-btns">${html}</div>` : '<span style="color:#444;font-size:11px">—</span>';
+}
+
+function orderNeedsSchedulingAction(o) {
+  if (orderIsTerminalStatus(o?.status) || orderIsCashStatus(o)) return false;
+  return o?.ops?.code === 'needs_schedule'
+    || (orderIsAsap(o) && !orderHasExactTime(o))
+    || !orderHasExactTime(o);
+}
+
+function orderIsPendingLike(status) {
+  const s = orderStatusKey(status);
+  return ['pending', 'new', 'setup required', 'setup created', 'pending (3ds)', 'blocked'].includes(s);
+}
+
+function orderCanRegenerateLink(o) {
+  const s = orderStatusKey(o?.status);
+  if (orderIsTerminalStatus(s) || orderIsCashStatus(o)) return false;
+  if (o?.ops?.code === 'payment_failed') return true;
+  if (s === 'scheduled' || s === 'confirmed') return false;
+  return orderIsPendingLike(s) || orderIsPaymentFailedStatus(s);
+}
+
+function orderCanCancel(o) {
+  const s = orderStatusKey(o?.status);
+  return !orderIsTerminalStatus(s)
+    && !orderIsCashStatus(o)
+    && !['declined', 'failed'].includes(s);
+}
+
+function orderCanCash(o) {
+  return ['pending', 'scheduled', 'confirmed', 'new'].includes(orderStatusKey(o?.status))
+    && !orderIsCashStatus(o);
+}
+
+function providerReminderWindowOpen(o) {
+  const h = orderHoursToService(o);
+  return h !== null && h >= 0 && h <= 6;
+}
+
+function primaryOrderAction(o) {
+  const s = orderStatusKey(o?.status);
+  const id = o?.id;
+  if (!id || orderIsCashStatus(o)) return null;
+
   const opsCode = o?.ops?.code || '';
-  const btns = buildOpsActionBtns(o);
+  const authorized = authorizedAmountForOrder(o);
+  const hasPi = orderHasPaymentIntent(o);
+  const h = orderHoursToService(o);
+  const insidePreauthWindow = h !== null && h >= 0 && h <= 24;
 
-  // Capture (full or partial) — only for orders in manual pre-auth state
-  const capturable = s === 'scheduled' || s === 'confirmed';
-  if (capturable && !['capture_due', 'capture_overdue'].includes(opsCode)) {
-    btns.push(`<button class="action-btn action-btn--capture" onclick="captureOrder('${id}', ${authorized})" title="Capturar pago (total o parcial)">⚡ Capturar</button>`);
+  if (orderIsCapturedStatus(s)) return actionRefund(id, authorized);
+  if (orderIsTerminalStatus(s)) return null;
+  if (opsCode === 'capture_due' || opsCode === 'capture_overdue') return actionCapture(id, authorized, 'Capturar pago');
+  if (orderNeedsSchedulingAction(o)) return actionSchedule(id);
+  if (opsCode === 'payment_failed' || orderIsPaymentFailedStatus(s)) return actionLink(id, 'Enviar enlace', 'Enviar enlace actualizado');
+  if (opsCode === 'preauth_due' || (opsCode === 'starting_soon' && o?.ops?.actionLabel === 'Autorizar ahora')) return actionPreauth(id);
+  if (s === 'scheduled' && insidePreauthWindow && !hasPi) return actionPreauth(id);
+  if (s === 'confirmed' && hasPi) return actionCapture(id, authorized);
+
+  if ((s === 'scheduled' || s === 'confirmed') && providerReminderWindowOpen(o)) {
+    return o.provider_id ? actionProviderReminder(id) : actionAssignProvider(id);
   }
 
-  // Cancel — anything not already captured/canceled/refunded
-  const notCancelable = new Set(['captured', 'canceled', 'cancelled', 'refunded', 'declined', 'failed', 'canceled (expired)', 'captured (partial refund)', 'pending cash']);
-  if (!notCancelable.has(s)) {
-    btns.push(`<button class="action-btn action-btn--cancel" onclick="cancelOrder('${id}')" title="Cancelar orden">✕ Cancelar</button>`);
-  }
+  if (orderCanRegenerateLink(o)) return actionLink(id);
+  if (opsCode && opsCode !== 'safe') return actionReview(id);
+  return null;
+}
 
-  // Refund — only for captured orders
-  const refundable = s === 'captured' || s === 'captured (partial refund)';
-  if (refundable) {
-    btns.push(`<button class="action-btn action-btn--refund" onclick="refundOrder('${id}', ${authorized})" title="Reembolsar">↩ Reembolso</button>`);
-  }
+function secondaryOrderActions(o, primary) {
+  const id = o?.id;
+  if (!id) return [];
+  const authorized = authorizedAmountForOrder(o);
+  const actions = [];
 
-  // Regenerate payment link — for any order awaiting payment (not yet captured/canceled/refunded)
-  const linkRegenerable = !['captured', 'canceled', 'cancelled', 'refunded', 'captured (partial refund)', 'pending cash'].includes(s);
-  if (linkRegenerable && opsCode !== 'payment_failed') {
-    btns.push(`<button class="action-btn" style="background:#1f2937;color:#93c5fd;border:1px solid #334155" onclick="regenerateLink('${id}')" title="Regenerar enlace de pago (extiende 2h)">🔗 Enlace</button>`);
-  }
+  if (orderCanCancel(o)) actions.push(actionCancel(id));
+  if (orderCanRegenerateLink(o)) actions.push(actionLink(id));
+  if (orderCanCash(o)) actions.push(actionCash(id));
 
-  // Mark as cash — only for orders in pending/scheduled/confirmed states
-  const cashable = ['pending', 'scheduled', 'confirmed', 'new'].includes(s);
-  if (cashable) {
-    btns.push(`<button class="action-btn" style="background:#1f1a0d;color:#fbbf24;border:1px solid #4a3a1a" onclick="markAsCash('${id}')" title="Marcar como pago en efectivo">💵 Efectivo</button>`);
+  const s = orderStatusKey(o?.status);
+  if ((s === 'scheduled' || s === 'confirmed') && providerReminderWindowOpen(o)) {
+    actions.push(o.provider_id ? actionProviderReminder(id) : actionAssignProvider(id));
   }
+  if (orderIsCapturedStatus(s)) actions.push(actionRefund(id, authorized));
 
-  return btns.length ? `<div class="action-btns">${btns.join('')}</div>` : '<span style="color:#444;font-size:11px">—</span>';
+  const seen = new Set(primary ? [primary.key] : []);
+  return actions.filter(action => {
+    if (!action || seen.has(action.key)) return false;
+    seen.add(action.key);
+    return true;
+  });
+}
+
+function buildOrderActions(o, { includeSecondary = true } = {}) {
+  const primary = primaryOrderAction(o);
+  return [primary, ...(includeSecondary ? secondaryOrderActions(o, primary) : [])].filter(Boolean);
+}
+
+function buildPrimaryActionBtns(o) {
+  return renderActionButtons(buildOrderActions(o, { includeSecondary: false }));
+}
+
+function buildActionBtns(o) {
+  return renderActionButtons(buildOrderActions(o, { includeSecondary: true }));
+}
+
+function normalizeWhatsappDigits(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (digits.length === 10) return '52' + digits;
+  return digits;
+}
+
+function providerReminderMessage(order, provider) {
+  const code = order.public_code || order.id?.slice(0, 8) || 'orden';
+  const providerName = provider?.name || order.provider_name || '';
+  const parts = [
+    `Hola ${providerName || 'equipo'}, soy del equipo SERVI.`,
+    `Te escribo para confirmar la orden ${code} de ${order.client_name || 'cliente'}.`,
+    `Servicio: ${fmtServiceDateTime(order.service_date, order.service_datetime)}.`,
+  ];
+  if (order.service_address) parts.push(`Direccion: ${order.service_address}.`);
+  parts.push('Me confirmas por favor que sigues disponible y listo para atenderla?');
+  return parts.join('\n');
+}
+
+async function findProviderForOrder(order) {
+  const providerId = String(order?.provider_id || '').trim();
+  if (!providerId) return null;
+  const params = new URLSearchParams({ search: providerId, limit: 25 });
+  const res = await fetch(API + '/api/admin/providers?' + params, { headers: headers() });
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(d.message || d.error || `HTTP ${res.status}`);
+  return (d.items || []).find(p => String(p.provider_id || '') === providerId) || null;
+}
+
+async function contactProviderForOrder(orderId) {
+  const order = _ordersCache[orderId] || (_detailOrderCache?.id === orderId ? _detailOrderCache : null);
+  if (!order) { toast('No se encontró la orden en el panel. Abre el detalle e intenta de nuevo.', 'err'); return; }
+  if (!order.provider_id) { openOrderEditFromAction(orderId); return; }
+  try {
+    const provider = await findProviderForOrder(order);
+    if (!provider) { toast('No se encontró el proveedor asignado en el roster.', 'err'); return; }
+    const phone = normalizeWhatsappDigits(provider.phone);
+    if (!phone) { toast('El proveedor no tiene teléfono registrado.', 'warn'); return; }
+    const url = `https://wa.me/${phone}?text=${encodeURIComponent(providerReminderMessage(order, provider))}`;
+    window.open(url, '_blank', 'noopener');
+  } catch (err) {
+    toast('No se pudo preparar el recordatorio: ' + err.message, 'err');
+  }
+}
+
+async function openOrderEditFromAction(orderId) {
+  if (_detailOrderCache?.id === orderId) { openOrderEdit(orderId); return; }
+  const cached = _ordersCache[orderId];
+  if (cached) _detailOrderCache = cached;
+  try {
+    const res = await fetch(API + '/api/admin/orders/' + encodeURIComponent(orderId), { headers: headers() });
+    if (res.ok) {
+      const d = await res.json();
+      if (d.order) {
+        _ordersCache[orderId] = d.order;
+        _detailOrderCache = d.order;
+      }
+    }
+  } catch (_) {}
+  openOrderEdit(orderId);
 }
 
 // ─── Lightweight in-page modal ────────────────────────────────────────────────
@@ -2889,6 +3221,7 @@ async function openOrderDetail(orderId) {
 function renderOrderDetail(o, adjustments) {
   document.getElementById('op-title').textContent = o.public_code || o.id.slice(0,8);
   _detailOrderCache = o;
+  _ordersCache[o.id] = o;
   const piLink = o.payment_intent_id
       ? `<a class="sp-stripe-btn" href="https://dashboard.stripe.com/payments/${encodeURIComponent(o.payment_intent_id)}" target="_blank" rel="noopener">Ver en Stripe ↗</a>`
       : '';
