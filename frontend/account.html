@@ -748,6 +748,95 @@
     .order-empty-emoji { font-size: 34px; line-height: 1; margin-bottom: 14px; }
     .order-empty-title { font-size: 16px; font-weight: 800; color: var(--color-text); margin-bottom: 6px; }
     .order-empty-text { font-size: 13px; color: var(--color-text-secondary); line-height: 1.5; margin-bottom: 18px; max-width: 360px; margin-left: auto; margin-right: auto; }
+    /* ─── Orders view switch (List / Calendar) ─────────────────────────── */
+    .orders-viewtabs { display: inline-flex; gap: 4px; padding: 4px; background: rgba(255,255,255,0.7); border: 1px solid var(--color-border); border-radius: 14px; flex: 0 0 auto; }
+    .ov-tab { display: inline-flex; align-items: center; gap: 7px; padding: 9px 15px; border: none; background: none; cursor: pointer; font-family: var(--font-body); font-size: 13px; font-weight: 700; color: var(--color-text-secondary); border-radius: 10px; transition: background var(--duration-fast), color var(--duration-fast); }
+    .ov-tab svg { width: 15px; height: 15px; stroke: currentColor; fill: none; }
+    .ov-tab:hover { color: var(--color-text); }
+    .ov-tab.active { background: var(--color-text); color: #fff; }
+    /* ─── Service Calendar ─────────────────────────────────────────────── */
+    .cal-wrap { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+    .cal-main { border: 1px solid var(--color-border); border-radius: 22px; background: rgba(255,255,255,0.82); backdrop-filter: blur(14px); padding: 18px; }
+    .cal-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+    .cal-title { font-family: var(--font-heading); font-size: 18px; font-weight: 800; letter-spacing: -0.01em; color: var(--color-text); text-transform: capitalize; }
+    .cal-nav { display: inline-flex; align-items: center; gap: 6px; }
+    .cal-nav-btn { width: 34px; height: 34px; border-radius: 11px; border: 1px solid var(--color-border); background: #fff; color: var(--color-text); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; font-size: 16px; transition: background var(--duration-fast), border-color var(--duration-fast); }
+    .cal-nav-btn:hover { background: var(--color-surface); border-color: var(--account-accent-ring); }
+    .cal-today-btn { padding: 0 13px; height: 34px; border-radius: 11px; border: 1px solid var(--color-border); background: #fff; color: var(--color-text); font-family: var(--font-body); font-size: 12.5px; font-weight: 700; cursor: pointer; transition: background var(--duration-fast); }
+    .cal-today-btn:hover { background: var(--color-surface); }
+    .cal-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-bottom: 6px; }
+    .cal-weekday { text-align: center; font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-text-muted); padding: 4px 0; }
+    .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+    .cal-cell { position: relative; min-height: 64px; border: 1px solid transparent; border-radius: 13px; background: rgba(17,17,17,0.022); padding: 7px 8px 6px; cursor: pointer; display: flex; flex-direction: column; gap: 4px; transition: background var(--duration-fast), border-color var(--duration-fast), transform var(--duration-fast); text-align: left; }
+    .cal-cell:hover { background: rgba(17,17,17,0.05); }
+    .cal-cell.empty { background: transparent; cursor: default; pointer-events: none; }
+    .cal-cell.has-events { background: var(--account-accent-soft); }
+    .cal-cell.selected { border-color: var(--color-accent); background: #fff; box-shadow: 0 0 0 1.5px var(--color-accent); }
+    .cal-cell.today .cal-daynum { background: var(--color-text); color: #fff; }
+    .cal-cell.past { opacity: 0.55; }
+    .cal-daynum { font-size: 12.5px; font-weight: 700; color: var(--color-text); width: 23px; height: 23px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; }
+    .cal-dots { display: flex; flex-wrap: wrap; gap: 3px; margin-top: auto; }
+    .cal-dot { width: 7px; height: 7px; border-radius: 999px; background: var(--dot, #95ccd5); }
+    .cal-dot.ring { background: #fff; box-shadow: inset 0 0 0 2px var(--dot, #95ccd5); }
+    .cal-more { font-size: 9.5px; font-weight: 800; color: var(--color-text-muted); line-height: 1; }
+    .cal-side { display: flex; flex-direction: column; gap: 16px; }
+    .cal-agenda, .cal-recurring { border: 1px solid var(--color-border); border-radius: 20px; background: rgba(255,255,255,0.82); backdrop-filter: blur(14px); padding: 18px; }
+    .cal-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
+    .cal-panel-title { font-family: var(--font-heading); font-size: 15px; font-weight: 800; letter-spacing: -0.01em; color: var(--color-text); }
+    .cal-panel-sub { font-size: 12px; color: var(--color-text-muted); font-weight: 600; }
+    .cal-add-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 13px; border-radius: 11px; border: none; background: var(--color-text); color: #fff; font-family: var(--font-body); font-size: 12px; font-weight: 700; cursor: pointer; transition: background var(--duration-fast), transform var(--duration-fast); white-space: nowrap; }
+    .cal-add-btn:hover { background: var(--color-accent); transform: translateY(-1px); }
+    .cal-event { display: grid; grid-template-columns: 42px 1fr auto; gap: 12px; align-items: center; padding: 11px 0; cursor: pointer; }
+    .cal-event + .cal-event { border-top: 1px solid rgba(17,17,17,0.06); }
+    .cal-event-icon { width: 42px; height: 42px; border-radius: 13px; display: inline-flex; align-items: center; justify-content: center; font-size: 19px; background: var(--order-tint, var(--color-surface)); }
+    .cal-event-main { min-width: 0; }
+    .cal-event-title { font-size: 14px; font-weight: 800; color: var(--color-text); line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cal-event-meta { font-size: 12px; color: var(--color-text-muted); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cal-event-time { font-size: 12.5px; font-weight: 800; color: var(--color-text-secondary); white-space: nowrap; text-align: right; }
+    .cal-tag { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; }
+    .cal-tag.recurring { background: rgba(146,166,228,0.18); color: #4f5bb0; }
+    .cal-empty { text-align: center; padding: 22px 12px; color: var(--color-text-muted); font-size: 13px; line-height: 1.5; }
+    .cal-legend { display: flex; flex-wrap: wrap; gap: 9px 14px; margin-top: 14px; padding-top: 14px; border-top: 1px solid rgba(17,17,17,0.06); }
+    .cal-legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 600; color: var(--color-text-secondary); }
+    .cal-legend-dot { width: 9px; height: 9px; border-radius: 999px; background: var(--dot, #95ccd5); }
+    /* Recurring plan cards */
+    .rec-card { border: 1px solid var(--color-border); border-radius: 16px; background: rgba(255,255,255,0.7); padding: 14px; }
+    .rec-card + .rec-card { margin-top: 12px; }
+    .rec-card.paused { opacity: 0.72; }
+    .rec-card-top { display: grid; grid-template-columns: 40px 1fr auto; gap: 12px; align-items: start; }
+    .rec-icon { width: 40px; height: 40px; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; font-size: 19px; background: var(--order-tint, var(--color-surface)); }
+    .rec-title { font-size: 14.5px; font-weight: 800; color: var(--color-text); line-height: 1.25; }
+    .rec-cadence { font-size: 12.5px; color: var(--color-text-secondary); margin-top: 2px; font-weight: 600; }
+    .rec-meta { font-size: 12px; color: var(--color-text-muted); margin-top: 4px; display: flex; flex-wrap: wrap; gap: 3px 12px; }
+    .rec-status { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 999px; font-size: 10.5px; font-weight: 800; white-space: nowrap; }
+    .rec-status::before { content: ""; width: 6px; height: 6px; border-radius: 999px; background: currentColor; }
+    .rec-status.active { background: rgba(31,122,58,0.13); color: #1f7a3a; }
+    .rec-status.paused { background: rgba(161,98,7,0.12); color: #a16207; }
+    .rec-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(17,17,17,0.06); }
+    .rec-empty { border: 1.5px dashed rgba(149,204,213,0.55); border-radius: 16px; padding: 22px 16px; text-align: center; background: rgba(255,255,255,0.55); }
+    .rec-empty-title { font-size: 14.5px; font-weight: 800; color: var(--color-text); margin-bottom: 5px; }
+    .rec-empty-text { font-size: 12.5px; color: var(--color-text-secondary); line-height: 1.5; margin-bottom: 14px; }
+    /* Recurring setup modal */
+    .rec-form { display: flex; flex-direction: column; gap: 14px; margin: 16px 0; text-align: left; }
+    .rec-field { display: flex; flex-direction: column; gap: 6px; }
+    .rec-field-label { font-size: 12px; font-weight: 800; color: var(--color-text-secondary); text-transform: uppercase; letter-spacing: 0.04em; }
+    .rec-field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .rec-input, .rec-select, .rec-textarea { width: 100%; padding: 11px 13px; border: 1.5px solid var(--color-border-input); border-radius: 12px; font-family: var(--font-body); font-size: 14px; color: var(--color-text); background: #fff; }
+    .rec-input:focus, .rec-select:focus, .rec-textarea:focus { outline: none; border-color: var(--color-accent); box-shadow: 0 0 0 3px var(--account-accent-ring); }
+    .rec-textarea { resize: vertical; min-height: 64px; }
+    .rec-weekdays { display: flex; gap: 6px; flex-wrap: wrap; }
+    .rec-wd { width: 38px; height: 38px; border-radius: 11px; border: 1.5px solid var(--color-border-input); background: #fff; color: var(--color-text-secondary); font-family: var(--font-body); font-size: 12.5px; font-weight: 700; cursor: pointer; transition: all var(--duration-fast); }
+    .rec-wd.on { background: var(--color-text); color: #fff; border-color: var(--color-text); }
+    .rec-freq-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+    .rec-chip { padding: 9px 14px; border-radius: 11px; border: 1.5px solid var(--color-border-input); background: #fff; color: var(--color-text-secondary); font-family: var(--font-body); font-size: 13px; font-weight: 700; cursor: pointer; transition: all var(--duration-fast); }
+    .rec-chip.on { background: var(--account-accent-soft); color: #2b6d77; border-color: var(--color-accent); }
+    .confirm-box.rec-modal-box { width: 560px; max-height: 90vh; overflow-y: auto; }
+    @media (max-width: 900px) {
+      .cal-wrap { grid-template-columns: 1fr; }
+      .cal-cell { min-height: 52px; }
+      .rec-field-row { grid-template-columns: 1fr; }
+      .confirm-box.rec-modal-box { width: 94%; }
+    }
     /* Detail drawer */
     .order-drawer-overlay { position: fixed; inset: 0; background: rgba(17, 17, 17, 0.42); backdrop-filter: blur(4px); z-index: 10000; opacity: 0; pointer-events: none; transition: opacity 0.32s ease; }
     .order-drawer-overlay.open { opacity: 1; pointer-events: auto; }
@@ -882,16 +971,46 @@
               <div class="section-title" id="title-orders">Mis pedidos</div>
               <div class="section-sub" id="sub-orders" style="margin-bottom:0">Da seguimiento a tus solicitudes y revisa tu historial.</div>
             </div>
+            <div class="orders-viewtabs" id="orders-viewtabs" role="tablist">
+              <button class="ov-tab active" data-view="list" role="tab" onclick="switchOrdersView('list')">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>
+                <span id="ov-list-label">Lista</span>
+              </button>
+              <button class="ov-tab" data-view="calendar" role="tab" onclick="switchOrdersView('calendar')">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16" rx="2.5"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/></svg>
+                <span id="ov-cal-label">Calendario</span>
+              </button>
+            </div>
           </div>
-          <div class="orders-segment" id="orders-segment" role="tablist">
-            <button class="orders-seg-btn active" role="tab" data-bucket="active" onclick="switchOrdersBucket('active')">
-              <span id="orders-seg-active">Activos</span><span class="orders-seg-count" id="orders-count-active" hidden></span>
-            </button>
-            <button class="orders-seg-btn" role="tab" data-bucket="past" onclick="switchOrdersBucket('past')">
-              <span id="orders-seg-past">Historial</span><span class="orders-seg-count" id="orders-count-past" hidden></span>
-            </button>
+
+          <!-- List view -->
+          <div id="orders-list-view">
+            <div class="orders-segment" id="orders-segment" role="tablist">
+              <button class="orders-seg-btn active" role="tab" data-bucket="active" onclick="switchOrdersBucket('active')">
+                <span id="orders-seg-active">Activos</span><span class="orders-seg-count" id="orders-count-active" hidden></span>
+              </button>
+              <button class="orders-seg-btn" role="tab" data-bucket="past" onclick="switchOrdersBucket('past')">
+                <span id="orders-seg-past">Historial</span><span class="orders-seg-count" id="orders-count-past" hidden></span>
+              </button>
+            </div>
+            <div class="orders-list" id="orders-list"></div>
           </div>
-          <div class="orders-list" id="orders-list"></div>
+
+          <!-- Calendar view (rendered by renderCalendar()) -->
+          <div id="orders-calendar-view" hidden>
+            <div class="cal-wrap">
+              <div class="cal-main">
+                <div class="cal-toolbar" id="cal-toolbar"></div>
+                <div class="cal-weekdays" id="cal-weekdays"></div>
+                <div class="cal-grid" id="cal-grid"></div>
+                <div class="cal-legend" id="cal-legend"></div>
+              </div>
+              <aside class="cal-side">
+                <div class="cal-agenda" id="cal-agenda"></div>
+                <div class="cal-recurring" id="cal-recurring"></div>
+              </aside>
+            </div>
+          </div>
         </section>
 
         <!-- Personal Info -->
@@ -1173,6 +1292,35 @@ const TX = {
     payGenerating: 'Generando enlace…',
     payNotAvailable: 'Este pedido ya no está disponible para pago en línea. Contáctanos por WhatsApp si necesitas ayuda.',
     payError: 'No pudimos abrir el pago. Intenta de nuevo.',
+    // Service Calendar
+    ovList: 'Lista', ovCalendar: 'Calendario',
+    calToday: 'Hoy', calPrev: 'Mes anterior', calNext: 'Mes siguiente',
+    calUpcoming: 'Próximos servicios', calUpcomingEmpty: 'No tienes servicios programados próximamente.',
+    calDayEmpty: 'Sin servicios este día.',
+    calOneService: '1 servicio', calNServices: (n) => `${n} servicios`,
+    calClear: 'Ver próximos', calRecurringTag: 'Recurrente',
+    calRecurringTitle: 'Servicios recurrentes', calNewRecurring: 'Programar recurrente',
+    calRecEmptyTitle: 'Crea una rutina con tu especialista',
+    calRecEmptyText: 'Programa un servicio que se repita —semanal, quincenal o mensual— con tu especialista de confianza. Nosotros lo organizamos por ti.',
+    calNext: 'Próximo', calActive: 'Activo', calPaused: 'En pausa',
+    calPause: 'Pausar', calResume: 'Reanudar', calEdit: 'Editar', calCancelPlan: 'Cancelar',
+    calCancelConfirm: '¿Cancelar este servicio recurrente? No se generarán nuevas solicitudes.',
+    calCancelGeneric: 'No pudimos completar la acción. Intenta de nuevo.',
+    calCanceledDone: 'Servicio recurrente cancelado.',
+    calNewTitle: 'Programar servicio recurrente', calEditTitle: 'Editar servicio recurrente',
+    calCategory: 'Categoría', calSpecialist: 'Especialista', calSpecialistHint: 'Es una preferencia. Si no está disponible, asignaremos a otro especialista verificado.',
+    calNoPreference: 'Sin preferencia',
+    calFrequency: 'Frecuencia',
+    calFreqDaily: 'Diario', calFreqWeekly: 'Semanal', calFreqBiweekly: 'Quincenal', calFreqMonthly: 'Mensual', calFreqCustom: 'Personalizado',
+    calOnDays: 'Días de la semana', calDayOfMonth: 'Día del mes', calEveryNDays: 'Cada cuántos días',
+    calTime: 'Hora', calStart: 'Inicia', calAddress: 'Dirección (opcional)', calAddressPh: 'Calle, número, colonia…',
+    calDetails: 'Detalles (opcional)', calDetailsPh: '¿Algo que el especialista deba saber?',
+    calCreatePlan: 'Crear', calSavePlan: 'Guardar cambios',
+    calCreatedDone: 'Servicio recurrente programado.', calSavedDone: 'Cambios guardados.',
+    calErrCategory: 'Elige una categoría.', calErrStart: 'Elige una fecha de inicio.',
+    calErrWeekdays: 'Elige al menos un día de la semana.', calErrInterval: 'Indica cada cuántos días se repite.',
+    calErrProvider: 'Este especialista no está disponible. Elige otro o quita la preferencia.',
+    calErrPhone: 'Verifica tu teléfono para programar servicios recurrentes.',
     titleInfo: 'Información personal', subInfo: 'Actualiza tu nombre, correo y teléfono.',
     titleSecurity: 'Seguridad', subSecurity: 'Información de acceso a tu cuenta.',
     titleAddresses: 'Mis direcciones', subAddresses: 'Guarda tus domicilios para agilizar tus solicitudes.',
@@ -1328,6 +1476,35 @@ const TX = {
     payGenerating: 'Generating link…',
     payNotAvailable: 'This order is no longer available for online payment. Contact us on WhatsApp if you need help.',
     payError: 'We could not open the payment. Please try again.',
+    // Service Calendar
+    ovList: 'List', ovCalendar: 'Calendar',
+    calToday: 'Today', calPrev: 'Previous month', calNext: 'Next month',
+    calUpcoming: 'Upcoming services', calUpcomingEmpty: 'You have no services scheduled soon.',
+    calDayEmpty: 'No services on this day.',
+    calOneService: '1 service', calNServices: (n) => `${n} services`,
+    calClear: 'See upcoming', calRecurringTag: 'Recurring',
+    calRecurringTitle: 'Recurring services', calNewRecurring: 'Schedule recurring',
+    calRecEmptyTitle: 'Set a routine with your specialist',
+    calRecEmptyText: 'Schedule a service that repeats —weekly, biweekly, or monthly— with your trusted specialist. We organize it for you.',
+    calNext: 'Next', calActive: 'Active', calPaused: 'Paused',
+    calPause: 'Pause', calResume: 'Resume', calEdit: 'Edit', calCancelPlan: 'Cancel',
+    calCancelConfirm: 'Cancel this recurring service? No new requests will be generated.',
+    calCancelGeneric: 'We could not complete the action. Please try again.',
+    calCanceledDone: 'Recurring service canceled.',
+    calNewTitle: 'Schedule recurring service', calEditTitle: 'Edit recurring service',
+    calCategory: 'Category', calSpecialist: 'Specialist', calSpecialistHint: "It's a preference. If they're unavailable, we'll assign another verified specialist.",
+    calNoPreference: 'No preference',
+    calFrequency: 'Frequency',
+    calFreqDaily: 'Daily', calFreqWeekly: 'Weekly', calFreqBiweekly: 'Every 2 weeks', calFreqMonthly: 'Monthly', calFreqCustom: 'Custom',
+    calOnDays: 'Days of the week', calDayOfMonth: 'Day of month', calEveryNDays: 'Every how many days',
+    calTime: 'Time', calStart: 'Starts', calAddress: 'Address (optional)', calAddressPh: 'Street, number, neighborhood…',
+    calDetails: 'Details (optional)', calDetailsPh: 'Anything the specialist should know?',
+    calCreatePlan: 'Create', calSavePlan: 'Save changes',
+    calCreatedDone: 'Recurring service scheduled.', calSavedDone: 'Changes saved.',
+    calErrCategory: 'Choose a category.', calErrStart: 'Choose a start date.',
+    calErrWeekdays: 'Choose at least one weekday.', calErrInterval: 'Set how many days between services.',
+    calErrProvider: 'This specialist is unavailable. Pick another or remove the preference.',
+    calErrPhone: 'Verify your phone to schedule recurring services.',
     titleInfo: 'Personal information', subInfo: 'Update your name, email, and phone.',
     titleSecurity: 'Security', subSecurity: 'Your account access information.',
     titleAddresses: 'My addresses', subAddresses: 'Save your addresses to speed up your requests.',
@@ -2669,6 +2846,7 @@ function specialistCardHtml(s) {
   if (s.available) {
     if (!s.isPreferred) actions.push(`<button class="addr-btn default-btn" onclick="setPreferredSpecialist('${escapeHtml(s.id)}')">${escapeHtml(t.specPreferNext)}</button>`);
     actions.push(`<button class="addr-btn default-btn" onclick="bookAgainSpecialist('${escapeHtml(s.providerId)}','${escapeHtml(s.category)}')">${escapeHtml(t.specBookAgain)}</button>`);
+    actions.push(`<button class="addr-btn default-btn" onclick="scheduleRecurringWithSpecialist('${escapeHtml(s.providerId)}','${escapeHtml(s.category)}')">${escapeHtml(t.calNewRecurring)}</button>`);
   }
   actions.push(`<button class="addr-btn default-btn" onclick="editSpecialistNickname('${escapeHtml(s.id)}')">${escapeHtml(t.specEditNick)}</button>`);
   actions.push(`<button class="addr-btn delete-btn" onclick="removeTrustedSpecialist('${escapeHtml(s.id)}')">${escapeHtml(t.specRemove)}</button>`);
@@ -2914,6 +3092,8 @@ function renderOrders() {
   const items = _orders.filter(o => (o.bucket === 'past' ? 'past' : 'active') === _ordersBucket);
   list.innerHTML = items.length ? items.map((it, i) => orderCardHtml(it, i)).join('') : ordersEmptyHtml();
   renderOrdersHub();
+  // Keep the calendar in sync when it's the active view (orders reload on tab return / actions).
+  if (_ordersView === 'calendar') renderCalendar();
 }
 
 function switchOrdersBucket(bucket) {
@@ -2921,6 +3101,544 @@ function switchOrdersBucket(bucket) {
   _ordersBucket = bucket;
   document.querySelectorAll('.orders-seg-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.bucket === bucket));
   renderOrders();
+}
+
+// ═══ Service Calendar ══════════════════════════════════════════════════════════
+// A month view of the user's scheduled services + projected recurring occurrences,
+// plus a panel to manage recurring plans. Reads the already-loaded _orders array and
+// a _recurring list (GET /api/auth/recurring-services); recurring occurrences are
+// projected client-side with the same civil-date math the backend cron uses.
+let _ordersView = 'list';
+let _recurring = [];
+let _recurringLoaded = false;
+let _recurringLoading = false;
+let _calMonth = null;          // Date anchored to the 1st of the visible month (local)
+let _calSelectedDay = null;    // 'YYYY-MM-DD' or null (null → upcoming agenda)
+
+// Solid category colors for calendar dots/legend (readable on white).
+const CATEGORY_DOT = {
+  cleaning: '#3a9bb0', repair: '#cf8a1e', moving: '#5b6fd8',
+  wellness: '#cf6a9b', suppliers: '#3aa85a', custom: '#9b7fd4',
+};
+function categoryDot(cat) { return CATEGORY_DOT[String(cat || '').toLowerCase()] || CATEGORY_DOT.custom; }
+
+// ── Civil-date helpers (mirror backend enumerateOccurrences) ──
+function _ymdU(ymd) { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(ymd || '')); if (!m) return null; const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])); return isNaN(d.getTime()) ? null : d; }
+function _uYmd(d) { return d.toISOString().slice(0, 10); }
+function _addU(d, n) { const x = new Date(d.getTime()); x.setUTCDate(x.getUTCDate() + n); return x; }
+function ymdLocal(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
+function todayYmd() { return ymdLocal(new Date()); }
+function parseWdCsvArr(arr) { return [...new Set((Array.isArray(arr) ? arr : String(arr || '').split(',')).map(n => parseInt(n, 10)).filter(n => Number.isInteger(n) && n >= 0 && n <= 6))].sort((a, b) => a - b); }
+
+// Project recurring occurrence date-keys for a plan within [fromYmd, toYmd] inclusive.
+function projectRecurring(plan, fromYmd, toYmd, max = 60) {
+  const c = plan.cadence || {};
+  const start = _ymdU(plan.startDate);
+  const windowEnd = _ymdU(toYmd);
+  if (!start || !windowEnd) return [];
+  const wsRaw = _ymdU(fromYmd);
+  let ws = wsRaw && wsRaw.getTime() > start.getTime() ? wsRaw : start;
+  const planEnd = plan.endDate ? _ymdU(plan.endDate) : null;
+  const hardEnd = planEnd && planEnd.getTime() < windowEnd.getTime() ? planEnd : windowEnd;
+  if (ws.getTime() > hardEnd.getTime()) return [];
+  const freq = String(c.frequency || '').toLowerCase();
+  const interval = Math.max(1, parseInt(c.intervalCount, 10) || 1);
+  const out = [];
+  if (freq === 'daily' || freq === 'custom') {
+    const step = freq === 'daily' ? 1 : interval;
+    const diff = Math.floor((ws.getTime() - start.getTime()) / 86400000);
+    const k = Math.max(0, Math.ceil(diff / step));
+    let d = _addU(start, k * step);
+    while (d.getTime() <= hardEnd.getTime() && out.length < max) { if (d.getTime() >= ws.getTime()) out.push(_uYmd(d)); d = _addU(d, step); }
+  } else if (freq === 'weekly' || freq === 'biweekly') {
+    const weekStep = freq === 'biweekly' ? 2 : interval;
+    let wds = parseWdCsvArr(c.weekdays); if (!wds.length) wds = [start.getUTCDay()];
+    const anchor = _addU(start, -start.getUTCDay());
+    const wsSun = _addU(ws, -ws.getUTCDay());
+    let wi = Math.max(0, Math.floor((wsSun.getTime() - anchor.getTime()) / (7 * 86400000)));
+    wi -= (wi % weekStep);
+    let wkStart = _addU(anchor, wi * 7);
+    while (wkStart.getTime() <= hardEnd.getTime() && out.length < max) {
+      for (const wd of wds) { const d = _addU(wkStart, wd); if (d.getTime() >= start.getTime() && d.getTime() >= ws.getTime() && d.getTime() <= hardEnd.getTime()) out.push(_uYmd(d)); }
+      wkStart = _addU(wkStart, weekStep * 7);
+    }
+    out.sort();
+  } else if (freq === 'monthly') {
+    let dom = parseInt(c.dayOfMonth, 10); if (!Number.isInteger(dom) || dom < 1 || dom > 31) dom = start.getUTCDate();
+    let y = ws.getUTCFullYear(), mo = ws.getUTCMonth();
+    while (out.length < max) {
+      const last = new Date(Date.UTC(y, mo + 1, 0)).getUTCDate();
+      const d = new Date(Date.UTC(y, mo, Math.min(dom, last)));
+      if (d.getTime() > hardEnd.getTime()) break;
+      if (d.getTime() >= start.getTime() && d.getTime() >= ws.getTime()) out.push(_uYmd(d));
+      mo += 1; if (mo > 11) { mo = 0; y += 1; }
+    }
+  }
+  return out.slice(0, max);
+}
+
+// Build calendar events (orders/requests with a date + projected recurring) in [fromYmd,toYmd].
+function buildCalendarEvents(fromYmd, toYmd) {
+  const events = [];
+  const concreteKeys = new Set();
+  _orders.forEach(o => {
+    let date = null, time = null;
+    if (o.serviceDateTime) { const d = parseDateValue(o.serviceDateTime); if (d) { date = ymdLocal(d); time = d.toLocaleTimeString(isEs() ? 'es-MX' : 'en-US', { hour: '2-digit', minute: '2-digit' }); } }
+    else if (o.serviceDate) { date = String(o.serviceDate).slice(0, 10); time = o.preferredTime || null; }
+    if (!date || date < fromYmd || date > toYmd) return;
+    concreteKeys.add(date + '|' + String(o.category || '').toLowerCase());
+    events.push({ date, time, sortKey: (time || '99:99'), evType: o.source, category: o.category, title: orderTitle(o), refId: o.id, statusMeta: orderStatusMeta(o), maskedProvider: o.providerMaskedName, bucket: o.bucket });
+  });
+  _recurring.forEach(plan => {
+    if (plan.status !== 'active') return;
+    projectRecurring(plan, fromYmd, toYmd).forEach(date => {
+      // Don't double-show a projection on a date already covered by a real order/request of the same category.
+      if (concreteKeys.has(date + '|' + String(plan.category || '').toLowerCase())) return;
+      events.push({ date, time: plan.preferredTime || null, sortKey: (plan.preferredTime || '99:99'), evType: 'recurring', category: plan.category, title: categoryLabel(plan.category), refId: plan.id, maskedProvider: plan.providerMaskedName, projected: true });
+    });
+  });
+  events.sort((a, b) => (a.date === b.date ? a.sortKey.localeCompare(b.sortKey) : a.date.localeCompare(b.date)));
+  return events;
+}
+
+function weekdayShortNames() {
+  const out = [];
+  for (let i = 0; i < 7; i++) { const d = new Date(2024, 0, 7 + i); out.push(d.toLocaleDateString(isEs() ? 'es-MX' : 'en-US', { weekday: 'short' }).replace('.', '')); }
+  return out; // index 0=Sun .. 6=Sat
+}
+const MON_FIRST = [1, 2, 3, 4, 5, 6, 0];
+
+function recCadenceLabel(plan) {
+  const c = plan.cadence || {}; const wn = weekdayShortNames(); const es = isEs(); const parts = [];
+  const days = () => (c.weekdays && c.weekdays.length) ? c.weekdays.slice().sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7)).map(d => wn[d]).join(', ') : '';
+  switch (c.frequency) {
+    case 'daily': parts.push(es ? 'Diario' : 'Daily'); break;
+    case 'weekly': parts.push(es ? 'Semanal' : 'Weekly'); if (days()) parts.push(days()); break;
+    case 'biweekly': parts.push(es ? 'Quincenal' : 'Every 2 weeks'); if (days()) parts.push(days()); break;
+    case 'monthly': parts.push(es ? 'Mensual' : 'Monthly'); if (c.dayOfMonth) parts.push((es ? 'día ' : 'day ') + c.dayOfMonth); break;
+    case 'custom': parts.push((es ? 'Cada ' : 'Every ') + (c.intervalCount || 1) + (es ? ' días' : ' days')); break;
+    default: parts.push(c.frequency || '');
+  }
+  if (plan.preferredTime) parts.push(plan.preferredTime);
+  return parts.join(' · ');
+}
+
+function switchOrdersView(view) {
+  if (view !== 'list' && view !== 'calendar') return;
+  _ordersView = view;
+  document.querySelectorAll('.ov-tab').forEach(b => b.classList.toggle('active', b.dataset.view === view));
+  const listView = document.getElementById('orders-list-view');
+  const calView = document.getElementById('orders-calendar-view');
+  if (listView) listView.hidden = view !== 'list';
+  if (calView) calView.hidden = view !== 'calendar';
+  if (view === 'calendar') {
+    if (!_recurringLoaded && !_recurringLoading) loadRecurring();
+    renderCalendar();
+  }
+}
+
+async function loadRecurring() {
+  if (_recurringLoading) return;
+  _recurringLoading = true;
+  try {
+    const res = await fetch(API + '/api/auth/recurring-services', { headers: authHeaders() });
+    if (!res.ok) return;
+    const d = await res.json();
+    _recurring = Array.isArray(d.recurring) ? d.recurring : [];
+    _recurringLoaded = true;
+    if (_ordersView === 'calendar') renderCalendar();
+  } catch {} finally { _recurringLoading = false; }
+}
+
+// ── Calendar rendering ──
+function renderCalendar() {
+  if (!_calMonth) { const n = new Date(); _calMonth = new Date(n.getFullYear(), n.getMonth(), 1); }
+  renderCalToolbar();
+  renderCalWeekdays();
+  renderCalGrid();
+  renderCalLegend();
+  renderCalAgenda();
+  renderRecurringPanel();
+}
+
+function calShiftMonth(delta) {
+  if (!_calMonth) _calMonth = new Date();
+  _calMonth = new Date(_calMonth.getFullYear(), _calMonth.getMonth() + delta, 1);
+  renderCalendar();
+}
+function calGoToday() {
+  const n = new Date();
+  _calMonth = new Date(n.getFullYear(), n.getMonth(), 1);
+  _calSelectedDay = todayYmd();
+  renderCalendar();
+}
+
+function renderCalToolbar() {
+  const el = document.getElementById('cal-toolbar'); if (!el) return;
+  const t = tr();
+  const monthLabel = _calMonth.toLocaleDateString(isEs() ? 'es-MX' : 'en-US', { month: 'long', year: 'numeric' });
+  el.innerHTML = `
+    <div class="cal-title">${escapeHtml(monthLabel)}</div>
+    <div class="cal-nav">
+      <button class="cal-today-btn" onclick="calGoToday()">${escapeHtml(t.calToday)}</button>
+      <button class="cal-nav-btn" aria-label="${escapeHtml(t.calPrev)}" onclick="calShiftMonth(-1)">‹</button>
+      <button class="cal-nav-btn" aria-label="${escapeHtml(t.calNext)}" onclick="calShiftMonth(1)">›</button>
+    </div>`;
+}
+
+function renderCalWeekdays() {
+  const el = document.getElementById('cal-weekdays'); if (!el) return;
+  const wn = weekdayShortNames();
+  el.innerHTML = MON_FIRST.map(i => `<div class="cal-weekday">${escapeHtml(wn[i])}</div>`).join('');
+}
+
+function renderCalGrid() {
+  const el = document.getElementById('cal-grid'); if (!el) return;
+  const year = _calMonth.getFullYear(), month = _calMonth.getMonth();
+  const first = new Date(year, month, 1);
+  const lead = (first.getDay() + 6) % 7; // Monday-first leading blanks
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const monthStart = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+  const monthEnd = `${year}-${String(month + 1).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
+  const events = buildCalendarEvents(monthStart, monthEnd);
+  const byDate = {};
+  events.forEach(ev => { (byDate[ev.date] = byDate[ev.date] || []).push(ev); });
+  const today = todayYmd();
+  const cells = [];
+  for (let i = 0; i < lead; i++) cells.push('<div class="cal-cell empty"></div>');
+  for (let day = 1; day <= daysInMonth; day++) {
+    const ymd = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const evs = byDate[ymd] || [];
+    const cls = ['cal-cell'];
+    if (evs.length) cls.push('has-events');
+    if (ymd === today) cls.push('today');
+    if (ymd < today) cls.push('past');
+    if (ymd === _calSelectedDay) cls.push('selected');
+    const shown = evs.slice(0, 4);
+    const dots = shown.map(ev => `<span class="cal-dot${ev.projected ? ' ring' : ''}" style="--dot:${categoryDot(ev.category)}"></span>`).join('');
+    const more = evs.length > 4 ? `<span class="cal-more">+${evs.length - 4}</span>` : '';
+    cells.push(`<button class="${cls.join(' ')}" onclick="selectCalDay('${ymd}')">
+      <span class="cal-daynum">${day}</span>
+      <span class="cal-dots">${dots}${more}</span>
+    </button>`);
+  }
+  while (cells.length % 7 !== 0) cells.push('<div class="cal-cell empty"></div>');
+  el.innerHTML = cells.join('');
+}
+
+function renderCalLegend() {
+  const el = document.getElementById('cal-legend'); if (!el) return;
+  const cats = ORDER_KNOWN_CATEGORIES;
+  el.innerHTML = cats.map(c => `<span class="cal-legend-item"><span class="cal-legend-dot" style="--dot:${categoryDot(c)}"></span>${escapeHtml(categoryLabel(c))}</span>`).join('');
+}
+
+function selectCalDay(ymd) {
+  _calSelectedDay = (_calSelectedDay === ymd) ? null : ymd;
+  renderCalGrid();
+  renderCalAgenda();
+}
+
+function calEventRowHtml(ev) {
+  const t = tr();
+  const cat = categoryMeta(ev.category);
+  const timeLabel = ev.time || (ev.evType !== 'recurring' ? t.asap : '');
+  const metaBits = [];
+  if (ev.maskedProvider) metaBits.push(ev.maskedProvider);
+  if (ev.evType === 'recurring') metaBits.push(`<span class="cal-tag recurring">${escapeHtml(t.calRecurringTag)}</span>`);
+  else if (ev.statusMeta) metaBits.push(`<span class="order-status ${ev.statusMeta.cls}" style="font-size:10px;padding:3px 8px">${escapeHtml(ev.statusMeta.label)}</span>`);
+  const onclick = ev.evType === 'recurring' ? `openRecurringPlanById('${escapeHtml(ev.refId)}')` : `openOrderDrawer('${escapeHtml(ev.refId)}')`;
+  return `<div class="cal-event" onclick="${onclick}">
+    <div class="cal-event-icon" style="--order-tint:${cat.tint}">${cat.icon}</div>
+    <div class="cal-event-main">
+      <div class="cal-event-title">${escapeHtml(ev.title)}</div>
+      <div class="cal-event-meta">${metaBits.join(' · ')}</div>
+    </div>
+    <div class="cal-event-time">${escapeHtml(timeLabel || '')}</div>
+  </div>`;
+}
+
+function renderCalAgenda() {
+  const el = document.getElementById('cal-agenda'); if (!el) return;
+  const t = tr();
+  let headTitle, headSub, events;
+  if (_calSelectedDay) {
+    const d = parseDateValue(_calSelectedDay);
+    headTitle = d ? d.toLocaleDateString(isEs() ? 'es-MX' : 'en-US', { weekday: 'long', day: 'numeric', month: 'long' }) : _calSelectedDay;
+    events = buildCalendarEvents(_calSelectedDay, _calSelectedDay);
+    headSub = events.length ? (events.length === 1 ? t.calOneService : t.calNServices(events.length)) : '';
+  } else {
+    const today = todayYmd();
+    const horizon = _uYmd(_addU(_ymdU(today), 90));
+    headTitle = t.calUpcoming;
+    events = buildCalendarEvents(today, horizon).slice(0, 8);
+    headSub = '';
+  }
+  let lastDate = null;
+  const body = events.length
+    ? events.map(ev => {
+        const showDate = !_calSelectedDay && ev.date !== lastDate;
+        lastDate = ev.date;
+        const dlabel = showDate ? `<div class="cal-panel-sub" style="margin:8px 0 -2px;text-transform:capitalize">${escapeHtml(formatDateShort(ev.date) || ev.date)}</div>` : '';
+        return dlabel + calEventRowHtml(ev);
+      }).join('')
+    : `<div class="cal-empty">${escapeHtml(_calSelectedDay ? t.calDayEmpty : t.calUpcomingEmpty)}</div>`;
+  el.innerHTML = `
+    <div class="cal-panel-head">
+      <div>
+        <div class="cal-panel-title" style="text-transform:capitalize">${escapeHtml(headTitle)}</div>
+        ${headSub ? `<div class="cal-panel-sub">${escapeHtml(headSub)}</div>` : ''}
+      </div>
+      ${_calSelectedDay ? `<button class="cal-today-btn" onclick="selectCalDay('${_calSelectedDay}')">${escapeHtml(t.calClear)}</button>` : ''}
+    </div>
+    ${body}`;
+}
+
+function renderRecurringPanel() {
+  const el = document.getElementById('cal-recurring'); if (!el) return;
+  const t = tr();
+  const head = `<div class="cal-panel-head">
+      <div class="cal-panel-title">${escapeHtml(t.calRecurringTitle)}</div>
+      <button class="cal-add-btn" onclick="openRecurringModal({})">+ <span>${escapeHtml(t.calNewRecurring)}</span></button>
+    </div>`;
+  if (!_recurringLoaded) { el.innerHTML = head + `<div class="cal-empty">·</div>`; return; }
+  if (!_recurring.length) {
+    el.innerHTML = head + `<div class="rec-empty">
+      <div class="rec-empty-title">${escapeHtml(t.calRecEmptyTitle)}</div>
+      <div class="rec-empty-text">${escapeHtml(t.calRecEmptyText)}</div>
+      <button class="btn-save" onclick="openRecurringModal({})">${escapeHtml(t.calNewRecurring)}</button>
+    </div>`;
+    return;
+  }
+  const sorted = _recurring.slice().sort((a, b) => (a.status === b.status ? 0 : a.status === 'active' ? -1 : 1));
+  el.innerHTML = head + sorted.map(p => recurringCardHtml(p)).join('');
+}
+
+function recurringCardHtml(p) {
+  const t = tr();
+  const cat = categoryMeta(p.category);
+  const paused = p.status === 'paused';
+  const meta = [];
+  if (p.providerMaskedName) meta.push(escapeHtml(p.providerMaskedName));
+  if (p.nextOccurrence) meta.push(`${escapeHtml(t.calNext)}: ${escapeHtml(formatDateShort(p.nextOccurrence) || p.nextOccurrence)}`);
+  return `<div class="rec-card ${paused ? 'paused' : ''}">
+    <div class="rec-card-top">
+      <div class="rec-icon" style="--order-tint:${cat.tint}">${cat.icon}</div>
+      <div style="min-width:0">
+        <div class="rec-title">${escapeHtml(categoryLabel(p.category))}</div>
+        <div class="rec-cadence">${escapeHtml(recCadenceLabel(p))}</div>
+        ${meta.length ? `<div class="rec-meta">${meta.map(m => `<span>${m}</span>`).join('')}</div>` : ''}
+      </div>
+      <span class="rec-status ${paused ? 'paused' : 'active'}">${escapeHtml(paused ? t.calPaused : t.calActive)}</span>
+    </div>
+    <div class="rec-actions">
+      <button class="addr-btn default-btn" onclick="toggleRecurringStatus('${escapeHtml(p.id)}')">${escapeHtml(paused ? t.calResume : t.calPause)}</button>
+      <button class="addr-btn default-btn" onclick="openRecurringPlanById('${escapeHtml(p.id)}')">${escapeHtml(t.calEdit)}</button>
+      <button class="addr-btn delete-btn" onclick="cancelRecurring('${escapeHtml(p.id)}')">${escapeHtml(t.calCancelPlan)}</button>
+    </div>
+  </div>`;
+}
+
+async function toggleRecurringStatus(id) {
+  const p = _recurring.find(x => x.id === id); if (!p) return;
+  const next = p.status === 'active' ? 'paused' : 'active';
+  try {
+    const res = await fetch(API + '/api/auth/recurring-services/' + encodeURIComponent(id), { method: 'PATCH', headers: authHeaders(), body: JSON.stringify({ status: next }) });
+    if (!res.ok) throw new Error('failed');
+    const d = await res.json().catch(() => ({}));
+    if (d.recurring) { const i = _recurring.findIndex(x => x.id === id); if (i >= 0) _recurring[i] = d.recurring; }
+    renderCalendar();
+  } catch { showOrderToast(tr().actionError); }
+}
+
+async function cancelRecurring(id) {
+  const t = tr();
+  if (!confirm(t.calCancelConfirm)) return;
+  try {
+    const res = await fetch(API + '/api/auth/recurring-services/' + encodeURIComponent(id), { method: 'DELETE', headers: authHeaders() });
+    if (!res.ok) throw new Error('failed');
+    _recurring = _recurring.filter(x => x.id !== id);
+    renderCalendar();
+    showOrderToast(t.calCanceledDone);
+  } catch { showOrderToast(t.actionError); }
+}
+
+function openRecurringPlanById(id) {
+  const p = _recurring.find(x => x.id === id);
+  if (p) openRecurringModal({ plan: p });
+}
+
+// Entry point from a Trusted Specialist card: jump to the calendar and open the setup
+// modal prefilled with that specialist + category.
+function scheduleRecurringWithSpecialist(providerId, category) {
+  switchSection('orders');
+  switchOrdersView('calendar');
+  if (!_recurringLoaded && !_recurringLoading) loadRecurring();
+  openRecurringModal({ category: String(category || '').toLowerCase(), providerId });
+}
+
+// ── Recurring setup / edit modal ──
+let _recOverlay = null;
+let _recModalState = { editingId: null, frequency: 'weekly', weekdays: [] };
+
+function openRecurringModal(opts = {}) {
+  const t = tr();
+  const plan = opts.plan || null;
+  _recModalState = {
+    editingId: plan ? plan.id : null,
+    frequency: plan ? (plan.cadence && plan.cadence.frequency) || 'weekly' : 'weekly',
+    weekdays: plan && plan.cadence && plan.cadence.weekdays ? plan.cadence.weekdays.slice() : [],
+  };
+  const presetCat = plan ? plan.category : (opts.category || 'cleaning');
+  const presetProvider = plan ? plan.providerId : (opts.providerId || '');
+  const catOptions = ORDER_KNOWN_CATEGORIES.map(c => `<option value="${c}" ${c === presetCat ? 'selected' : ''}>${escapeHtml(categoryLabel(c))}</option>`).join('');
+  const freqs = [['daily', t.calFreqDaily], ['weekly', t.calFreqWeekly], ['biweekly', t.calFreqBiweekly], ['monthly', t.calFreqMonthly], ['custom', t.calFreqCustom]];
+  const freqChips = freqs.map(([k, lbl]) => `<button type="button" class="rec-chip ${k === _recModalState.frequency ? 'on' : ''}" data-freq="${k}" onclick="recSelectFreq('${k}')">${escapeHtml(lbl)}</button>`).join('');
+  const minDate = todayYmd();
+  const startVal = plan && plan.startDate ? plan.startDate : minDate;
+  // New weekly/biweekly plan with no selection yet → default to the start date's weekday.
+  if (!plan && !_recModalState.weekdays.length && (_recModalState.frequency === 'weekly' || _recModalState.frequency === 'biweekly')) {
+    const sd = _ymdU(startVal); if (sd) _recModalState.weekdays = [sd.getUTCDay()];
+  }
+  _recOverlay = buildActionModal(`
+    <h3>${escapeHtml(plan ? t.calEditTitle : t.calNewTitle)}</h3>
+    <div class="rec-form">
+      <div class="rec-field">
+        <label class="rec-field-label" for="rec_category">${escapeHtml(t.calCategory)}</label>
+        <select class="rec-select" id="rec_category" onchange="recRenderProviders()">${catOptions}</select>
+      </div>
+      <div class="rec-field">
+        <label class="rec-field-label" for="rec_provider">${escapeHtml(t.calSpecialist)}</label>
+        <select class="rec-select" id="rec_provider"></select>
+        <div class="cal-panel-sub" style="font-weight:600">${escapeHtml(t.calSpecialistHint)}</div>
+      </div>
+      <div class="rec-field">
+        <label class="rec-field-label">${escapeHtml(t.calFrequency)}</label>
+        <div class="rec-freq-chips" id="rec_freq_chips">${freqChips}</div>
+      </div>
+      <div id="rec-cond"></div>
+      <div class="rec-field-row">
+        <div class="rec-field">
+          <label class="rec-field-label" for="rec_time">${escapeHtml(t.calTime)}</label>
+          <input type="time" class="rec-input" id="rec_time" value="${escapeHtml(plan && plan.preferredTime ? plan.preferredTime : '10:00')}">
+        </div>
+        <div class="rec-field">
+          <label class="rec-field-label" for="rec_start">${escapeHtml(t.calStart)}</label>
+          <input type="date" class="rec-input" id="rec_start" min="${minDate}" value="${escapeHtml(startVal)}">
+        </div>
+      </div>
+      <div class="rec-field">
+        <label class="rec-field-label" for="rec_address">${escapeHtml(t.calAddress)}</label>
+        <input type="text" class="rec-input" id="rec_address" placeholder="${escapeHtml(t.calAddressPh)}" value="${escapeHtml(plan && plan.address ? plan.address : '')}">
+      </div>
+      <div class="rec-field">
+        <label class="rec-field-label" for="rec_desc">${escapeHtml(t.calDetails)}</label>
+        <textarea class="rec-textarea" id="rec_desc" placeholder="${escapeHtml(t.calDetailsPh)}">${escapeHtml(plan && plan.description ? plan.description : '')}</textarea>
+      </div>
+      <div id="rec-modal-error" style="font-size:13px;color:#c55d49;min-height:16px"></div>
+    </div>
+    <div class="confirm-row">
+      <button class="confirm-cancel" onclick="closeRecModal()">${escapeHtml(t.cancelBtn)}</button>
+      <button class="btn-save" onclick="submitRecurring(this)">${escapeHtml(plan ? t.calSavePlan : t.calCreatePlan)}</button>
+    </div>`, { boxClass: 'rec-modal-box' });
+  recRenderProviders(presetProvider);
+  recRenderConditional(plan);
+}
+
+function closeRecModal() { if (_recOverlay) { _recOverlay.remove(); _recOverlay = null; } }
+
+function recSelectFreq(freq) {
+  _recModalState.frequency = freq;
+  document.querySelectorAll('#rec_freq_chips .rec-chip').forEach(c => c.classList.toggle('on', c.dataset.freq === freq));
+  recRenderConditional(null);
+}
+
+function recToggleWeekday(n) {
+  const i = _recModalState.weekdays.indexOf(n);
+  if (i >= 0) _recModalState.weekdays.splice(i, 1); else _recModalState.weekdays.push(n);
+  document.querySelectorAll('#rec_weekdays .rec-wd').forEach(b => b.classList.toggle('on', _recModalState.weekdays.includes(parseInt(b.dataset.wd, 10))));
+}
+
+function recRenderProviders(preset) {
+  const sel = document.getElementById('rec_provider'); if (!sel) return;
+  const t = tr();
+  const cat = (document.getElementById('rec_category') || {}).value || 'cleaning';
+  const current = preset != null ? preset : sel.value;
+  const matches = _specialists.filter(s => String(s.category).toLowerCase() === String(cat).toLowerCase() && s.available);
+  const opts = [`<option value="">${escapeHtml(t.calNoPreference)}</option>`]
+    .concat(matches.map(s => `<option value="${escapeHtml(s.providerId)}" ${s.providerId === current ? 'selected' : ''}>${escapeHtml(s.nickname || s.maskedName)}</option>`));
+  sel.innerHTML = opts.join('');
+}
+
+function recRenderConditional(plan) {
+  const el = document.getElementById('rec-cond'); if (!el) return;
+  const t = tr();
+  const freq = _recModalState.frequency;
+  if (freq === 'weekly' || freq === 'biweekly') {
+    if (!_recModalState.weekdays.length && plan && plan.cadence && plan.cadence.weekdays) _recModalState.weekdays = plan.cadence.weekdays.slice();
+    const wn = weekdayShortNames();
+    const chips = MON_FIRST.map(i => `<button type="button" class="rec-wd ${_recModalState.weekdays.includes(i) ? 'on' : ''}" data-wd="${i}" onclick="recToggleWeekday(${i})">${escapeHtml(wn[i])}</button>`).join('');
+    el.innerHTML = `<div class="rec-field"><label class="rec-field-label">${escapeHtml(t.calOnDays)}</label><div class="rec-weekdays" id="rec_weekdays">${chips}</div></div>`;
+  } else if (freq === 'monthly') {
+    const dom = plan && plan.cadence && plan.cadence.dayOfMonth ? plan.cadence.dayOfMonth : (new Date().getDate());
+    el.innerHTML = `<div class="rec-field"><label class="rec-field-label" for="rec_dom">${escapeHtml(t.calDayOfMonth)}</label><input type="number" class="rec-input" id="rec_dom" min="1" max="31" value="${dom}"></div>`;
+  } else if (freq === 'custom') {
+    const iv = plan && plan.cadence && plan.cadence.intervalCount ? plan.cadence.intervalCount : 3;
+    el.innerHTML = `<div class="rec-field"><label class="rec-field-label" for="rec_interval">${escapeHtml(t.calEveryNDays)}</label><input type="number" class="rec-input" id="rec_interval" min="1" max="365" value="${iv}"></div>`;
+  } else {
+    el.innerHTML = '';
+  }
+}
+
+async function submitRecurring(btn) {
+  const t = tr();
+  const errEl = document.getElementById('rec-modal-error');
+  const setErr = (m) => { if (errEl) errEl.textContent = m; };
+  setErr('');
+  const category = (document.getElementById('rec_category') || {}).value || '';
+  const providerId = (document.getElementById('rec_provider') || {}).value || '';
+  const frequency = _recModalState.frequency;
+  const preferredTime = (document.getElementById('rec_time') || {}).value || '';
+  const startDate = (document.getElementById('rec_start') || {}).value || '';
+  const serviceAddress = (document.getElementById('rec_address') || {}).value.trim();
+  const description = (document.getElementById('rec_desc') || {}).value.trim();
+  if (!category) return setErr(t.calErrCategory);
+  if (!startDate) return setErr(t.calErrStart);
+  const payload = { category, frequency, preferredTime, startDate, lang: isEs() ? 'es' : 'en' };
+  if (providerId) payload.providerId = providerId;
+  if (serviceAddress) payload.serviceAddress = serviceAddress;
+  if (description) payload.description = description;
+  if (frequency === 'weekly' || frequency === 'biweekly') {
+    if (!_recModalState.weekdays.length) return setErr(t.calErrWeekdays);
+    payload.weekdays = _recModalState.weekdays;
+  } else if (frequency === 'monthly') {
+    payload.dayOfMonth = parseInt((document.getElementById('rec_dom') || {}).value, 10) || new Date().getDate();
+  } else if (frequency === 'custom') {
+    const iv = parseInt((document.getElementById('rec_interval') || {}).value, 10);
+    if (!iv || iv < 1) return setErr(t.calErrInterval);
+    payload.intervalCount = iv;
+  }
+  const editingId = _recModalState.editingId;
+  const prev = btn.textContent; btn.disabled = true; btn.textContent = '…';
+  try {
+    const url = API + '/api/auth/recurring-services' + (editingId ? '/' + encodeURIComponent(editingId) : '');
+    const res = await fetch(url, { method: editingId ? 'PATCH' : 'POST', headers: authHeaders(), body: JSON.stringify(payload) });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      if (d.error === 'provider_unavailable') return finish(t.calErrProvider);
+      if (d.error === 'phone_required') return finish(t.calErrPhone);
+      return finish(d.message || t.actionError);
+    }
+    if (d.recurring) {
+      if (editingId) { const i = _recurring.findIndex(x => x.id === editingId); if (i >= 0) _recurring[i] = d.recurring; }
+      else { _recurring.unshift(d.recurring); }
+    } else { _recurringLoaded = false; await loadRecurring(); }
+    closeRecModal();
+    renderCalendar();
+    showOrderToast(editingId ? t.calSavedDone : t.calCreatedDone);
+  } catch {
+    finish(t.actionError);
+  }
+  function finish(msg) { btn.disabled = false; btn.textContent = prev; setErr(msg); }
 }
 
 // ── Detail drawer ──
@@ -3548,6 +4266,7 @@ function applyTranslations() {
   const ph = (id, val) => { const el = document.getElementById(id); if (el) el.placeholder = val; };
   set('title-orders', t.titleOrders);   set('sub-orders', t.subOrders);
   set('orders-seg-active', t.ordersSegActive); set('orders-seg-past', t.ordersSegPast);
+  set('ov-list-label', t.ovList);       set('ov-cal-label', t.ovCalendar);
   set('title-info', t.titleInfo);       set('sub-info', t.subInfo);
   set('title-security', t.titleSecurity); set('sub-security', t.subSecurity);
   set('security-2step-title', t.security2StepTitle); set('security-2step-sub', t.security2StepSub);
@@ -3649,6 +4368,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadAddresses();
     loadTrustedSpecialists();
     loadFavoriteServices();
+    loadRecurring();
     loadPaymentMethods();
     buildNav();
 
@@ -3671,6 +4391,7 @@ document.addEventListener('DOMContentLoaded', () => {
     renderTrustedSpecialists();
     renderFavoriteServices();
     if (_ordersLoaded) renderOrders();
+    if (_ordersView === 'calendar') renderCalendar();
     // Re-render payment methods list with updated language (data is already cached in DOM)
     const pmList = document.getElementById('pm-list');
     if (pmList && pmList.querySelector('.pm-card')) loadPaymentMethods();

@@ -3355,6 +3355,114 @@ app.post('/create-standalone-setup', async (req, res) => {
 });
 
 
+// Materialize due recurring-service occurrences into service_requests. For each active plan,
+// create one intake request per occurrence falling within [today, today + lead_time_days] that
+// hasn't been generated yet. Idempotent via the (recurring_service_id, recurring_occurrence_date)
+// unique index + ON CONFLICT DO NOTHING. Best-effort; one bad plan never blocks the others.
+// Helpers (todayYmdMX/enumerateOccurrences/RECURRING_SELECT/…) are defined with the recurring
+// routes further down but only read at call time, so the forward reference is safe.
+async function materializeDueRecurringServices({ limit = 200 } = {}) {
+  const today = todayYmdMX();
+  const todayUTC = ymdToUTC(today);
+  const { rows: plans } = await pool.query(
+    `SELECT ${RECURRING_SELECT} FROM recurring_services
+       WHERE status = 'active' AND (end_date IS NULL OR end_date >= $1)
+       ORDER BY COALESCE(next_occurrence_date, start_date) ASC
+       LIMIT $2`,
+    [today, limit]
+  );
+
+  let plansTouched = 0, requestsCreated = 0;
+  const results = [];
+  for (const plan of plans) {
+    try {
+      const { rows: uRows } = await pool.query(
+        'SELECT name, phone, email, phone_verified FROM auth_users WHERE id = $1', [plan.user_id]
+      );
+      const user = uRows[0];
+      if (!user || !user.phone || !user.phone_verified) { results.push({ id: plan.id, skipped: 'user_unverified' }); continue; }
+
+      const horizon = utcToYmd(addUTCDays(todayUTC, Math.max(0, plan.lead_time_days ?? 3)));
+      // Never (re)generate the past or anything already materialized.
+      let from = maxYmd(plan.start_date, today);
+      if (plan.last_occurrence_date) from = maxYmd(from, utcToYmd(addUTCDays(ymdToUTC(plan.last_occurrence_date), 1)));
+      const occurrences = enumerateOccurrences(plan, from, horizon, { max: 60 });
+
+      // Re-validate the preferred specialist each run (preference, not guarantee).
+      let prefProviderId = plan.provider_id || null;
+      let prefProviderName = plan.provider_name || null;
+      if (prefProviderId) {
+        const { rows: pp } = await pool.query('SELECT status, name FROM providers WHERE provider_id = $1 LIMIT 1', [prefProviderId]);
+        if (!pp[0] || pp[0].status !== 'verified') { prefProviderId = null; prefProviderName = null; }
+        else if (pp[0].name) prefProviderName = pp[0].name;
+      }
+
+      let created = 0;
+      let lastOcc = plan.last_occurrence_date || null;
+      for (const occ of occurrences) {
+        const reqId = randomUUID();
+        const ins = await pool.query(
+          `INSERT INTO service_requests
+             (id, category, description, preferred_date, preferred_time, is_asap, service_address,
+              service_address_details, client_name, client_phone, client_email, customer_id, lang,
+              request_mode, preferred_provider_id, preferred_provider_name,
+              recurring_service_id, recurring_occurrence_date)
+           VALUES ($1,$2,$3,$4,$5,false,$6,$7,$8,$9,$10,$11,$12,'recurring',$13,$14,$15,$16)
+           ON CONFLICT (recurring_service_id, recurring_occurrence_date) WHERE recurring_service_id IS NOT NULL DO NOTHING
+           RETURNING id`,
+          [reqId, plan.category, plan.description || null, occ, plan.preferred_time || null,
+           plan.service_address || null, plan.service_address_details || null,
+           user.name || 'Cliente SERVI', user.phone, user.email || null, plan.user_id, plan.lang || 'es',
+           prefProviderId, prefProviderName, plan.id, occ]
+        );
+        if (ins.rows[0]) {
+          created += 1;
+          if (!lastOcc || occ > lastOcc) lastOcc = occ;
+          postToGoogleWebhook({
+            type: 'service_request.created', requestId: ins.rows[0].id, category: plan.category,
+            clientName: user.name || '', clientPhone: user.phone, clientEmail: user.email || '',
+            serviceAddress: plan.service_address || '', isAsap: false, preferredDate: occ, preferredTime: plan.preferred_time || '',
+          });
+        }
+      }
+
+      const nextOcc = nextOccurrenceOnOrAfter(plan, maxYmd(today, plan.start_date));
+      await pool.query(
+        `UPDATE recurring_services
+            SET last_run_at = NOW(),
+                last_occurrence_date = COALESCE($2, last_occurrence_date),
+                next_occurrence_date = $3,
+                times_generated = times_generated + $4,
+                updated_at = NOW()
+          WHERE id = $1`,
+        [plan.id, lastOcc, nextOcc, created]
+      );
+      // Auto-close a plan once its end_date has fully elapsed.
+      if (plan.end_date && ymdToUTC(plan.end_date).getTime() < todayUTC.getTime()) {
+        await pool.query(`UPDATE recurring_services SET status = 'canceled', updated_at = NOW() WHERE id = $1`, [plan.id]);
+      }
+      plansTouched += 1; requestsCreated += created;
+      results.push({ id: plan.id, created });
+    } catch (planErr) {
+      console.error('[recurring-due] plan failed', plan.id, planErr?.message || planErr);
+      results.push({ id: plan.id, error: planErr?.message || 'failed' });
+    }
+  }
+  return { plans: plansTouched, requestsCreated, results };
+}
+
+// Standalone admin trigger (manual/testing). The hourly preauth-due cron also calls
+// materializeDueRecurringServices() so no extra scheduled job is required.
+app.post('/tasks/recurring-due', adminRateLimit, requireAdminAuth, async (_req, res) => {
+  try {
+    const out = await materializeDueRecurringServices();
+    res.json({ ok: true, ...out });
+  } catch (e) {
+    console.error('recurring-due error:', e);
+    res.status(500).json({ ok: false, error: e.message || 'internal' });
+  }
+});
+
 app.post('/tasks/preauth-due', adminRateLimit, requireAdminAuth, async (req, res) => {
   try {
     // force:true bypasses ONLY the 24h window bounds (for manual/testing dispatch). All
@@ -3485,7 +3593,17 @@ app.post('/tasks/preauth-due', adminRateLimit, requireAdminAuth, async (req, res
       console.warn('[preauth-due] revoked_sessions prune failed (non-blocking):', pruneErr?.message || pruneErr);
     }
 
-    res.json({ ok: true, processed: results.length, results, revokedPruned });
+    // Same hourly trigger drives the Service Calendar: materialize due recurring-service
+    // occurrences into intake requests. Best-effort — never blocks the preauth response.
+    let recurring = null;
+    try {
+      recurring = await materializeDueRecurringServices();
+      if (recurring.requestsCreated) console.log('[preauth-due] recurring requests created:', recurring.requestsCreated);
+    } catch (recErr) {
+      console.warn('[preauth-due] recurring materialization failed (non-blocking):', recErr?.message || recErr);
+    }
+
+    res.json({ ok: true, processed: results.length, results, revokedPruned, recurring });
   } catch (e) {
     console.error('preauth-due error:', e);
     res.status(500).json({ ok: false, error: e.message || 'internal' });
@@ -7354,6 +7472,376 @@ app.patch('/api/auth/trusted-specialists/:id/preferred', publicFormLimit, async 
     return res.json({ ok: true });
   } catch (err) {
     console.error('[PATCH /api/auth/trusted-specialists/:id/preferred]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// ─── Service Calendar: recurring services ─────────────────────────────────────
+// A client schedules a repeating service (weekly cleaning, monthly deep-clean, …),
+// optionally pinned to a trusted specialist. The hourly cron materializes one
+// service_request per due occurrence (lead_time_days ahead) into the normal admin
+// pipeline — only the *schedule* lives here, so calendar, pricing, pre-auth, and
+// capture are all unchanged downstream. Provider preference is re-validated each run
+// (never guaranteed). All recurrence math runs on plain civil dates ('YYYY-MM-DD')
+// in UTC to stay stable across the America/Mexico_City offset.
+
+const RECURRENCE_FREQUENCIES = new Set(['daily', 'weekly', 'biweekly', 'monthly', 'custom']);
+const RECURRING_TIME_RE = /^([01]?\d|2[0-3]):[0-5]\d$/;
+const RECURRING_MAX_LEAD_DAYS = 14;
+
+function ymdToUTC(ymd) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(ymd || '').trim());
+  if (!m) return null;
+  const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+  return isNaN(d.getTime()) ? null : d;
+}
+function utcToYmd(d) { return d.toISOString().slice(0, 10); }
+function addUTCDays(d, n) { const x = new Date(d.getTime()); x.setUTCDate(x.getUTCDate() + n); return x; }
+function maxYmd(a, b) {
+  const da = ymdToUTC(a), db = ymdToUTC(b);
+  if (!da) return b; if (!db) return a;
+  return da.getTime() >= db.getTime() ? a : b;
+}
+// 'today' in the service time zone, as a 'YYYY-MM-DD' key (en-CA → ISO date).
+function todayYmdMX() {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Mexico_City', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
+}
+function parseWeekdaysCsv(csv) {
+  return [...new Set(String(csv || '')
+    .split(',')
+    .map((s) => parseInt(s, 10))
+    .filter((n) => Number.isInteger(n) && n >= 0 && n <= 6))]
+    .sort((a, b) => a - b);
+}
+
+// Enumerate occurrence date keys for a plan within [fromYmd, toYmd] inclusive.
+// Hard-capped at `max` so a misconfigured open-ended daily plan can never run away.
+function enumerateOccurrences(plan, fromYmd, toYmd, { max = 366 } = {}) {
+  const start = ymdToUTC(plan.start_date);
+  const windowEnd = ymdToUTC(toYmd);
+  if (!start || !windowEnd) return [];
+  const windowStartRaw = ymdToUTC(fromYmd);
+  let windowStart = windowStartRaw && windowStartRaw.getTime() > start.getTime() ? windowStartRaw : start;
+  const planEnd = plan.end_date ? ymdToUTC(plan.end_date) : null;
+  const hardEnd = planEnd && planEnd.getTime() < windowEnd.getTime() ? planEnd : windowEnd;
+  if (windowStart.getTime() > hardEnd.getTime()) return [];
+
+  const freq = String(plan.frequency || '').toLowerCase();
+  const interval = Math.max(1, parseInt(plan.interval_count, 10) || 1);
+  const out = [];
+
+  if (freq === 'daily' || freq === 'custom') {
+    const step = freq === 'daily' ? 1 : interval;
+    const dayDiff = Math.floor((windowStart.getTime() - start.getTime()) / 86400000);
+    const k = Math.max(0, Math.ceil(dayDiff / step));
+    let d = addUTCDays(start, k * step);
+    while (d.getTime() <= hardEnd.getTime() && out.length < max) {
+      if (d.getTime() >= windowStart.getTime()) out.push(utcToYmd(d));
+      d = addUTCDays(d, step);
+    }
+  } else if (freq === 'weekly' || freq === 'biweekly') {
+    const weekStep = freq === 'biweekly' ? 2 : interval;
+    let weekdays = parseWeekdaysCsv(plan.weekdays);
+    if (!weekdays.length) weekdays = [start.getUTCDay()];
+    const anchor = addUTCDays(start, -start.getUTCDay());              // Sunday of the start week
+    const wsSunday = addUTCDays(windowStart, -windowStart.getUTCDay());
+    let weekIdx = Math.max(0, Math.floor((wsSunday.getTime() - anchor.getTime()) / (7 * 86400000)));
+    weekIdx -= (weekIdx % weekStep);                                   // align to the step parity
+    let weekStart = addUTCDays(anchor, weekIdx * 7);
+    while (weekStart.getTime() <= hardEnd.getTime() && out.length < max) {
+      for (const wd of weekdays) {
+        const d = addUTCDays(weekStart, wd);
+        if (d.getTime() >= start.getTime() && d.getTime() >= windowStart.getTime() && d.getTime() <= hardEnd.getTime()) {
+          out.push(utcToYmd(d));
+        }
+      }
+      weekStart = addUTCDays(weekStart, weekStep * 7);
+    }
+    out.sort();
+  } else if (freq === 'monthly') {
+    let dom = parseInt(plan.day_of_month, 10);
+    if (!Number.isInteger(dom) || dom < 1 || dom > 31) dom = start.getUTCDate();
+    let y = windowStart.getUTCFullYear();
+    let mo = windowStart.getUTCMonth();
+    while (out.length < max) {
+      const lastDay = new Date(Date.UTC(y, mo + 1, 0)).getUTCDate();
+      const d = new Date(Date.UTC(y, mo, Math.min(dom, lastDay)));
+      if (d.getTime() > hardEnd.getTime()) break;
+      if (d.getTime() >= start.getTime() && d.getTime() >= windowStart.getTime()) out.push(utcToYmd(d));
+      mo += 1; if (mo > 11) { mo = 0; y += 1; }
+    }
+  }
+  return out.slice(0, max);
+}
+
+// The soonest occurrence on or after a date (open-ended-safe ~18-month look-ahead).
+function nextOccurrenceOnOrAfter(plan, fromYmd) {
+  const horizon = utcToYmd(addUTCDays(ymdToUTC(fromYmd) || ymdToUTC(todayYmdMX()), 550));
+  const occ = enumerateOccurrences(plan, fromYmd, horizon, { max: 1 });
+  return occ.length ? occ[0] : null;
+}
+
+// Human-free cadence descriptor the frontend turns into a localized label.
+function recurringCadence(plan) {
+  return {
+    frequency: plan.frequency,
+    intervalCount: plan.interval_count || 1,
+    weekdays: parseWeekdaysCsv(plan.weekdays),
+    dayOfMonth: plan.day_of_month || null,
+  };
+}
+
+function mapRecurringRow(r, today = todayYmdMX()) {
+  const next = (r.status === 'active') ? nextOccurrenceOnOrAfter(r, today) : null;
+  return {
+    id: r.id,
+    category: r.category,
+    description: r.description || null,
+    providerId: r.provider_id || null,
+    providerMaskedName: maskProviderName(r.provider_name),
+    cadence: recurringCadence(r),
+    preferredTime: r.preferred_time || null,
+    address: r.service_address || null,
+    startDate: r.start_date || null,
+    endDate: r.end_date || null,
+    leadTimeDays: r.lead_time_days ?? 3,
+    status: r.status,
+    nextOccurrence: next,
+    timesGenerated: r.times_generated || 0,
+    createdAt: r.created_at,
+  };
+}
+
+// Column list with DATE fields rendered as 'YYYY-MM-DD' text so the JS date math above
+// never has to reason about node-postgres' local-midnight Date parsing.
+const RECURRING_SELECT = `id, user_id, category, description, provider_id, provider_name,
+  frequency, interval_count, weekdays, day_of_month, preferred_time, service_address,
+  service_address_details, lead_time_days, status, times_generated,
+  to_char(start_date,'YYYY-MM-DD') AS start_date,
+  to_char(end_date,'YYYY-MM-DD') AS end_date,
+  to_char(last_occurrence_date,'YYYY-MM-DD') AS last_occurrence_date,
+  to_char(next_occurrence_date,'YYYY-MM-DD') AS next_occurrence_date,
+  created_at, updated_at`;
+
+// Validate + normalize a recurrence payload (shared by POST/PATCH). Returns
+// { ok:true, value } or { ok:false, error, message }. `partial` skips required-field checks.
+function normalizeRecurrenceInput(body, { partial = false } = {}) {
+  const out = {};
+  const has = (k) => Object.prototype.hasOwnProperty.call(body, k);
+
+  if (!partial || has('category')) {
+    const category = normalizeTrustCategory(body.category);
+    if (!category) return { ok: false, error: 'missing_category' };
+    out.category = category;
+  }
+  if (!partial || has('frequency')) {
+    const frequency = String(body.frequency || '').trim().toLowerCase();
+    if (!RECURRENCE_FREQUENCIES.has(frequency)) return { ok: false, error: 'invalid_frequency' };
+    out.frequency = frequency;
+  }
+  if (!partial || has('startDate') || has('start_date')) {
+    const startDate = String(body.startDate ?? body.start_date ?? '').trim();
+    if (!ymdToUTC(startDate)) return { ok: false, error: 'invalid_start_date' };
+    out.start_date = startDate.slice(0, 10);
+  }
+  if (has('endDate') || has('end_date')) {
+    const raw = body.endDate ?? body.end_date;
+    if (raw == null || raw === '') out.end_date = null;
+    else { const v = String(raw).trim(); if (!ymdToUTC(v)) return { ok: false, error: 'invalid_end_date' }; out.end_date = v.slice(0, 10); }
+  }
+  if (has('intervalCount') || has('interval_count')) {
+    const n = parseInt(body.intervalCount ?? body.interval_count, 10);
+    out.interval_count = (Number.isInteger(n) && n >= 1 && n <= 365) ? n : 1;
+  }
+  if (has('weekdays')) {
+    const arr = Array.isArray(body.weekdays) ? body.weekdays : String(body.weekdays || '').split(',');
+    const csv = parseWeekdaysCsv(arr.join(','));
+    out.weekdays = csv.length ? csv.join(',') : null;
+  }
+  if (has('dayOfMonth') || has('day_of_month')) {
+    const n = parseInt(body.dayOfMonth ?? body.day_of_month, 10);
+    out.day_of_month = (Number.isInteger(n) && n >= 1 && n <= 31) ? n : null;
+  }
+  if (has('preferredTime') || has('preferred_time')) {
+    const raw = String(body.preferredTime ?? body.preferred_time ?? '').trim();
+    if (raw && !RECURRING_TIME_RE.test(raw)) return { ok: false, error: 'invalid_time' };
+    out.preferred_time = raw || null;
+  }
+  if (has('description')) out.description = body.description ? String(body.description).slice(0, 1000) : null;
+  if (has('serviceAddress') || has('service_address')) {
+    const raw = body.serviceAddress ?? body.service_address;
+    out.service_address = raw ? String(raw).slice(0, 1000) : null;
+  }
+  if (has('serviceAddressDetails') || has('service_address_details')) {
+    const raw = body.serviceAddressDetails ?? body.service_address_details;
+    out.service_address_details = (raw && typeof raw === 'object') ? JSON.stringify(raw) : (raw ? String(raw).slice(0, 4000) : null);
+  }
+  if (has('leadTimeDays') || has('lead_time_days')) {
+    const n = parseInt(body.leadTimeDays ?? body.lead_time_days, 10);
+    out.lead_time_days = (Number.isInteger(n) && n >= 0) ? Math.min(n, RECURRING_MAX_LEAD_DAYS) : 3;
+  }
+  return { ok: true, value: out };
+}
+
+// Resolve + verify a preferred specialist (must be a currently-verified provider).
+// Returns { providerId, providerName } or throws makeError on an unavailable pick.
+async function resolveRecurringProvider(providerIdRaw) {
+  const providerId = String(providerIdRaw || '').trim();
+  if (!providerId) return { providerId: null, providerName: null };
+  const { rows } = await pool.query('SELECT status, name FROM providers WHERE provider_id = $1 LIMIT 1', [providerId]);
+  if (!rows[0] || rows[0].status !== 'verified') {
+    throw makeError('provider_unavailable', 'Este especialista no está disponible actualmente.', 409);
+  }
+  return { providerId, providerName: rows[0].name || null };
+}
+
+// GET /api/auth/recurring-services — the user's recurring plans (active + paused).
+app.get('/api/auth/recurring-services', async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const { rows } = await pool.query(
+      `SELECT ${RECURRING_SELECT} FROM recurring_services
+        WHERE user_id = $1 AND status <> 'canceled'
+        ORDER BY status ASC, created_at DESC`,
+      [payload.user_id]
+    );
+    const today = todayYmdMX();
+    res.set('Cache-Control', 'no-store');
+    return res.json({ recurring: rows.map((r) => mapRecurringRow(r, today)) });
+  } catch (err) {
+    console.error('[GET /api/auth/recurring-services]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// POST /api/auth/recurring-services — create a recurring plan.
+app.post('/api/auth/recurring-services', publicFormLimit, async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    // Mirror the booking gate intent: a recurring plan generates real intake requests, so the
+    // owner must at least have a verified phone (always required to place an order).
+    const { rows: uRows } = await pool.query(
+      'SELECT name, phone, email, phone_verified FROM auth_users WHERE id = $1', [payload.user_id]
+    );
+    const user = uRows[0];
+    if (!user) return res.status(404).json({ error: 'user_not_found' });
+    if (!user.phone_verified) return res.status(409).json({ error: 'phone_required', message: 'Verifica tu teléfono para programar servicios recurrentes.' });
+
+    const norm = normalizeRecurrenceInput(req.body || {}, { partial: false });
+    if (!norm.ok) return res.status(400).json(norm);
+    const v = norm.value;
+
+    let provider;
+    try { provider = await resolveRecurringProvider((req.body || {}).providerId ?? (req.body || {}).provider_id); }
+    catch (e) { if (e.status) return res.status(e.status).json({ error: e.code, message: e.message }); throw e; }
+
+    const id = randomUUID();
+    const planForNext = {
+      start_date: v.start_date, end_date: v.end_date ?? null, frequency: v.frequency,
+      interval_count: v.interval_count ?? 1, weekdays: v.weekdays ?? null, day_of_month: v.day_of_month ?? null,
+    };
+    const today = todayYmdMX();
+    const nextOcc = nextOccurrenceOnOrAfter(planForNext, maxYmd(today, v.start_date));
+
+    const { rows } = await pool.query(
+      `INSERT INTO recurring_services
+         (id, user_id, category, description, provider_id, provider_name, frequency, interval_count,
+          weekdays, day_of_month, preferred_time, service_address, service_address_details,
+          start_date, end_date, lead_time_days, status, next_occurrence_date, lang)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,'active',$17,$18)
+       RETURNING ${RECURRING_SELECT}`,
+      [
+        id, payload.user_id, v.category, v.description ?? null, provider.providerId, provider.providerName,
+        v.frequency, v.interval_count ?? 1, v.weekdays ?? null, v.day_of_month ?? null, v.preferred_time ?? null,
+        v.service_address ?? null, v.service_address_details ?? null, v.start_date, v.end_date ?? null,
+        v.lead_time_days ?? 3, nextOcc, String((req.body || {}).lang || 'es').slice(0, 5),
+      ]
+    );
+    return res.status(201).json({ recurring: mapRecurringRow(rows[0], today) });
+  } catch (err) {
+    console.error('[POST /api/auth/recurring-services]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// PATCH /api/auth/recurring-services/:id — edit / pause / resume a plan.
+app.patch('/api/auth/recurring-services/:id', publicFormLimit, async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const { rows: curRows } = await pool.query(
+      `SELECT ${RECURRING_SELECT} FROM recurring_services WHERE id = $1 AND user_id = $2 LIMIT 1`,
+      [req.params.id, payload.user_id]
+    );
+    const cur = curRows[0];
+    if (!cur) return res.status(404).json({ error: 'not_found' });
+
+    const body = req.body || {};
+    const updates = {};
+
+    // Status transitions: active ⇄ paused (and canceled, which the DELETE route also covers).
+    if (Object.prototype.hasOwnProperty.call(body, 'status')) {
+      const status = String(body.status || '').trim().toLowerCase();
+      if (!['active', 'paused', 'canceled'].includes(status)) return res.status(400).json({ error: 'invalid_status' });
+      updates.status = status;
+    }
+
+    const norm = normalizeRecurrenceInput(body, { partial: true });
+    if (!norm.ok) return res.status(400).json(norm);
+    Object.assign(updates, norm.value);
+
+    if (Object.prototype.hasOwnProperty.call(body, 'providerId') || Object.prototype.hasOwnProperty.call(body, 'provider_id')) {
+      try {
+        const provider = await resolveRecurringProvider(body.providerId ?? body.provider_id);
+        updates.provider_id = provider.providerId;
+        updates.provider_name = provider.providerName;
+      } catch (e) { if (e.status) return res.status(e.status).json({ error: e.code, message: e.message }); throw e; }
+    }
+
+    if (!Object.keys(updates).length) return res.status(400).json({ error: 'no_fields' });
+
+    // Recompute the cached next occurrence from the merged plan.
+    const merged = { ...cur, ...updates };
+    const today = todayYmdMX();
+    updates.next_occurrence_date = (String(merged.status) === 'active')
+      ? nextOccurrenceOnOrAfter(merged, maxYmd(today, merged.start_date))
+      : null;
+
+    const cols = Object.keys(updates);
+    const setSql = cols.map((c, i) => `${c} = $${i + 1}`).join(', ');
+    const params = cols.map((c) => updates[c]);
+    params.push(req.params.id, payload.user_id);
+    const { rows } = await pool.query(
+      `UPDATE recurring_services SET ${setSql}, updated_at = NOW()
+        WHERE id = $${cols.length + 1} AND user_id = $${cols.length + 2}
+        RETURNING ${RECURRING_SELECT}`,
+      params
+    );
+    return res.json({ recurring: mapRecurringRow(rows[0], today) });
+  } catch (err) {
+    console.error('[PATCH /api/auth/recurring-services/:id]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// DELETE /api/auth/recurring-services/:id — cancel a plan. Already-generated requests/orders
+// are independent and are left untouched.
+app.delete('/api/auth/recurring-services/:id', async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const { rowCount } = await pool.query(
+      'DELETE FROM recurring_services WHERE id = $1 AND user_id = $2',
+      [req.params.id, payload.user_id]
+    );
+    if (!rowCount) return res.status(404).json({ error: 'not_found' });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('[DELETE /api/auth/recurring-services/:id]', err);
     return res.status(500).json({ error: 'internal_error' });
   }
 });
