@@ -776,8 +776,10 @@
     .order-status { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 999px; font-size: 11px; font-weight: 800; white-space: nowrap; }
     .order-status::before { content: ""; width: 6px; height: 6px; border-radius: 999px; background: currentColor; }
     .order-status.is-pending { background: rgba(161, 98, 7, 0.12); color: #a16207; }
-    .order-status.is-progress { background: rgba(49, 120, 131, 0.13); color: #2b6d77; }
-    .order-status.is-authorized { background: var(--account-accent-soft); color: #2b6d77; }
+    .order-status.is-request { background: rgba(49, 120, 131, 0.13); color: #2b6d77; }
+    .order-status.is-booked { background: rgba(91, 111, 216, 0.13); color: #4b5cc4; }
+    .order-status.is-progress { background: rgba(91, 111, 216, 0.13); color: #4b5cc4; }
+    .order-status.is-authorized { background: rgba(31, 122, 58, 0.13); color: #1f7a3a; }
     .order-status.is-done { background: rgba(31, 122, 58, 0.13); color: #1f7a3a; }
     .order-status.is-canceled { background: rgba(17, 17, 17, 0.06); color: #7c7c7c; }
     .order-status.is-declined { background: var(--account-danger-soft); color: var(--account-danger); }
@@ -962,7 +964,7 @@
       .hub-cta { flex: 1 1 auto; min-width: 132px; }
       .orders-head { flex-direction: column; align-items: stretch; }
       .orders-new-btn { width: 100%; }
-      .orders-segment { display: grid; grid-template-columns: 1fr 1fr; }
+      .orders-segment { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
       .orders-seg-btn { justify-content: center; }
       .order-card { padding: 16px; }
       .order-card-top { grid-template-columns: 46px 1fr; }
@@ -1042,8 +1044,11 @@
           <!-- List view -->
           <div id="orders-list-view">
             <div class="orders-segment" id="orders-segment" role="tablist">
+              <button class="orders-seg-btn" role="tab" data-bucket="requests" onclick="switchOrdersBucket('requests')">
+                <span id="orders-seg-requests">Solicitudes</span><span class="orders-seg-count" id="orders-count-requests" hidden></span>
+              </button>
               <button class="orders-seg-btn active" role="tab" data-bucket="active" onclick="switchOrdersBucket('active')">
-                <span id="orders-seg-active">Activos</span><span class="orders-seg-count" id="orders-count-active" hidden></span>
+                <span id="orders-seg-active">Reservados</span><span class="orders-seg-count" id="orders-count-active" hidden></span>
               </button>
               <button class="orders-seg-btn" role="tab" data-bucket="past" onclick="switchOrdersBucket('past')">
                 <span id="orders-seg-past">Historial</span><span class="orders-seg-count" id="orders-count-past" hidden></span>
@@ -1297,26 +1302,29 @@ const TX = {
     titleOrders: 'Mis pedidos', subOrders: 'Da seguimiento a tus solicitudes y revisa tu historial.',
     ordersNew: 'Nueva solicitud',
     // Orders hub (promoted workspace)
-    hubActiveCap: 'Activos', hubPastCap: 'Historial',
+    hubRequestsCap: 'Solicitudes', hubActiveCap: 'Reservados', hubPastCap: 'Historial',
     hubOrdersView: 'Ver pedidos',
     hubSpecManage: 'Gestionar especialistas',
     hubFavView: 'Ver favoritos',
     hubOrdersAction: (n) => n === 1 ? '1 pedido necesita tu atención' : `${n} pedidos necesitan tu atención`,
-    hubOrdersInProgress: (n) => n === 1 ? '1 servicio en curso' : `${n} servicios en curso`,
+    hubOrdersInProgress: (n) => n === 1 ? '1 servicio reservado' : `${n} servicios reservados`,
+    hubOrdersRequests: (n) => n === 1 ? '1 solicitud recibida' : `${n} solicitudes recibidas`,
     hubOrdersNone: 'Sin pedidos activos por ahora',
     hubSpecReady: (n) => n === 1 ? '1 especialista guardado' : `${n} especialistas guardados`,
     hubSpecEmpty: 'Guarda a tus especialistas de confianza',
     hubFavReady: (n) => n === 1 ? '1 servicio guardado' : `${n} servicios guardados`,
     hubFavEmpty: 'Guarda tus servicios favoritos',
-    ordersSegActive: 'Activos', ordersSegPast: 'Historial',
+    ordersSegRequests: 'Solicitudes', ordersSegActive: 'Reservados', ordersSegPast: 'Historial',
     ordersLoadError: 'No pudimos cargar tus pedidos.', ordersRetry: 'Reintentar',
-    ordersEmptyActiveTitle: 'No tienes pedidos activos',
-    ordersEmptyActiveText: 'Cuando solicites un servicio podrás darle seguimiento aquí en tiempo real.',
+    ordersEmptyRequestsTitle: 'No tienes solicitudes pendientes',
+    ordersEmptyRequestsText: 'Las solicitudes recibidas aparecerán aquí hasta que se conviertan en una reserva.',
+    ordersEmptyActiveTitle: 'No tienes servicios reservados',
+    ordersEmptyActiveText: 'Cuando una solicitud quede reservada podrás darle seguimiento aquí.',
     ordersEmptyPastTitle: 'Aún no tienes historial',
     ordersEmptyPastText: 'Tus servicios completados y cancelados aparecerán aquí.',
     ordersEmptyCta: 'Solicitar un servicio',
     stRequested: 'Solicitud recibida', stPendingPay: 'Pendiente de pago', stPay3ds: 'Verificación de pago',
-    stCash: 'Pago en efectivo', stScheduled: 'Programado', stAuthorized: 'Autorizado',
+    stCash: 'Pago en efectivo', stScheduled: 'Reservado', stAuthorized: 'Autorizado',
     stCompleted: 'Completado', stCanceled: 'Cancelado', stCanceledFee: 'Cancelado (con tarifa)', stDeclined: 'Rechazado', stRefunded: 'Reembolsado',
     stNeedCard: 'Falta método de pago', stConfirmBooking: 'Confirma tu reserva',
     noteScheduled: 'Listo. Autorizaremos tu tarjeta ~24 h antes del servicio.',
@@ -1484,26 +1492,29 @@ const TX = {
     titleOrders: 'My orders', subOrders: 'Track your requests and browse your history.',
     ordersNew: 'New request',
     // Orders hub (promoted workspace)
-    hubActiveCap: 'Active', hubPastCap: 'History',
+    hubRequestsCap: 'Requests', hubActiveCap: 'Booked', hubPastCap: 'History',
     hubOrdersView: 'View orders',
     hubSpecManage: 'Manage specialists',
     hubFavView: 'View favorites',
     hubOrdersAction: (n) => n === 1 ? '1 order needs your attention' : `${n} orders need your attention`,
-    hubOrdersInProgress: (n) => n === 1 ? '1 service in progress' : `${n} services in progress`,
+    hubOrdersInProgress: (n) => n === 1 ? '1 booked service' : `${n} booked services`,
+    hubOrdersRequests: (n) => n === 1 ? '1 request received' : `${n} requests received`,
     hubOrdersNone: 'No active orders right now',
     hubSpecReady: (n) => n === 1 ? '1 saved specialist' : `${n} saved specialists`,
     hubSpecEmpty: 'Save your trusted specialists',
     hubFavReady: (n) => n === 1 ? '1 saved service' : `${n} saved services`,
     hubFavEmpty: 'Save your favorite services',
-    ordersSegActive: 'Active', ordersSegPast: 'History',
+    ordersSegRequests: 'Requests', ordersSegActive: 'Booked', ordersSegPast: 'History',
     ordersLoadError: 'We could not load your orders.', ordersRetry: 'Retry',
-    ordersEmptyActiveTitle: 'No active orders',
-    ordersEmptyActiveText: 'When you request a service, you can track it here in real time.',
+    ordersEmptyRequestsTitle: 'No pending requests',
+    ordersEmptyRequestsText: 'Received requests will appear here until they become a booking.',
+    ordersEmptyActiveTitle: 'No booked services',
+    ordersEmptyActiveText: 'Once a request is booked, you can track it here.',
     ordersEmptyPastTitle: 'No history yet',
     ordersEmptyPastText: 'Your completed and canceled services will show up here.',
     ordersEmptyCta: 'Request a service',
     stRequested: 'Request received', stPendingPay: 'Payment pending', stPay3ds: 'Payment verification',
-    stCash: 'Cash payment', stScheduled: 'Scheduled', stAuthorized: 'Authorized',
+    stCash: 'Cash payment', stScheduled: 'Booked', stAuthorized: 'Authorized',
     stCompleted: 'Completed', stCanceled: 'Canceled', stCanceledFee: 'Canceled (fee applied)', stDeclined: 'Declined', stRefunded: 'Refunded',
     stNeedCard: 'Add payment method', stConfirmBooking: 'Confirm booking',
     noteScheduled: "All set. We'll authorize your card ~24h before service.",
@@ -1800,15 +1811,19 @@ function renderOrdersHub() {
       <span class="hub-status hub-sk">·</span></div>`;
   } else {
     const active = _orders.filter(o => o.bucket !== 'past');
+    const requests = active.filter(orderIsActiveRequest);
+    const booked = active.filter(o => !orderIsActiveRequest(o));
     const past = _orders.filter(o => o.bucket === 'past');
     const actionable = active.filter(o => orderStatusMeta(o).cls === 'is-pending');
     let status = t.hubOrdersNone, statusCls = '';
     if (actionable.length) { status = t.hubOrdersAction(actionable.length); statusCls = ' is-action'; }
-    else if (active.length) { status = t.hubOrdersInProgress(active.length); }
+    else if (booked.length) { status = t.hubOrdersInProgress(booked.length); }
+    else if (requests.length) { status = t.hubOrdersRequests(requests.length); }
     ordersBody = `
       <div class="hub-summary">
       <div class="hub-metrics">
-        <div class="hub-metric"><span class="hub-metric-num is-primary">${active.length}</span><span class="hub-metric-cap">${escapeHtml(t.hubActiveCap)}</span></div>
+        <div class="hub-metric"><span class="hub-metric-num is-primary">${booked.length}</span><span class="hub-metric-cap">${escapeHtml(t.hubActiveCap)}</span></div>
+        <div class="hub-metric"><span class="hub-metric-num">${requests.length}</span><span class="hub-metric-cap">${escapeHtml(t.hubRequestsCap)}</span></div>
         <div class="hub-metric"><span class="hub-metric-num">${past.length}</span><span class="hub-metric-cap">${escapeHtml(t.hubPastCap)}</span></div>
       </div>
       <span class="hub-status${statusCls}">${escapeHtml(status)}</span></div>`;
@@ -2739,7 +2754,7 @@ function orderStatusMeta(item) {
   if (item.source === 'request') {
     // A withdrawn intake request becomes 'canceled'; otherwise it's still in the intake step.
     if (/^cancel/i.test(String(item.status || ''))) return { label: t.stCanceled, cls: 'is-canceled', step: 1, canceled: true };
-    return { label: t.stRequested, cls: 'is-progress', step: 1, canceled: false };
+    return { label: t.stRequested, cls: 'is-request', step: 1, canceled: false };
   }
   const raw = String(item.status || '').trim();
   const kind = String(item.kind || '').toLowerCase();
@@ -2757,7 +2772,7 @@ function orderStatusMeta(item) {
   if (/^blocked/i.test(raw)) return { label: t.stNeedCard, cls: 'is-pending', step: 2, canceled: false };
   switch (raw) {
     case 'Confirmed':                return { label: t.stAuthorized, cls: 'is-authorized', step: 3, canceled: false };
-    case 'Scheduled':                return { label: t.stScheduled,  cls: 'is-progress',   step: 2, canceled: false };
+    case 'Scheduled':                return { label: t.stScheduled,  cls: 'is-booked',     step: 2, canceled: false };
     case 'Pending Cash':             return { label: t.stCash,       cls: 'is-progress',   step: 2, canceled: false };
     case 'Pending (3DS)':            return { label: t.stPay3ds,     cls: 'is-pending',    step: 2, canceled: false };
     case 'Declined':                 return { label: t.stDeclined,   cls: 'is-declined',   step: 1, canceled: true };
@@ -2802,6 +2817,13 @@ function orderPolicy(item) {
   if (item.policy && typeof item.policy === 'object') return item.policy;
   const past = (item.bucket === 'past');
   return { canCancel: false, cancelTier: 'none', cancelFeeCents: 0, canEditAddress: false, canRequestReschedule: false, canReorder: past && !!item.category, isCaptured: false };
+}
+function orderIsActiveRequest(item) {
+  return item && item.bucket !== 'past' && item.source === 'request';
+}
+function orderListBucket(item) {
+  if (!item || item.bucket === 'past') return 'past';
+  return orderIsActiveRequest(item) ? 'requests' : 'active';
 }
 function orderCanReorder(item) { return !!orderPolicy(item).canReorder && !!item.category; }
 function orderWhenLabel(item) {
@@ -3151,13 +3173,16 @@ function ordersErrorHtml() {
 }
 function ordersEmptyHtml() {
   const t = tr();
-  const active = _ordersBucket === 'active';
+  const isRequests = _ordersBucket === 'requests';
+  const isActive = _ordersBucket === 'active';
+  const title = isRequests ? t.ordersEmptyRequestsTitle : (isActive ? t.ordersEmptyActiveTitle : t.ordersEmptyPastTitle);
+  const text = isRequests ? t.ordersEmptyRequestsText : (isActive ? t.ordersEmptyActiveText : t.ordersEmptyPastText);
   return `
     <div class="order-empty">
-      <div class="order-empty-emoji">${active ? '📋' : '🗂️'}</div>
-      <div class="order-empty-title">${escapeHtml(active ? t.ordersEmptyActiveTitle : t.ordersEmptyPastTitle)}</div>
-      <div class="order-empty-text">${escapeHtml(active ? t.ordersEmptyActiveText : t.ordersEmptyPastText)}</div>
-      ${active ? `<a class="btn-save" href="/smart-request.html">${escapeHtml(t.ordersEmptyCta)}</a>` : ''}
+      <div class="order-empty-emoji">${isRequests ? '📨' : (isActive ? '📋' : '🗂️')}</div>
+      <div class="order-empty-title">${escapeHtml(title)}</div>
+      <div class="order-empty-text">${escapeHtml(text)}</div>
+      ${_ordersBucket !== 'past' ? `<a class="btn-save" href="/smart-request.html">${escapeHtml(t.ordersEmptyCta)}</a>` : ''}
     </div>`;
 }
 
@@ -3234,11 +3259,17 @@ async function loadOrders(opts = {}) {
 function renderOrders() {
   const list = document.getElementById('orders-list');
   if (!list) return;
-  let active = 0, past = 0;
-  _orders.forEach(o => { (o.bucket === 'past') ? past++ : active++; });
+  let requests = 0, active = 0, past = 0;
+  _orders.forEach(o => {
+    const bucket = orderListBucket(o);
+    if (bucket === 'requests') requests++;
+    else if (bucket === 'past') past++;
+    else active++;
+  });
+  setOrdersCount('requests', requests);
   setOrdersCount('active', active);
   setOrdersCount('past', past);
-  const items = _orders.filter(o => (o.bucket === 'past' ? 'past' : 'active') === _ordersBucket);
+  const items = _orders.filter(o => orderListBucket(o) === _ordersBucket);
   list.innerHTML = items.length ? items.map((it, i) => orderCardHtml(it, i)).join('') : ordersEmptyHtml();
   renderOrdersHub();
   // Keep the calendar in sync when it's the active view (orders reload on tab return / actions).
@@ -3246,7 +3277,7 @@ function renderOrders() {
 }
 
 function switchOrdersBucket(bucket) {
-  if (bucket !== 'active' && bucket !== 'past') return;
+  if (bucket !== 'requests' && bucket !== 'active' && bucket !== 'past') return;
   _ordersBucket = bucket;
   document.querySelectorAll('.orders-seg-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.bucket === bucket));
   renderOrders();
@@ -4414,7 +4445,7 @@ function applyTranslations() {
   const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
   const ph = (id, val) => { const el = document.getElementById(id); if (el) el.placeholder = val; };
   set('title-orders', t.titleOrders);   set('sub-orders', t.subOrders);
-  set('orders-seg-active', t.ordersSegActive); set('orders-seg-past', t.ordersSegPast);
+  set('orders-seg-requests', t.ordersSegRequests); set('orders-seg-active', t.ordersSegActive); set('orders-seg-past', t.ordersSegPast);
   set('ov-list-label', t.ovList);       set('ov-cal-label', t.ovCalendar);
   set('title-info', t.titleInfo);       set('sub-info', t.subInfo);
   set('title-security', t.titleSecurity); set('sub-security', t.subSecurity);
