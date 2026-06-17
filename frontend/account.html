@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="/shared/shared-styles.css">
   <link rel="stylesheet" href="/shared/landing-theme.css">
   <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script src="/shared/browse-data.js"></script>
   <style>
     .account-page {
       --account-accent-soft: rgba(149, 204, 213, 0.14);
@@ -589,7 +590,7 @@
     .action-address-form { margin: 14px 0 12px; }
     .action-address-form .servi-addr { gap: 12px; }
     /* ─── Orders hub (promoted workspace header) ────────────────────────── */
-    .orders-hub { display: grid; grid-template-columns: 1.55fr 1fr; grid-auto-rows: minmax(0, 1fr); gap: 10px 16px; height: 232px; margin-bottom: 22px; }
+    .orders-hub { display: grid; grid-template-columns: 1.55fr 1fr; grid-auto-rows: minmax(0, 1fr); gap: 10px 16px; height: 242px; margin-bottom: 22px; }
     .hub-tile {
       position: relative;
       display: flex; flex-direction: column;
@@ -637,30 +638,45 @@
     .hub-spacer { flex: 1 1 auto; min-height: 0; }
     .hub-status { display: block; min-width: 0; font-size: 13px; color: var(--color-text-secondary); line-height: 1.45; }
     .hub-status.is-action { color: #a16207; font-weight: 700; }
-    .hub-actions { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-top: 12px; }
+    .hub-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+    .hub-tile-orders .hub-actions { align-items: flex-end; }
     .hub-action {
       position: relative;
       z-index: 1;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 7px;
       min-height: 36px;
-      padding: 9px 13px;
+      padding: 9px 14px;
       border: 1px solid rgba(16, 18, 19, 0.14);
       border-radius: 12px;
       background: var(--color-text);
       color: #fff;
+      font-family: var(--font-body);
       font-size: 12.5px;
       font-weight: 800;
       line-height: 1;
+      text-decoration: none;
+      white-space: nowrap;
+      cursor: pointer;
       box-shadow: 0 16px 28px -22px rgba(17, 17, 17, 0.72);
       transition: transform var(--duration-fast), background var(--duration-fast), border-color var(--duration-fast), box-shadow var(--duration-fast);
     }
-    .hub-action-arrow { font-size: 14px; line-height: 1; transform: translateY(-0.5px); transition: transform var(--duration-fast); }
+    .hub-action.is-secondary {
+      background: rgba(255, 255, 255, 0.86);
+      border-color: rgba(17, 17, 17, 0.14);
+      color: var(--color-text);
+      box-shadow: none;
+    }
     .hub-tile:hover .hub-action { background: var(--color-accent-hover); border-color: var(--color-accent-hover); box-shadow: 0 18px 30px -20px rgba(63, 142, 157, 0.48); }
-    .hub-tile:hover .hub-action-arrow { transform: translate(2px, -0.5px); }
     .hub-tile.active .hub-action { background: var(--color-accent); border-color: var(--color-accent); color: #fff; }
+    .hub-tile:hover .hub-action.is-secondary,
+    .hub-tile.active .hub-action.is-secondary {
+      background: rgba(255, 255, 255, 0.9);
+      border-color: rgba(17, 17, 17, 0.14);
+      color: var(--color-text);
+      box-shadow: none;
+    }
     .hub-cta { position: relative; z-index: 1; align-self: flex-start; margin-top: 0; padding: 9px 13px; min-height: 36px; border-radius: 12px; font-size: 12.5px; box-shadow: none; }
     /* skeleton placeholders while a count loads */
     .hub-sk { color: transparent !important; border-radius: 8px;
@@ -1742,7 +1758,14 @@ function hubKey(e, section) {
 }
 
 function hubActionHtml(label) {
-  return `<span class="hub-action">${escapeHtml(label)}<span class="hub-action-arrow" aria-hidden="true">&rarr;</span></span>`;
+  return `<span class="hub-action">${escapeHtml(label)}</span>`;
+}
+
+function scheduleRecurringFromHub() {
+  switchSection('orders');
+  switchOrdersView('calendar');
+  if (!_recurringLoaded && !_recurringLoading) loadRecurring();
+  openRecurringModal();
 }
 
 function hubSmallTile(section, icon, label, actionLabel, loaded, count, readyCopyFn, emptyCopy) {
@@ -1791,6 +1814,10 @@ function renderOrdersHub() {
       <span class="hub-status${statusCls}">${escapeHtml(status)}</span></div>`;
   }
 
+  const ordersExtraActions = activeSection === 'orders' ? `
+        <a class="hub-action is-secondary" href="/browse.html" onclick="event.stopPropagation()">${escapeHtml(t.browseFavorites)}</a>
+        <button class="hub-action is-secondary" type="button" onclick="event.stopPropagation();scheduleRecurringFromHub()">${escapeHtml(t.calNewRecurring)}</button>` : '';
+
   hub.innerHTML = `
     <div class="hub-tile hub-tile-orders${activeSection === 'orders' ? ' active' : ''}" role="button" tabindex="0"
       aria-label="${escapeHtml(t.navOrders)}" onclick="switchSection('orders')" onkeydown="hubKey(event,'orders')">
@@ -1800,6 +1827,7 @@ function renderOrdersHub() {
       <div class="hub-actions">
         ${hubActionHtml(t.hubOrdersView)}
         <a class="btn-save hub-cta" href="/smart-request.html" onclick="event.stopPropagation()">${escapeHtml(t.ordersNew)}</a>
+        ${ordersExtraActions}
       </div>
     </div>
     ${hubSmallTile('specialists', HUB_ICONS.specialists, t.navSpecialists, t.hubSpecManage, _specialistsLoaded, _specialists.length, t.hubSpecReady, t.hubSpecEmpty)}
@@ -2841,11 +2869,75 @@ async function startOrderPayment(id, flow, btn) {
     restore();
   }
 }
-function reorder(category) {
+function normalizeOrderServiceText(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ');
+}
+
+function descriptionServicePrefix(description) {
+  const raw = String(description || '').trim();
+  if (!raw) return '';
+  return raw.split(/\s+[—-]\s+/)[0].trim();
+}
+
+function findCatalogService(category, subKey, serviceName) {
   const cat = String(category || '').toLowerCase();
-  window.location.href = ORDER_KNOWN_CATEGORIES.includes(cat)
-    ? '/service.html?category=' + encodeURIComponent(cat)
-    : '/browse.html';
+  const catalog = window.browseCategoryData && window.browseCategoryData[cat];
+  if (!catalog || !Array.isArray(catalog.subcategories)) return null;
+  const wantedSub = String(subKey || '').trim();
+  const wantedService = normalizeOrderServiceText(serviceName);
+  const subcategories = wantedSub
+    ? catalog.subcategories.filter(s => s.key === wantedSub)
+    : catalog.subcategories;
+
+  for (const sub of subcategories) {
+    const servicesByLang = sub.services || {};
+    const serviceSets = [servicesByLang.es, servicesByLang.en].filter(Array.isArray);
+    for (const services of serviceSets) {
+      const index = services.findIndex(s => normalizeOrderServiceText(s) === wantedService);
+      if (index === -1) continue;
+      return {
+        category: cat,
+        sub: sub.key,
+        service: (servicesByLang[isEs() ? 'es' : 'en'] || services)[index] || services[index],
+      };
+    }
+  }
+  return null;
+}
+
+function inferOrderCatalogService(item) {
+  if (!item) return null;
+  return findCatalogService(item.category, item.matchedSubKey, item.matchedService)
+    || findCatalogService(item.category, null, item.matchedService)
+    || findCatalogService(item.category, item.matchedSubKey, descriptionServicePrefix(item.description))
+    || findCatalogService(item.category, null, descriptionServicePrefix(item.description));
+}
+
+function buildReorderUrl(itemOrCategory) {
+  const item = typeof itemOrCategory === 'object' && itemOrCategory ? itemOrCategory : { category: itemOrCategory };
+  const cat = String(item.category || '').toLowerCase();
+  if (!ORDER_KNOWN_CATEGORIES.includes(cat) || cat === 'custom') return '/browse.html';
+  const match = inferOrderCatalogService(item);
+  if (!match) return '/browse.html?category=' + encodeURIComponent(cat);
+  const params = new URLSearchParams();
+  params.set('category', match.category);
+  params.set('sub', match.sub);
+  params.set('service', match.service);
+  return '/service.html?' + params.toString();
+}
+
+function reorder(itemOrCategory) {
+  window.location.href = buildReorderUrl(itemOrCategory);
+}
+
+function reorderOrderById(id) {
+  const item = _orders.find(o => o.id === id);
+  reorder(item || null);
 }
 
 // ─── Trusted Specialists ────────────────────────────────────────────────────
@@ -3083,7 +3175,7 @@ function orderCardHtml(item, idx) {
   const actions = [];
   if (orderIsPayable(item)) actions.push(`<button class="order-cta" onclick="event.stopPropagation();startOrderPayment('${escapeHtml(item.id)}','${escapeHtml(item.payFlow || item.kind)}',this)">${escapeHtml(orderCtaLabel(item))}</button>`);
   // "Order again" only on closed/past orders (server-authoritative). Cancel/modify live in the drawer.
-  if (orderCanReorder(item)) actions.push(`<button class="addr-btn default-btn" onclick="event.stopPropagation();reorder('${escapeHtml(item.category)}')">${escapeHtml(t.actReorder)}</button>`);
+  if (orderCanReorder(item)) actions.push(`<button class="addr-btn default-btn" onclick="event.stopPropagation();reorderOrderById('${escapeHtml(item.id)}')">${escapeHtml(t.actReorder)}</button>`);
   // "Rate" on a completed, not-yet-rated order — opens the drawer where the 👍/👎 widget lives.
   if (item.policy && item.policy.canRate && !item.rated) actions.push(`<button class="addr-btn default-btn" onclick="event.stopPropagation();openOrderDrawer('${escapeHtml(item.id)}')">${escapeHtml(t.actRate)}</button>`);
   const note = orderNote(item);

@@ -8111,7 +8111,7 @@ app.get('/api/auth/orders', async (req, res) => {
     // Pending intake requests that have not yet been turned into an order.
     const { rows: reqRows } = await pool.query(
       `SELECT id, category, description, preferred_date, preferred_time, is_asap,
-              service_address, status, created_at
+              service_address, status, matched_service, matched_sub_key, created_at
          FROM service_requests
         WHERE ${matchClause}
           AND COALESCE(converted_order_id, '') = ''
@@ -8167,6 +8167,8 @@ app.get('/api/auth/orders', async (req, res) => {
         bucket: reqBucket,
         category: r.category || null,
         description: r.description || null,
+        matchedService: r.matched_service || null,
+        matchedSubKey: r.matched_sub_key || null,
         serviceDate: r.preferred_date || null,
         serviceDateTime: null,
         preferredTime: r.preferred_time || null,
