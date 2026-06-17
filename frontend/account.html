@@ -620,7 +620,9 @@
     .hub-tile:active { transform: translateY(0); }
     .hub-tile.active { border-color: var(--color-accent); box-shadow: 0 0 0 1.5px var(--color-accent), 0 24px 48px -34px rgba(17, 17, 17, 0.22); }
     .hub-tile-orders { grid-row: span 2; }
+    .hub-tile-small { padding-block: 16px 14px; }
     .hub-tile-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+    .hub-tile-small .hub-tile-head { margin-bottom: 0; }
     .hub-tile-icon {
       width: 32px; height: 32px; flex: 0 0 32px; border-radius: 10px;
       display: inline-flex; align-items: center; justify-content: center;
@@ -639,6 +641,7 @@
     .hub-status { display: block; min-width: 0; font-size: 13px; color: var(--color-text-secondary); line-height: 1.45; }
     .hub-status.is-action { color: #a16207; font-weight: 700; }
     .hub-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+    .hub-tile-small .hub-actions { margin-top: 8px; }
     .hub-tile-orders .hub-actions { align-items: flex-end; }
     .hub-action {
       position: relative;
@@ -1779,20 +1782,10 @@ function scheduleRecurringFromHub() {
   openRecurringModal();
 }
 
-function hubSmallTile(section, icon, label, actionLabel, loaded, count, readyCopyFn, emptyCopy) {
-  let body;
-  if (!loaded) {
-    body = `<div class="hub-summary"><div class="hub-metrics"><div class="hub-metric"><span class="hub-metric-num hub-sk">0</span></div></div>
-      <span class="hub-status hub-sk">·</span></div>`;
-  } else {
-    const status = count ? readyCopyFn(count) : emptyCopy;
-    body = `<div class="hub-summary"><div class="hub-metrics"><div class="hub-metric"><span class="hub-metric-num">${count}</span></div></div>
-      <span class="hub-status">${escapeHtml(status)}</span></div>`;
-  }
+function hubSmallTile(section, icon, label, actionLabel) {
   return `<div class="hub-tile hub-tile-small${activeSection === section ? ' active' : ''}" role="button" tabindex="0"
     aria-label="${escapeHtml(label)}" onclick="switchSection('${section}')" onkeydown="hubKey(event,'${section}')">
     <div class="hub-tile-head"><span class="hub-tile-icon">${icon}</span><span class="hub-tile-label">${escapeHtml(label)}</span></div>
-    ${body}
     <div class="hub-spacer"></div>
     <div class="hub-actions">${hubActionHtml(actionLabel)}</div>
   </div>`;
@@ -1845,8 +1838,8 @@ function renderOrdersHub() {
         ${ordersExtraActions}
       </div>
     </div>
-    ${hubSmallTile('specialists', HUB_ICONS.specialists, t.navSpecialists, t.hubSpecManage, _specialistsLoaded, _specialists.length, t.hubSpecReady, t.hubSpecEmpty)}
-    ${hubSmallTile('favorites', HUB_ICONS.favorites, t.navFavorites, t.hubFavView, _favoritesLoaded, _favoriteServices.length, t.hubFavReady, t.hubFavEmpty)}`;
+    ${hubSmallTile('specialists', HUB_ICONS.specialists, t.navSpecialists, t.hubSpecManage)}
+    ${hubSmallTile('favorites', HUB_ICONS.favorites, t.navFavorites, t.hubFavView)}`;
 }
 
 // ─── Pre-fill personal info ───────────────────────────────────────────────────
