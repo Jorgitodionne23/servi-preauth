@@ -663,7 +663,8 @@
           <option value="Scheduled">Scheduled</option>
           <option value="Captured">Captured</option>
           <option value="Canceled">Canceled</option>
-          <option value="Withdrawn">Retiradas (web)</option>
+          <option value="Refunded">Refunded</option>
+          <option value="Withdrawn">Withdrawn</option>
           <option value="Declined">Declined</option>
         </select>
         <button class="filter-pill ops-attention-pill" id="orders-attention" onclick="toggleAttentionFilter()">Atención</button>
@@ -1185,6 +1186,49 @@ function badgeClass(status) {
   if (s === 'reviewed') return 'badge-reviewed';
   if (s === 'resolved') return 'badge-resolved';
   return '';
+}
+
+// Clean, human-readable English label for an order status. Pure + case-insensitive, mirroring
+// badgeClass()'s prefix-then-exact structure. Color still comes from badgeClass(rawStatus) on the
+// RAW value; this only changes the displayed text. Falls back to Title-Case for any future status.
+function orderStatusLabel(status) {
+  const raw = String(status || '').trim();
+  if (!raw) return '—';
+  const titleCase = (str) => String(str || '').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+  const s = raw.toLowerCase();
+  // Prefix matches first so compound labels resolve before the exact map.
+  if (s.startsWith('cancel')) {
+    const m = raw.match(/\(([^)]+)\)/);
+    if (!m) return 'Canceled';
+    const reasonMap = {
+      'requested_by_customer': 'Customer Request',
+      'expired': 'Expired',
+      'late fee': 'Late Fee',
+      'change request': 'Change Request',
+      'abandoned': 'Abandoned',
+      'duplicate': 'Duplicate',
+      'fraudulent': 'Fraudulent',
+    };
+    const key = m[1].trim().toLowerCase();
+    return `Canceled — ${reasonMap[key] || titleCase(m[1].replace(/_/g, ' '))}`;
+  }
+  if (s.startsWith('captured (partial refund)')) return 'Captured — Partial Refund';
+  if (s.startsWith('captured')) return 'Captured';
+  const exact = {
+    'pending': 'Pending',
+    'pending (3ds)': 'Pending — 3-D Secure',
+    'pending cash': 'Pending — Cash',
+    'setup required': 'Setup Required',
+    'setup created': 'Setup Created',
+    'blocked': 'Needs Card',
+    'scheduled': 'Scheduled',
+    'confirmed': 'Confirmed',
+    'failed': 'Failed',
+    'declined': 'Declined',
+    'refunded': 'Refunded',
+    'new': 'New',
+  };
+  return exact[s] || titleCase(raw);
 }
 
 function opsSeverityLabel(severity) {
@@ -1874,7 +1918,7 @@ async function loadOrders() {
         <td>${fmtMoney(o.pricing_total_amount || o.amount)}</td>
         <td>${scheduleRowText(o)}</td>
         <td class="hours-cell ${cellClass}">${escapeHtml(timeLabel)}</td>
-        <td><span class="badge ${badgeClass(o.status)}">${escapeHtml(o.status || '—')}</span>${o.has_pending_change ? ' <span class="badge badge-pending" title="Solicitud de cambio pendiente por revisar">⏳ Cambio</span>' : ''}${opsLine}</td>
+        <td><span class="badge ${badgeClass(o.status)}">${escapeHtml(orderStatusLabel(o.status))}</span>${o.has_pending_change ? ' <span class="badge badge-pending" title="Solicitud de cambio pendiente por revisar">⏳ Cambio</span>' : ''}${opsLine}</td>
         <td onclick="event.stopPropagation()">${buildActionBtns(o)}</td>
       </tr>`;
     }).join('');
@@ -2674,7 +2718,7 @@ async function lookupParentOrder() {
     if (!res.ok) { info.textContent = '⚠️ Orden no encontrada'; return; }
     const d = await res.json();
     const o = d.order;
-    info.textContent = `✓ ${o.client_name || '—'} · ${o.service_description || '—'} · ${fmtMoney(o.amount)} · ${o.status}`;
+    info.textContent = `✓ ${o.client_name || '—'} · ${o.service_description || '—'} · ${fmtMoney(o.amount)} · ${orderStatusLabel(o.status)}`;
   } catch (_) { info.textContent = '⚠️ Error al buscar'; }
 }
 
@@ -2849,13 +2893,13 @@ function renderOrderDetail(o, adjustments) {
       ? `<a class="sp-stripe-btn" href="https://dashboard.stripe.com/payments/${encodeURIComponent(o.payment_intent_id)}" target="_blank" rel="noopener">Ver en Stripe ↗</a>`
       : '';
     const adjsHtml = (adjustments || []).length
-      ? adjustments.map(a => `<div class="sp-adj"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><span style="font-family:monospace;color:#a78bfa">${escapeHtml(a.public_code || a.id.slice(0,8))}</span><span class="badge ${badgeClass(a.status)}">${escapeHtml(a.status)}</span></div><div style="color:#888">${escapeHtml(a.service_description || '—')} · ${fmtMoney(a.pricing_total_amount || a.amount)}</div></div>`).join('')
+      ? adjustments.map(a => `<div class="sp-adj"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><span style="font-family:monospace;color:#a78bfa">${escapeHtml(a.public_code || a.id.slice(0,8))}</span><span class="badge ${badgeClass(a.status)}">${escapeHtml(orderStatusLabel(a.status))}</span></div><div style="color:#888">${escapeHtml(a.service_description || '—')} · ${fmtMoney(a.pricing_total_amount || a.amount)}</div></div>`).join('')
       : '<div style="color:#555;font-size:12px">Sin ajustes</div>';
-    const editableStatuses = new Set(['Pending','Setup required','Setup created','Pending (3DS)','Scheduled','Confirmed','Pending Cash','New']);
-    const isEditable = editableStatuses.has(o.status);
+    const editableStatuses = new Set(['pending','setup required','setup created','pending (3ds)','scheduled','confirmed','pending cash','new']);
+    const isEditable = editableStatuses.has(String(o.status||'').trim().toLowerCase());
     const editBtn = isEditable
       ? `<button class="action-btn" style="margin-left:auto" onclick="openOrderEdit('${o.id}')">✎ Editar</button>`
-      : `<span style="margin-left:auto;font-size:11px;color:#666">No editable (${escapeHtml(o.status||'')})</span>`;
+      : `<span style="margin-left:auto;font-size:11px;color:#666">No editable (${escapeHtml(orderStatusLabel(o.status))})</span>`;
     document.getElementById('op-body').innerHTML = `
       <div class="sp-sec">
         <div class="sp-sec-t" style="display:flex;align-items:center">Cliente${editBtn}</div>
@@ -2874,7 +2918,7 @@ function renderOrderDetail(o, adjustments) {
           <div style="grid-column:1/-1"><div class="sp-lbl">Horario del servicio</div>${scheduleDetailHtml(o)}</div>
           <div style="grid-column:1/-1"><div class="sp-lbl">Descripción</div><div class="sp-val">${escapeHtml(o.service_description || '—')}</div></div>
           <div><div class="sp-lbl">Tipo</div><div class="sp-val">${escapeHtml(o.kind || '—')}</div></div>
-          <div><div class="sp-lbl">Estado</div><div class="sp-val"><span class="badge ${badgeClass(o.status)}">${escapeHtml(o.status || '—')}</span></div></div>
+          <div><div class="sp-lbl">Estado</div><div class="sp-val"><span class="badge ${badgeClass(o.status)}">${escapeHtml(orderStatusLabel(o.status))}</span></div></div>
         </div>
       </div>
       <div class="sp-sec">

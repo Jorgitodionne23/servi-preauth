@@ -362,6 +362,30 @@
       return 'rango';
     }
 
+    // Clean Spanish label for an order status (this page is es-only). Mirrors account.html's
+    // orderStatusMeta() tone. Case-insensitive; compound labels matched by prefix.
+    function statusLabel(status) {
+      const raw = String(status || '').trim();
+      if (!raw) return '—';
+      const s = raw.toLowerCase();
+      if (s.startsWith('captured')) return 'Completado';
+      if (s.startsWith('refund')) return 'Reembolsado';
+      if (s.startsWith('cancel')) return /late fee/i.test(raw) ? 'Cancelado (cargo por cancelación)' : 'Cancelado';
+      if (s.startsWith('blocked')) return 'Requiere tarjeta';
+      const exact = {
+        'confirmed': 'Autorizado',
+        'scheduled': 'Agendado',
+        'pending cash': 'Pago en efectivo',
+        'pending (3ds)': 'Pago pendiente',
+        'declined': 'Rechazado',
+        'failed': 'Rechazado',
+        'expired': 'Cancelado',
+        'setup required': 'Requiere tarjeta',
+        'setup created': 'Requiere tarjeta',
+      };
+      return exact[s] || 'Pendiente de pago';
+    }
+
     function renderOrder(order, { totalsOverride = null, reasonOverride = null, skipStripeReason = false } = {}) {
       try {
         targetOrderId.textContent = friendlyCode(order);
@@ -451,7 +475,7 @@
       } else {
         emailRow.style.display = 'none';
       }
-      if (statusEl) statusEl.textContent = order.status || '—';
+      if (statusEl) statusEl.textContent = statusLabel(order.status);
 
       const isAdjustment = String(order.kind || totals.kind || '').toLowerCase() === 'adjustment';
       if (isAdjustment) {

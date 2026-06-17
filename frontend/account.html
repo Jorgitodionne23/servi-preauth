@@ -80,7 +80,9 @@
       justify-content: center;
       font-size: 16px;
       line-height: 1;
+      color: inherit;
     }
+    .account-sidebar-icon svg { width: 18px; height: 18px; stroke: currentColor; fill: none; }
     .account-card {
       background: rgba(255, 255, 255, 0.84);
       border: 1px solid var(--color-border);
@@ -586,6 +588,50 @@
     .confirm-ok:disabled { opacity: 0.6; cursor: not-allowed; }
     .action-address-form { margin: 14px 0 12px; }
     .action-address-form .servi-addr { gap: 12px; }
+    /* ─── Orders hub (promoted workspace header) ────────────────────────── */
+    .orders-hub { display: grid; grid-template-columns: 1.55fr 1fr; grid-auto-rows: minmax(0, 1fr); gap: 16px; margin-bottom: 26px; }
+    .hub-tile {
+      position: relative;
+      display: flex; flex-direction: column;
+      width: 100%; text-align: left;
+      border: 1px solid var(--color-border); border-radius: 22px;
+      background: rgba(255, 255, 255, 0.82);
+      backdrop-filter: blur(16px);
+      box-shadow: 0 24px 48px -34px rgba(17, 17, 17, 0.22);
+      padding: 22px; cursor: pointer;
+      font-family: var(--font-body);
+      transition: transform var(--duration-fast), box-shadow var(--duration-fast), border-color var(--duration-fast);
+    }
+    .hub-tile:hover { transform: translateY(-2px); border-color: var(--account-accent-ring); box-shadow: 0 26px 52px -30px rgba(17, 17, 17, 0.3); }
+    .hub-tile:focus-visible { outline: none; border-color: var(--color-accent); box-shadow: 0 0 0 4px var(--account-accent-ring); }
+    .hub-tile:active { transform: translateY(0); }
+    .hub-tile.active { border-color: var(--color-accent); box-shadow: 0 0 0 1.5px var(--color-accent), 0 24px 48px -34px rgba(17, 17, 17, 0.22); }
+    .hub-tile-orders { grid-row: span 2; }
+    .hub-tile-head { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+    .hub-tile-icon {
+      width: 42px; height: 42px; flex: 0 0 42px; border-radius: 13px;
+      display: inline-flex; align-items: center; justify-content: center;
+      background: var(--account-accent-soft); color: var(--color-accent);
+    }
+    .hub-tile-icon svg { width: 22px; height: 22px; stroke: currentColor; fill: none; }
+    .hub-tile-label { font-family: var(--font-heading); font-size: 15px; font-weight: 800; letter-spacing: -0.01em; color: var(--color-text); line-height: 1.2; }
+    .hub-tile-orders .hub-tile-label { font-size: 19px; }
+    .hub-metrics { display: flex; align-items: flex-end; gap: 22px; }
+    .hub-metric { display: flex; flex-direction: column; gap: 4px; }
+    .hub-metric-num { font-family: var(--font-heading); font-weight: 800; letter-spacing: -0.02em; color: var(--color-text); line-height: 0.95; font-size: 26px; }
+    .hub-tile-orders .hub-metric-num.is-primary { font-size: 40px; }
+    .hub-metric-cap { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-text-muted); }
+    .hub-spacer { flex: 1 1 auto; min-height: 10px; }
+    .hub-status { font-size: 13px; color: var(--color-text-secondary); line-height: 1.45; }
+    .hub-status.is-action { color: #a16207; font-weight: 700; }
+    .hub-cta { align-self: flex-start; margin-top: 16px; }
+    /* skeleton placeholders while a count loads */
+    .hub-sk { color: transparent !important; border-radius: 8px;
+      background: linear-gradient(100deg, rgba(17,17,17,0.05) 28%, rgba(17,17,17,0.09) 50%, rgba(17,17,17,0.05) 72%);
+      background-size: 220% 100%; animation: skShimmer 1.3s ease-in-out infinite; }
+    .hub-metric-num.hub-sk { display: inline-block; width: 48px; height: 28px; }
+    .hub-tile-orders .hub-metric-num.is-primary.hub-sk { width: 64px; height: 38px; }
+    .hub-status.hub-sk { display: inline-block; width: 150px; height: 13px; }
     /* ─── Orders / history ─────────────────────────────────────────────── */
     .orders-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
     .orders-new-btn { flex: 0 0 auto; white-space: nowrap; gap: 9px; }
@@ -766,6 +812,9 @@
       .form-row { grid-template-columns: 1fr; }
       .favorite-list { grid-template-columns: 1fr; }
       .favorite-card { grid-template-columns: 96px 1fr; }
+      .orders-hub { grid-template-columns: 1fr; }
+      .hub-tile-orders { grid-row: auto; }
+      .hub-tile { padding: 20px; }
       .orders-head { flex-direction: column; align-items: stretch; }
       .orders-new-btn { width: 100%; }
       .orders-segment { display: grid; grid-template-columns: 1fr 1fr; }
@@ -802,7 +851,6 @@
 
 <main class="account-page">
   <div class="container">
-    <div class="mobile-tabs" id="mobile-tabs"></div>
     <div class="account-layout">
 
       <!-- Sidebar -->
@@ -821,6 +869,12 @@
           <button class="verify-warning-action" id="email-warning-action" onclick="handleEmailWarningAction()">Verificar correo</button>
         </div>
 
+        <!-- Orders hub (promoted workspace) — rendered by renderOrdersHub() -->
+        <div class="orders-hub" id="orders-hub"></div>
+
+        <!-- Account settings tabs (mobile only) -->
+        <div class="mobile-tabs" id="mobile-tabs"></div>
+
         <!-- Orders / History -->
         <section class="account-section" id="section-orders">
           <div class="orders-head">
@@ -828,10 +882,6 @@
               <div class="section-title" id="title-orders">Mis pedidos</div>
               <div class="section-sub" id="sub-orders" style="margin-bottom:0">Da seguimiento a tus solicitudes y revisa tu historial.</div>
             </div>
-            <a class="btn-outline orders-new-btn" href="/smart-request.html" id="orders-new-btn">
-              <span class="orders-new-plus" aria-hidden="true">+</span>
-              <span class="orders-new-label" id="orders-new-label">Nueva solicitud</span>
-            </a>
           </div>
           <div class="orders-segment" id="orders-segment" role="tablist">
             <button class="orders-seg-btn active" role="tab" data-bucket="active" onclick="switchOrdersBucket('active')">
@@ -1071,6 +1121,15 @@ const TX = {
     navInfo: 'Información personal', navSecurity: 'Seguridad', navAddresses: 'Mis direcciones', navFavorites: 'Favoritos', navPayments: 'Métodos de pago', navDelete: 'Eliminar cuenta',
     titleOrders: 'Mis pedidos', subOrders: 'Da seguimiento a tus solicitudes y revisa tu historial.',
     ordersNew: 'Nueva solicitud',
+    // Orders hub (promoted workspace)
+    hubActiveCap: 'Activos', hubPastCap: 'Historial',
+    hubOrdersAction: (n) => n === 1 ? '1 pedido necesita tu atención' : `${n} pedidos necesitan tu atención`,
+    hubOrdersInProgress: (n) => n === 1 ? '1 servicio en curso' : `${n} servicios en curso`,
+    hubOrdersNone: 'Sin pedidos activos por ahora',
+    hubSpecReady: (n) => n === 1 ? '1 especialista guardado' : `${n} especialistas guardados`,
+    hubSpecEmpty: 'Guarda a tus especialistas de confianza',
+    hubFavReady: (n) => n === 1 ? '1 servicio guardado' : `${n} servicios guardados`,
+    hubFavEmpty: 'Guarda tus servicios favoritos',
     ordersSegActive: 'Activos', ordersSegPast: 'Historial',
     ordersLoadError: 'No pudimos cargar tus pedidos.', ordersRetry: 'Reintentar',
     ordersEmptyActiveTitle: 'No tienes pedidos activos',
@@ -1217,6 +1276,15 @@ const TX = {
     navInfo: 'Personal info', navSecurity: 'Security', navAddresses: 'My addresses', navFavorites: 'Favorites', navPayments: 'Payment methods', navDelete: 'Delete account',
     titleOrders: 'My orders', subOrders: 'Track your requests and browse your history.',
     ordersNew: 'New request',
+    // Orders hub (promoted workspace)
+    hubActiveCap: 'Active', hubPastCap: 'History',
+    hubOrdersAction: (n) => n === 1 ? '1 order needs your attention' : `${n} orders need your attention`,
+    hubOrdersInProgress: (n) => n === 1 ? '1 service in progress' : `${n} services in progress`,
+    hubOrdersNone: 'No active orders right now',
+    hubSpecReady: (n) => n === 1 ? '1 saved specialist' : `${n} saved specialists`,
+    hubSpecEmpty: 'Save your trusted specialists',
+    hubFavReady: (n) => n === 1 ? '1 saved service' : `${n} saved services`,
+    hubFavEmpty: 'Save your favorite services',
     ordersSegActive: 'Active', ordersSegPast: 'History',
     ordersLoadError: 'We could not load your orders.', ordersRetry: 'Retry',
     ordersEmptyActiveTitle: 'No active orders',
@@ -1388,17 +1456,24 @@ function guardAuth() {
 const SECTIONS = ['orders', 'info', 'security', 'addresses', 'specialists', 'favorites', 'payments', 'delete'];
 let activeSection = 'orders';
 
+// Orders / Specialists / Favorites are promoted to the hub (renderOrdersHub);
+// the sidebar + mobile tabs carry the secondary account-maintenance sections only.
+const ACCOUNT_NAV_ICONS = {
+  info: '<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-3.4 3.1-5.5 7-5.5s7 2.1 7 5.5"/></svg>',
+  security: '<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/></svg>',
+  addresses: '<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-5.6 7-11a7 7 0 1 0-14 0c0 5.4 7 11 7 11Z"/><circle cx="12" cy="10" r="2.5"/></svg>',
+  payments: '<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5.5" width="18" height="13" rx="2.5"/><path d="M3 10h18"/></svg>',
+  delete: '<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14M10 7V5h4v2M6 7l1 13h10l1-13"/></svg>',
+};
+
 function buildNav() {
   const t = tr();
   const items = [
-    { id: 'orders',    label: t.navOrders,    icon: '🧾', danger: false },
-    { id: 'info',      label: t.navInfo,      icon: '👤', danger: false },
-    { id: 'security',  label: t.navSecurity,   icon: '🔒', danger: false },
-    { id: 'addresses', label: t.navAddresses,  icon: '📍', danger: false },
-    { id: 'specialists', label: t.navSpecialists, icon: '🛡️', danger: false },
-    { id: 'favorites', label: t.navFavorites,  icon: '❤️', danger: false },
-    { id: 'payments',  label: t.navPayments,   icon: '💳', danger: false },
-    { id: 'delete',    label: t.navDelete,     icon: '🗑',  danger: true  },
+    { id: 'info',      label: t.navInfo,      icon: ACCOUNT_NAV_ICONS.info,      danger: false },
+    { id: 'security',  label: t.navSecurity,  icon: ACCOUNT_NAV_ICONS.security,  danger: false },
+    { id: 'addresses', label: t.navAddresses, icon: ACCOUNT_NAV_ICONS.addresses, danger: false },
+    { id: 'payments',  label: t.navPayments,  icon: ACCOUNT_NAV_ICONS.payments,  danger: false },
+    { id: 'delete',    label: t.navDelete,    icon: ACCOUNT_NAV_ICONS.delete,    danger: true  },
   ];
   const html = items.map(item => `
     <button class="account-sidebar-item ${item.danger ? 'danger' : ''} ${item.id === activeSection ? 'active' : ''}"
@@ -1424,10 +1499,77 @@ function switchSection(id) {
     document.getElementById('section-' + s)?.classList.toggle('active', s === id);
   });
   buildNav();
+  renderOrdersHub();        // keep the active hub tile in sync (orders/specialists/favorites live here, not the sidebar)
   if (id === 'orders' && !_ordersLoaded) loadOrders();
   if (id === 'specialists' && !_specialistsLoaded) loadTrustedSpecialists();
+  if (id === 'favorites' && !_favoritesLoaded) loadFavoriteServices();
   if (id === 'security' && !_activityLoaded) loadLoginActivity();
   window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// ─── Orders hub (promoted Orders / Specialists / Favorites summary) ────────────
+const HUB_ICONS = {
+  orders: '<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 16h4"/></svg>',
+  specialists: '<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.2-2.9 7.6-7 9-4.1-1.4-7-4.8-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg>',
+  favorites: '<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20s-7-4.6-9.2-9C1.3 8.3 2.6 5 6 5c2 0 3.2 1.2 4 2.4C10.8 6.2 12 5 14 5c3.4 0 4.7 3.3 3.2 6-2.2 4.4-9.2 9-9.2 9z"/></svg>',
+};
+
+function hubKey(e, section) {
+  if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); switchSection(section); }
+}
+
+function hubSmallTile(section, icon, label, loaded, count, readyCopyFn, emptyCopy) {
+  let body;
+  if (!loaded) {
+    body = `<div class="hub-metrics"><div class="hub-metric"><span class="hub-metric-num hub-sk">0</span></div></div>
+      <div class="hub-spacer"></div><span class="hub-status hub-sk">·</span>`;
+  } else {
+    const status = count ? readyCopyFn(count) : emptyCopy;
+    body = `<div class="hub-metrics"><div class="hub-metric"><span class="hub-metric-num">${count}</span></div></div>
+      <div class="hub-spacer"></div><span class="hub-status">${escapeHtml(status)}</span>`;
+  }
+  return `<div class="hub-tile hub-tile-small${activeSection === section ? ' active' : ''}" role="button" tabindex="0"
+    aria-label="${escapeHtml(label)}" onclick="switchSection('${section}')" onkeydown="hubKey(event,'${section}')">
+    <div class="hub-tile-head"><span class="hub-tile-icon">${icon}</span><span class="hub-tile-label">${escapeHtml(label)}</span></div>
+    ${body}
+  </div>`;
+}
+
+function renderOrdersHub() {
+  const hub = document.getElementById('orders-hub');
+  if (!hub) return;
+  const t = tr();
+
+  // Orders tile body (active / history counts + an action-aware status line)
+  let ordersBody;
+  if (!_ordersLoaded) {
+    ordersBody = `
+      <div class="hub-metrics"><div class="hub-metric"><span class="hub-metric-num is-primary hub-sk">0</span><span class="hub-metric-cap">${escapeHtml(t.hubActiveCap)}</span></div></div>
+      <div class="hub-spacer"></div><span class="hub-status hub-sk">·</span>`;
+  } else {
+    const active = _orders.filter(o => o.bucket !== 'past');
+    const past = _orders.filter(o => o.bucket === 'past');
+    const actionable = active.filter(o => orderStatusMeta(o).cls === 'is-pending');
+    let status = t.hubOrdersNone, statusCls = '';
+    if (actionable.length) { status = t.hubOrdersAction(actionable.length); statusCls = ' is-action'; }
+    else if (active.length) { status = t.hubOrdersInProgress(active.length); }
+    ordersBody = `
+      <div class="hub-metrics">
+        <div class="hub-metric"><span class="hub-metric-num is-primary">${active.length}</span><span class="hub-metric-cap">${escapeHtml(t.hubActiveCap)}</span></div>
+        <div class="hub-metric"><span class="hub-metric-num">${past.length}</span><span class="hub-metric-cap">${escapeHtml(t.hubPastCap)}</span></div>
+      </div>
+      <div class="hub-spacer"></div><span class="hub-status${statusCls}">${escapeHtml(status)}</span>`;
+  }
+
+  hub.innerHTML = `
+    <div class="hub-tile hub-tile-orders${activeSection === 'orders' ? ' active' : ''}" role="button" tabindex="0"
+      aria-label="${escapeHtml(t.navOrders)}" onclick="switchSection('orders')" onkeydown="hubKey(event,'orders')">
+      <div class="hub-tile-head"><span class="hub-tile-icon">${HUB_ICONS.orders}</span><span class="hub-tile-label">${escapeHtml(t.navOrders)}</span></div>
+      ${ordersBody}
+      <a class="btn-save hub-cta" href="/smart-request.html" onclick="event.stopPropagation()">${escapeHtml(t.ordersNew)}</a>
+    </div>
+    ${hubSmallTile('specialists', HUB_ICONS.specialists, t.navSpecialists, _specialistsLoaded, _specialists.length, t.hubSpecReady, t.hubSpecEmpty)}
+    ${hubSmallTile('favorites', HUB_ICONS.favorites, t.navFavorites, _favoritesLoaded, _favoriteServices.length, t.hubFavReady, t.hubFavEmpty)}`;
 }
 
 // ─── Pre-fill personal info ───────────────────────────────────────────────────
@@ -2198,6 +2340,7 @@ async function deleteAddress(id) {
 
 // ─── Favorite Services ───────────────────────────────────────────────────────
 let _favoriteServices = [];
+let _favoritesLoaded = false;
 
 async function loadFavoriteServices() {
   const list = document.getElementById('favorite-list');
@@ -2208,6 +2351,7 @@ async function loadFavoriteServices() {
     if (!res.ok) throw new Error('load_failed');
     const d = await res.json();
     _favoriteServices = d.favorites || [];
+    _favoritesLoaded = true;
     renderFavoriteServices();
   } catch {
     list.innerHTML = `<p style="font-size:14px;color:#aaa;text-align:center;padding:20px 0;grid-column:1/-1">${isEs() ? 'Error al cargar.' : 'Failed to load.'}</p>`;
@@ -2215,6 +2359,7 @@ async function loadFavoriteServices() {
 }
 
 function renderFavoriteServices() {
+  renderOrdersHub();   // keep the hub favorites count in sync on both empty + populated paths
   const t = tr();
   const list = document.getElementById('favorite-list');
   if (!list) return;
@@ -2493,6 +2638,7 @@ function specialistInitials(name) {
 }
 
 function renderTrustedSpecialists() {
+  renderOrdersHub();   // keep the hub specialists count in sync on both empty + populated paths
   const t = tr();
   const list = document.getElementById('specialist-list');
   if (!list) return;
@@ -2767,6 +2913,7 @@ function renderOrders() {
   setOrdersCount('past', past);
   const items = _orders.filter(o => (o.bucket === 'past' ? 'past' : 'active') === _ordersBucket);
   list.innerHTML = items.length ? items.map((it, i) => orderCardHtml(it, i)).join('') : ordersEmptyHtml();
+  renderOrdersHub();
 }
 
 function switchOrdersBucket(bucket) {
@@ -3400,7 +3547,6 @@ function applyTranslations() {
   const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
   const ph = (id, val) => { const el = document.getElementById(id); if (el) el.placeholder = val; };
   set('title-orders', t.titleOrders);   set('sub-orders', t.subOrders);
-  set('orders-new-label', t.ordersNew);
   set('orders-seg-active', t.ordersSegActive); set('orders-seg-past', t.ordersSegPast);
   set('title-info', t.titleInfo);       set('sub-info', t.subInfo);
   set('title-security', t.titleSecurity); set('sub-security', t.subSecurity);
@@ -3520,6 +3666,7 @@ document.addEventListener('DOMContentLoaded', () => {
     renderSecurityVerification();
     renderConnectedSocialApps();
     buildNav();
+    renderOrdersHub();
     renderAddresses();
     renderTrustedSpecialists();
     renderFavoriteServices();

@@ -2147,7 +2147,7 @@ app.use(express.static(FRONTEND_DIR));
       VALUES (
         $1,$2,$3,$4,$5,$6,$7,
         $8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
-        $19,'pending',$20,'primary',
+        $19,'Pending',$20,'primary',
         $21,$22,$23,$24,$25,$26,$27,$28,$29
       )
       ON CONFLICT (id) DO NOTHING`,
@@ -2505,6 +2505,8 @@ async function reconcileOrderStatusFromStripe(row, opts = {}) {
     let next = null;
     if (pi.capture_method === 'manual' && pi.status === 'requires_capture') next = 'Confirmed';
     else if (pi.status === 'succeeded') next = 'Captured';
+    // Heal a 3DS-in-flight order (only over a pre-auth/pending state, never a real hold).
+    else if (pi.status === 'requires_action' && current !== 'Confirmed') next = 'Pending (3DS)';
     if (!next || next === current) return current;
 
     // Forward-only at the DB level too, mirroring the webhook's guard.
@@ -4352,7 +4354,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
         );
       } else {
         await pool.query(
-          `UPDATE all_bookings SET status = $1 WHERE payment_intent_id = $2 AND status <> 'Refunded' AND status NOT LIKE 'Cancel%'`,
+          `UPDATE all_bookings SET status = $1 WHERE payment_intent_id = $2 AND status <> 'Refunded' AND status NOT ILIKE 'Cancel%'`,
           [nextStatus, paymentIntentId]
         );
       }
@@ -4656,6 +4658,50 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
         postToGoogleWebhook({ type: 'order.status', paymentIntentId: obj.id, status: 'Confirmed', orderId: row.id || '', customerId: row.customer_id || '', parentOrderId: row.parent_id_of_adjustment || '' });
       }
+      break;
+    }
+
+    // Refund issued (including from the Stripe Dashboard, which the app never sees otherwise).
+    // Fires on full AND partial refunds.
+    case 'charge.refunded': {
+      const charge = event.data.object;
+      const amountCaptured = Number(charge.amount_captured || charge.amount || 0);
+      const amountRefunded = Number(charge.amount_refunded || 0);
+      const fullyRefunded = charge.refunded === true || amountRefunded >= amountCaptured;
+      const nextStatus = fullyRefunded ? 'Refunded' : 'Captured (partial refund)';
+      const remaining = Math.max(0, amountCaptured - amountRefunded);
+      console.log(`↩️ ${nextStatus} (charge.refunded):`, paymentIntentId, `refunded=${amountRefunded}/${amountCaptured}`);
+
+      const r = await pool.query('SELECT id, customer_id FROM all_bookings WHERE payment_intent_id = $1 LIMIT 1', [paymentIntentId]);
+      const row = r.rows[0] || {};
+      // A refund is the one transition allowed to overwrite 'Captured'. Only an already-'Refunded'
+      // (fully closed) order is left untouched — this also lets the in-app /refund-order endpoint,
+      // whose "full refund" keeps the non-refundable processing fee, win over a later webhook that
+      // would otherwise see a non-zero remainder and downgrade it to a partial refund.
+      await pool.query(
+        `UPDATE all_bookings SET status = $1, final_captured_amount = $2
+          WHERE payment_intent_id = $3 AND status <> 'Refunded'`,
+        [nextStatus, remaining, paymentIntentId]
+      );
+      postToGoogleWebhook({ type: 'order.status', paymentIntentId, status: nextStatus, orderId: row.id || '', customerId: row.customer_id || '' });
+      break;
+    }
+
+    // 3DS challenge in flight — surface it instead of leaving the order on its pre-auth status.
+    case 'payment_intent.requires_action': {
+      console.log('🔐 Pending (3DS) (payment_intent.requires_action):', paymentIntentId);
+      const r = await pool.query('SELECT id, customer_id FROM all_bookings WHERE payment_intent_id = $1 LIMIT 1', [paymentIntentId]);
+      const row = r.rows[0] || {};
+      // Never downgrade a real hold ('Confirmed'), a settled/refunded order, or a cancellation.
+      await pool.query(
+        `UPDATE all_bookings SET status = 'Pending (3DS)'
+          WHERE payment_intent_id = $1
+            AND status NOT IN ('Refunded', 'Confirmed')
+            AND status NOT ILIKE 'Captured%'
+            AND status NOT ILIKE 'Cancel%'`,
+        [paymentIntentId]
+      );
+      postToGoogleWebhook({ type: 'order.status', paymentIntentId, status: 'Pending (3DS)', orderId: row.id || '', customerId: row.customer_id || '' });
       break;
     }
 
@@ -7444,7 +7490,7 @@ function computeOrderActionPolicy(row) {
   const status = String(row?.status || '').trim();
   const isCaptured = /^captured/i.test(status);            // Captured / Captured (partial refund)
   const isPast = customerOrderBucket(status) === 'past';
-  const editable = ORDER_EDITABLE_STATUSES.has(status);    // Pending..Confirmed, never terminal
+  const editable = isEditableStatus(status);              // Pending..Confirmed, never terminal
 
   // Cancel: any editable order can be cancelled. Captured/terminal cannot (→ support).
   let canCancel = editable;
@@ -8262,7 +8308,7 @@ app.get('/api/admin/orders', adminRateLimit, requireAdminAuth, async (req, res) 
       // ('Canceled (late fee)', 'Canceled (expired)', 'Captured (partial refund)', …).
       if (/^cancel/i.test(status)) { params.push('cancel%'); conditions.push(`status ILIKE $${params.length}`); }
       else if (/^captured/i.test(status)) { params.push('captured%'); conditions.push(`status ILIKE $${params.length}`); }
-      else { params.push(status); conditions.push(`status = $${params.length}`); }
+      else { params.push(status); conditions.push(`lower(status) = lower($${params.length})`); }
     }
     if (search) {
       params.push(`%${search}%`);
@@ -8498,7 +8544,7 @@ app.get('/api/admin/stats', adminRateLimit, requireAdminAuth, async (req, res) =
     const today = new Date().toISOString().slice(0, 10);
     const [requests, pendingOrders, confirmed, captured, reports, applications, pendingChanges] = await Promise.all([
       pool.query(`SELECT count(*)::int AS c FROM service_requests WHERE created_at::date = $1`, [today]),
-      pool.query(`SELECT count(*)::int AS c FROM all_bookings WHERE status = 'Pending'`),
+      pool.query(`SELECT count(*)::int AS c FROM all_bookings WHERE lower(status) = 'pending'`),
       pool.query(`SELECT count(*)::int AS c FROM all_bookings WHERE status = 'Confirmed'`),
       pool.query(`SELECT count(*)::int AS c, COALESCE(sum(final_captured_amount),0)::int AS revenue FROM all_bookings WHERE status = 'Captured'`),
       pool.query(`SELECT count(*)::int AS c FROM service_reports WHERE status = 'new'`),
@@ -8599,13 +8645,17 @@ app.post('/api/admin/orders/:id/mark-cash', adminRateLimit, requireAdminAuth, as
 
 // ─── Admin: Order Changes (reschedule / cancel / address_update / inline_edit) ─────
 
+// Keys are lowercase; always test with isEditableStatus()/isTerminalStatus() so a stored
+// 'pending' (lowercase, from the primary INSERT) matches the same as 'Pending'.
 const ORDER_EDITABLE_STATUSES = new Set([
-  'Pending', 'Setup required', 'Setup created', 'Pending (3DS)',
-  'Scheduled', 'Confirmed', 'Pending Cash', 'New'
+  'pending', 'setup required', 'setup created', 'pending (3ds)',
+  'scheduled', 'confirmed', 'pending cash', 'new'
 ]);
 const ORDER_TERMINAL_STATUSES = new Set([
-  'Captured', 'Refunded', 'Canceled', 'Cancelled', 'Declined', 'Failed', 'Captured (partial refund)'
+  'captured', 'refunded', 'canceled', 'cancelled', 'declined', 'failed', 'captured (partial refund)'
 ]);
+const isEditableStatus = (s) => ORDER_EDITABLE_STATUSES.has(String(s || '').trim().toLowerCase());
+const isTerminalStatus = (s) => ORDER_TERMINAL_STATUSES.has(String(s || '').trim().toLowerCase());
 
 function newChangeId() {
   const d = new Date();
@@ -8694,7 +8744,7 @@ app.post('/api/admin/changes/:changeId/apply', adminRateLimit, requireAdminAuth,
 
     let appliedNote = '';
     if (change.change_type === 'reschedule') {
-      if (ORDER_TERMINAL_STATUSES.has(order.status)) {
+      if (isTerminalStatus(order.status)) {
         await client.query('ROLLBACK');
         return res.status(409).json({ error: 'order_terminal', message: 'No se puede reagendar una orden en estado terminal.' });
       }
@@ -8706,7 +8756,7 @@ app.post('/api/admin/changes/:changeId/apply', adminRateLimit, requireAdminAuth,
       );
       appliedNote = `Reagendado: ${order.service_datetime || '—'} → ${newDt}`;
     } else if (change.change_type === 'address_update') {
-      if (ORDER_TERMINAL_STATUSES.has(order.status)) {
+      if (isTerminalStatus(order.status)) {
         await client.query('ROLLBACK');
         return res.status(409).json({ error: 'order_terminal', message: 'No se puede actualizar la dirección en estado terminal.' });
       }
@@ -8801,7 +8851,7 @@ app.patch('/api/admin/orders/:id', adminRateLimit, requireAdminAuth, async (req,
     const { rows } = await pool.query(`SELECT * FROM all_bookings WHERE id = $1 LIMIT 1`, [id]);
     const before = rows[0];
     if (!before) return res.status(404).json({ error: 'order_not_found' });
-    if (!ORDER_EDITABLE_STATUSES.has(before.status)) {
+    if (!isEditableStatus(before.status)) {
       return res.status(409).json({ error: 'order_not_editable', message: `Estado "${before.status}" no permite edición inline.` });
     }
 
