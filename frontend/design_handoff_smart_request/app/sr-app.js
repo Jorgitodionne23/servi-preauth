@@ -71,7 +71,6 @@
             '<button type="button" class="sr-att__x" data-action="remove-att:' + i + '">' + I.x(12) + '</button></div>';
         }).join('') + '</div>' : '') +
         '<div class="sr-box__bar"><div class="sr-box__bar-left">' +
-          '<button type="button" class="sr-iconbtn sr-iconbtn--outline" data-action="attach-photos" aria-label="Attach photos">' + I.plus(18) + '</button>' +
           '<span class="sr-attach-hint">Attach photos (optional)</span></div>' +
           '<button type="button" class="sr-iconbtn ' + (S.text.trim() ? 'sr-iconbtn--accent' : 'sr-iconbtn--solid') + '" data-action="send-text" aria-label="Send"' + (S.text.trim() ? '' : ' disabled') + '>' + I.send(18) + '</button>' +
         '</div>';

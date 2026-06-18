@@ -59,9 +59,6 @@
           onkeydown="if(event.key==='Enter'&&(event.metaKey||event.ctrlKey)){event.preventDefault();window._dashSubmitText()}"
         ></textarea>
         <div class="dash-hero__textarea-bar">
-          <button class="dash-hero__attach-btn" type="button" onclick="window._dashShowAttachMenu()" aria-label="Adjuntar">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-          </button>
           <button class="dash-hero__send-btn" type="button" onclick="window._dashSubmitText()" aria-label="Enviar">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
           </button>
@@ -338,7 +335,12 @@
     opts = opts || {};
     const url = new URL('/smart-request.html', window.location.origin);
     if (opts.mode) url.searchParams.set('mode', opts.mode);
-    if (opts.text) url.searchParams.set('text', String(opts.text));
+    if (opts.text) {
+      const text = String(opts.text);
+      const detectedLang = typeof window.applyRequestLanguage === 'function' ? window.applyRequestLanguage(text) : null;
+      url.searchParams.set('text', text);
+      url.searchParams.set('lang', detectedLang || (window.__lang === 'en' ? 'en' : 'es'));
+    }
     url.searchParams.set('return', window.location.pathname + window.location.search + window.location.hash);
     window.location.href = url.toString();
   };
@@ -523,6 +525,9 @@
       if (ta.value.trim()) {
         stopDashPlaceholderRotation();
         ta.placeholder = '';
+      }
+      if (typeof window.applyRequestLanguage === 'function') {
+        window.applyRequestLanguage(ta.value);
       }
     });
     ta.addEventListener('blur', () => {
@@ -1302,7 +1307,8 @@
       const ta = document.getElementById('dash-textarea');
       const text = ta ? ta.value.trim() : '';
       if (!text) { if (ta) ta.focus(); return; }
-      const payload = { mode: 'text', text };
+      const detectedLang = typeof window.applyRequestLanguage === 'function' ? window.applyRequestLanguage(text) : null;
+      const payload = { mode: 'text', text, lang: detectedLang || (window.__lang === 'en' ? 'en' : 'es') };
       const atts = dashAtts.map(a => ({ url: a.url })).filter(a => a.url);
       if (atts.length) payload.atts = atts;
       goToReview(payload);

@@ -880,11 +880,11 @@
   padding: 10px 14px 12px;
 }
 
-/* Toolbar — "+" attach on the left, submit on the right */
+/* Toolbar - submit on the right */
 .spp-toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 8px;
 }
 .spp-tool {
@@ -2206,7 +2206,7 @@
   right: 16px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
 }
 .dash-hero__attach-btn {
   width: 40px;

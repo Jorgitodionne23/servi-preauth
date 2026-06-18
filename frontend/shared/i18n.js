@@ -1511,6 +1511,77 @@ function setStoredLang(lang) {
   try { localStorage.setItem('servi-lang', lang); } catch {}
 }
 
+const REQUEST_LANG_SIGNALS = {
+  es: new Set([
+    'necesito', 'necesitamos', 'quiero', 'queremos', 'tengo', 'tenemos', 'busco', 'ocupo',
+    'arreglar', 'arreglen', 'reparar', 'reparen', 'instalar', 'montar', 'limpiar', 'mover',
+    'limpieza', 'profunda', 'fuga', 'gotea', 'gotera', 'plomero', 'plomeria', 'electricista',
+    'electrico', 'cerradura', 'llave', 'lavabo', 'fregadero', 'cocina', 'bano', 'baño',
+    'departamento', 'recamara', 'recamaras', 'habitación', 'habitacion', 'sala', 'pared',
+    'sofá', 'sofa', 'domicilio', 'servicio', 'hoy', 'mañana', 'manana', 'tarde', 'noche',
+    'debajo', 'encima', 'para', 'por', 'con', 'sin', 'una', 'uno', 'un', 'el', 'la', 'los', 'las',
+  ]),
+  en: new Set([
+    'need', 'needs', 'needed', 'want', 'looking', 'have', 'has', 'please', 'fix', 'repair',
+    'install', 'mount', 'clean', 'move', 'cleaning', 'deep', 'leak', 'leaking', 'dripping',
+    'plumber', 'plumbing', 'electrician', 'electrical', 'lock', 'key', 'sink', 'kitchen',
+    'bathroom', 'apartment', 'bedroom', 'bedrooms', 'room', 'living', 'wall', 'couch', 'sofa',
+    'home', 'service', 'today', 'tomorrow', 'afternoon', 'tonight', 'under', 'above', 'for',
+    'with', 'without', 'the', 'this', 'that', 'my', 'our',
+  ]),
+};
+
+const REQUEST_LANG_PHRASES = {
+  es: [
+    'necesito que', 'quiero que', 'tengo una', 'tengo un', 'me urge', 'a domicilio',
+    'por favor', 'hoy por la tarde', 'debajo del', 'en la cocina', 'en el baño',
+  ],
+  en: [
+    'i need', 'i want', 'looking for', 'please fix', 'at home', 'right now',
+    'this afternoon', 'under the', 'in the kitchen', 'in the bathroom',
+  ],
+};
+
+function detectRequestLanguage(text) {
+  const raw = String(text || '').trim();
+  if (!raw) return null;
+  const lower = raw.toLowerCase();
+  const tokens = lower.match(/[a-záéíóúüñ]+/g) || [];
+  if (tokens.join('').length < 8) return null;
+
+  const score = { es: 0, en: 0 };
+  if (/[¿¡ñáéíóúü]/i.test(raw)) score.es += 3;
+
+  tokens.forEach(token => {
+    if (REQUEST_LANG_SIGNALS.es.has(token)) score.es += token.length <= 3 ? 1 : 2;
+    if (REQUEST_LANG_SIGNALS.en.has(token)) score.en += token.length <= 3 ? 1 : 2;
+  });
+
+  REQUEST_LANG_PHRASES.es.forEach(phrase => { if (lower.includes(phrase)) score.es += 3; });
+  REQUEST_LANG_PHRASES.en.forEach(phrase => { if (lower.includes(phrase)) score.en += 3; });
+
+  const winner = score.es > score.en ? 'es' : score.en > score.es ? 'en' : null;
+  if (!winner) return null;
+  const loser = winner === 'es' ? 'en' : 'es';
+  const enoughSignal = tokens.length <= 3 ? score[winner] >= 4 : score[winner] >= 3;
+  return enoughSignal && (score[winner] - score[loser] >= 2) ? winner : null;
+}
+
+function applyRequestLanguage(text) {
+  const detected = detectRequestLanguage(text);
+  if (!detected) return null;
+  if (window.__lang !== detected) {
+    if (typeof window.setLang === 'function') setLang(detected);
+    else {
+      window.__lang = detected;
+      window.__t = T[detected];
+      setStoredLang(detected);
+      document.documentElement.lang = detected;
+    }
+  }
+  return detected;
+}
+
 // Global state — other scripts read window.__lang and window.__t
 window.__lang = getStoredLang();
 window.__t = T[window.__lang];
@@ -1548,6 +1619,8 @@ function setLang(lang) {
 
 window.setLang = setLang;
 window.T = T;
+window.detectRequestLanguage = detectRequestLanguage;
+window.applyRequestLanguage = applyRequestLanguage;
 
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => setLang(window.__lang));

@@ -419,14 +419,11 @@
     return `<div class="spp-panel spp-panel--describe" data-panel="describe">${_describeInner()}</div>`;
   }
 
-  // Each booking method now owns its own pill segment + popover panel, so the
-  // describe toolbar keeps only the inline attach ("+") and the submit arrow.
+  // Each booking method now owns its own pill segment + popover panel.
   function _describeInner() {
     const lang = window.__lang || 'es';
-    const attachLabel = lang === 'es' ? 'Adjuntar foto' : 'Attach a photo';
     return `
       <div class="spp-toolbar">
-        <button type="button" class="spp-tool spp-tool--add" data-action="spp-attach" aria-label="${attachLabel}">${ICON.plus}</button>
         <button type="button" class="spp-submit-btn" data-action="spp-submit" aria-label="${lang === 'es' ? 'Enviar' : 'Submit'}">${ICON.arrow}</button>
       </div>
     `;
@@ -623,7 +620,12 @@
   // Hand captured media to the Smart Request review screen — same sessionStorage
   // handoff the hero uses. This is the final submit step, not "opening a tool".
   function _capHandoff(payload) {
-    if (state._describeText && state._describeText.trim()) payload.text = state._describeText.trim();
+    if (state._describeText && state._describeText.trim()) {
+      payload.text = state._describeText.trim();
+      if (typeof window.applyRequestLanguage === 'function') {
+        payload.lang = window.applyRequestLanguage(payload.text) || payload.lang;
+      }
+    }
     try { sessionStorage.setItem('sr_handoff', JSON.stringify(payload)); } catch (_) {}
     const url = new URL('/smart-request.html', window.location.origin);
     url.searchParams.set('return', window.location.pathname + window.location.search + window.location.hash);
@@ -1104,8 +1106,10 @@
       return;
     }
     closeSegment();
+    const detectedLang = typeof window.applyRequestLanguage === 'function' ? window.applyRequestLanguage(text) : null;
     const url = new URL('/smart-request.html', window.location.origin);
     url.searchParams.set('text', text);
+    url.searchParams.set('lang', detectedLang || (window.__lang === 'en' ? 'en' : 'es'));
     url.searchParams.set('return', window.location.pathname + window.location.search + window.location.hash);
     window.location.href = url.toString();
   }
