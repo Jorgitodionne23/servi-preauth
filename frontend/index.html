@@ -538,29 +538,62 @@
   // ─── Address Change Modal ────────────────────────────────────
   const DASH_DEFAULT_ADDRESS = 'CDMX';
   const DASH_LEGACY_DEFAULT_ADDRESS = 'Santa Fe, CDMX';
+  const DASH_LOCATION_LABEL_MAX_LENGTH = 34;
 
   function normalizeDashDefaultAddress(address) {
     return String(address || '').trim() === DASH_LEGACY_DEFAULT_ADDRESS ? DASH_DEFAULT_ADDRESS : String(address || '').trim();
+  }
+
+  function formatDashLocationLabel(address) {
+    const full = normalizeDashDefaultAddress(address);
+    if (!full || full.length <= DASH_LOCATION_LABEL_MAX_LENGTH) return full;
+
+    const parts = full.split(',').map(part => part.trim()).filter(Boolean);
+    if (parts.length >= 3) {
+      const cityPart = parts.find(part => /\b(cdmx|ciudad de m[eé]xico|mexico city)\b/i.test(part)) || parts[parts.length - 1];
+      const neighborhoodPart = parts[1];
+      const neighborhoodCity = [neighborhoodPart, cityPart].filter(Boolean).join(', ');
+      if (neighborhoodCity.length <= DASH_LOCATION_LABEL_MAX_LENGTH) return neighborhoodCity;
+      if (neighborhoodPart.length <= DASH_LOCATION_LABEL_MAX_LENGTH) return neighborhoodPart;
+    }
+
+    if (parts.length >= 2) {
+      const firstAndLast = [parts[0], parts[parts.length - 1]].join(', ');
+      if (firstAndLast.length <= DASH_LOCATION_LABEL_MAX_LENGTH) return firstAndLast;
+      if (parts[0].length <= DASH_LOCATION_LABEL_MAX_LENGTH) return parts[0];
+    }
+
+    const truncated = full.slice(0, DASH_LOCATION_LABEL_MAX_LENGTH - 3).trimEnd();
+    return truncated + '...';
+  }
+
+  function setDashLocationLabel(address) {
+    const label = document.getElementById('dash-location-label');
+    if (!label) return;
+    const full = normalizeDashDefaultAddress(address) || DASH_DEFAULT_ADDRESS;
+    label.dataset.fullAddress = full;
+    label.title = full;
+    label.textContent = formatDashLocationLabel(full);
   }
 
   function getDashAddress() {
     const saved = localStorage.getItem('dash_hero_address');
     if (saved && saved.trim()) return normalizeDashDefaultAddress(saved);
     const label = document.getElementById('dash-location-label');
-    return normalizeDashDefaultAddress(label?.textContent);
+    return normalizeDashDefaultAddress(label?.dataset.fullAddress || label?.textContent);
   }
 
   function setDashAddress(newAddr) {
-    const label = document.getElementById('dash-location-label');
-    if (label) label.textContent = newAddr;
+    const fullAddress = normalizeDashDefaultAddress(newAddr);
+    setDashLocationLabel(fullAddress);
 
     const input = document.getElementById('address-input');
-    if (input) input.value = newAddr;
+    if (input) input.value = fullAddress;
 
     const smartAddressInput = document.getElementById('sr-addr');
-    if (smartAddressInput) smartAddressInput.value = newAddr;
+    if (smartAddressInput) smartAddressInput.value = fullAddress;
 
-    localStorage.setItem('dash_hero_address', newAddr);
+    localStorage.setItem('dash_hero_address', fullAddress);
   }
 
   function setAddressModalStatus(message, tone) {
@@ -776,10 +809,7 @@
   // Load saved address from localStorage on init
   function loadSavedAddress() {
     const saved = getDashAddress();
-    if (saved) {
-      const label = document.getElementById('dash-location-label');
-      if (label) label.textContent = saved;
-    }
+    if (saved) setDashLocationLabel(saved);
   }
 
   // ─── Render dynamic sections ─────────────────────────────────
@@ -819,8 +849,7 @@
     grid.innerHTML = cards + customCard;
 
     // Update static i18n labels in the dashboard hero
-    const locLabel = document.getElementById('dash-location-label');
-    if (locLabel) locLabel.textContent = getDashAddress() || dh.location || DASH_DEFAULT_ADDRESS;
+    setDashLocationLabel(getDashAddress() || dh.location || DASH_DEFAULT_ADDRESS);
     const changeBtn = document.getElementById('dash-change-address');
     if (changeBtn) changeBtn.textContent = dh.changeAddress || 'Cambiar dirección';
     const headline = document.getElementById('dash-headline');
