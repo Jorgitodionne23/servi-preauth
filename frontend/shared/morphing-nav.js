@@ -255,6 +255,7 @@
               <span class="search-pill__icon">${ICON.mic}</span>
               <span class="search-pill__label search-pill__label--method">${t.header.pillVoice || 'Voice'}</span>
             </button>
+            <button type="button" class="spp-submit-btn search-pill__submit-btn" data-action="spp-submit" aria-label="${(window.__lang || 'es') === 'es' ? 'Enviar' : 'Submit'}">${ICON.arrow}</button>
           </div>
           ${isBrowsePage ? '' : `<button type="button" class="site-header__browse-btn" data-segment="browse" aria-label="${t.header.pillBrowse || 'Browse'}">
             <span>${t.header.pillBrowse || 'Browse'}</span>
@@ -635,6 +636,7 @@
   // The pill segments that own a popover surface (browse routes away instead).
   const PILL_SEGMENTS = ['describe', 'camera', 'voice'];
   const _isPillSegment = (s) => PILL_SEGMENTS.indexOf(s) !== -1;
+  const _isMobileHeaderLayout = () => window.matchMedia && window.matchMedia('(max-width: 900px)').matches;
 
   function _updatePillIndicator() {
     const pill = document.querySelector('.site-header__pill');
@@ -889,18 +891,32 @@
       scrim.setAttribute('data-visible', 'true');
       scrim.setAttribute('aria-hidden', 'false');
 
-      if (popover) {
+      if (popover && state.segment === 'describe' && _isMobileHeaderLayout()) {
+        popover.removeAttribute('data-open');
+        popover.setAttribute('aria-hidden', 'true');
+        popover.setAttribute('data-segment', '');
+        popover.innerHTML = '';
+        requestAnimationFrame(() => {
+          const inp = document.getElementById('spp-describe-input');
+          if (inp) inp.focus();
+          _autoGrowDescribe();
+          _trackPopoverDuringMorph(520);
+        });
+      } else if (popover) {
         const alreadyOpen = popover.getAttribute('data-open') === 'true';
+        const targetPanelMissing = alreadyOpen && !popover.querySelector(`.spp-panel--${state.segment}`);
         popover.setAttribute('data-segment', state.segment);
         popover.setAttribute('data-open', 'true');
         popover.setAttribute('aria-hidden', 'false');
 
-        if (!alreadyOpen) {
-          // First open: render all three method panels into the popover
+        if (!alreadyOpen || targetPanelMissing) {
+          // First open: desktop keeps the describe toolbar in the popover;
+          // mobile describes inline in the pill, so only media panels are mounted.
+          const panelsHtml = _isMobileHeaderLayout()
+            ? `${buildCameraPanel()}${buildVoicePanel()}`
+            : `${buildDescribePanel()}${buildCameraPanel()}${buildVoicePanel()}`;
           popover.innerHTML = `<div class="spp-body">
-            ${buildDescribePanel()}
-            ${buildCameraPanel()}
-            ${buildVoicePanel()}
+            ${panelsHtml}
           </div>`;
           // Start collapsed so the body unfolds (0 → natural height) on open.
           const _body = popover.querySelector('.spp-body');
@@ -1130,6 +1146,12 @@
 
   // ─── Delegated event handler ───────────────────────────────────────────
   function onRootClick(e) {
+    const directAction = e.target.closest('[data-action]');
+    if (directAction && directAction.getAttribute('data-action') === 'spp-submit' && !directAction.closest('#search-pill-popover')) {
+      submitSearchPillDescribe();
+      return;
+    }
+
     // Pill segments
     const seg = e.target.closest('.search-pill__segment');
     if (seg) {
@@ -1497,7 +1519,8 @@
   window.addEventListener('resize', () => {
     requestAnimationFrame(() => {
       _updatePillIndicator();
-      if (_isPillSegment(state.segment)) _positionPopover();
+      if (state.segment === 'describe') applyHeaderState();
+      else if (_isPillSegment(state.segment)) _positionPopover();
     });
   }, { passive: true });
 

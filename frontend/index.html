@@ -190,7 +190,9 @@
 <section id="testimonials" class="section">
   <div class="container">
     <h2 class="heading-lg" data-i18n="testimonials.title" style="margin-bottom:48px" data-reveal>Nuestros clientes</h2>
-    <div class="grid-3" id="testimonials-grid" style="gap:20px" data-reveal></div>
+    <div class="testimonials-carousel" data-reveal>
+      <div class="grid-3 testimonials-carousel__track" id="testimonials-grid" style="gap:20px"></div>
+    </div>
   </div>
 </section>
 
@@ -1743,8 +1745,8 @@
     const grid = document.getElementById('testimonials-grid');
     if (!grid) return;
     const items = t().testimonials.items;
-    grid.innerHTML = items.map(item => `
-      <div class="testimonial-card">
+    const renderCard = (item, isClone) => `
+      <div class="testimonial-card${isClone ? ' testimonial-card--clone' : ''}"${isClone ? ' aria-hidden="true"' : ''}>
         <div class="quote-mark">&ldquo;</div>
         <p class="text-sm" style="color:var(--color-text-secondary);margin-bottom:20px">${item.text}</p>
         <div style="display:flex;align-items:center;gap:12px">
@@ -1752,7 +1754,8 @@
           <div style="font-weight:600;font-size:14px">${item.author}</div>
         </div>
       </div>
-    `).join('');
+    `;
+    grid.innerHTML = items.map(item => renderCard(item, false)).join('') + items.map(item => renderCard(item, true)).join('');
   }
 
   function renderAll() {

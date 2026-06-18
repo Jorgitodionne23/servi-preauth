@@ -564,7 +564,8 @@
 .site-header[data-state="scrolled-expanded"] .site-header__browse-btn {
   height: 62px;
   padding: 0 26px;
-  background: var(--color-surface);
+  background: #ececec;
+  border-color: transparent;
 }
 .site-header[data-state="scrolled-expanded"] .site-header__browse-btn:hover,
 .site-header[data-state="scrolled-expanded"] .site-header__browse-btn[data-active="true"] {
@@ -767,7 +768,7 @@
 .search-pill__active-card[data-show="true"] { opacity: 1; }
 .search-pill__active-card[data-segment="camera"],
 .search-pill__active-card[data-segment="voice"] {
-  background: var(--color-surface);
+  background: #ececec;
   border-color: transparent;
   box-shadow: none;
 }
@@ -779,10 +780,10 @@
 .search-pill__method-focus {
   position: absolute;
   box-sizing: border-box;
-  top: 7px;
+  top: 1px;
   left: 0;
   width: var(--method-focus-w, 0);
-  height: calc(100% - 14px);
+  height: calc(100% - 2px);
   transform: translateX(var(--method-focus-x, 0));
   border: 1px solid rgba(216,216,216,0.72);
   border-radius: 999px;
@@ -925,6 +926,12 @@
 .spp-submit-btn:hover { background: #333; transform: scale(1.06); }
 .spp-submit-btn:active { transform: scale(0.94); }
 .spp-submit-btn svg { width: 16px; height: 16px; }
+.search-pill__submit-btn {
+  display: none;
+  margin-left: 0;
+  position: relative;
+  z-index: 104;
+}
 
 /* ── Camera method — Photos / Video chooser, then the shared capture surface
    (reuses the global .dash-cap__* styles inside the same panel). ─────────── */
@@ -1596,9 +1603,15 @@
 }
 
 /* Testimonial overrides */
+.landing-page .testimonials-carousel {
+  overflow: visible;
+}
 .landing-page .testimonial-card {
   border-color: var(--color-border);
   padding: 40px;
+}
+.landing-page .testimonial-card--clone {
+  display: none;
 }
 .landing-page .quote-mark {
   display: block;
@@ -1827,48 +1840,58 @@
     gap: 28px;
   }
 }
-@media (max-width: 640px) {
-  /* On phones the segments are too narrow to anchor to — drop a centred,
-     near-full-width sheet under the pill instead. Because it no longer "unfolds"
-     from a segment, the desktop weld illusion (a white card welded to the segment
-     + a borderless, square-topped popover continuing from it) would render as two
-     misaligned white boxes. So on mobile the popover becomes a self-contained
-     rounded card with its own border + shadow, sitting just below the pill, and
-     the segment-welded surfaces are hidden.
-     !important on transform/left/width is required to beat the [data-open] reveal
-     transform's higher specificity. */
+@media (max-width: 900px) {
+  /* Mobile keeps the same gray tray + sliding white active surface as desktop,
+     but the Camera/Voz panel floats below the finished header bar instead of
+     welding to the segment. */
   .search-pill-popover,
   .search-pill-popover[data-open="true"] {
-    width: calc(100vw - 32px) !important;
-    left: 50% !important;
+    width: var(--spp-width, 100%) !important;
+    left: var(--spp-left, 0) !important;
     right: auto !important;
-    top: calc(var(--spp-top, 100%) + 9px) !important;
+    top: calc(100% + 11px) !important;
     border: 1px solid rgba(216,216,216,0.9);
     border-radius: 18px;
     box-shadow:
       0 14px 30px -12px rgba(31,42,45,0.28),
       0 6px 14px -8px rgba(31,42,45,0.18);
   }
-  /* Subtle slide-down on open (transform is otherwise locked to the centring
-     translate, so the entrance rides translateY). */
   .search-pill-popover {
-    transform: translateX(-50%) translateY(-6px) !important;
+    transform: translateY(-6px) scale(0.985) !important;
   }
   .search-pill-popover[data-open="true"] {
-    transform: translateX(-50%) translateY(0) !important;
+    transform: translateY(0) scale(1) !important;
   }
-  /* The welded card + method-focus capsule only read correctly when the popover
-     unfolds from their segment; against a centred sheet they look like stray
-     floating boxes — hide them and let the active segment carry a simple pill
-     highlight instead. */
-  .search-pill__active-card,
-  .search-pill__method-focus { display: none !important; }
-  .site-header[data-state="scrolled-expanded"] .search-pill__segment--camera[data-active="true"],
-  .site-header[data-state="scrolled-expanded"] .search-pill__segment--voice[data-active="true"] {
-    background: #fff;
+  .site-header[data-state="scrolled-expanded"] .search-pill__active-card {
+    border-bottom: 1px solid rgba(216,216,216,0.78);
+    border-radius: 999px;
     box-shadow:
       inset 0 0 0 1px rgba(216,216,216,0.7),
       0 4px 10px -6px rgba(31,42,45,0.3);
+  }
+  .site-header[data-state="scrolled-expanded"] .search-pill__active-card[data-segment="camera"],
+  .site-header[data-state="scrolled-expanded"] .search-pill__active-card[data-segment="voice"] {
+    background: #ececec;
+    border-color: transparent;
+    box-shadow: none;
+  }
+  .site-header[data-state="scrolled-expanded"] .search-pill__segment:hover {
+    background: transparent;
+  }
+  .site-header[data-state="scrolled-expanded"] .search-pill__method-focus {
+    top: 0;
+    height: 100%;
+  }
+  .site-header[data-state="scrolled-expanded"] .site-header__pill[data-active-segment="describe"] .search-pill__input {
+    font-size: 14px;
+  }
+  .site-header[data-state="scrolled-expanded"] .site-header__pill[data-active-segment="describe"] .search-pill__submit-btn {
+    display: inline-flex;
+    width: 34px;
+    height: 34px;
+    flex: 0 0 34px;
+    align-self: center;
+    margin-right: 8px;
   }
   .header-panel__input { font-size: 16px; }
 }
@@ -2096,8 +2119,56 @@
     padding: 28px;
     aspect-ratio: auto;
   }
+  .landing-page .testimonials-carousel {
+    --testimonial-gap: 18px;
+    --testimonial-gap-half: 9px;
+    overflow: hidden;
+    margin: 0 -24px;
+    padding: 2px 0 12px 24px;
+    -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 24px, #000 calc(100% - 40px), transparent 100%);
+    mask-image: linear-gradient(90deg, transparent 0, #000 24px, #000 calc(100% - 40px), transparent 100%);
+  }
+  .landing-page .testimonials-carousel__track {
+    display: flex !important;
+    grid-template-columns: none !important;
+    width: max-content;
+    gap: var(--testimonial-gap) !important;
+    animation: testimonial-marquee 22s linear infinite;
+    will-change: transform;
+  }
   .landing-page .testimonial-card {
+    flex: 0 0 min(82vw, 340px);
     padding: 28px;
+  }
+  .landing-page .testimonial-card--clone {
+    display: block;
+  }
+  .landing-page .testimonials-carousel:hover .testimonials-carousel__track,
+  .landing-page .testimonials-carousel:focus-within .testimonials-carousel__track {
+    animation-play-state: paused;
+  }
+}
+
+@keyframes testimonial-marquee {
+  to {
+    transform: translate3d(calc(-50% - var(--testimonial-gap-half)), 0, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-page .testimonials-carousel {
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x mandatory;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+  .landing-page .testimonials-carousel__track {
+    animation: none !important;
+    transform: none !important;
+  }
+  .landing-page .testimonial-card {
+    scroll-snap-align: start;
   }
 }
 

@@ -412,7 +412,7 @@
   }
 
   function buildHTML() {
-    var left = '<div class="sr-pane-left"><button type="button" class="sr-editlink" data-action="reset">' + I.back(15) + esc(tr('editRequest')) + '</button>' +
+    var left = '<div class="sr-pane-left">' +
       (S.thinking
         ? '<div class="sr-think"><span class="sr-think__spark">' + I.spark(18) + '</span><div><div class="sr-think__line">' +
             esc(S.mode === 'photos' ? tr('thinkPhotos') : S.mode === 'voice' ? tr('thinkVoice') : S.mode === 'video' ? tr('thinkVideo') : tr('thinkText')) +
@@ -452,11 +452,7 @@
   // ════════════════════════════ TOP BAR + MODALS ═══════════════════════════
   function topbarHTML() {
     if (window.SR_USE_SITE_HEADER) {
-      // Site nav is shown by the host page; render only a back/leave affordance.
-      return '<div class="sr-backbar">' +
-        '<button type="button" data-action="sr-close" aria-label="' + (curLang() === 'es' ? 'Volver' : 'Back') + '" ' +
-        'style="display:inline-flex;align-items:center;gap:6px;background:none;border:none;cursor:pointer;font:inherit;font-weight:600;color:var(--text-secondary);padding:6px 0">' +
-        I.back(16) + '<span>' + (curLang() === 'es' ? 'Volver' : 'Back') + '</span></button></div>';
+      return '';
     }
     var loc = S.address.length > 22 ? defaultAddress() : S.address;
     return '<header class="sr-top"><div class="sr-top__in">' +
@@ -465,7 +461,6 @@
       '<span class="sr-top__loc">' + I.pin(14) + esc(loc) + '</span>' +
       '<span class="sr-lang"><button class="' + (curLang() === 'en' ? 'on' : '') + '" data-action="sr-lang:en">EN</button><button class="' + (curLang() === 'es' ? 'on' : '') + '" data-action="sr-lang:es">ES</button></span>' +
       (srDebug() ? '<button type="button" class="sr-iconbtn sr-iconbtn--outline" data-action="open-tweaks" aria-label="Settings" style="width:38px;height:38px">' + I.sliders(17) + '</button>' : '') +
-      '<button type="button" class="sr-iconbtn sr-iconbtn--outline" data-action="sr-close" aria-label="Close" style="width:38px;height:38px">' + I.x(18) + '</button>' +
       '</div></div></header>';
   }
 
@@ -826,7 +821,6 @@
       case 'submit': submit(); break;
       case 'reset': reset(); break;
       case 'my-orders': window.location.href = '/account.html?section=orders'; break;
-      case 'sr-close': window.closeSmartRequest(); break;
       case 'sr-lang': if (typeof window.setLang === 'function') window.setLang(arg); else { window.__lang = arg; } render(); break;
       case 'browse-open': window.location.href = '/browse.html'; break;
       case 'open-tweaks': openTweaks(); break;
