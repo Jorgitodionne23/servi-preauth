@@ -580,16 +580,17 @@
 
     .svc-mobile-form {
       display: none;
-      border-top: 1px solid #e8e8e8;
-      padding-top: 32px;
-      margin-top: 32px;
+      margin-top: 28px;
     }
+    /* On mobile the form is a self-contained white card (not sticky). Keep the
+       border + radius + shadow + padding from the base .svc-sidebar so the white
+       surface reads as an intentional card instead of bleeding into the page. */
     .svc-mobile-form .svc-sidebar {
       position: static;
-      box-shadow: none;
-      border: none;
-      border-radius: 0;
-      padding: 0;
+      border: 1.5px solid #e8e8e8;
+      border-radius: 18px;
+      padding: 22px 18px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.06);
     }
 
     @media (max-width: 900px) {
@@ -601,6 +602,11 @@
       .svc-layout > .svc-sidebar { display: none; }
       .svc-mobile-bar { display: block; }
       .svc-mobile-form { display: block; }
+      /* Make the left column a flex stack so the booking form comes first and the
+         "Otros servicios en esta categoría" block is pushed to the very bottom
+         (below the form) instead of sitting on top of it. */
+      .svc-left { display: flex; flex-direction: column; }
+      .svc-other-section { order: 1; margin-top: 36px; }
     }
     @media (max-width: 600px) {
       .svc-page { padding: 112px 16px 100px; }

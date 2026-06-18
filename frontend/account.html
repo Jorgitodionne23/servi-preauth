@@ -1007,25 +1007,66 @@
       .form-row { grid-template-columns: 1fr; }
       .favorite-list { grid-template-columns: 1fr; }
       .favorite-card { grid-template-columns: 96px 1fr; }
-      .orders-hub { grid-template-columns: 1fr; height: auto; }
-      .hub-tile-orders { grid-row: auto; }
-      .hub-tile { padding: 20px; }
-      .hub-summary { align-items: flex-start; }
-      .hub-actions {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        width: 100%;
+      .orders-hub {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-auto-rows: auto;
+        gap: 8px;
+        height: auto;
+        margin-bottom: 16px;
       }
-      .hub-tile-small .hub-actions { grid-template-columns: 1fr; }
+      .hub-tile-orders { grid-row: auto; }
+      .hub-tile {
+        aspect-ratio: 1 / 1;
+        min-height: 0;
+        padding: 10px;
+        border-radius: 16px;
+        box-shadow: 0 14px 28px -24px rgba(17, 17, 17, 0.24);
+      }
+      .hub-tile::after { display: none; }
+      .hub-tile-head {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 6px;
+        margin-bottom: 0;
+      }
+      .hub-tile-icon {
+        width: 26px;
+        height: 26px;
+        flex-basis: 26px;
+        border-radius: 8px;
+      }
+      .hub-tile-icon svg { width: 15px; height: 15px; }
+      .hub-tile-label,
+      .hub-tile-orders .hub-tile-label {
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        font-size: 12px;
+        line-height: 1.12;
+        letter-spacing: 0;
+      }
+      .hub-summary { display: none; }
+      .hub-spacer { display: none; }
+      .hub-actions {
+        display: flex;
+        width: 100%;
+        margin-top: auto;
+      }
+      .hub-tile-orders .hub-actions > :not(:first-child),
+      .hub-tile-small .hub-actions { display: none; }
       .hub-action,
       .hub-cta {
         width: 100%;
         min-width: 0;
-        padding-left: 10px;
-        padding-right: 10px;
+        min-height: 28px;
+        padding: 6px 8px;
+        border-radius: 9px;
+        font-size: 10.5px;
         white-space: normal;
         line-height: 1.15;
         text-align: center;
+        box-shadow: none;
       }
       .orders-head { flex-direction: column; align-items: stretch; }
       .orders-viewtabs { width: 100%; }
