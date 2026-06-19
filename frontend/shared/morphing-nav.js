@@ -244,6 +244,7 @@
               <textarea class="search-pill__label search-pill__input" id="spp-describe-input"
                 placeholder="${t.header.pillDescribe || 'Describe what you need'}" autocomplete="off"
                 spellcheck="false" rows="1" readonly></textarea>
+              <button type="button" class="spp-submit-btn search-pill__submit-btn" data-action="spp-submit" aria-label="${(window.__lang || 'es') === 'es' ? 'Enviar' : 'Submit'}">${ICON.arrow}</button>
             </label>
             <span class="search-pill__divider" aria-hidden="true"></span>
             <button type="button" class="search-pill__segment search-pill__segment--camera" data-segment="camera" aria-label="${t.header.pillCamera || 'Camera'}">
@@ -255,7 +256,6 @@
               <span class="search-pill__icon">${ICON.mic}</span>
               <span class="search-pill__label search-pill__label--method">${t.header.pillVoice || 'Voice'}</span>
             </button>
-            <button type="button" class="spp-submit-btn search-pill__submit-btn" data-action="spp-submit" aria-label="${(window.__lang || 'es') === 'es' ? 'Enviar' : 'Submit'}">${ICON.arrow}</button>
           </div>
           ${isBrowsePage ? '' : `<button type="button" class="site-header__browse-btn" data-segment="browse" aria-label="${t.header.pillBrowse || 'Browse'}">
             <span>${t.header.pillBrowse || 'Browse'}</span>
@@ -727,7 +727,8 @@
   function _positionMethodFocus(segment, pill) {
     const focus = pill.querySelector('.search-pill__method-focus');
     if (!focus) return;
-    if (segment !== 'camera' && segment !== 'voice') {
+    const supportsSegment = segment === 'camera' || segment === 'voice' || (segment === 'describe' && _isMobileHeaderLayout());
+    if (!supportsSegment) {
       focus.removeAttribute('data-show');
       focus.setAttribute('data-segment', '');
       return;
@@ -756,7 +757,12 @@
     const popover = document.getElementById('search-pill-popover');
     const card = document.querySelector('.search-pill__active-card');
     const focus = document.querySelector('.search-pill__method-focus');
-    [popover, card, focus].forEach(el => { if (el) el.classList.toggle('spp--instant', on); });
+    if (popover) popover.classList.toggle('spp--instant', on);
+    // Mobile needs the white active pill to morph smoothly from Describe's wide
+    // segment to the Camera/Voz method segments. Keep only the popover snapped
+    // there; desktop still snaps the welded card while the header opens.
+    const snapActiveSurfaces = on && !_isMobileHeaderLayout();
+    [card, focus].forEach(el => { if (el) el.classList.toggle('spp--instant', snapActiveSurfaces); });
   }
   function _trackPopoverDuringMorph(ms) {
     const popover = document.getElementById('search-pill-popover');
