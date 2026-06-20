@@ -2345,9 +2345,9 @@
 .dash-hero__send-btn svg { width: 18px; height: 18px; }
 
 .dash-hero__media-label {
-  font-family: var(--font-body);
-  font-size: 15px;
-  font-weight: 600;
+  font-family: var(--font-heading);
+  font-size: 22px;
+  font-weight: 700;
   color: var(--color-text);
   margin: 0;
 }
@@ -2794,28 +2794,6 @@
 .servi-tour__example {
   margin-top: 13px;
 }
-.servi-tour__example-btn {
-  display: inline-flex;
-  align-items: center;
-  max-width: 100%;
-  padding: 9px 12px;
-  border: 1px solid rgba(17, 17, 17, 0.12);
-  border-radius: 13px;
-  background: #f6f6f2;
-  color: #111;
-  font-family: var(--font-body);
-  font-size: 12.5px;
-  font-weight: 700;
-  line-height: 1.35;
-  cursor: pointer;
-  text-align: left;
-  transition: background 280ms cubic-bezier(0.32, 0.72, 0, 1),
-              transform 280ms cubic-bezier(0.32, 0.72, 0, 1);
-}
-.servi-tour__example-btn:hover {
-  background: #ecece4;
-  transform: translateY(-1px);
-}
 .servi-tour__rail {
   display: flex;
   gap: 7px;
@@ -2882,8 +2860,7 @@
 }
 .servi-tour__close:focus-visible,
 .servi-tour__back:focus-visible,
-.servi-tour__next:focus-visible,
-.servi-tour__example-btn:focus-visible {
+.servi-tour__next:focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 3px;
 }
@@ -3993,7 +3970,6 @@
   .servi-tour__close,
   .servi-tour__back,
   .servi-tour__next,
-  .servi-tour__example-btn,
   .dash-hero__tour-btn {
     transition: none;
   }

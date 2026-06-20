@@ -248,7 +248,7 @@
       body = '<div class="sr-drop"><div class="sr-drop__icon">' + (isPhotos ? I.camera(26) : I.video(26)) + '</div>' +
         '<p class="sr-drop__title">' + esc(isPhotos ? tr('photosTitle') : tr('videoTitle')) + '</p>' +
         '<div class="sr-drop__btns">' + btn('secondary', 'sm', isPhotos ? tr('choosePhotos') : tr('uploadVideo'), { action: 'media-upload', iconLeft: I.upload(16) }) +
-          (!isPhotos && shouldOpenNativeVideoCapture() ? btn('secondary', 'sm', tr('recordNow'), { action: 'media-record', iconLeft: I.video(16) }) : '') + '</div>' +
+          (!isPhotos ? btn('secondary', 'sm', tr('recordNow'), { action: 'media-record', iconLeft: I.video(16) }) : '') + '</div>' +
         '<button type="button" class="sr-sample" data-action="media-sample">' + esc(tr('trySample')) + '</button></div>';
     }
     var note = isPhotos
@@ -617,10 +617,6 @@
     inp.addEventListener('change', function () { cb(Array.from(inp.files || [])); inp.remove(); });
     inp.click();
   }
-  function shouldOpenNativeVideoCapture() {
-    return window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
-  }
-
   function uploadAttachment(file) {
     var API = (window.CONFIG && window.CONFIG.API_BASE) || '';
     var fd = new FormData(); fd.append('file', file);
@@ -764,7 +760,6 @@
     switch (cmd) {
       case 'mode':
         switchMode(arg);
-        if (arg === 'video' && shouldOpenNativeVideoCapture()) pickVideo(true);
         break;
       case 'send-text': submitText(); break;
       case 'attach-photos': pickFiles('image/*', true, 'environment', function (files) {
@@ -792,7 +787,7 @@
           } else { addVideoFile(files[0]); return; }
           render();
         }); break;
-      case 'media-record': pickVideo(true); break;
+      case 'media-record': startVid(); break;
       case 'media-sample': if (S.mode === 'photos') S.media = S.media.concat([{ kind: 'photo', sample: true }]).slice(0, 5); else S.media = [{ kind: 'video', sample: true, dur: 12 }]; render(); break;
       case 'media-remove': S.media.splice(+arg, 1); render(); break;
       case 'media-use': if (S.media.some(function (m) { return m.uploading; })) return; runAnalyze(S.mode); break;

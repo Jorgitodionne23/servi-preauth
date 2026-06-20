@@ -132,7 +132,7 @@
     <h2 class="servi-tour__title" id="servi-tour-title"></h2>
     <p class="servi-tour__body" id="servi-tour-body"></p>
     <div class="servi-tour__example" id="servi-tour-example-wrap" hidden>
-      <button class="servi-tour__example-btn" type="button" id="servi-tour-example"></button>
+      <button type="button" id="servi-tour-example"></button>
     </div>
     <div class="servi-tour__rail" aria-hidden="true"></div>
     <div class="servi-tour__actions">
@@ -475,11 +475,17 @@
   let dashPlaceholderIndex = 0;
   let dashPlaceholderBound = false;
 
+  const dashPlaceholderIntro = {
+    es: 'Cuéntanos qué necesitas…',
+    en: 'Tell us what you need…',
+  };
+
   function getDashPlaceholderExamples() {
     const dh = t().dashHero || {};
     const examples = Array.isArray(dh.placeholderExamples) ? dh.placeholderExamples.filter(Boolean) : [];
-    if (examples.length) return examples;
-    return dashPlaceholderFallbacks[getLocale()] || dashPlaceholderFallbacks.es;
+    const rotating = examples.length ? examples : (dashPlaceholderFallbacks[getLocale()] || dashPlaceholderFallbacks.es);
+    const intro = dashPlaceholderIntro[getLocale()] || dashPlaceholderIntro.es;
+    return [intro, ...rotating];
   }
 
   function stopDashPlaceholderRotation() {
@@ -1083,9 +1089,6 @@
       inp.addEventListener('change', () => { cb(Array.from(inp.files || [])); inp.remove(); });
       inp.click();
     }
-    function shouldOpenNativeVideoCapture() {
-      return window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
-    }
     function uploadAttachment(file) {
       const API = (window.CONFIG && window.CONFIG.API_BASE) || '';
       const fd = new FormData(); fd.append('file', file);
@@ -1277,7 +1280,7 @@
           goToReview({ mode: capMode, media: dashMedia.map(cleanMedia) });
           break;
         case 'vid-upload': pickVideo(false); break;
-        case 'vid-record': pickVideo(true); break;
+        case 'vid-record': startVid(); break;
         case 'vid-stop': stopVid(); break;
       }
     });
@@ -1301,7 +1304,6 @@
     window._dashShowMicExplain   = function () { openCapture('voice'); };
     window._dashShowVideoExplain = function () {
       openCapture('video');
-      if (shouldOpenNativeVideoCapture()) pickVideo(true);
     };
 
     // Send the typed request → review screen, carrying any attached files.

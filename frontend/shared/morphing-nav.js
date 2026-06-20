@@ -482,7 +482,6 @@
     inp.addEventListener('change', () => { cb(Array.from(inp.files || [])); inp.remove(); });
     inp.click();
   }
-  function _capShouldNativeVideo() { return window.matchMedia && window.matchMedia('(pointer: coarse)').matches; }
   function _capUpload(file) {
     const API = ((window.CONFIG && window.CONFIG.API_BASE) || '').replace(/\/+$/, '');
     const fd = new FormData(); fd.append('file', file);
@@ -553,6 +552,12 @@
       '</div>';
   }
   function _capVideoPanel() {
+    if (_capRec && _capRec.phase === 'vidrec') {
+      return _capBackBar() + '<div class="dash-cap__video-rec">' +
+        '<span class="dash-cap__time dash-cap__time--lg"><i class="dash-cap__dot"></i><span id="spp-rec-elapsed">' + _capFmt(_capRec.elapsed) + '</span> / ' + _capFmt(90) + '</span>' +
+        '<p class="dash-cap__hint">' + (_isEs() ? 'Graba el problema' : 'Film the problem') + '</p>' +
+        '<div class="dash-cap__actions"><button type="button" class="dash-cap__btn dash-cap__btn--accent" data-action="sppcap-vid-stop">' + ICON.stop + (_isEs() ? 'Detener' : 'Stop') + '</button></div></div>';
+    }
     if (_capMedia.length) {
       const it = _capMedia[0];
       return _capBackBar() +
@@ -677,6 +682,24 @@
       _capUpload(f).then(d => { item.url = d.url; item.uploading = false; _renderCapture(); })
         .catch(() => { item.uploading = false; _renderCapture(); });
     });
+  }
+  function _capStartVid() {
+    _capRec = { phase: 'vidrec', elapsed: 0, t0: Date.now() };
+    _renderCapture();
+    _capRec.timer = setInterval(() => {
+      _capRec.elapsed = (Date.now() - _capRec.t0) / 1000;
+      const el = document.getElementById('spp-rec-elapsed');
+      if (el) el.textContent = _capFmt(_capRec.elapsed);
+      if (_capRec.elapsed >= 90) _capStopVid();
+    }, 100);
+  }
+  function _capStopVid() {
+    if (!_capRec) return;
+    clearInterval(_capRec.timer);
+    const d = Math.max(1, Math.round(_capRec.elapsed));
+    _capRec = null;
+    _capMedia = [{ kind: 'video', sample: true, dur: d }];
+    _renderCapture();
   }
 
   function _capCleanMedia(it) { const o = { kind: it.kind }; if (it.url) o.url = it.url; if (it.dur) o.dur = it.dur; if (it.name) o.name = it.name; if (it.sample) o.sample = true; return o; }
@@ -1190,10 +1213,7 @@
     releaseSearchPillFocus();
     requestAnimationFrame(() => {
       _renderCapture();
-      // "+" jumps straight to the photo picker; video on touch devices opens the
-      // native camera immediately (same behavior as the homepage hero).
       if (mode === 'upload') _capPickPhotos(false);
-      else if (cap === 'video' && _capShouldNativeVideo()) _capPickVideo(true);
     });
   }
 
@@ -1376,7 +1396,8 @@
             _capHandoff({ mode: state.capMode, media: _capMedia.map(_capCleanMedia) });
             break;
           case 'sppcap-vid-upload': _capPickVideo(false); break;
-          case 'sppcap-vid-record': _capPickVideo(true); break;
+          case 'sppcap-vid-record': _capStartVid(); break;
+          case 'sppcap-vid-stop': _capStopVid(); break;
         }
         return;
       }

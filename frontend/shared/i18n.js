@@ -866,7 +866,7 @@ const T = {
       ],
       mediaLabel: "Or send request through:",
       sendLabel: "Send",
-      browseTitle: "Or browse",
+      browseTitle: "Browse services",
       details: "Details",
       cantFind: "Can't find what you're looking for?",
       leaveItToUs: "Leave it to us",
