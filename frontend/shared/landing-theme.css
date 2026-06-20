@@ -606,8 +606,18 @@
   width: 18px; height: 18px;
   display: inline-flex; align-items: center; justify-content: center;
   flex: 0 0 18px;
-  color: var(--color-accent);
+  color: var(--color-text-muted);
   line-height: 0;
+}
+.search-pill__segment--camera[data-active="true"] .search-pill__icon,
+.search-pill__segment--voice[data-active="true"] .search-pill__icon {
+  color: var(--color-accent);
+}
+.search-pill__segment--camera .search-pill__icon,
+.search-pill__segment--voice .search-pill__icon {
+  width: 19px;
+  height: 19px;
+  flex-basis: 19px;
 }
 .search-pill__icon svg {
   display: block;
@@ -629,13 +639,14 @@
   border: none;
   outline: none;
   background: transparent;
-  padding: 0;
+  padding: 0 0 0 4px;
   margin: 0;
   font: inherit;
   line-height: 1.45;
   color: inherit;
   cursor: pointer;
   resize: none;
+  box-sizing: border-box;
   /* Collapsed: a single, non-wrapping line that the segment centers. */
   height: 1.45em;
   white-space: nowrap;
@@ -938,9 +949,21 @@
 .spp-panel--camera { padding: 12px 14px 14px; }
 .spp-panel--voice { padding: 12px 14px 14px; }
 .spp-cam-choose__q {
-  margin: 0 0 10px;
+  max-width: 240px;
+  margin: 0 auto 10px;
   font-family: var(--font-body);
   font-size: 13px;
+  line-height: 1.28;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-align: center;
+}
+.spp-voice-prompt {
+  max-width: 220px;
+  margin: 0 auto 8px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  line-height: 1.28;
   font-weight: 600;
   color: var(--color-text-muted);
   text-align: center;
@@ -977,7 +1000,7 @@
 .spp-cam-choice:active { transform: translateY(0); }
 .spp-cam-choice__ic {
   width: 26px; height: 26px;
-  color: var(--color-accent);
+  color: currentColor;
   flex-shrink: 0;
   display: inline-flex; align-items: center; justify-content: center;
 }
@@ -2024,9 +2047,9 @@
   .site-header[data-state="scrolled-expanded"] .search-pill__segment--camera .search-pill__icon,
   .site-header[data-state="scrolled-expanded"] .search-pill__segment--voice .search-pill__icon {
     display: inline-flex;
-    width: 18px;
-    height: 18px;
-    flex-basis: 18px;
+    width: 19px;
+    height: 19px;
+    flex-basis: 19px;
   }
   .site-header[data-state="scrolled"] .search-pill__segment--camera,
   .site-header[data-state="scrolled"] .search-pill__segment--voice {
@@ -2458,8 +2481,8 @@
   padding: 10px 0 4px;
 }
 .dash-mic {
-  width: 76px;
-  height: 76px;
+  width: 70px;
+  height: 70px;
   border-radius: 50%;
   border: none;
   background: var(--color-text);
@@ -2470,7 +2493,7 @@
   justify-content: center;
   transition: transform var(--duration-fast), background var(--duration-fast);
 }
-.dash-mic svg { width: 30px; height: 30px; }
+.dash-mic svg { width: 28px; height: 28px; }
 .dash-mic:hover { transform: scale(1.04); }
 .dash-mic.rec { background: #2bb6ad; animation: dashMicPulse 1.4s ease-in-out infinite; }
 @keyframes dashMicPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(43,182,173,0.4); } 50% { box-shadow: 0 0 0 12px rgba(43,182,173,0); } }
@@ -2505,8 +2528,10 @@
 @keyframes dashBlink { 50% { opacity: 0.25; } }
 .dash-cap__play {
   width: 40px; height: 40px; border-radius: 50%;
+  border: none; padding: 0;
   background: var(--color-text); color: #fff;
   display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
+  cursor: pointer;
 }
 .dash-cap__play svg { width: 16px; height: 16px; }
 .dash-cap__voice-done { flex-direction: row; }
@@ -3796,6 +3821,7 @@
   .dash-hero__location {
     max-width: 100%;
     flex-wrap: nowrap;
+    margin-top: 7px;
   }
   .dash-hero__location-change {
     flex-shrink: 0;
@@ -3912,17 +3938,32 @@
   }
   .dash-hero__media-row {
     display: grid;
-    grid-template-columns: 1fr;
-    gap: 10px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
     width: 100%;
   }
   .dash-hero__media-btn {
     width: 100%;
     min-width: 0;
-    min-height: 66px;
-    padding: 12px 14px;
+    min-height: 78px;
+    padding: 10px 6px;
+    flex-direction: column;
+    justify-content: center;
+    gap: 7px;
+    text-align: center;
   }
   .dash-hero__media-btn svg { width: 24px; height: 24px; }
+  .dash-hero__media-txt {
+    align-items: center;
+    gap: 0;
+  }
+  .dash-hero__media-title {
+    font-size: 12.5px;
+    line-height: 1.12;
+  }
+  .dash-hero__media-sub {
+    display: none;
+  }
   .dash-hero__tour-btn {
     font-size: 12px;
     padding: 9px 12px 9px 10px;
