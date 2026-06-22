@@ -2557,6 +2557,14 @@
 .dash-cap__drop-btns { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
 
 .dash-cap__video-rec { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 14px 0; }
+.dash-cap__video-preview {
+  width: min(100%, 420px);
+  aspect-ratio: 16 / 9;
+  border-radius: 14px;
+  background: #111;
+  object-fit: cover;
+  display: block;
+}
 .dash-cap__media-chip {
   display: flex; align-items: center; gap: 10px;
   border: 1.5px solid var(--color-border); border-radius: 12px;

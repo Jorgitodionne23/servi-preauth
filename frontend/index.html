@@ -1061,6 +1061,7 @@
     let dashMedia = [];  // captured media for the active mode
     let dashRec = null;  // recorder transient {phase,elapsed,t0,timer}
     let capMode = null;  // 'voice' | 'video' | 'photos'
+    const VIDEO_MAX_SECONDS = 90;
 
     function fmtTime(s) { const m = Math.floor(s / 60), sec = Math.floor(s % 60); return m + ':' + String(sec).padStart(2, '0'); }
     function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
@@ -1123,7 +1124,8 @@
       renderCapture();
     }
     function closeCapture() {
-      stopWave(); if (dashRec && dashRec.timer) clearInterval(dashRec.timer);
+      stopWave();
+      clearVideoRec(true);
       dashRec = null; dashMedia = []; capMode = null;
       const c = capEl(); if (c) { c.hidden = true; c.innerHTML = ''; }
       composeEls().forEach(el => { if (el) el.hidden = false; });
@@ -1171,7 +1173,8 @@
     function videoPanel() {
       if (dashRec && dashRec.phase === 'vidrec') {
         return backBar() + '<div class="dash-cap__video-rec">' +
-          '<span class="dash-cap__time dash-cap__time--lg"><i class="dash-cap__dot"></i><span id="dash-rec-elapsed">' + fmtTime(dashRec.elapsed) + '</span> / ' + fmtTime(90) + '</span>' +
+          '<video class="dash-cap__video-preview" id="dash-video-preview" autoplay playsinline muted></video>' +
+          '<span class="dash-cap__time dash-cap__time--lg"><i class="dash-cap__dot"></i><span id="dash-rec-elapsed">' + fmtTime(dashRec.elapsed) + '</span> / ' + fmtTime(VIDEO_MAX_SECONDS) + '</span>' +
           '<p class="dash-cap__hint">' + (isEs() ? 'Graba el problema' : 'Film the problem') + '</p>' +
           '<div class="dash-cap__actions"><button type="button" class="dash-cap__btn dash-cap__btn--accent" data-cap="vid-stop">' + IC.stop + (isEs() ? 'Detener' : 'Stop') + '</button></div></div>';
       }
@@ -1220,16 +1223,75 @@
       startWave('dash-wave');
     }
     function finishVoice() { if (!dashRec) return; clearInterval(dashRec.timer); stopWave(); dashRec.phase = 'done'; renderCapture(); }
-    function startVid() {
-      dashRec = { phase: 'vidrec', elapsed: 0, t0: Date.now() };
-      renderCapture();
-      dashRec.timer = setInterval(() => {
-        dashRec.elapsed = (Date.now() - dashRec.t0) / 1000;
-        const el = document.getElementById('dash-rec-elapsed'); if (el) el.textContent = fmtTime(dashRec.elapsed);
-        if (dashRec.elapsed >= 90) stopVid();
-      }, 100);
+    function videoMimeType() {
+      if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return '';
+      const types = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
+      return types.find(t => MediaRecorder.isTypeSupported(t)) || '';
     }
-    function stopVid() { if (!dashRec) return; clearInterval(dashRec.timer); const d = Math.max(1, Math.round(dashRec.elapsed)); dashRec = null; dashMedia = [{ kind: 'video', sample: true, dur: d }]; renderCapture(); }
+    function attachVideoPreview(stream) {
+      const video = document.getElementById('dash-video-preview');
+      if (!video) return;
+      video.srcObject = stream;
+      video.play().catch(() => {});
+    }
+    function clearVideoRec(discard) {
+      if (!dashRec) return;
+      clearInterval(dashRec.timer);
+      clearTimeout(dashRec.limitTimer);
+      if (discard) dashRec.discard = true;
+      if (dashRec.recorder && dashRec.recorder.state !== 'inactive') dashRec.recorder.stop();
+      else if (dashRec.stream) dashRec.stream.getTracks().forEach(t => t.stop());
+    }
+    function startVid() {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
+        pickVideo(true);
+        return;
+      }
+      navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' } },
+        audio: true
+      }).then(stream => {
+        const chunks = [];
+        const mimeType = videoMimeType();
+        const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+        const rec = { phase: 'vidrec', elapsed: 0, t0: Date.now(), stream, recorder, chunks };
+        dashRec = rec;
+        renderCapture();
+        attachVideoPreview(stream);
+        rec.timer = setInterval(() => {
+          rec.elapsed = (Date.now() - rec.t0) / 1000;
+          const el = document.getElementById('dash-rec-elapsed'); if (el) el.textContent = fmtTime(rec.elapsed);
+          if (rec.elapsed >= VIDEO_MAX_SECONDS) stopVid();
+        }, 100);
+        recorder.addEventListener('dataavailable', e => {
+          if (e.data && e.data.size) chunks.push(e.data);
+        });
+        recorder.addEventListener('stop', () => {
+          stream.getTracks().forEach(t => t.stop());
+          if (rec.discard) return;
+          const type = recorder.mimeType || mimeType || 'video/webm';
+          const blob = new Blob(chunks, { type });
+          const d = Math.min(VIDEO_MAX_SECONDS, Math.max(1, Math.round(rec.elapsed || ((Date.now() - rec.t0) / 1000))));
+          const file = typeof File === 'function'
+            ? new File([blob], 'servi-request-video.webm', { type })
+            : blob;
+          const item = { kind: 'video', url: URL.createObjectURL(blob), name: 'Recorded video', dur: d, uploading: true };
+          if (dashRec === rec) dashRec = null;
+          dashMedia = [item];
+          renderCapture();
+          uploadAttachment(file).then(data => { item.url = data.url; item.uploading = false; renderCapture(); })
+            .catch(() => { item.uploading = false; renderCapture(); });
+        });
+        recorder.start(250);
+      }).catch(() => {
+        pickVideo(true);
+      });
+    }
+    function stopVid() {
+      if (!dashRec || dashRec.phase !== 'vidrec') return;
+      dashRec.elapsed = (Date.now() - dashRec.t0) / 1000;
+      clearVideoRec(false);
+    }
 
     // ── pickers ──
     function pickPhotos(capture) {

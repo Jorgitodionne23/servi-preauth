@@ -470,6 +470,7 @@
   // record video without leaving the page. The captured media is handed to the
   // Smart Request review screen only on "Continue/Use" — never to open a tool.
   const _isEs = () => (window.__lang !== 'en');
+  const _CAP_VIDEO_MAX_SECONDS = 90;
   function _capFmt(s) { const m = Math.floor(s / 60), sec = Math.floor(s % 60); return m + ':' + String(sec).padStart(2, '0'); }
   function _capEsc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
   function _capBars() { return Array(28).fill('<span></span>').join(''); }
@@ -554,7 +555,8 @@
   function _capVideoPanel() {
     if (_capRec && _capRec.phase === 'vidrec') {
       return _capBackBar() + '<div class="dash-cap__video-rec">' +
-        '<span class="dash-cap__time dash-cap__time--lg"><i class="dash-cap__dot"></i><span id="spp-rec-elapsed">' + _capFmt(_capRec.elapsed) + '</span> / ' + _capFmt(90) + '</span>' +
+        '<video class="dash-cap__video-preview" id="spp-video-preview" autoplay playsinline muted></video>' +
+        '<span class="dash-cap__time dash-cap__time--lg"><i class="dash-cap__dot"></i><span id="spp-rec-elapsed">' + _capFmt(_capRec.elapsed) + '</span> / ' + _capFmt(_CAP_VIDEO_MAX_SECONDS) + '</span>' +
         '<p class="dash-cap__hint">' + (_isEs() ? 'Graba el problema' : 'Film the problem') + '</p>' +
         '<div class="dash-cap__actions"><button type="button" class="dash-cap__btn dash-cap__btn--accent" data-action="sppcap-vid-stop">' + ICON.stop + (_isEs() ? 'Detener' : 'Stop') + '</button></div></div>';
     }
@@ -683,23 +685,69 @@
         .catch(() => { item.uploading = false; _renderCapture(); });
     });
   }
+  function _capVideoMimeType() {
+    if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return '';
+    const types = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
+    return types.find(t => MediaRecorder.isTypeSupported(t)) || '';
+  }
+  function _capAttachVideoPreview(stream) {
+    const video = document.getElementById('spp-video-preview');
+    if (!video) return;
+    video.srcObject = stream;
+    video.play().catch(() => {});
+  }
   function _capStartVid() {
-    _capRec = { phase: 'vidrec', elapsed: 0, t0: Date.now() };
-    _renderCapture();
-    _capRec.timer = setInterval(() => {
-      _capRec.elapsed = (Date.now() - _capRec.t0) / 1000;
-      const el = document.getElementById('spp-rec-elapsed');
-      if (el) el.textContent = _capFmt(_capRec.elapsed);
-      if (_capRec.elapsed >= 90) _capStopVid();
-    }, 100);
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
+      _capPickVideo(true);
+      return;
+    }
+    navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' } },
+      audio: true
+    }).then(stream => {
+      const chunks = [];
+      const mimeType = _capVideoMimeType();
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      const rec = { phase: 'vidrec', elapsed: 0, t0: Date.now(), stream, recorder, chunks };
+      _capRec = rec;
+      _renderCapture();
+      _capAttachVideoPreview(stream);
+      rec.timer = setInterval(() => {
+        rec.elapsed = (Date.now() - rec.t0) / 1000;
+        const el = document.getElementById('spp-rec-elapsed');
+        if (el) el.textContent = _capFmt(rec.elapsed);
+        if (rec.elapsed >= _CAP_VIDEO_MAX_SECONDS) _capStopVid();
+      }, 100);
+      recorder.addEventListener('dataavailable', e => {
+        if (e.data && e.data.size) chunks.push(e.data);
+      });
+      recorder.addEventListener('stop', () => {
+        stream.getTracks().forEach(t => t.stop());
+        if (rec.discard) return;
+        const type = recorder.mimeType || mimeType || 'video/webm';
+        const blob = new Blob(chunks, { type });
+        const d = Math.min(_CAP_VIDEO_MAX_SECONDS, Math.max(1, Math.round(rec.elapsed || ((Date.now() - rec.t0) / 1000))));
+        const file = typeof File === 'function'
+          ? new File([blob], 'servi-request-video.webm', { type })
+          : blob;
+        const item = { kind: 'video', url: URL.createObjectURL(blob), name: 'Recorded video', dur: d, uploading: true };
+        if (_capRec === rec) _capRec = null;
+        _capMedia = [item];
+        _renderCapture();
+        _capUpload(file).then(data => { item.url = data.url; item.uploading = false; _renderCapture(); })
+          .catch(() => { item.uploading = false; _renderCapture(); });
+      });
+      recorder.start(250);
+    }).catch(() => {
+      _capPickVideo(true);
+    });
   }
   function _capStopVid() {
-    if (!_capRec) return;
+    if (!_capRec || _capRec.phase !== 'vidrec') return;
+    _capRec.elapsed = (Date.now() - _capRec.t0) / 1000;
     clearInterval(_capRec.timer);
-    const d = Math.max(1, Math.round(_capRec.elapsed));
-    _capRec = null;
-    _capMedia = [{ kind: 'video', sample: true, dur: d }];
-    _renderCapture();
+    if (_capRec.recorder && _capRec.recorder.state !== 'inactive') _capRec.recorder.stop();
+    else if (_capRec.stream) _capRec.stream.getTracks().forEach(t => t.stop());
   }
 
   function _capCleanMedia(it) { const o = { kind: it.kind }; if (it.url) o.url = it.url; if (it.dur) o.dur = it.dur; if (it.name) o.name = it.name; if (it.sample) o.sample = true; return o; }
