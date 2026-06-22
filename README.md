@@ -38,15 +38,17 @@ Backend, payments, and admin tooling for **SERVI** — an on-demand home service
 
 ```
 backend/
-  index.mjs          — all server routes and business logic (~7.7k lines)
+  index.mjs          — all server routes and business logic (~9.6k lines)
   db.pg.mjs          — PostgreSQL schema (CREATE TABLE IF NOT EXISTS) + connection pool
   pricing.mjs        — alpha-curve booking fee + Stripe processing fee with VAT
 
 frontend/
   index.html         — landing page (hero, categories, how-it-works, testimonials)
+  smart-request.html — standalone Smart Request intake (describe / show / say what you need)
   browse.html        — service category browser
   service.html       — individual service request flow (describe + schedule)
   account.html       — auth-guarded profile, addresses, payment methods, delete account
+  email-verified.html — post-email-verification landing page
   partners.html      — partner signup hub  +  partners/registro.html (application form)
   handbook.html      — provider guide index  +  handbook/ subpages
   helpcenter.html    — support index  +  helpcenter/ subpages
@@ -58,9 +60,11 @@ frontend/
   save.html          — standalone card / account management
   link-expired.html  — shown when a payment link has expired
   config.js          — runtime config (API_BASE, Stripe publishable key, Firebase config, WhatsApp number)
+  smart-request/     — Smart Request app (catalog.js, heuristic.js, parse.js, sr-app.js, sr-icons.js, sr-styles.css)
   shared/            — shared-styles.css, landing-theme.css, shared-auth.js,
                        shared-nav.js, shared-footer.js, morphing-nav.js,
-                       i18n.js (ES/EN), browse-data.js
+                       i18n.js (ES/EN), browse-data.js, address-form.js,
+                       shared-active-order.js, contact-cta.js, motion.js
 
 functions/
   _middleware.js     — Cloudflare Pages middleware (injects Firebase API key into config.js at edge)
@@ -91,6 +95,7 @@ There is no committed `.env.example` — copy the table below into your local `.
 | `FRONTEND_BASE_URL` | Yes | Cloudflare Pages URL — used to build payment links |
 | `FIREBASE_SERVICE_ACCOUNT_JSON` | Yes (prod) | Firebase Admin SDK service account JSON — required to verify Firebase ID tokens and check revocation |
 | `JWT_SECRET` | Yes (prod) | Secret used to sign the custom session JWT. Must be set on Render; backend throws at startup in production if missing |
+| `ANTHROPIC_API_KEY` | Yes (prod) | Backend-only Claude API key for Smart Request text parsing (`POST /api/parse-request`). When missing, the request falls back to a client-side heuristic |
 | `SHEETS_WEBHOOK_URL` | Optional | Google Apps Script exec URL for legacy Sheet sync |
 | `R2_ACCOUNT_ID` | Optional | Cloudflare R2 — for service request file uploads |
 | `R2_ACCESS_KEY_ID` | Optional | Cloudflare R2 access key |
@@ -148,7 +153,7 @@ Identity is handled by **Firebase Auth** on the frontend; sessions are issued by
 
 A `401 { error: 'token_revoked' | 'user_disabled' | 'invalid_token' }` from the backend tells the frontend to clear `localStorage`, call `auth.signOut()`, and rebuild the navbar — this is the normal recovery path, not a bug.
 
-The booking gate requires both `email_verified=true` **and** `phone_verified=true` on the `auth_users` row.
+The booking gate (`POST /api/service-requests`) always requires `phone_verified=true`. `email_verified=true` is required for returning users (anyone with prior service activity); a brand-new user who skipped email at signup may place their **first** order with phone-only, then must verify email for subsequent orders.
 
 Full design lives in [`docs/AUTH_STATE_MACHINE.md`](./docs/AUTH_STATE_MACHINE.md). Past hardening work is recorded in [`docs/AUTH_AUDIT.md`](./docs/AUTH_AUDIT.md) and [`docs/session-handoff.md`](./docs/session-handoff.md) (historical snapshots — not living docs).
 
