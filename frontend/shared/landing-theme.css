@@ -2565,6 +2565,15 @@
   object-fit: cover;
   display: block;
 }
+.dash-cap__video-playback {
+  width: min(100%, 420px);
+  aspect-ratio: 16 / 9;
+  border-radius: 14px;
+  background: #111;
+  object-fit: cover;
+  display: block;
+  margin: 4px auto 12px;
+}
 .dash-cap__media-chip {
   display: flex; align-items: center; gap: 10px;
   border: 1.5px solid var(--color-border); border-radius: 12px;

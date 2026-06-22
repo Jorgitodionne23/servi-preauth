@@ -1061,7 +1061,7 @@
     let dashMedia = [];  // captured media for the active mode
     let dashRec = null;  // recorder transient {phase,elapsed,t0,timer}
     let capMode = null;  // 'voice' | 'video' | 'photos'
-    const VIDEO_MAX_SECONDS = 90;
+    const VIDEO_MAX_SECONDS = 30;
 
     function fmtTime(s) { const m = Math.floor(s / 60), sec = Math.floor(s % 60); return m + ':' + String(sec).padStart(2, '0'); }
     function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
@@ -1181,6 +1181,7 @@
       if (dashMedia.length) {
         const it = dashMedia[0];
         return backBar() +
+          '<video class="dash-cap__video-playback" controls playsinline preload="metadata" src="' + esc(it.previewUrl || it.url || '') + '"></video>' +
           '<div class="dash-cap__media-chip' + (it.uploading ? ' uploading' : '') + '">' + IC.video +
             '<span>' + (it.name ? esc(it.name) : (isEs() ? 'Video listo' : 'Video ready')) + (it.dur ? ' · ' + fmtTime(it.dur) : '') + '</span>' +
             '<button type="button" class="dash-cap__chip-x" data-cap="media-clear">' + IC.x + '</button></div>' +
@@ -1275,7 +1276,8 @@
           const file = typeof File === 'function'
             ? new File([blob], 'servi-request-video.webm', { type })
             : blob;
-          const item = { kind: 'video', url: URL.createObjectURL(blob), name: 'Recorded video', dur: d, uploading: true };
+          const previewUrl = URL.createObjectURL(blob);
+          const item = { kind: 'video', url: previewUrl, previewUrl, name: 'Recorded video', dur: d, uploading: true };
           if (dashRec === rec) dashRec = null;
           dashMedia = [item];
           renderCapture();
@@ -1309,7 +1311,8 @@
       pickFiles('video/*', false, capture ? 'environment' : null, files => {
         if (!files.length) return;
         const f = files[0];
-        const item = { kind: 'video', url: URL.createObjectURL(f), name: f.name, uploading: true };
+        const previewUrl = URL.createObjectURL(f);
+        const item = { kind: 'video', url: previewUrl, previewUrl, name: f.name, uploading: true };
         dashMedia = [item]; renderCapture();
         uploadAttachment(f).then(d => { item.url = d.url; item.uploading = false; renderCapture(); })
           .catch(() => { item.uploading = false; renderCapture(); });

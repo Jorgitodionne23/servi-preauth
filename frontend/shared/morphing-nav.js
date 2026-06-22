@@ -470,7 +470,7 @@
   // record video without leaving the page. The captured media is handed to the
   // Smart Request review screen only on "Continue/Use" — never to open a tool.
   const _isEs = () => (window.__lang !== 'en');
-  const _CAP_VIDEO_MAX_SECONDS = 90;
+  const _CAP_VIDEO_MAX_SECONDS = 30;
   function _capFmt(s) { const m = Math.floor(s / 60), sec = Math.floor(s % 60); return m + ':' + String(sec).padStart(2, '0'); }
   function _capEsc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
   function _capBars() { return Array(28).fill('<span></span>').join(''); }
@@ -563,6 +563,7 @@
     if (_capMedia.length) {
       const it = _capMedia[0];
       return _capBackBar() +
+        '<video class="dash-cap__video-playback" controls playsinline preload="metadata" src="' + _capEsc(it.previewUrl || it.url || '') + '"></video>' +
         '<div class="dash-cap__media-chip' + (it.uploading ? ' uploading' : '') + '">' + ICON.video +
           '<span>' + (it.name ? _capEsc(it.name) : (_isEs() ? 'Video listo' : 'Video ready')) + (it.dur ? ' · ' + _capFmt(it.dur) : '') + '</span>' +
           '<button type="button" class="dash-cap__chip-x" data-action="sppcap-media-clear">' + ICON.close + '</button></div>' +
@@ -679,7 +680,8 @@
     _capPickFiles('video/*', false, capture ? 'environment' : null, files => {
       if (!files.length) return;
       const f = files[0];
-      const item = { kind: 'video', url: URL.createObjectURL(f), name: f.name, uploading: true };
+      const previewUrl = URL.createObjectURL(f);
+      const item = { kind: 'video', url: previewUrl, previewUrl, name: f.name, uploading: true };
       _capMedia = [item]; _renderCapture();
       _capUpload(f).then(d => { item.url = d.url; item.uploading = false; _renderCapture(); })
         .catch(() => { item.uploading = false; _renderCapture(); });
@@ -730,7 +732,8 @@
         const file = typeof File === 'function'
           ? new File([blob], 'servi-request-video.webm', { type })
           : blob;
-        const item = { kind: 'video', url: URL.createObjectURL(blob), name: 'Recorded video', dur: d, uploading: true };
+        const previewUrl = URL.createObjectURL(blob);
+        const item = { kind: 'video', url: previewUrl, previewUrl, name: 'Recorded video', dur: d, uploading: true };
         if (_capRec === rec) _capRec = null;
         _capMedia = [item];
         _renderCapture();
