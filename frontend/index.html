@@ -1202,7 +1202,10 @@
       }
       return backBar() + '<div class="dash-cap__drop"><div class="dash-cap__drop-ic">' + IC.cam + '</div>' +
         '<p class="dash-cap__drop-title">' + (isEs() ? 'Agrega fotos del problema' : 'Add photos of the problem') + '</p>' +
-        '<div class="dash-cap__drop-btns"><button type="button" class="dash-cap__btn dash-cap__btn--secondary" data-cap="photos-add">' + IC.upload + (isEs() ? 'Elegir fotos' : 'Choose photos') + '</button></div></div>';
+        '<div class="dash-cap__drop-btns">' +
+          '<button type="button" class="dash-cap__btn dash-cap__btn--secondary" data-cap="photos-capture">' + IC.cam + (isEs() ? 'Tomar foto' : 'Take photo') + '</button>' +
+          '<button type="button" class="dash-cap__btn dash-cap__btn--secondary" data-cap="photos-add">' + IC.upload + (isEs() ? 'Elegir fotos' : 'Choose photos') + '</button>' +
+        '</div></div>';
     }
 
     // ── recorders ──
@@ -1229,8 +1232,8 @@
     function stopVid() { if (!dashRec) return; clearInterval(dashRec.timer); const d = Math.max(1, Math.round(dashRec.elapsed)); dashRec = null; dashMedia = [{ kind: 'video', sample: true, dur: d }]; renderCapture(); }
 
     // ── pickers ──
-    function pickPhotos() {
-      pickFiles('image/*', true, 'environment', files => {
+    function pickPhotos(capture) {
+      pickFiles('image/*', !capture, capture ? 'environment' : null, files => {
         files.slice(0, 5 - dashMedia.length).forEach(f => {
           const item = { kind: 'photo', url: URL.createObjectURL(f), uploading: true };
           dashMedia.push(item);
@@ -1272,7 +1275,8 @@
         case 'mic-toggle': (dashRec && dashRec.phase === 'recording') ? finishVoice() : startVoice(); break;
         case 'voice-reset': dashRec = null; renderCapture(); break;
         case 'voice-use': goToReview({ mode: 'voice', media: [{ kind: 'voice', duration: dashRec ? dashRec.elapsed : 0 }] }); break;
-        case 'photos-add': pickPhotos(); break;
+        case 'photos-capture': pickPhotos(true); break;
+        case 'photos-add': pickPhotos(false); break;
         case 'media-remove': dashMedia.splice(+arg, 1); renderCapture(); break;
         case 'media-clear': dashMedia = []; renderCapture(); break;
         case 'media-use':

@@ -1910,7 +1910,8 @@
       opacity 180ms ease;
   }
   .site-header[data-state="scrolled-expanded"] .site-header__pill[data-active-segment="describe"] .search-pill__input {
-    font-size: 14px;
+    /* Keep at 16px to prevent iOS Safari focus-zoom from cropping the pill. */
+    font-size: 16px;
   }
   .site-header[data-state="scrolled-expanded"] .site-header__pill[data-active-segment="describe"] .search-pill__submit-btn {
     display: inline-flex;
