@@ -47,7 +47,7 @@
         <button class="dash-hero__location-change" id="dash-change-address" type="button" onclick="window._dashShowAddressModal()">Cambiar dirección</button>
       </div>
 
-      <h1 class="dash-hero__headline" id="dash-headline">Solicita un servicio ahora</h1>
+      <h1 class="dash-hero__headline" id="dash-headline">Describe what you need now</h1>
 
       <div class="dash-hero__textarea-wrap">
         <textarea
@@ -59,40 +59,58 @@
           onkeydown="if(event.key==='Enter'&&(event.metaKey||event.ctrlKey)){event.preventDefault();window._dashSubmitText()}"
         ></textarea>
         <div class="dash-hero__textarea-bar">
+          <button class="dash-hero__attach-btn" type="button" onclick="window._dashToggleAttachMenu(event)" aria-label="Adjuntar foto, video o audio" aria-haspopup="true" aria-expanded="false" id="dash-attach-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6v12M6 12h12"/></svg>
+          </button>
           <button class="dash-hero__send-btn" type="button" onclick="window._dashSubmitText()" aria-label="Enviar">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
           </button>
         </div>
+
+        <!-- Attach menu (photo / voice / video capture) — revealed by the "+" button -->
+        <div class="dash-hero__attach-menu" id="dash-attach-menu" hidden role="menu" aria-labelledby="dash-attach-btn">
+          <p class="dash-hero__media-label" id="dash-media-label">Attach to description or send request using:</p>
+          <div class="dash-hero__media-row">
+            <button class="dash-hero__media-btn" type="button" onclick="window._dashShowCameraExplain()" aria-label="Cámara" id="dash-camera-btn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
+              <span class="dash-hero__media-txt">
+                <span class="dash-hero__media-title" id="dash-camera-title">Agregar fotos</span>
+                <span class="dash-hero__media-sub" id="dash-camera-sub">Toma o sube</span>
+              </span>
+            </button>
+            <button class="dash-hero__media-btn" type="button" onclick="window._dashShowMicExplain()" aria-label="Micrófono" id="dash-mic-btn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+              <span class="dash-hero__media-txt">
+                <span class="dash-hero__media-title" id="dash-mic-title">Nota de voz</span>
+                <span class="dash-hero__media-sub" id="dash-mic-sub">Dilo en voz alta</span>
+              </span>
+            </button>
+            <button class="dash-hero__media-btn" type="button" onclick="window._dashShowVideoExplain()" aria-label="Video" id="dash-video-btn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+              <span class="dash-hero__media-txt">
+                <span class="dash-hero__media-title" id="dash-video-title">Grabar un video</span>
+                <span class="dash-hero__media-sub" id="dash-video-sub">Muestra el problema</span>
+              </span>
+            </button>
+          </div>
+        </div>
+
         <div class="dash-atts" id="dash-atts" hidden></div>
+      </div>
+
+      <div class="dash-hero__tour-action dash-hero__tour-action--desktop">
+        <button class="dash-hero__tour-btn" type="button" onclick="window._serviTourStart && window._serviTourStart({ force: true })">
+          <span class="dash-hero__tour-dot" aria-hidden="true">
+            <svg viewBox="0 0 18 18" fill="none" aria-hidden="true">
+              <path d="M7 5.5v7l5-3.5-5-3.5Z" fill="currentColor"/>
+            </svg>
+          </span>
+          <span class="dash-tour-label">Ver guía rápida</span>
+        </button>
       </div>
 
       <!-- Inline media capture (mic / video / photos) — rendered by the hero capture engine -->
       <div class="dash-capture" id="dash-capture" hidden></div>
-
-      <p class="dash-hero__media-label" id="dash-media-label">O envía tu solicitud por:</p>
-      <div class="dash-hero__media-row">
-        <button class="dash-hero__media-btn" type="button" onclick="window._dashShowCameraExplain()" aria-label="Cámara" id="dash-camera-btn">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
-          <span class="dash-hero__media-txt">
-            <span class="dash-hero__media-title" id="dash-camera-title">Agregar fotos</span>
-            <span class="dash-hero__media-sub" id="dash-camera-sub">Toma o sube</span>
-          </span>
-        </button>
-        <button class="dash-hero__media-btn" type="button" onclick="window._dashShowMicExplain()" aria-label="Micrófono" id="dash-mic-btn">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
-          <span class="dash-hero__media-txt">
-            <span class="dash-hero__media-title" id="dash-mic-title">Nota de voz</span>
-            <span class="dash-hero__media-sub" id="dash-mic-sub">Dilo en voz alta</span>
-          </span>
-        </button>
-        <button class="dash-hero__media-btn" type="button" onclick="window._dashShowVideoExplain()" aria-label="Video" id="dash-video-btn">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
-          <span class="dash-hero__media-txt">
-            <span class="dash-hero__media-title" id="dash-video-title">Grabar un video</span>
-            <span class="dash-hero__media-sub" id="dash-video-sub">Muestra el problema</span>
-          </span>
-        </button>
-      </div>
     </div>
 
     <!-- RIGHT — Browse categories -->
@@ -868,7 +886,7 @@
     const headline = document.getElementById('dash-headline');
     if (headline) headline.textContent = dh.headline || 'Solicita un servicio ahora';
     const mediaLabel = document.getElementById('dash-media-label');
-    if (mediaLabel) mediaLabel.textContent = dh.mediaLabel || 'O envía tu solicitud por:';
+    if (mediaLabel) mediaLabel.textContent = dh.mediaLabel || 'Attach to description or send request using:';
     const sr = tr.smartRequest || {};
     const setText = (id, value) => {
       const el = document.getElementById(id);
@@ -889,8 +907,9 @@
     const browseTitle = document.getElementById('dash-browse-title');
     if (browseTitle) browseTitle.textContent = dh.browseTitle || 'O explora';
     updatePlaceholders();
-    const tourLabel = document.getElementById('dash-tour-label');
-    if (tourLabel) tourLabel.textContent = getTourCopy().replay;
+    document.querySelectorAll('.dash-tour-label').forEach(label => {
+      label.textContent = getTourCopy().replay;
+    });
 
     renderPopularServices();
   }
@@ -1054,7 +1073,7 @@
       document.querySelector('.dash-hero__textarea-wrap'),
       document.getElementById('dash-media-label'),
       document.querySelector('.dash-hero__media-row'),
-      document.getElementById('dash-tour-btn'),
+      document.querySelector('.dash-hero__tour-action--desktop'),
     ];
 
     let dashAtts = [];   // photos attached to a TEXT request  [{url,uploading}]
@@ -1097,9 +1116,28 @@
         .then(r => { if (!r.ok) throw new Error('upload-' + r.status); return r.json(); });
     }
 
-    // ── waveform animation (real mic if available, else simulated) ──
-    let waveRAF = null, waveStream = null;
-    function startWave(id) {
+	    // ── waveform animation (real mic if available, else simulated) ──
+	    let waveRAF = null, waveStream = null;
+	    function startWaveFromStream(id, stream) {
+	      const wrap = document.getElementById(id); if (!wrap || !stream) return;
+	      const wb = wrap.querySelectorAll('span');
+	      try {
+	        waveStream = stream;
+	        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+	        const src = ctx.createMediaStreamSource(stream);
+	        const an = ctx.createAnalyser(); an.fftSize = 64; src.connect(an);
+	        const data = new Uint8Array(an.frequencyBinCount);
+	        (function loop() {
+	          an.getByteFrequencyData(data);
+	          for (let i = 0; i < wb.length; i++) {
+	            const v = data[Math.floor(i / wb.length * data.length)] / 255;
+	            wb[i].style.transform = 'scaleY(' + Math.max(0.12, v) + ')';
+	          }
+	          waveRAF = requestAnimationFrame(loop);
+	        })();
+	      } catch (_) { fakeWave(wb); }
+	    }
+	    function startWave(id) {
       const wrap = document.getElementById(id); if (!wrap) return;
       const wb = wrap.querySelectorAll('span');
       if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
@@ -1118,21 +1156,30 @@
 
     // ── open / close the inline capture surface ──
     function openCapture(mode) {
+      closeAttachMenu();
       capMode = mode; dashMedia = []; dashRec = null;
       composeEls().forEach(el => { if (el) el.hidden = true; });
       const c = capEl(); if (c) c.hidden = false;
       renderCapture();
-    }
-    function closeCapture() {
-      stopWave();
-      clearVideoRec(true);
-      dashRec = null; dashMedia = []; capMode = null;
+	    }
+	    function closeCapture() {
+	      clearVideoRec(true);
+	      stopWave();
+	      dashRec = null; dashMedia = []; capMode = null;
       const c = capEl(); if (c) { c.hidden = true; c.innerHTML = ''; }
       composeEls().forEach(el => { if (el) el.hidden = false; });
     }
 
     // ── handoff → review screen on /smart-request.html ──
     function goToReview(payload) {
+      const ta = document.getElementById('dash-textarea');
+      const text = ta ? ta.value.trim() : '';
+      if (text) {
+        payload.text = text;
+        payload.lang = (typeof window.applyRequestLanguage === 'function')
+          ? (window.applyRequestLanguage(text) || payload.lang)
+          : (payload.lang || (window.__lang === 'en' ? 'en' : 'es'));
+      }
       try { sessionStorage.setItem('sr_handoff', JSON.stringify(payload)); } catch (_) {}
       const url = new URL('/smart-request.html', window.location.origin);
       url.searchParams.set('return', window.location.pathname + window.location.search + window.location.hash);
@@ -1147,18 +1194,20 @@
       c.innerHTML = capMode === 'voice' ? voicePanel() : capMode === 'video' ? videoPanel() : photosPanel();
     }
 
-    function voicePanel() {
-      const r = dashRec || { phase: 'idle', elapsed: 0 };
-      if (r.phase === 'done') {
-        return backBar() +
-          '<div class="dash-cap__voice-done"><span class="dash-cap__play">' + IC.play + '</span>' +
-          '<div class="dash-wave dash-wave--static">' + staticBars() + '</div>' +
-          '<span class="dash-cap__dur">' + fmtTime(r.elapsed) + '</span></div>' +
-          '<div class="dash-cap__actions">' +
-            '<button type="button" class="dash-cap__btn dash-cap__btn--ghost" data-cap="voice-reset">' + IC.mic + (isEs() ? 'Repetir' : 'Re-record') + '</button>' +
-            '<button type="button" class="dash-cap__btn dash-cap__btn--accent" data-cap="voice-use">' + (isEs() ? 'Usar grabación' : 'Use recording') + IC.arrow + '</button>' +
-          '</div>';
-      }
+	    function voicePanel() {
+	      const r = dashRec || { phase: 'idle', elapsed: 0 };
+	      if (r.phase === 'done') {
+	        const item = dashMedia.find(it => it.kind === 'voice') || r.item || {};
+	        const uploading = !!item.uploading;
+	        return backBar() +
+	          '<div class="dash-cap__voice-done"><span class="dash-cap__play">' + IC.play + '</span>' +
+	          '<div class="dash-wave dash-wave--static">' + staticBars() + '</div>' +
+	          '<span class="dash-cap__dur">' + fmtTime(r.elapsed) + '</span></div>' +
+	          '<div class="dash-cap__actions">' +
+	            '<button type="button" class="dash-cap__btn dash-cap__btn--ghost" data-cap="voice-reset">' + IC.mic + (isEs() ? 'Repetir' : 'Re-record') + '</button>' +
+	            '<button type="button" class="dash-cap__btn dash-cap__btn--accent" data-cap="voice-use"' + (uploading ? ' disabled' : '') + '>' + (uploading ? (isEs() ? 'Subiendo…' : 'Uploading…') : (isEs() ? 'Usar grabación' : 'Use recording')) + IC.arrow + '</button>' +
+	          '</div>';
+	      }
       const rec = r.phase === 'recording';
       return backBar() +
         '<div class="dash-cap__voice">' +
@@ -1212,18 +1261,78 @@
         '</div></div>';
     }
 
-    // ── recorders ──
-    function startVoice() {
-      dashRec = { phase: 'recording', elapsed: 0, t0: Date.now() };
-      renderCapture();
-      dashRec.timer = setInterval(() => {
-        dashRec.elapsed = (Date.now() - dashRec.t0) / 1000;
-        const el = document.getElementById('dash-rec-elapsed'); if (el) el.textContent = fmtTime(dashRec.elapsed);
-        if (dashRec.elapsed >= 60) finishVoice();
-      }, 100);
-      startWave('dash-wave');
-    }
-    function finishVoice() { if (!dashRec) return; clearInterval(dashRec.timer); stopWave(); dashRec.phase = 'done'; renderCapture(); }
+	    // ── recorders ──
+	    function audioMimeType() {
+	      if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return '';
+	      const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'];
+	      return types.find(t => MediaRecorder.isTypeSupported(t)) || '';
+	    }
+	    function startVoice() {
+	      function beginFallback() {
+	        dashRec = { phase: 'recording', elapsed: 0, t0: Date.now(), noRecorder: true };
+	        renderCapture();
+	        dashRec.timer = setInterval(() => {
+	          dashRec.elapsed = (Date.now() - dashRec.t0) / 1000;
+	          const el = document.getElementById('dash-rec-elapsed'); if (el) el.textContent = fmtTime(dashRec.elapsed);
+	          if (dashRec.elapsed >= 60) finishVoice();
+	        }, 100);
+	        startWave('dash-wave');
+	      }
+	      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
+	        beginFallback();
+	        return;
+	      }
+	      navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+	        const chunks = [];
+	        const mimeType = audioMimeType();
+	        const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+	        const rec = { phase: 'recording', elapsed: 0, t0: Date.now(), stream, recorder, chunks };
+	        dashRec = rec;
+	        renderCapture();
+	        rec.timer = setInterval(() => {
+	          rec.elapsed = (Date.now() - rec.t0) / 1000;
+	          const el = document.getElementById('dash-rec-elapsed'); if (el) el.textContent = fmtTime(rec.elapsed);
+	          if (rec.elapsed >= 60) finishVoice();
+	        }, 100);
+	        startWaveFromStream('dash-wave', stream);
+	        recorder.addEventListener('dataavailable', e => {
+	          if (e.data && e.data.size) chunks.push(e.data);
+	        });
+	        recorder.addEventListener('stop', () => {
+	          stream.getTracks().forEach(t => t.stop());
+	          if (rec.discard) return;
+	          const type = recorder.mimeType || mimeType || 'audio/webm';
+	          const blob = new Blob(chunks, { type });
+	          const d = Math.max(1, Math.round(rec.elapsed || ((Date.now() - rec.t0) / 1000)));
+	          const file = typeof File === 'function'
+	            ? new File([blob], 'servi-voice-note.webm', { type })
+	            : blob;
+	          const previewUrl = URL.createObjectURL(blob);
+	          const item = { kind: 'voice', url: previewUrl, previewUrl, name: 'Voice note', dur: d, uploading: true };
+	          dashMedia = [item];
+	          dashRec = { phase: 'done', elapsed: d, item };
+	          renderCapture();
+	          uploadAttachment(file).then(data => { item.url = data.url; item.uploading = false; renderCapture(); })
+	            .catch(() => { item.uploading = false; item.uploadError = true; renderCapture(); });
+	        });
+	        recorder.start(250);
+	      }).catch(() => beginFallback());
+	    }
+	    function finishVoice() {
+	      if (!dashRec) return;
+	      const rec = dashRec;
+	      rec.elapsed = (Date.now() - rec.t0) / 1000;
+	      clearInterval(rec.timer);
+	      if (rec.recorder && rec.recorder.state !== 'inactive') {
+	        if (waveRAF) cancelAnimationFrame(waveRAF);
+	        waveRAF = null; waveStream = null;
+	        rec.recorder.stop();
+	        return;
+	      }
+	      stopWave();
+	      rec.phase = 'done';
+	      renderCapture();
+	    }
     function videoMimeType() {
       if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return '';
       const types = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
@@ -1338,8 +1447,11 @@
       switch (cmd) {
         case 'back': closeCapture(); break;
         case 'mic-toggle': (dashRec && dashRec.phase === 'recording') ? finishVoice() : startVoice(); break;
-        case 'voice-reset': dashRec = null; renderCapture(); break;
-        case 'voice-use': goToReview({ mode: 'voice', media: [{ kind: 'voice', duration: dashRec ? dashRec.elapsed : 0 }] }); break;
+	        case 'voice-reset': clearVideoRec(true); stopWave(); dashRec = null; dashMedia = []; renderCapture(); break;
+	        case 'voice-use':
+	          if (dashMedia.some(m => m.uploading)) return;
+	          goToReview({ mode: 'voice', media: dashMedia.map(cleanMedia) });
+	          break;
         case 'photos-capture': pickPhotos(true); break;
         case 'photos-add': pickPhotos(false); break;
         case 'media-remove': dashMedia.splice(+arg, 1); renderCapture(); break;
@@ -1366,6 +1478,32 @@
         });
         dashAtts = dashAtts.slice(0, 4); renderAtts();
       });
+    };
+
+    // Attach menu — "+" button reveals the photo / voice / video capture options.
+    let attachDocHandler = null;
+    function closeAttachMenu() {
+      const menu = document.getElementById('dash-attach-menu');
+      const btn  = document.getElementById('dash-attach-btn');
+      if (menu) menu.hidden = true;
+      if (btn) btn.setAttribute('aria-expanded', 'false');
+      if (attachDocHandler) { document.removeEventListener('click', attachDocHandler); attachDocHandler = null; }
+    }
+    window._dashToggleAttachMenu = function (e) {
+      if (e) e.stopPropagation();
+      const menu = document.getElementById('dash-attach-menu');
+      const btn  = document.getElementById('dash-attach-btn');
+      if (!menu) return;
+      if (menu.hidden) {
+        menu.hidden = false;
+        if (btn) btn.setAttribute('aria-expanded', 'true');
+        attachDocHandler = function (ev) {
+          if (!menu.contains(ev.target) && !(btn && btn.contains(ev.target))) closeAttachMenu();
+        };
+        setTimeout(() => document.addEventListener('click', attachDocHandler), 0);
+      } else {
+        closeAttachMenu();
+      }
     };
 
     // Inline media capture entry points (mic / camera / video buttons).
@@ -1419,10 +1557,10 @@
             exampleText: 'Necesito arreglar una fuga debajo del lavabo. Estoy en Santa Fe y me queda bien hoy por la tarde.',
           },
           {
-            selector: '.dash-hero__media-row',
+            selector: '.dash-hero__attach-btn',
             preferredPlacement: 'top',
             title: 'O envía foto, video o audio',
-            body: 'Toca cámara, video o micrófono. SERVI AI revisa lo que envíes para identificar el problema y orientar la solicitud al servicio correcto.',
+            body: 'Toca el botón "+" para adjuntar una foto, video o nota de voz. SERVI AI revisa lo que envíes para identificar el problema y orientar la solicitud al servicio correcto.',
           },
           {
             selector: '.dash-cats-grid',
@@ -1455,10 +1593,10 @@
           exampleText: 'I need a leak under the sink repaired. I am in Santa Fe and today afternoon works for me.',
         },
         {
-          selector: '.dash-hero__media-row',
+          selector: '.dash-hero__attach-btn',
           preferredPlacement: 'top',
           title: 'Or send a photo, video, or audio',
-          body: 'Tap camera, video, or microphone. SERVI AI reviews what you send to identify the issue and route the request to the right service.',
+          body: 'Tap the "+" button to attach a photo, video, or voice note. SERVI AI reviews what you send to identify the issue and route the request to the right service.',
         },
         {
           selector: '.dash-cats-grid',
@@ -1779,24 +1917,27 @@
       { num: '2', title: resolve('how.s2t'), desc: resolve('how.s2d') },
       { num: '3', title: resolve('how.s3t'), desc: resolve('how.s3d') },
     ];
-    grid.innerHTML = `
-      <div class="landing-steps">${steps.map(s => `
-      <div class="landing-step">
-        <div class="step-num-large">${s.num}</div>
-        <div class="heading-sm" style="margin:16px 0 8px">${s.title}</div>
-        <div class="text-sm">${s.desc}</div>
-      </div>
-    `).join('')}</div>
-      <div class="how-tour-action">
-        <button class="dash-hero__tour-btn" type="button" onclick="window._serviTourStart && window._serviTourStart({ force: true })" id="dash-tour-btn">
+    const tourButton = `
+      <div class="dash-hero__tour-action dash-hero__tour-action--mobile">
+        <button class="dash-hero__tour-btn" type="button" onclick="window._serviTourStart && window._serviTourStart({ force: true })">
           <span class="dash-hero__tour-dot" aria-hidden="true">
             <svg viewBox="0 0 18 18" fill="none" aria-hidden="true">
               <path d="M7 5.5v7l5-3.5-5-3.5Z" fill="currentColor"/>
             </svg>
           </span>
-          <span id="dash-tour-label">${getTourCopy().replay}</span>
+          <span class="dash-tour-label">${getTourCopy().replay}</span>
         </button>
       </div>
+    `;
+    grid.innerHTML = `
+      <div class="landing-steps">${steps.map((s, index) => `
+      <div class="landing-step">
+        <div class="step-num-large">${s.num}</div>
+        <div class="heading-sm" style="margin:16px 0 8px">${s.title}</div>
+        <div class="text-sm">${s.desc}</div>
+        ${index === 0 ? tourButton : ''}
+      </div>
+    `).join('')}</div>
     `;
   }
 

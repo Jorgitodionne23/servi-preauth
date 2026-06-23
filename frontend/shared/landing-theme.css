@@ -1592,12 +1592,6 @@
 .landing-step:last-child {
   padding-right: 0;
 }
-.how-tour-action {
-  display: flex;
-  justify-content: center;
-  margin-top: 42px;
-}
-
 /* Stats on dark bg */
 .landing-page .section--dark .stat-num {
   color: #fff;
@@ -2284,7 +2278,7 @@
   background: #fff;
   border: 1.5px solid var(--color-border);
   border-radius: 20px;
-  padding: 20px 20px 56px;
+  padding: 16px 18px 52px;
   box-shadow: 0 4px 24px -12px rgba(0,0,0,0.10);
   transition: border-color var(--duration-fast), box-shadow var(--duration-fast);
 }
@@ -2294,7 +2288,8 @@
 }
 .dash-hero__textarea {
   width: 100%;
-  min-height: 100px;
+  height: 72px;
+  min-height: 72px;
   border: none;
   outline: none;
   font-family: var(--font-body);
@@ -2312,7 +2307,7 @@
   right: 16px;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
 }
 .dash-hero__attach-btn {
   width: 40px;
@@ -2329,6 +2324,10 @@
   flex-shrink: 0;
 }
 .dash-hero__attach-btn:hover { border-color: var(--color-text); color: var(--color-text); }
+.dash-hero__attach-btn svg {
+  width: 19px;
+  height: 19px;
+}
 .dash-hero__send-btn {
   width: 40px;
   height: 40px;
@@ -2345,6 +2344,20 @@
 .dash-hero__send-btn:hover { background: var(--color-accent); transform: translateX(1px); }
 .dash-hero__send-btn svg { width: 18px; height: 18px; }
 
+@media (min-width: 901px) {
+  .dash-hero__headline {
+    max-width: 720px;
+    text-wrap: balance;
+  }
+  .dash-hero__textarea-wrap {
+    min-height: 166px;
+  }
+  .dash-hero__textarea {
+    height: 96px;
+    min-height: 96px;
+  }
+}
+
 .dash-hero__media-label {
   font-family: var(--font-heading);
   font-size: 22px;
@@ -2352,6 +2365,37 @@
   color: var(--color-text);
   margin: 0;
 }
+
+/* ═══ Attach menu — popover revealed by the "+" button in the textarea bar ═══ */
+.dash-hero__attach-menu {
+  position: absolute;
+  left: 16px;
+  bottom: 60px;
+  z-index: 30;
+  background: #fff;
+  border: 1.5px solid var(--color-border);
+  border-radius: 18px;
+  padding: 16px;
+  box-shadow: 0 16px 40px -12px rgba(0,0,0,0.22);
+  width: max-content;
+  max-width: calc(100% - 32px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transform-origin: bottom left;
+  animation: dashAttachIn var(--duration-fast) ease;
+}
+@keyframes dashAttachIn {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.dash-hero__attach-menu[hidden] { display: none; }
+.dash-hero__attach-menu .dash-hero__media-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
 .dash-hero__media-row {
   display: flex;
   align-self: flex-start;
@@ -2608,6 +2652,7 @@
 }
 .dash-cap__btn svg { width: 16px; height: 16px; }
 .dash-cap__btn:hover { transform: translateY(-1px); }
+.dash-cap__btn:disabled { cursor: not-allowed; opacity: .55; transform: none; }
 .dash-cap__btn--accent { background: var(--color-text); color: #fff; }
 .dash-cap__btn--secondary { background: #fff; border-color: var(--color-border); color: var(--color-text); }
 .dash-cap__btn--secondary:hover { border-color: var(--color-accent); }
@@ -2633,6 +2678,16 @@
   transition: transform 340ms cubic-bezier(0.32, 0.72, 0, 1),
               border-color 340ms cubic-bezier(0.32, 0.72, 0, 1),
               background 340ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.dash-hero__tour-action {
+  display: flex;
+}
+.dash-hero__tour-action--desktop {
+  margin-top: 18px;
+}
+.dash-hero__tour-action--mobile {
+  display: none;
+  margin-top: 16px;
 }
 .dash-hero__tour-btn:hover {
   background: #fff;
@@ -2893,8 +2948,14 @@
   display: flex;
   flex-direction: column;
   gap: 20px;
-  padding-top: 100px;
+  padding-top: 72px;
   min-width: 0;
+}
+@media (min-width: 901px) {
+  .dash-hero__right {
+    width: 68%;
+    justify-self: center;
+  }
 }
 .dash-hero__browse-title {
   font-family: var(--font-heading);
@@ -3897,6 +3958,13 @@
     display: none;
   }
   .dash-hero__right { padding-top: 0; }
+  .dash-hero__tour-action--desktop {
+    display: none;
+  }
+  .dash-hero__tour-action--mobile {
+    display: flex;
+    justify-content: flex-start;
+  }
   .dash-popular {
     gap: 8px;
     margin-top: -28px;

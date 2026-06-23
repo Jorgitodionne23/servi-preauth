@@ -31,7 +31,7 @@
     thinking: false,
     req: { emoji: '✨', categoryLabel: 'Custom request' },
     answers: {},
-    when: 'asap', date: '', time: '', dateLabel: '',
+    when: '', date: '', time: '', dateLabel: '',
     address: DEFAULT_ADDR,
     addressDetails: null,
     // recorder transients
@@ -81,7 +81,13 @@
   }
   var SR_ADDR_PREFIX = 'sr_addr';
   function addressFallbackDetails() {
-    return S.addressDetails || { address_type: 'house', street: S.address || defaultAddress() };
+    if (S.addressDetails) return S.addressDetails;
+    var address = S.address || defaultAddress();
+    if (window.ServiAddress && typeof window.ServiAddress.parseDisplayAddress === 'function') {
+      var parsed = window.ServiAddress.parseDisplayAddress(address);
+      if (parsed && (parsed.street || parsed.neighborhood || parsed.city || parsed.state || parsed.postal_code)) return parsed;
+    }
+    return { address_type: 'house', street: address };
   }
   function syncAddressFromFields() {
     if (!window.ServiAddress || !document.getElementById(SR_ADDR_PREFIX + '_root')) return;
@@ -200,19 +206,21 @@
   }
 
   // ── voice panel (renders by S.rec.phase) ──
-  function voicePanelHTML() {
-    var r = S.rec || { phase: 'idle', elapsed: 0 };
-    if (r.phase === 'done') {
-      return '<div class="sr-capture sr-capture--voice">' +
-        '<div class="sr-voice-done"><div class="sr-voice-play">' + I.play(18) + '</div>' +
-        '<div class="sr-wave sr-wave--static">' + staticBars() + '</div>' +
-        '<span class="sr-voice-dur">' + fmtTime(r.elapsed) + '</span></div>' +
-        '<div class="sr-capture__actions">' +
-          btn('ghost', 'sm', tr('reRecord'), { action: 'voice-reset', iconLeft: I.mic(16) }) +
-          btn('accent', 'sm', tr('useRecording'), { action: 'voice-use', iconRight: I.arrow(16) }) + '</div>' +
-        '<p class="sr-capture__note">' + esc(tr('voiceNote')) + '</p>' +
-        '</div>';
-    }
+	  function voicePanelHTML() {
+	    var r = S.rec || { phase: 'idle', elapsed: 0 };
+	    if (r.phase === 'done') {
+	      var item = (S.media || []).filter(function (m) { return m.kind === 'voice'; })[0] || r.item || {};
+	      var isUploading = !!item.uploading;
+	      return '<div class="sr-capture sr-capture--voice">' +
+	        '<div class="sr-voice-done"><div class="sr-voice-play">' + I.play(18) + '</div>' +
+	        '<div class="sr-wave sr-wave--static">' + staticBars() + '</div>' +
+	        '<span class="sr-voice-dur">' + fmtTime(r.elapsed) + '</span></div>' +
+	        '<div class="sr-capture__actions">' +
+	          btn('ghost', 'sm', tr('reRecord'), { action: 'voice-reset', iconLeft: I.mic(16) }) +
+	          btn('accent', 'sm', isUploading ? tr('uploading') : tr('useRecording'), { action: 'voice-use', iconRight: I.arrow(16), disabled: isUploading }) + '</div>' +
+	        '<p class="sr-capture__note">' + esc(tr('voiceNote')) + '</p>' +
+	        '</div>';
+	    }
     var rec = r.phase === 'recording';
     return '<div class="sr-capture sr-capture--voice">' +
       '<button type="button" class="sr-mic' + (rec ? ' rec' : '') + '" data-action="mic-toggle" aria-label="' + (rec ? 'Stop' : 'Record') + '">' + (rec ? I.stop(30) : I.mic(30)) + '</button>' +
@@ -247,9 +255,9 @@
     } else {
       body = '<div class="sr-drop"><div class="sr-drop__icon">' + (isPhotos ? I.camera(26) : I.video(26)) + '</div>' +
         '<p class="sr-drop__title">' + esc(isPhotos ? tr('photosTitle') : tr('videoTitle')) + '</p>' +
-        '<div class="sr-drop__btns">' + btn('secondary', 'sm', isPhotos ? tr('choosePhotos') : tr('uploadVideo'), { action: 'media-upload', iconLeft: I.upload(16) }) +
-          (!isPhotos ? btn('secondary', 'sm', tr('recordNow'), { action: 'media-record', iconLeft: I.video(16) }) : '') + '</div>' +
-        '<button type="button" class="sr-sample" data-action="media-sample">' + esc(tr('trySample')) + '</button></div>';
+	        '<div class="sr-drop__btns">' + btn('secondary', 'sm', isPhotos ? tr('choosePhotos') : tr('uploadVideo'), { action: 'media-upload', iconLeft: I.upload(16) }) +
+	          (!isPhotos ? btn('secondary', 'sm', tr('recordNow'), { action: 'media-record', iconLeft: I.video(16) }) : '') + '</div>' +
+	        (srDebug() ? '<button type="button" class="sr-sample" data-action="media-sample">' + esc(tr('trySample')) + '</button>' : '') + '</div>';
     }
     var note = isPhotos
       ? tr('photosNote')
@@ -261,20 +269,36 @@
   }
 
   // ════════════════════════════ BUILD ══════════════════════════════════════
-  function understandingHTML() {
-    var req = S.req;
-    var conf = Math.round((req.confidence || 0) * 100);
-    var transcript = req.transcript ? '<div class="sr-transcript"><b>' + esc(tr('transcribed')) + '</b>“' + esc(req.transcript) + '”</div>'
-      : (req.caption ? '<div class="sr-transcript"><b>' + esc(tr('fromPhotos')) + '</b>' + esc(req.caption) + '</div>' : '');
-    return '<div class="sr-understand sr-fade-in"><div class="sr-understand__top">' +
-      '<span class="sr-understand__emoji">' + (req.emoji || '✨') + '</span><div class="sr-understand__head">' +
-      '<div class="sr-understand__eyebrow">' + I.spark(13) + esc(tr('understood')) +
-        badge(conf >= 70 ? 'accent' : 'pending', esc(tr('match', { n: conf })), 'sr-conf') + '</div>' +
-      '<div class="sr-understand__svc"><strong>' + esc(req.service || tr('customRequest')) + '</strong>' +
-      '<span class="sr-understand__cat">' + esc(req.subLabel ? req.subLabel + ' · ' + req.categoryLabel : req.categoryLabel) + '</span></div></div></div>' +
-      (req.summary ? '<p class="sr-understand__summary">“' + esc(req.summary) + '”</p>' : '') + transcript +
-      '<button type="button" class="sr-link" data-action="open-picker">' + I.edit(14) + esc(tr('changeService')) + '</button></div>';
-  }
+	  function understandingHTML() {
+	    var req = S.req;
+	    if (req.aiStatus === 'unclear' || req.adminReview) return unableHTML(req);
+	    var transcript = req.transcript ? '<div class="sr-transcript"><b>' + esc(tr('transcribed')) + '</b>“' + esc(req.transcript) + '”</div>'
+	      : (req.caption ? '<div class="sr-transcript"><b>' + esc(tr('fromPhotos')) + '</b>' + esc(req.caption) + '</div>' : '');
+	    return '<div class="sr-understand sr-fade-in"><div class="sr-understand__top">' +
+	      '<span class="sr-understand__emoji">' + (req.emoji || '✨') + '</span><div class="sr-understand__head">' +
+	      '<div class="sr-understand__eyebrow">' + I.spark(13) + esc(tr('understood')) + '</div>' +
+	      '<div class="sr-understand__svc"><strong>' + esc(req.service || tr('customRequest')) + '</strong>' +
+	      '<span class="sr-understand__cat">' + esc(req.subLabel ? req.subLabel + ' · ' + req.categoryLabel : req.categoryLabel) + '</span></div></div></div>' +
+	      (req.summary ? '<p class="sr-understand__summary">“' + esc(req.summary) + '”</p>' : '') + transcript +
+	      '<button type="button" class="sr-link" data-action="open-picker">' + I.edit(14) + esc(tr('changeService')) + '</button></div>';
+	  }
+
+	  function unableHTML(req) {
+	    var isVoice = S.mode === 'voice';
+	    var title = isVoice ? tr('unableVoiceTitle') : (S.mode === 'photos' ? tr('unablePhotosTitle') : tr('manualReviewTitle'));
+	    var desc = req.summary || (isVoice ? tr('unableVoiceDesc') : tr('unablePhotosDesc'));
+	    var icon = isVoice ? I.mic(22) : (S.mode === 'photos' ? I.camera(22) : I.video(22));
+	    return '<div class="sr-understand sr-understand--unclear sr-fade-in"><div class="sr-understand__top">' +
+	      '<span class="sr-understand__emoji">' + icon + '</span><div class="sr-understand__head">' +
+	      '<div class="sr-understand__eyebrow">' + I.shield(13) + esc(tr('manualReview')) + '</div>' +
+	      '<div class="sr-understand__svc"><strong>' + esc(title) + '</strong>' +
+	      '<span class="sr-understand__cat">' + esc(tr('manualReviewSub')) + '</span></div></div></div>' +
+	      '<p class="sr-understand__summary sr-understand__summary--plain">' + esc(desc) + '</p>' +
+	      '<div class="sr-capture__actions sr-understand__actions">' +
+	        btn('secondary', 'sm', tr('addDetails'), { action: 'clarify-text', iconLeft: I.edit(14) }) +
+	        btn('ghost', 'sm', tr('changeService'), { action: 'open-picker', iconLeft: I.edit(14) }) +
+	      '</div></div>';
+	  }
 
   function mediaReceivedHTML() {
     var n = S.media.length;
@@ -309,7 +333,7 @@
   function whenWhereHTML() {
     var todayMin = new Date().toISOString().slice(0, 10);
     return '<div class="sr-card sr-fade-in"><div class="sr-card__head"><h3 class="sr-card__title">' + esc(tr('whenWhere')) + '</h3></div>' +
-      '<div class="sr-when">' +
+      '<div class="sr-when sr-when--time">' +
         '<button type="button" class="sr-radio' + (S.when === 'asap' ? ' sr-radio--on' : '') + '" data-action="when:asap">' +
           '<span class="sr-radio__ic">' + I.bolt(18) + '</span><span class="sr-radio__txt"><span class="sr-radio__label">' + esc(tr('asap')) + '</span>' +
           '<span class="sr-radio__desc">' + esc(tr('asapDesc')) + '</span></span></button>' +
@@ -328,21 +352,29 @@
       '</div>';
   }
 
-  function summaryHTML() {
+  // Recap rows shared by the inline rail summary (desktop) and the mobile
+  // confirmation modal. Returns just the `.sr-sum__rows` block so both surfaces
+  // can wrap it in their own container.
+  function summaryRowsHTML() {
     var req = S.req;
     var details = Object.keys(S.answers).filter(function (k) { return S.answers[k]; }).map(function (k) { return S.answers[k]; });
-    var whenStr = S.when === 'asap' ? tr('asap') : (S.date ? fmtDate(S.date) + (S.time ? ' · ' + S.time : '') : tr('scheduled'));
+    var whenStr = S.when === 'asap' ? tr('asap') : (S.when === 'schedule' ? (S.date ? fmtDate(S.date) + (S.time ? ' · ' + S.time : '') : tr('scheduled')) : '');
     var mediaLabel = S.mode === 'voice' ? tr('voiceNoteLabel') : S.mode === 'video' ? tr('videoClip') : S.mode === 'photos' ? tr('nPhotos', { n: S.media.length }) : null;
     function row(label, val) { return val ? '<div class="sr-sum__row"><span class="sr-sum__label">' + label + '</span><span class="sr-sum__val">' + esc(val) + '</span></div>' : ''; }
     var svcVal = (S.mode === 'text' || S.mode === 'voice' || S.mode === 'photos') && req.service ? req.service : mediaLabel;
-    return '<div class="sr-sum"><div class="sr-sum__head"><span class="sr-sum__emoji">' + (req.emoji || '✨') + '</span>' + esc(tr('yourRequest')) + '</div>' +
-      '<div class="sr-sum__rows">' +
+    return '<div class="sr-sum__rows">' +
         row(tr('rowService'), svcVal) +
         ((S.mode !== 'video' && req.subLabel) ? row(tr('rowCategory'), req.categoryLabel) : '') +
         (details.length ? row(tr('rowDetails'), details.join(' · ')) : '') +
         row(tr('rowWhen'), whenStr) +
         row(tr('rowWhere'), S.address || '—') +
-      '</div></div>';
+      '</div>';
+  }
+
+  function summaryHTML() {
+    var req = S.req;
+    return '<div class="sr-sum"><div class="sr-sum__head"><span class="sr-sum__emoji">' + (req.emoji || '✨') + '</span>' + esc(tr('yourRequest')) + '</div>' +
+      summaryRowsHTML() + '</div>';
   }
 
   function nextStepsHTML() {
@@ -412,14 +444,13 @@
   }
 
   function buildHTML() {
-    var left = '<div class="sr-pane-left">' +
-      (S.thinking
-        ? '<div class="sr-think"><span class="sr-think__spark">' + I.spark(18) + '</span><div><div class="sr-think__line">' +
-            esc(S.mode === 'photos' ? tr('thinkPhotos') : S.mode === 'voice' ? tr('thinkVoice') : S.mode === 'video' ? tr('thinkVideo') : tr('thinkText')) +
-            '</div><div class="sr-think__bars"><i></i><i></i><i></i></div></div></div>'
-        : ((S.mode === 'video') ? mediaReceivedHTML()
-            : (S.mode === 'photos' && !S.req.service) ? mediaReceivedHTML()
-            : understandingHTML()) + followupsHTML()) +
+	    var left = '<div class="sr-pane-left">' +
+	      (S.thinking
+	        ? '<div class="sr-think"><span class="sr-think__spark">' + I.spark(18) + '</span><div><div class="sr-think__line">' +
+	            esc(S.mode === 'photos' ? tr('thinkPhotos') : S.mode === 'voice' ? tr('thinkVoice') : S.mode === 'video' ? tr('thinkVideo') : tr('thinkText')) +
+	            '</div><div class="sr-think__bars"><i></i><i></i><i></i></div></div></div>'
+	        : ((S.mode === 'video') ? mediaReceivedHTML()
+	            : understandingHTML()) + followupsHTML()) +
       (S.thinking ? '' : whenWhereHTML()) + (S.thinking ? '' : trustedSelectorHTML()) + '</div>';
 
     var canSend = S.address.trim() && (S.when === 'asap' || (S.when === 'schedule' && S.date));
@@ -534,12 +565,38 @@
     mountModal(html);
   }
 
+  // ── mobile confirmation modal ──
+  // On the stacked (mobile) layout the inline rail summary is hidden to save
+  // scroll; instead, tapping "Send request" surfaces this double-confirm sheet
+  // so the client reviews their details one last time before it's submitted.
+  function srIsStacked() {
+    try { return window.matchMedia('(max-width: 920px)').matches; } catch (_) { return false; }
+  }
+  function openConfirm() {
+    var html = '<div class="sr-modal__overlay" data-action="modal-close"><div class="sr-modal sr-modal--confirm" data-stop>' +
+      '<div class="sr-modal__head"><h3 class="sr-modal__title">' + esc(tr('confirmTitle')) + '</h3>' +
+        '<button type="button" class="sr-modal__close" data-action="modal-close" aria-label="' + esc(tr('editRequest')) + '">' + I.x(18) + '</button></div>' +
+      '<div class="sr-modal__body sr-confirm">' +
+        '<p class="sr-confirm__lead">' + esc(tr('confirmLead')) + '</p>' +
+        '<div class="sr-confirm__sum">' + summaryRowsHTML() + '</div>' +
+        '<div class="sr-confirm__acts">' +
+          btn('accent', 'lg', tr('confirmSend'), { action: 'submit-go', block: true, id: 'sr-confirm-go', iconRight: I.send(18) }) +
+          btn('secondary', 'md', tr('editRequest'), { action: 'modal-close', block: true }) +
+        '</div>' +
+        '<p class="sr-confirm__fine">' + esc(tr('fine')) + '</p>' +
+      '</div></div></div>';
+    mountModal(html);
+  }
+
   var modalLayer = null;
-  function mountModal(html) { closeModal(); modalLayer = h(html); document.body.appendChild(modalLayer); }
+  function modalMountTarget() {
+    return document.getElementById('sr-overlay') || document.body;
+  }
+  function mountModal(html) { closeModal(); modalLayer = h(html); modalMountTarget().appendChild(modalLayer); }
   function closeModal() { if (modalLayer) { modalLayer.remove(); modalLayer = null; } }
 
   // ════════════════════════════ ACTIONS ════════════════════════════════════
-  function switchMode(m) { S.mode = m; S.text = ''; S.atts = []; S.media = []; S.rec = null; render(); }
+	  function switchMode(m) { discardActiveVoice(); S.mode = m; S.text = ''; S.atts = []; S.media = []; S.rec = null; render(); }
 
   function submitText() {
     if (!S.text.trim()) return;
@@ -552,34 +609,110 @@
     S.mode = mode; S.answers = {}; S.phase = 'build'; S.thinking = true; S.req = { emoji: '✨', categoryLabel: 'Custom request' };
     render(); window.scrollTo({ top: 0, behavior: 'smooth' });
     var started = Date.now();
-    var p;
-    if (mode === 'text') p = window.serviParse(payloadText, { engine: SETTINGS.engine });
-    else if (mode === 'voice') p = window.serviAnalyzeVoice({});
-    else if (mode === 'photos') p = window.serviAnalyzePhotos({});
+	    var p;
+	    if (mode === 'text') p = window.serviParse(payloadText, { engine: SETTINGS.engine });
+	    else if (mode === 'voice') p = window.serviAnalyzeVoice({ media: S.media });
+	    else if (mode === 'photos') p = window.serviAnalyzePhotos({ media: S.media });
     else p = window.serviAnalyzeVideo();
     p.then(function (parsed) {
       var wait = Math.max(0, 850 - (Date.now() - started));
       setTimeout(function () {
         S.req = parsed;
-        if (parsed.urgency === 'scheduled' && parsed.inferredDate) { S.when = 'schedule'; S.date = parsed.inferredDate; S.dateLabel = parsed.inferredDateLabel || ''; }
-        else { S.when = 'asap'; }
+        if (parsed.inferredDate) { S.when = 'schedule'; S.date = parsed.inferredDate; S.dateLabel = parsed.inferredDateLabel || ''; }
+        else if (parsed.urgency === 'asap') { S.when = 'asap'; S.date = ''; S.dateLabel = ''; }
+        else if (parsed.urgency === 'scheduled') { S.when = 'schedule'; S.date = ''; S.dateLabel = ''; }
+        else { S.when = ''; S.date = ''; S.dateLabel = ''; }
         S.thinking = false; render();
       }, wait);
     });
   }
 
-  // ── recorders ──
-  function startVoice() {
-    S.rec = { phase: 'recording', elapsed: 0, t0: Date.now() };
-    render();
-    S.rec.timer = setInterval(function () {
-      S.rec.elapsed = (Date.now() - S.rec.t0) / 1000;
-      var el = document.getElementById('sr-rec-elapsed'); if (el) el.textContent = fmtTime(S.rec.elapsed);
-      if (S.rec.elapsed >= SETTINGS.voiceLimit) finishVoice();
-    }, 100);
-    startWave('sr-wave');
-  }
-  function finishVoice() { if (!S.rec) return; clearInterval(S.rec.timer); stopWave(); S.rec.phase = 'done'; render(); }
+	  // ── recorders ──
+	  function audioMimeType() {
+	    if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return '';
+	    var types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'];
+	    for (var i = 0; i < types.length; i++) {
+	      if (MediaRecorder.isTypeSupported(types[i])) return types[i];
+	    }
+	    return '';
+	  }
+
+	  function startVoice() {
+	    function beginFallback() {
+	      S.rec = { phase: 'recording', elapsed: 0, t0: Date.now(), noRecorder: true };
+	      render();
+	      S.rec.timer = setInterval(function () {
+	        S.rec.elapsed = (Date.now() - S.rec.t0) / 1000;
+	        var el = document.getElementById('sr-rec-elapsed'); if (el) el.textContent = fmtTime(S.rec.elapsed);
+	        if (S.rec.elapsed >= SETTINGS.voiceLimit) finishVoice();
+	      }, 100);
+	      startWave('sr-wave');
+	    }
+	    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
+	      beginFallback();
+	      return;
+	    }
+	    navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+	      var chunks = [];
+	      var mimeType = audioMimeType();
+	      var recorder = new MediaRecorder(stream, mimeType ? { mimeType: mimeType } : undefined);
+	      var rec = { phase: 'recording', elapsed: 0, t0: Date.now(), stream: stream, recorder: recorder, chunks: chunks };
+	      S.rec = rec;
+	      render();
+	      rec.timer = setInterval(function () {
+	        rec.elapsed = (Date.now() - rec.t0) / 1000;
+	        var el = document.getElementById('sr-rec-elapsed'); if (el) el.textContent = fmtTime(rec.elapsed);
+	        if (rec.elapsed >= SETTINGS.voiceLimit) finishVoice();
+	      }, 100);
+	      startWaveFromStream('sr-wave', stream);
+	      recorder.addEventListener('dataavailable', function (e) {
+	        if (e.data && e.data.size) chunks.push(e.data);
+	      });
+	      recorder.addEventListener('stop', function () {
+	        stream.getTracks().forEach(function (t) { t.stop(); });
+	        if (rec.discard) return;
+	        var type = recorder.mimeType || mimeType || 'audio/webm';
+	        var blob = new Blob(chunks, { type: type });
+	        var dur = Math.max(1, Math.round(rec.elapsed || ((Date.now() - rec.t0) / 1000)));
+	        var file = typeof File === 'function'
+	          ? new File([blob], 'servi-voice-note.webm', { type: type })
+	          : blob;
+	        var previewUrl = URL.createObjectURL(blob);
+	        var item = { kind: 'voice', url: previewUrl, previewUrl: previewUrl, name: 'Voice note', dur: dur, uploading: true };
+	        S.media = [item];
+	        S.rec = { phase: 'done', elapsed: dur, item: item };
+	        render();
+	        uploadAttachment(file).then(function (d) { item.url = d.url; item.uploading = false; render(); })
+	          .catch(function () { item.uploading = false; item.uploadError = true; render(); });
+	      });
+	      recorder.start(250);
+	    }).catch(function () {
+	      beginFallback();
+	    });
+	  }
+	  function finishVoice() {
+	    if (!S.rec) return;
+	    var rec = S.rec;
+	    rec.elapsed = (Date.now() - rec.t0) / 1000;
+	    clearInterval(rec.timer);
+	    if (rec.recorder && rec.recorder.state !== 'inactive') {
+	      if (waveRAF) cancelAnimationFrame(waveRAF);
+	      waveRAF = null; waveStream = null;
+	      rec.recorder.stop();
+	      return;
+	    }
+	    stopWave();
+	    rec.phase = 'done';
+	    render();
+	  }
+	  function discardActiveVoice() {
+	    if (!S.rec) return;
+	    clearInterval(S.rec.timer);
+	    S.rec.discard = true;
+	    if (S.rec.recorder && S.rec.recorder.state !== 'inactive') S.rec.recorder.stop();
+	    else if (S.rec.stream) S.rec.stream.getTracks().forEach(function (t) { t.stop(); });
+	    stopWave();
+	  }
   function startVid() {
     S.rec = { phase: 'vidrec', elapsed: 0, t0: Date.now() };
     render();
@@ -591,10 +724,31 @@
   }
   function stopVid() { if (!S.rec) return; clearInterval(S.rec.timer); var d = Math.max(1, Math.round(S.rec.elapsed)); S.rec = null; S.media = [{ kind: 'video', sample: true, dur: d }]; render(); }
 
-  // waveform animation (real mic if available, else simulated)
-  var waveRAF = null, waveStream = null;
-  function startWave(id) {
-    var wrap = document.getElementById(id); if (!wrap) return;
+	  // waveform animation (real mic if available, else simulated)
+	  var waveRAF = null, waveStream = null;
+	  function startWaveFromStream(id, stream) {
+	    var wrap = document.getElementById(id); if (!wrap || !stream) return;
+	    var bars = wrap.querySelectorAll('span');
+	    try {
+	      waveStream = stream;
+	      var ctx = new (window.AudioContext || window.webkitAudioContext)();
+	      var src = ctx.createMediaStreamSource(stream);
+	      var an = ctx.createAnalyser(); an.fftSize = 64; src.connect(an);
+	      var data = new Uint8Array(an.frequencyBinCount);
+	      (function loop() {
+	        an.getByteFrequencyData(data);
+	        for (var i = 0; i < bars.length; i++) {
+	          var v = data[Math.floor(i / bars.length * data.length)] / 255;
+	          bars[i].style.transform = 'scaleY(' + Math.max(0.12, v) + ')';
+	        }
+	        waveRAF = requestAnimationFrame(loop);
+	      })();
+	    } catch (_) {
+	      fakeWave(bars);
+	    }
+	  }
+	  function startWave(id) {
+	    var wrap = document.getElementById(id); if (!wrap) return;
     var bars = wrap.querySelectorAll('span');
     if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
       navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
@@ -639,14 +793,16 @@
   }
 
   // ── production-shaped payload for POST /api/service-requests ──
-  function buildPayload() {
-    var details = Object.keys(S.answers).filter(function (k) { return S.answers[k]; }).map(function (k) { return S.answers[k]; });
-    var desc = S.req.summary || S.text || '';
-    if (details.length) desc += ' — ' + details.join(', ');
-    if (S.req.transcript) desc = S.req.transcript + (details.length ? ' — ' + details.join(', ') : '');
-    return {
-      category: S.req.category || 'custom',
-      description: desc,
+	  function buildPayload() {
+	    var details = Object.keys(S.answers).filter(function (k) { return S.answers[k]; }).map(function (k) { return S.answers[k]; });
+	    var desc = S.req.summary || S.text || '';
+	    if (details.length) desc += ' — ' + details.join(', ');
+	    if (S.req.transcript) desc = S.req.transcript + (details.length ? ' — ' + details.join(', ') : '');
+	    var aiStatus = S.req.aiStatus || (S.req.adminReview ? 'manual_review' : 'understood');
+	    var isUnderstood = aiStatus === 'understood';
+	    return {
+	      category: S.req.category || 'custom',
+	      description: desc,
       preferredDate: S.when === 'schedule' ? S.date : null,
       preferredTime: S.when === 'schedule' ? (S.time || null) : null,
       isAsap: S.when === 'asap',
@@ -656,26 +812,37 @@
       clientPhone: (window.__user && window.__user.phone) || '',
       clientEmail: (window.__user && window.__user.email) || '',
       lang: (typeof window.lang === 'function' ? window.lang() : 'en'),
-      attachments: (S.atts.concat(S.media)).map(function (a) { return a.url; }).filter(Boolean),
-      // ── additive SERVI Intelligence metadata (admin dispatch context) ──
-      requestMode: S.mode,
-      matchedService: S.req.service || null,
-      matchedSubKey: S.req.subKey || null,
-      aiSummary: S.req.summary || null,
-      aiConfidence: S.req.confidence || null,
-      aiSource: S.req.source || null,
-      detailAnswers: S.answers,
+	      attachments: (S.atts.concat(S.media)).map(function (a) { return a.url; }).filter(Boolean),
+	      // ── additive SERVI Intelligence metadata (admin dispatch context) ──
+	      requestMode: S.mode,
+	      matchedService: isUnderstood ? (S.req.service || null) : null,
+	      matchedSubKey: isUnderstood ? (S.req.subKey || null) : null,
+	      aiSummary: S.req.summary || null,
+	      aiConfidence: S.req.confidence || null,
+	      aiSource: S.req.source || null,
+	      aiStatus: aiStatus,
+	      aiReason: S.req.aiReason || null,
+	      aiEvidence: Array.isArray(S.req.aiEvidence) ? S.req.aiEvidence : [],
+	      detailAnswers: S.answers,
       clientRequestId: (S._reqId || (S._reqId = clientReqId())),
       // Trusted-specialist preference (server re-validates the provider is verified).
       preferredProviderId: S._prefer || undefined,
     };
   }
 
-  function submit() {
+  // Validate + sync the structured address. Returns false if invalid (the form
+  // focuses the offending field). Run this before opening the mobile confirm
+  // sheet so that focus lands on a visible field, not one hidden behind it.
+  function srEnsureAddress() {
     if (window.ServiAddress && document.getElementById(SR_ADDR_PREFIX + '_root')) {
-      if (!window.ServiAddress.validate(SR_ADDR_PREFIX)) return;
+      if (!window.ServiAddress.validate(SR_ADDR_PREFIX)) return false;
       syncAddressFromFields();
     }
+    return true;
+  }
+
+  function submit() {
+    if (!srEnsureAddress()) return;
     if (!window.__user) {
       if (typeof window.openAuthModal === 'function') {
         var resume = function () { window.removeEventListener('servi-auth-success', resume); setTimeout(submit, 100); };
@@ -689,14 +856,17 @@
     payload.clientPhone = (window.__user && window.__user.phone) || '';
     payload.clientEmail = (window.__user && window.__user.email) || '';
 
-    var btnEl = document.getElementById('sr-submit');
+    // The confirm-sheet button (mobile) takes priority over the rail button so
+    // the loading state shows where the user actually tapped.
+    function activeSubmitBtn() { return document.getElementById('sr-confirm-go') || document.getElementById('sr-submit'); }
+    var btnEl = activeSubmitBtn();
     if (btnEl) { btnEl.disabled = true; var sp = btnEl.querySelector('span'); if (sp) sp.textContent = tr('sending'); }
     var API = (window.CONFIG && window.CONFIG.API_BASE) || '';
     var headers = (typeof window.__serviJsonAuthHeaders === 'function') ? window.__serviJsonAuthHeaders() : { 'Content-Type': 'application/json' };
 
     function restoreBtn() {
-      var b = document.getElementById('sr-submit');
-      if (b) { b.disabled = false; var s = b.querySelector('span'); if (s) s.textContent = tr('sendRequest'); }
+      var b = activeSubmitBtn();
+      if (b) { b.disabled = false; var s = b.querySelector('span'); if (s) s.textContent = b.id === 'sr-confirm-go' ? tr('confirmSend') : tr('sendRequest'); }
     }
 
     fetch(API + '/api/service-requests', { method: 'POST', headers: headers, body: JSON.stringify(payload) })
@@ -711,9 +881,11 @@
         if (payload.serviceAddressDetails && window.ServiAddress && window.ServiAddress.rememberLastUsed) {
           window.ServiAddress.rememberLastUsed(payload.serviceAddressDetails);
         }
-        S.submittedId = data && data.id; S.phase = 'success'; render(); window.scrollTo({ top: 0 });
+        S.submittedId = data && data.id; S.phase = 'success'; closeModal(); render(); window.scrollTo({ top: 0 });
       })
       .catch(function (err) {
+        // Dismiss the confirm sheet (if open) so gates/alerts below it are visible.
+        closeModal();
         if (err && err.body && err.body.error === 'email_required' && typeof window.__showServiceRequestEmailGate === 'function') {
           restoreBtn();
           window.__showServiceRequestEmailGate({ target: document.querySelector('.sr-pane-left') || document.getElementById('sr-root'), retry: submit });
@@ -732,11 +904,11 @@
       });
   }
 
-  function reset() {
-    stopWave(); if (S.rec && S.rec.timer) clearInterval(S.rec.timer);
+	  function reset() {
+	    discardActiveVoice(); stopWave(); if (S.rec && S.rec.timer) clearInterval(S.rec.timer);
     S.phase = 'compose'; S.mode = 'text'; S.text = ''; S.atts = []; S.media = []; S.rec = null; S._reqId = null; S.submittedId = null;
     S.thinking = false; S.req = { emoji: '✨', categoryLabel: 'Custom request' }; S.answers = {};
-    S.when = 'asap'; S.date = ''; S.time = ''; S.dateLabel = ''; S.address = defaultAddress(); S.addressDetails = null;
+    S.when = ''; S.date = ''; S.time = ''; S.dateLabel = ''; S.address = defaultAddress(); S.addressDetails = null;
     S._trusted = []; S._trustedCat = null; S._trustedFetching = false; S._prefer = null;
     render();
   }
@@ -750,7 +922,7 @@
     if (t.hasAttribute('data-pick')) {
       var svc = t.getAttribute('data-pick'), subKey = t.getAttribute('data-sub');
       var cats = CAT(), c = cats[pickerCat], sub = c.subs.find(function (s) { return s.key === subKey; });
-      S.req = Object.assign({}, S.req, { category: pickerCat, categoryLabel: c.label, emoji: c.emoji, subKey: subKey, subLabel: sub.label, service: svc, confidence: 1 });
+	      S.req = Object.assign({}, S.req, { category: pickerCat, categoryLabel: c.label, emoji: c.emoji, subKey: subKey, subLabel: sub.label, service: svc, confidence: 1, aiStatus: 'understood', aiReason: null });
       S.answers = {}; closeModal(); render(); return;
     }
 
@@ -773,8 +945,8 @@
       }); break;
       case 'remove-att': S.atts.splice(+arg, 1); render(); break;
       case 'mic-toggle': (S.rec && S.rec.phase === 'recording') ? finishVoice() : startVoice(); break;
-      case 'voice-use': S.media = [{ kind: 'voice', duration: S.rec ? S.rec.elapsed : 0 }]; runAnalyze('voice'); break;
-      case 'voice-reset': S.rec = null; render(); break;
+	      case 'voice-use': if (S.media.some(function (m) { return m.uploading; })) return; runAnalyze('voice'); break;
+	      case 'voice-reset': discardActiveVoice(); S.rec = null; S.media = []; render(); break;
       case 'media-upload': pickFiles(S.mode === 'photos' ? 'image/*' : 'video/*', S.mode === 'photos', S.mode === 'photos' ? 'environment' : null, function (files) {
           if (S.mode === 'photos') {
             files.slice(0, 5 - S.media.length).forEach(function (f) {
@@ -792,7 +964,8 @@
       case 'media-remove': S.media.splice(+arg, 1); render(); break;
       case 'media-use': if (S.media.some(function (m) { return m.uploading; })) return; runAnalyze(S.mode); break;
       case 'vid-stop': stopVid(); break;
-      case 'open-picker': openPicker(); break;
+	      case 'open-picker': openPicker(); break;
+	      case 'clarify-text': S.phase = 'compose'; S.mode = 'text'; S.text = ''; S.rec = null; render(); break;
       case 'when': S.when = arg; if (arg === 'asap') { S.date = ''; S.time = ''; } render(); break;
       case 'use-loc': {
         if (window.ServiAddress && document.getElementById(SR_ADDR_PREFIX + '_root')) {
@@ -813,7 +986,12 @@
       }
       case 'chip': var key = arg, val = t.getAttribute('data-val'); S.answers[key] = (S.answers[key] === val ? '' : val); render(); break;
       case 'prefer': S._prefer = (arg === 'none' ? null : arg); render(); break;
-      case 'submit': submit(); break;
+      case 'submit':
+        // Mobile (stacked) layout: confirm details in a sheet first. Desktop sends directly.
+        if (srIsStacked() && S.phase === 'build') { if (srEnsureAddress()) openConfirm(); }
+        else submit();
+        break;
+      case 'submit-go': submit(); break;
       case 'reset': reset(); break;
       case 'my-orders': window.location.href = '/account.html?section=orders'; break;
       case 'sr-lang': if (typeof window.setLang === 'function') window.setLang(arg); else { window.__lang = arg; } render(); break;
@@ -863,21 +1041,21 @@
       window.setLang(opts.lang);
     }
     reset();
-    if (opts.media && opts.media.length) {            // inline-capture handoff → straight to review
+    if (opts.text) {
+      S.text = String(opts.text);
+      if (opts.atts && opts.atts.length) S.atts = opts.atts;  // carry attachments through to submit
+      if (opts.media && opts.media.length) S.media = opts.media;  // media complements the written request
+      render(); runAnalyze('text', String(opts.text).trim());
+    } else if (opts.media && opts.media.length) {            // inline-capture handoff → straight to review
       S.mode = opts.mode || 'photos';
       S.media = opts.media;
       runAnalyze(S.mode);
     } else if (opts.mode && opts.mode !== 'text') { switchMode(opts.mode); }
-    else if (opts.text) {
-      S.text = String(opts.text);
-      if (opts.atts && opts.atts.length) S.atts = opts.atts;  // carry attachments through to submit
-      render(); runAnalyze('text', String(opts.text).trim());
-    }
   };
-  window.closeSmartRequest = function () {
-    stopSrPlaceholderRotation();
-    stopWave(); if (S.rec && S.rec.timer) clearInterval(S.rec.timer);
-    var ov = document.getElementById('sr-overlay'); if (ov) ov.hidden = true;
-    document.body.classList.remove('sr-open');
-  };
+	  window.closeSmartRequest = function () {
+	    stopSrPlaceholderRotation();
+	    discardActiveVoice(); stopWave(); if (S.rec && S.rec.timer) clearInterval(S.rec.timer);
+	    var ov = document.getElementById('sr-overlay'); if (ov) ov.hidden = true;
+	    document.body.classList.remove('sr-open');
+	  };
 })();

@@ -26,7 +26,15 @@ import { NodeHttpHandler } from '@smithy/node-http-handler';
 import https from 'https';
 import Anthropic from '@anthropic-ai/sdk';
 import { classifyOrderOps, sortOpsItems, summarizeOps } from './ops-radar.mjs';
-import { buildParseSystemPrompt, buildParseUserPrompt, parseModelResponse, MAX_TEXT } from './smartRequestParse.mjs';
+import {
+  buildMediaAnalysisSystemPrompt,
+  buildMediaAnalysisUserPrompt,
+  buildParseSystemPrompt,
+  buildParseUserPrompt,
+  parseMediaModelResponse,
+  parseModelResponse,
+  MAX_TEXT
+} from './smartRequestParse.mjs';
 
 // --- R2 / S3 Client ---
 const r2 = new S3Client({
@@ -1079,6 +1087,7 @@ const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD || '';
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
 const anthropic = ANTHROPIC_API_KEY ? new Anthropic({ apiKey: ANTHROPIC_API_KEY }) : null;
 const PARSE_SYSTEM_PROMPT = buildParseSystemPrompt();
+const MEDIA_ANALYSIS_SYSTEM_PROMPT = buildMediaAnalysisSystemPrompt();
 const emailTransporter = (GMAIL_USER && GMAIL_APP_PASSWORD)
   ? nodemailer.createTransport({
       host: 'smtp.gmail.com',
@@ -5623,11 +5632,82 @@ app.post('/api/parse-request', publicFormLimit, async (req, res) => {
   }
 });
 
+function unclearMediaAnalysis(reason, summary = '') {
+  return {
+    aiStatus: 'unclear',
+    aiReason: reason,
+    aiEvidence: [],
+    category: 'custom',
+    subKey: null,
+    service: null,
+    summary,
+    confidence: 0,
+    urgency: 'flexible',
+    inferredDate: null,
+    followups: [],
+  };
+}
+
+function imageUrlsFromMedia(media) {
+  const items = Array.isArray(media) ? media : [];
+  return items
+    .map((item) => typeof item === 'string' ? item : item?.url)
+    .map((url) => String(url || '').trim())
+    .filter((url) => {
+      try {
+        const parsed = new URL(url);
+        return parsed.protocol === 'https:' || parsed.protocol === 'http:';
+      } catch (_) {
+        return false;
+      }
+    })
+    .slice(0, 5);
+}
+
+// --- Public: AI analysis for uploaded Smart Request media ---
+// Voice stays manual-review under the Anthropic-only constraint; this endpoint is for photos.
+app.post('/api/analyze-media', publicFormLimit, async (req, res) => {
+  try {
+    const { mode, media, lang } = req.body || {};
+    if (mode !== 'photos') {
+      return res.json(unclearMediaAnalysis('unsupported_media_mode'));
+    }
+    const imageUrls = imageUrlsFromMedia(media);
+    if (!imageUrls.length) {
+      return res.json(unclearMediaAnalysis('no_public_image_url'));
+    }
+    if (!anthropic) {
+      return res.json(unclearMediaAnalysis('ai_unavailable'));
+    }
+
+    const langCode = lang === 'en' ? 'en' : 'es';
+    const content = [
+      { type: 'text', text: buildMediaAnalysisUserPrompt(langCode, imageUrls.length) },
+      ...imageUrls.map((url) => ({
+        type: 'image',
+        source: { type: 'url', url },
+      })),
+    ];
+    const msg = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 700,
+      system: [{ type: 'text', text: MEDIA_ANALYSIS_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
+      messages: [{ role: 'user', content }],
+    });
+    const raw = (msg.content || []).map((b) => b.text || '').join('');
+    return res.json(parseMediaModelResponse(raw));
+  } catch (err) {
+    console.error('[POST /api/analyze-media]', err && err.message);
+    return res.json(unclearMediaAnalysis('analysis_failed'));
+  }
+});
+
 // --- Public: Submit a service request ---
 app.post('/api/service-requests', publicFormLimit, async (req, res) => {
   try {
     const { category, description, preferredDate, preferredTime, isAsap, serviceAddress, serviceAddressDetails, clientName, clientPhone, clientEmail, customerId, lang, attachments, clientRequestId,
       requestMode, matchedService, matchedSubKey, aiSummary, aiConfidence, aiSource, detailAnswers,
+      aiStatus, aiReason, aiEvidence,
       preferredProviderId, preferred_provider_id, preferredProviderName, preferred_provider_name } = req.body || {};
     if (!category || !clientName || !clientPhone) {
       return res.status(400).json({ error: 'missing_required_fields', message: 'category, clientName, and clientPhone are required' });
@@ -5730,7 +5810,13 @@ app.post('/api/service-requests', publicFormLimit, async (req, res) => {
     const detailAnswersStr = detailAnswers && typeof detailAnswers === 'object'
       ? JSON.stringify(detailAnswers)
       : null;
+    const aiEvidenceStr = aiEvidence != null
+      ? JSON.stringify(Array.isArray(aiEvidence) || typeof aiEvidence === 'object' ? aiEvidence : [String(aiEvidence)])
+      : null;
     const aiConfidenceNum = (typeof aiConfidence === 'number' && Number.isFinite(aiConfidence)) ? aiConfidence : null;
+    const aiStatusNorm = ['understood', 'unclear', 'manual_review'].includes(String(aiStatus || ''))
+      ? String(aiStatus)
+      : null;
 
     // Trusted Specialists: a customer can prefer a specific specialist for this rebooking. It's a
     // PREFERENCE, not a guarantee — we only carry it forward if the provider is currently verified;
@@ -5757,10 +5843,10 @@ app.post('/api/service-requests', publicFormLimit, async (req, res) => {
     const id = randomUUID();
     try {
       await pool.query(
-        `INSERT INTO service_requests (id, category, description, preferred_date, preferred_time, is_asap, service_address, service_address_details, client_name, client_phone, client_email, client_request_id, customer_id, lang, attachments, request_mode, matched_service, matched_sub_key, ai_summary, ai_confidence, ai_source, detail_answers, preferred_provider_id, preferred_provider_name)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)`,
+        `INSERT INTO service_requests (id, category, description, preferred_date, preferred_time, is_asap, service_address, service_address_details, client_name, client_phone, client_email, client_request_id, customer_id, lang, attachments, request_mode, matched_service, matched_sub_key, ai_summary, ai_confidence, ai_source, ai_status, ai_reason, ai_evidence, detail_answers, preferred_provider_id, preferred_provider_name)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)`,
         [id, category, description || null, preferredDate || null, preferredTime || null, !!isAsap, serviceAddress || null, addressDetailsStr, clientName, clientPhone, clientEmail || null, clientRequestIdNorm || null, effectiveCustomerId, lang || 'es', attachmentsStr,
-          requestMode || null, matchedService || null, matchedSubKey || null, aiSummary || null, aiConfidenceNum, aiSource || null, detailAnswersStr, prefProviderId, prefProviderName]
+          requestMode || null, matchedService || null, matchedSubKey || null, aiSummary || null, aiConfidenceNum, aiSource || null, aiStatusNorm, aiReason || null, aiEvidenceStr, detailAnswersStr, prefProviderId, prefProviderName]
       );
     } catch (insertErr) {
       if (insertErr.code === '23505' && clientRequestIdNorm) {

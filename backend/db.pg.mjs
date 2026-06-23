@@ -351,6 +351,9 @@ export async function initDb() {
       ai_summary TEXT,
       ai_confidence NUMERIC,
       ai_source TEXT,
+      ai_status TEXT,
+      ai_reason TEXT,
+      ai_evidence JSONB,
       detail_answers JSONB,
       created_at TIMESTAMPTZ DEFAULT NOW(),
       updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -373,6 +376,9 @@ export async function initDb() {
     ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS ai_summary TEXT;
     ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS ai_confidence NUMERIC;
     ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS ai_source TEXT;
+    ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS ai_status TEXT;
+    ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS ai_reason TEXT;
+    ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS ai_evidence JSONB;
     ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS detail_answers JSONB;
     -- Trusted Specialists (Phase 2): the specialist the customer prefers for this rebooking.
     -- A preference, not a guarantee — admin honors it when the provider is available.

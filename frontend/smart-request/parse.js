@@ -17,6 +17,27 @@
   const CAT = () => window.SERVI_CATALOG || {};
 
   function norm(s) { return String(s || '').toLowerCase(); }
+  function normSearch(s) {
+    return String(s || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function isWhenFollowup(item) {
+    const key = normSearch(item && item.key);
+    const q = normSearch(item && item.q);
+    const chips = normSearch((item && item.chips || []).join(' '));
+    const text = key + ' ' + q + ' ' + chips;
+    return /\b(when|timing|date|schedule|scheduled|asap|soon|today|tomorrow|week|weekend|urgent|cuando|fecha|programar|agendar|agenda|pronto|hoy|manana|semana|urgente)\b/.test(text);
+  }
+
+  function stripWhenFollowups(items) {
+    return (items || []).filter((item) => !isWhenFollowup(item));
+  }
 
   // ── Natural-language date inference → real date ──────────────────────────
   const DAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
@@ -91,7 +112,7 @@
   }
 
   function followupsFor(subKey) {
-    return (window.SERVI_FOLLOWUPS && window.SERVI_FOLLOWUPS[subKey]) || window.SERVI_GENERIC_FOLLOWUPS;
+    return stripWhenFollowups((window.SERVI_FOLLOWUPS && window.SERVI_FOLLOWUPS[subKey]) || window.SERVI_GENERIC_FOLLOWUPS);
   }
 
   function heuristic(text) {
@@ -115,7 +136,7 @@
         confidence: 0.35, urgency,
         inferredDate: dateInfo ? dateInfo.date : null,
         inferredDateLabel: dateInfo ? dateInfo.label : null,
-        followups: window.SERVI_GENERIC_FOLLOWUPS,
+        followups: stripWhenFollowups(window.SERVI_GENERIC_FOLLOWUPS),
         source: 'heuristic',
       };
     }
@@ -154,27 +175,77 @@
       const d = new Date(data.inferredDate + 'T00:00:00');
       if (!isNaN(d)) dateLabel = d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
     }
-    let followups = Array.isArray(data.followups) ? data.followups.filter((f) => f && f.q).slice(0, 3) : [];
+    let followups = Array.isArray(data.followups) ? stripWhenFollowups(data.followups.filter((f) => f && f.q)).slice(0, 3) : [];
     if (!followups.length) followups = sub ? followupsFor(sub.key) : window.SERVI_GENERIC_FOLLOWUPS;
+    followups = stripWhenFollowups(followups);
+    const clientDate = inferDate(text);
+    const inferredDate = data.inferredDate || (clientDate ? clientDate.date : null);
+    const inferredDateLabel = data.inferredDate ? dateLabel : (clientDate ? clientDate.label : null);
+    const modelUrgency = ['asap', 'scheduled', 'flexible'].includes(data.urgency) ? data.urgency : 'flexible';
+    const clientUrgency = inferUrgency(text);
+    const urgency = clientUrgency !== 'flexible' ? clientUrgency : modelUrgency;
 
-    return {
-      category: catKey,
-      categoryLabel: cat ? cat.label : 'Custom request',
-      emoji: cat ? cat.emoji : '✨',
+	    return {
+	      aiStatus: data.aiStatus || 'understood',
+	      aiReason: data.aiReason || null,
+	      aiEvidence: data.aiEvidence || [],
+	      category: catKey,
+	      categoryLabel: cat ? cat.label : 'Custom request',
+	      emoji: cat ? cat.emoji : '✨',
       subKey: sub ? sub.key : null,
       subLabel: sub ? sub.label : null,
       service: data.service || (sub ? sub.services[0] : null),
       summary: data.summary || String(text || '').trim(),
       confidence: typeof data.confidence === 'number' ? data.confidence : 0.7,
-      urgency: ['asap', 'scheduled', 'flexible'].includes(data.urgency) ? data.urgency : inferUrgency(text),
-      inferredDate: data.inferredDate || null,
-      inferredDateLabel: dateLabel,
+      urgency: inferredDate ? 'scheduled' : urgency,
+      inferredDate,
+      inferredDateLabel,
       followups,
-      source: 'ai',
-    };
-  }
+	      source: 'ai',
+	    };
+	  }
 
-  window.serviParse = async function serviParse(text, opts) {
+	  function mediaSummary(kind, reason) {
+	    const es = window.__lang !== 'en';
+	    if (kind === 'voice') {
+	      return es
+	        ? 'No pude descifrar la nota de voz.'
+	        : 'I could not decipher the voice note.';
+	    }
+	    if (reason === 'no_public_image_url') {
+	      return es
+	        ? 'No pude analizar las fotos automáticamente.'
+	        : 'I could not analyze the photos automatically.';
+	    }
+	    return es
+	      ? 'No pude identificar el servicio con suficiente certeza.'
+	      : 'I could not identify the service with enough certainty.';
+	  }
+
+	  function unclearMedia(kind, reason) {
+	    return {
+	      mode: kind,
+	      adminReview: true,
+	      aiStatus: 'unclear',
+	      aiReason: reason || 'unable_to_decipher',
+	      aiEvidence: [],
+	      emoji: '✨',
+	      category: 'custom',
+	      categoryLabel: 'Custom request',
+	      subKey: null,
+	      subLabel: null,
+	      service: null,
+	      summary: mediaSummary(kind, reason),
+	      confidence: 0,
+	      urgency: 'flexible',
+	      inferredDate: null,
+	      inferredDateLabel: null,
+	      followups: [],
+	      source: kind === 'voice' ? 'voice-manual-review' : 'photo-unclear',
+	    };
+	  }
+
+	  window.serviParse = async function serviParse(text, opts) {
     const engine = (opts && opts.engine) || 'ai';
     if (engine === 'heuristic') return heuristic(text);
     try {
@@ -189,80 +260,87 @@
   // expose helpers for UI (e.g. when editing service manually)
   window.serviInferDate = inferDate;
 
-  /* ═══════════════════════════════════════════════════════════════════════
-     MULTIMODAL ANALYSIS — voice & photos get the same "Here's what I
-     understood" flow; video is Wizard-of-Oz (looks AI, reviewed by admin).
+	  /* ═══════════════════════════════════════════════════════════════════════
+	     MULTIMODAL ANALYSIS — fail closed. Voice is stored for manual review
+	     under the Anthropic-only constraint; photos use the backend vision
+	     endpoint and return an explicit unclear state when evidence is weak.
+	     ═══════════════════════════════════════════════════════════════════════ */
 
-     PROTOTYPE NOTE: voice/photos analyze a transcript/caption string through
-     the same text engine.
-     In PRODUCTION, replace the body of `callMediaBackend` with a real call to
-     a multimodal endpoint (speech-to-text + vision) — see SERVI-INTEGRATION.md.
-     ═══════════════════════════════════════════════════════════════════════ */
+	  async function callMediaBackend(kind, payload) {
+	    if (kind === 'voice') return unclearMedia('voice', 'audio_transcription_unavailable');
+	    const API = (window.CONFIG && window.CONFIG.API_BASE) || '';
+	    const lang = (window.__lang === 'en') ? 'en' : 'es';
+	    const media = Array.isArray(payload.media) ? payload.media : [];
+	    if (!media.length) return unclearMedia('photos', 'no_media');
+	    const res = await fetch(API + '/api/analyze-media', {
+	      method: 'POST',
+	      headers: { 'Content-Type': 'application/json' },
+	      body: JSON.stringify({ mode: kind, media, lang }),
+	    });
+	    if (!res.ok) throw new Error('media-http-' + res.status);
+	    const data = await res.json();
+	    const cats = CAT();
+	    const catKey = cats[data.category] ? data.category : 'custom';
+	    const cat = cats[catKey];
+	    const sub = cat ? cat.subs.find((s) => s.key === data.subKey) : null;
+	    const isUnderstood = data.aiStatus === 'understood' && sub && data.service;
+	    if (!isUnderstood) {
+	      const unclear = unclearMedia('photos', data.aiReason || 'insufficient_visual_evidence');
+	      unclear.summary = data.summary || unclear.summary;
+	      unclear.aiEvidence = Array.isArray(data.aiEvidence) ? data.aiEvidence : [];
+	      unclear.confidence = typeof data.confidence === 'number' ? data.confidence : 0;
+	      return unclear;
+	    }
+	    return {
+	      aiStatus: 'understood',
+	      aiReason: null,
+	      aiEvidence: Array.isArray(data.aiEvidence) ? data.aiEvidence : [],
+	      category: catKey,
+	      categoryLabel: cat.label,
+	      emoji: cat.emoji,
+	      subKey: sub.key,
+	      subLabel: sub.label,
+	      service: data.service,
+	      summary: data.summary || data.service,
+	      confidence: typeof data.confidence === 'number' ? data.confidence : 0,
+	      urgency: ['asap', 'scheduled', 'flexible'].includes(data.urgency) ? data.urgency : 'flexible',
+	      inferredDate: data.inferredDate || null,
+	      inferredDateLabel: null,
+	      followups: [],
+	      source: 'photo-ai',
+	    };
+	  }
 
-  // Representative transcripts/captions for the in-prototype demo only.
-  const SAMPLES = {
-    voice: [
-      'Hi, my bathroom sink is draining really slowly and it smells bad, I think it is clogged. Can someone come take a look this week?',
-      'I need a deep cleaning for my two bedroom apartment, we just had a party last night and it is a mess.',
-      'Looking for someone to mount a 55 inch TV on the living room wall and hide the cables.',
-    ],
-    photos: [
-      'Photo shows a kitchen sink cabinet with a leaking P-trap; water pooling on the cabinet floor.',
-      'Photo shows a wall-mounted light fixture hanging loose with exposed wiring.',
-      'Photo shows a wooden shelf that has detached from the wall, with anchors pulled out.',
-    ],
-  };
-  let sampleIdx = { voice: 0, photos: 0 };
-  window.__serviSampleText = function (kind) {
-    const pool = SAMPLES[kind] || SAMPLES.voice;
-    const v = pool[sampleIdx[kind] % pool.length];
-    sampleIdx[kind] = (sampleIdx[kind] || 0) + 1;
-    return v;
-  };
+	  // VOICE → manual review unless a future caller provides a real transcript.
+	  window.serviAnalyzeVoice = async function (payload) {
+	    const data = payload || {};
+	    if (data.transcript) {
+	      const parsed = await ai(data.transcript);
+	      return Object.assign(parsed, { mode: 'voice', transcript: data.transcript, source: 'voice-text-ai' });
+	    }
+	    const parsed = await callMediaBackend('voice', data);
+	    return Object.assign(parsed, { mode: 'voice' });
+	  };
 
-  // PRODUCTION SWAP POINT — replace with a real multimodal backend request.
-  async function callMediaBackend(kind, payload) {
-    // payload = { transcript } | { caption } | { fileUrls }
-    const text = payload.transcript || payload.caption || '';
-    if (!text) throw new Error('no-media-text');
-    const parsed = await ai(text);           // reuse the grounded text engine
-    return parsed;
-  }
-
-  // VOICE → transcribe (prod) → parse. Returns an understanding object.
-  window.serviAnalyzeVoice = async function (payload) {
-    const data = payload || {};
-    const transcript = data.transcript || window.__serviSampleText('voice');
-    try {
-      const parsed = await callMediaBackend('voice', { transcript });
-      return Object.assign(parsed, { mode: 'voice', transcript, source: 'voice-ai' });
-    } catch (e) {
-      const h = heuristic(transcript);
-      return Object.assign(h, { mode: 'voice', transcript, source: 'voice-heuristic' });
-    }
-  };
-
-  // PHOTOS → vision caption (prod) → parse. Returns an understanding object.
-  window.serviAnalyzePhotos = async function (payload) {
-    const data = payload || {};
-    const caption = data.caption || window.__serviSampleText('photos');
-    try {
-      const parsed = await callMediaBackend('photos', { caption });
-      return Object.assign(parsed, { mode: 'photos', caption, source: 'photo-ai' });
-    } catch (e) {
-      const h = heuristic(caption);
-      return Object.assign(h, { mode: 'photos', caption, source: 'photo-heuristic' });
-    }
-  };
+	  // PHOTOS → strict backend vision analysis.
+	  window.serviAnalyzePhotos = async function (payload) {
+	    const data = payload || {};
+	    try {
+	      const parsed = await callMediaBackend('photos', data);
+	      return Object.assign(parsed, { mode: 'photos' });
+	    } catch (e) {
+	      return unclearMedia('photos', 'analysis_failed');
+	    }
+	  };
 
   // VIDEO → Wizard-of-Oz. We *show* an AI-style analysis, but no service is
   // parsed: the admin team reviews the clip and follows up on WhatsApp.
-  window.serviAnalyzeVideo = function () {
-    return Promise.resolve({
-      mode: 'video', adminReview: true,
-      emoji: '🎬', categoryLabel: 'Video request', service: null,
-      summary: 'Our specialists will review your video in detail.',
-      followups: [], source: 'video-review',
+	  window.serviAnalyzeVideo = function () {
+	    return Promise.resolve({
+	      mode: 'video', adminReview: true, aiStatus: 'manual_review', aiReason: 'video_manual_review', aiEvidence: [],
+	      emoji: '🎬', categoryLabel: 'Video request', service: null,
+	      summary: 'Our specialists will review your video in detail.',
+	      followups: [], source: 'video-review',
     });
   };
 })();

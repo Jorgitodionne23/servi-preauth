@@ -40,6 +40,18 @@
     return Array.from(new Set((values || []).filter(Boolean)));
   }
 
+  function isWhenFollowup(item) {
+    const key = normalizeText(item && item.key);
+    const q = normalizeText(item && item.q);
+    const chips = normalizeText((item && item.chips || []).join(' '));
+    const text = `${key} ${q} ${chips}`;
+    return /\b(when|timing|date|schedule|scheduled|asap|soon|today|tomorrow|week|weekend|urgent|cu[aá]ndo|cuando|fecha|programar|agendar|agenda|pronto|hoy|manana|semana|urgente)\b/.test(text);
+  }
+
+  function stripWhenFollowups(items) {
+    return (items || []).filter((item) => !isWhenFollowup(item));
+  }
+
   function mkDate(date) {
     const y = date.getFullYear();
     const m = String(date.getMonth() + 1).padStart(2, '0');
@@ -134,7 +146,7 @@
         chips: ambiguousChoices.slice(0, 4),
       }];
     }
-    return (followups && followups[subKey]) || genericFollowups || [];
+    return stripWhenFollowups((followups && followups[subKey]) || genericFollowups || []);
   }
 
   function matchCatalog(text, options) {
@@ -210,7 +222,7 @@
         urgency,
         inferredDate: dateInfo ? dateInfo.date : null,
         inferredDateLabel: dateInfo ? dateInfo.label : null,
-        followups: genericFollowups,
+        followups: stripWhenFollowups(genericFollowups),
         source: 'heuristic',
         _debug: { candidates: match.candidates.slice(0, 3).map((c) => ({ subKey: c.sub.key, score: Number(c.score.toFixed(2)) })) },
       };

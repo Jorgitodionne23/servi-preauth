@@ -45,6 +45,19 @@ test('parseModelResponse caps followups at 3', () => {
   assert.equal(parseModelResponse(f).followups.length, 3);
 });
 
+test('parseModelResponse removes date and timing followups', () => {
+  const out = parseModelResponse(JSON.stringify({
+    category: 'repair',
+    confidence: 0.8,
+    urgency: 'flexible',
+    followups: [
+      { q: 'Roughly when do you need it?', key: 'timing', chips: ['ASAP', 'This week'] },
+      { q: 'Which fixture is affected?', key: 'fixture', chips: ['Sink', 'Toilet'] },
+    ],
+  }));
+  assert.deepEqual(out.followups, [{ q: 'Which fixture is affected?', key: 'fixture', chips: ['Sink', 'Toilet'] }]);
+});
+
 test('parseModelResponse throws when no JSON present', () => {
   assert.throws(() => parseModelResponse('I could not help with that.'));
 });

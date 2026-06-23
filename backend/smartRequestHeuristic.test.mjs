@@ -73,6 +73,7 @@ test('weak request stays low confidence and custom', () => {
   const out = parse('necesito ayuda con algo en casa');
   assert.equal(out.category, 'custom');
   assert.ok(out.confidence < 0.5);
+  assert.equal(out.followups.some((f) => f.key === 'timing' || /when|cuando|fecha|semana/i.test(f.q)), false);
 });
 
 test('ambiguous close match asks for clarification without high confidence', () => {
@@ -80,4 +81,10 @@ test('ambiguous close match asks for clarification without high confidence', () 
   assert.equal(out.category, 'repair');
   assert.ok(out.confidence < 0.9);
   assert.equal(out.followups[0]?.key, 'service_clarification');
+});
+
+test('heuristic removes timing followups from matched services', () => {
+  const out = parse('necesito cuidado de niños');
+  assert.equal(out.subKey, 'child-care');
+  assert.equal(out.followups.some((f) => f.key === 'when' || /when|cuando|fecha|semana/i.test(f.q)), false);
 });
