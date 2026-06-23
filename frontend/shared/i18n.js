@@ -106,7 +106,7 @@ const T = {
     dashHero: {
       location: "CDMX",
       changeAddress: "Cambiar dirección",
-      headline: "Describe what you need now",
+      headline: "Pide cualquier servicio para tu hogar",
       placeholder: "Describe lo que necesitas...",
       placeholderExamples: [
         "Necesito una limpieza profunda para un departamento de 2 recámaras...",
@@ -115,7 +115,9 @@ const T = {
         "Necesito mover un sofá grande este fin de semana...",
         "Busco masaje a domicilio para dos personas...",
       ],
-      mediaLabel: "O envía tu solicitud por:",
+      mediaTitle: "Cuéntanos qué necesitas por texto, foto, voz o video.",
+      mediaSubtitle: "SERVI encuentra y coordina al especialista por ti.",
+      mediaLabel: "Cuéntanos qué necesitas por texto, foto, voz o video. SERVI encuentra y coordina al especialista por ti.",
       sendLabel: "Enviar",
       browseTitle: "O explora",
       details: "Detalles",
@@ -867,7 +869,7 @@ const T = {
     dashHero: {
       location: "CDMX",
       changeAddress: "Change address",
-      headline: "Describe what you need now",
+      headline: "Request any service for your home",
       placeholder: "Describe what you need...",
       placeholderExamples: [
         "Deep clean for a 2-bedroom apartment this Saturday...",
@@ -876,7 +878,9 @@ const T = {
         "Move a large sofa this weekend...",
         "At-home massage for two people...",
       ],
-      mediaLabel: "Or send request through:",
+      mediaTitle: "Tell us what you need by text, photo, voice, or video.",
+      mediaSubtitle: "SERVI finds and coordinates the specialist for you.",
+      mediaLabel: "Tell us what you need by text, photo, voice, or video. SERVI finds and coordinates the specialist for you.",
       sendLabel: "Send",
       browseTitle: "Browse services",
       details: "Details",
