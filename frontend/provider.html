@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SERVI · Panel del especialista</title>
+  <script src="./config.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@800&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; }
+    :root {
+      --bg: #0b0b0c; --panel: #151517; --panel-2: #1d1d20; --line: #2a2a2e;
+      --text: #f5f5f7; --muted: #9a9aa2; --brand: #95ccd5; --ok: #34c759;
+      --warn: #ffc861; --danger: #ff6b6b;
+    }
+    body {
+      background: var(--bg); color: var(--text); margin: 0; line-height: 1.55;
+      font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+      -webkit-font-smoothing: antialiased; min-height: 100vh;
+    }
+    .wrap { max-width: 480px; margin: 0 auto; padding: 22px 18px 60px; }
+    .top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+    .logo { font-family: "Outfit","Inter",sans-serif; font-weight: 800; font-size: 26px; letter-spacing: -0.01em; }
+    .logo-dot { color: var(--brand); }
+    .lang { background: transparent; border: 1px solid var(--line); color: var(--muted);
+      border-radius: 999px; padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer; }
+    .card { background: var(--panel); border: 1px solid var(--line); border-radius: 18px;
+      padding: 18px; margin-bottom: 16px; }
+    .eyebrow { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 8px; }
+    .code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--brand); font-weight: 600; }
+    .row { display: flex; gap: 10px; align-items: flex-start; padding: 7px 0; font-size: 14px; }
+    .row .k { color: var(--muted); min-width: 88px; flex-shrink: 0; }
+    .row .v { color: var(--text); }
+    .row .v a { color: var(--brand); text-decoration: none; }
+    h2 { font-size: 15px; margin: 0 0 14px; font-weight: 600; }
+    .steps { display: grid; gap: 10px; }
+    .step-btn { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+      background: var(--panel-2); border: 1.5px solid var(--line); color: var(--text);
+      border-radius: 14px; padding: 15px 16px; font-size: 15px; font-weight: 600; cursor: pointer;
+      transition: border-color .15s, background .15s, transform .05s; }
+    .step-btn:hover { border-color: var(--brand); }
+    .step-btn:active { transform: scale(0.99); }
+    .step-btn .ico { font-size: 20px; width: 26px; text-align: center; }
+    .step-btn.done { border-color: rgba(52,199,89,.5); background: rgba(52,199,89,.10); color: var(--ok); }
+    .step-btn.done .ico::after { content: " ✓"; }
+    .step-btn.current { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(149,204,213,.12); }
+    .loc-btn { width: 100%; background: transparent; border: 1.5px solid var(--line); color: var(--text);
+      border-radius: 14px; padding: 14px; font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 12px; }
+    .loc-btn:hover { border-color: var(--brand); }
+    .loc-btn:disabled { opacity: .55; cursor: default; }
+    .price-btn { width: 100%; background: var(--brand); color: #06262b; border: none;
+      border-radius: 14px; padding: 15px; font-size: 15px; font-weight: 700; cursor: pointer; }
+    .price-btn:hover { filter: brightness(1.05); }
+    .pc-field { margin-bottom: 12px; }
+    .pc-field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+    .pc-field input, .pc-field select, .pc-field textarea {
+      width: 100%; background: var(--panel-2); border: 1.5px solid var(--line); color: var(--text);
+      border-radius: 12px; padding: 12px; font-size: 15px; font-family: inherit; }
+    .pc-field textarea { resize: vertical; min-height: 64px; }
+    .hint { font-size: 12px; color: var(--muted); margin-top: 10px; }
+    .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(20px);
+      background: #fff; color: #111; padding: 12px 18px; border-radius: 12px; font-size: 14px; font-weight: 600;
+      opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; max-width: 90vw; box-shadow: 0 8px 30px rgba(0,0,0,.4); }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .toast.err { background: #ff6b6b; color: #fff; }
+    .toast.ok { background: #34c759; color: #fff; }
+    .center-msg { text-align: center; color: var(--muted); padding: 60px 20px; }
+    .preview { background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px;
+      padding: 12px; margin-top: 12px; font-size: 13px; display: none; }
+    .preview .big { font-size: 18px; font-weight: 700; color: var(--text); }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="top">
+      <span class="logo">SERVI<span class="logo-dot">.</span></span>
+      <button class="lang" id="langBtn">EN</button>
+    </div>
+    <div id="content"><div class="center-msg" id="loading">…</div></div>
+  </div>
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const API = (window.CONFIG && window.CONFIG.API_BASE) || window.location.origin;
+    const params = new URLSearchParams(location.search);
+    const ORDER = params.get('order') || '';
+    const PT = params.get('pt') || '';
+    let lang = (navigator.language || 'es').toLowerCase().startsWith('en') ? 'en' : 'es';
+    let order = null;
+
+    const PHASES = ['en_route', 'arrived', 'started', 'completed'];
+    const PHASE_RANK = { en_route: 1, arrived: 2, started: 3, completed: 4 };
+
+    const T = {
+      es: {
+        panel: 'Panel del especialista', order: 'Orden', service: 'Servicio', address: 'Dirección',
+        when: 'Cuándo', client: 'Cliente', asap: 'Lo antes posible', map: 'Ver en mapa',
+        statusTitle: '¿En qué punto vas?',
+        en_route: 'En camino', arrived: 'Llegué', started: 'Inicié', completed: 'Terminé',
+        shareLoc: '📍 Compartir mi ubicación', sharing: 'Compartiendo…', shared: '✓ Ubicación compartida',
+        priceTitle: 'Proponer cambio de precio',
+        priceIntro: 'Si el trabajo requiere un costo adicional, propónlo aquí. El cliente lo aprueba y SERVI realiza el cobro — sin acuerdos por fuera.',
+        type: 'Tipo de cambio', amount: 'Costo adicional (MXN)', note: 'Detalle (opcional)',
+        send: 'Enviar propuesta', sending: 'Enviando…',
+        t_precio_corregido: 'Corrección de precio', t_horas_adicionales: 'Horas adicionales',
+        t_servicio_adicional: 'Servicio adicional', t_materiales: 'Materiales', t_otro: 'Otro',
+        notFound: 'No encontramos esta orden. Verifica tu enlace.',
+        checkSaved: '✓ Registrado', locDenied: 'No se pudo obtener tu ubicación.',
+        priceSent: '✓ Propuesta enviada. El equipo SERVI la procesará.',
+        amountErr: 'Ingresa un monto válido.', genErr: 'Algo salió mal. Intenta de nuevo.',
+        previewTotal: 'El cliente verá un total adicional aproximado de'
+      },
+      en: {
+        panel: 'Specialist panel', order: 'Order', service: 'Service', address: 'Address',
+        when: 'When', client: 'Client', asap: 'As soon as possible', map: 'View on map',
+        statusTitle: 'Where are you at?',
+        en_route: 'On my way', arrived: 'Arrived', started: 'Started', completed: 'Finished',
+        shareLoc: '📍 Share my location', sharing: 'Sharing…', shared: '✓ Location shared',
+        priceTitle: 'Propose a price change',
+        priceIntro: 'If the job needs an extra cost, propose it here. The client approves it and SERVI charges it — no side deals.',
+        type: 'Type of change', amount: 'Additional cost (MXN)', note: 'Details (optional)',
+        send: 'Send proposal', sending: 'Sending…',
+        t_precio_corregido: 'Price correction', t_horas_adicionales: 'Additional hours',
+        t_servicio_adicional: 'Additional service', t_materiales: 'Materials', t_otro: 'Other',
+        notFound: 'We could not find this order. Check your link.',
+        checkSaved: '✓ Saved', locDenied: 'Could not get your location.',
+        priceSent: '✓ Proposal sent. The SERVI team will process it.',
+        amountErr: 'Enter a valid amount.', genErr: 'Something went wrong. Try again.',
+        previewTotal: 'The client will see an approximate additional total of'
+      }
+    };
+    const tr = (k) => (T[lang] && T[lang][k]) || k;
+
+    function toast(msg, kind) {
+      const el = document.getElementById('toast');
+      el.textContent = msg; el.className = 'toast show' + (kind ? ' ' + kind : '');
+      clearTimeout(el._t); el._t = setTimeout(() => { el.className = 'toast'; }, 3200);
+    }
+    function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+    function fmtWhen(o) {
+      if (o.isAsap && !o.serviceDateTime) return tr('asap');
+      const raw = o.serviceDateTime || o.serviceDate;
+      if (!raw) return '—';
+      const d = new Date(raw.length <= 10 ? raw + 'T00:00:00' : raw);
+      if (isNaN(d)) return raw;
+      const date = d.toLocaleDateString(lang === 'en' ? 'en-US' : 'es-MX', { day: 'numeric', month: 'short', year: 'numeric' });
+      if (raw.length <= 10) return date;
+      return date + ' · ' + d.toLocaleTimeString(lang === 'en' ? 'en-US' : 'es-MX', { hour: '2-digit', minute: '2-digit' });
+    }
+
+    async function api(path, opts) {
+      const res = await fetch(API + path, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opts));
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw Object.assign(new Error(data.error || 'error'), { data });
+      return data;
+    }
+
+    async function load() {
+      if (!ORDER || !PT) { renderNotFound(); return; }
+      try {
+        const data = await api('/api/provider/order?order=' + encodeURIComponent(ORDER) + '&pt=' + encodeURIComponent(PT));
+        order = data.order;
+        render();
+      } catch (e) { renderNotFound(); }
+    }
+    function renderNotFound() {
+      document.getElementById('content').innerHTML = '<div class="center-msg">' + esc(tr('notFound')) + '</div>';
+    }
+
+    function render() {
+      const o = order;
+      const curRank = PHASE_RANK[o.servicePhase] || 0;
+      const mapHref = o.serviceAddress ? 'https://maps.google.com/?q=' + encodeURIComponent(o.serviceAddress) : '';
+      const steps = PHASES.map(p => {
+        const r = PHASE_RANK[p];
+        const cls = r < curRank ? 'done' : (r === curRank ? 'current done' : '');
+        const ico = { en_route: '🚗', arrived: '📍', started: '▶️', completed: '✅' }[p];
+        return '<button class="step-btn ' + cls + '" data-phase="' + p + '"><span class="ico">' + ico + '</span>' + esc(tr(p)) + '</button>';
+      }).join('');
+
+      const types = ['precio_corregido', 'horas_adicionales', 'servicio_adicional', 'materiales', 'otro'];
+      const typeOpts = types.map(t => '<option value="' + t + '">' + esc(tr('t_' + t)) + '</option>').join('');
+
+      document.getElementById('content').innerHTML =
+        '<div class="card">' +
+          '<div class="eyebrow">' + esc(tr('panel')) + '</div>' +
+          '<div class="row"><span class="k">' + esc(tr('order')) + '</span><span class="v code">' + esc(o.publicCode || '—') + '</span></div>' +
+          (o.serviceDescription ? '<div class="row"><span class="k">' + esc(tr('service')) + '</span><span class="v">' + esc(o.serviceDescription) + '</span></div>' : '') +
+          '<div class="row"><span class="k">' + esc(tr('address')) + '</span><span class="v">' + esc(o.serviceAddress || '—') +
+            (mapHref ? ' · <a href="' + mapHref + '" target="_blank" rel="noopener">' + esc(tr('map')) + '</a>' : '') + '</span></div>' +
+          '<div class="row"><span class="k">' + esc(tr('when')) + '</span><span class="v">' + esc(fmtWhen(o)) + '</span></div>' +
+          (o.clientFirstName ? '<div class="row"><span class="k">' + esc(tr('client')) + '</span><span class="v">' + esc(o.clientFirstName) + '</span></div>' : '') +
+        '</div>' +
+        '<div class="card">' +
+          '<h2>' + esc(tr('statusTitle')) + '</h2>' +
+          '<div class="steps">' + steps + '</div>' +
+          '<button class="loc-btn" id="locBtn">' + esc(tr('shareLoc')) + '</button>' +
+        '</div>' +
+        '<div class="card">' +
+          '<h2>' + esc(tr('priceTitle')) + '</h2>' +
+          '<p class="hint" style="margin-top:0">' + esc(tr('priceIntro')) + '</p>' +
+          '<div class="pc-field"><label>' + esc(tr('type')) + '</label><select id="pcType">' + typeOpts + '</select></div>' +
+          '<div class="pc-field"><label>' + esc(tr('amount')) + '</label><input id="pcAmount" type="number" inputmode="decimal" min="1" placeholder="0" /></div>' +
+          '<div class="pc-field"><label>' + esc(tr('note')) + '</label><textarea id="pcNote" maxlength="500"></textarea></div>' +
+          '<button class="price-btn" id="pcSend">' + esc(tr('send')) + '</button>' +
+          '<div class="preview" id="pcPreview"></div>' +
+        '</div>';
+
+      document.querySelectorAll('.step-btn').forEach(b => b.addEventListener('click', () => checkin(b.dataset.phase)));
+      document.getElementById('locBtn').addEventListener('click', shareLocation);
+      document.getElementById('pcSend').addEventListener('click', sendPriceChange);
+    }
+
+    async function checkin(phase) {
+      try {
+        await api('/api/provider/checkin', { method: 'POST', body: JSON.stringify({ order: ORDER, pt: PT, event: phase }) });
+        order.servicePhase = phase;
+        render();
+        toast(tr('checkSaved'), 'ok');
+      } catch (e) { toast(tr('genErr'), 'err'); }
+    }
+
+    function shareLocation() {
+      const btn = document.getElementById('locBtn');
+      if (!navigator.geolocation) { toast(tr('locDenied'), 'err'); return; }
+      btn.disabled = true; btn.textContent = tr('sharing');
+      navigator.geolocation.getCurrentPosition(async (pos) => {
+        try {
+          await api('/api/provider/location', { method: 'POST', body: JSON.stringify({
+            order: ORDER, pt: PT, lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy
+          }) });
+          btn.textContent = tr('shared'); toast(tr('shared'), 'ok');
+          setTimeout(() => { btn.disabled = false; btn.textContent = tr('shareLoc'); }, 4000);
+        } catch (e) { btn.disabled = false; btn.textContent = tr('shareLoc'); toast(tr('genErr'), 'err'); }
+      }, () => { btn.disabled = false; btn.textContent = tr('shareLoc'); toast(tr('locDenied'), 'err'); },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 });
+    }
+
+    async function sendPriceChange() {
+      const amount = Number(document.getElementById('pcAmount').value);
+      const type = document.getElementById('pcType').value;
+      const note = document.getElementById('pcNote').value;
+      if (!Number.isFinite(amount) || amount <= 0) { toast(tr('amountErr'), 'err'); return; }
+      const btn = document.getElementById('pcSend');
+      btn.disabled = true; btn.textContent = tr('sending');
+      try {
+        const data = await api('/api/provider/price-change', { method: 'POST', body: JSON.stringify({
+          order: ORDER, pt: PT, amount, type, note
+        }) });
+        const prev = document.getElementById('pcPreview');
+        if (data && data.preview && data.preview.total != null) {
+          prev.style.display = 'block';
+          prev.innerHTML = esc(tr('previewTotal')) + '<br><span class="big">$' +
+            (data.preview.total / 100).toLocaleString(lang === 'en' ? 'en-US' : 'es-MX', { minimumFractionDigits: 2 }) + ' MXN</span>';
+        }
+        document.getElementById('pcAmount').value = ''; document.getElementById('pcNote').value = '';
+        toast(tr('priceSent'), 'ok');
+      } catch (e) {
+        toast(tr('genErr'), 'err');
+      } finally { btn.disabled = false; btn.textContent = tr('send'); }
+    }
+
+    document.getElementById('langBtn').addEventListener('click', () => {
+      lang = lang === 'es' ? 'en' : 'es';
+      document.getElementById('langBtn').textContent = lang === 'es' ? 'EN' : 'ES';
+      document.documentElement.lang = lang;
+      if (order) render();
+    });
+    document.getElementById('langBtn').textContent = lang === 'es' ? 'EN' : 'ES';
+    document.documentElement.lang = lang;
+    load();
+  </script>
+</body>
+</html>

@@ -28,6 +28,7 @@
     es: {
       pay: 'Pago pendiente', active: 'Pedido activo', requested: 'Solicitud recibida',
       authorized: 'Autorizado', scheduled: 'Programado', cash: 'Pago en efectivo', inProcess: 'En proceso',
+      ph_en_route: 'Especialista en camino', ph_arrived: 'Especialista llegó', ph_started: 'Servicio en curso', ph_completed: 'Servicio terminado',
       rate: 'Servicio completado', ctaRate: 'Califica tu servicio',
       ctaPay: 'Completar pago', view: 'Ver pedido', viewAll: 'Ver todos',
       moreOne: 'pedido más', moreMany: 'pedidos más',
@@ -38,6 +39,7 @@
     en: {
       pay: 'Payment pending', active: 'Active order', requested: 'Request received',
       authorized: 'Authorized', scheduled: 'Scheduled', cash: 'Cash payment', inProcess: 'In progress',
+      ph_en_route: 'Specialist on the way', ph_arrived: 'Specialist arrived', ph_started: 'Service in progress', ph_completed: 'Service finished',
       rate: 'Service complete', ctaRate: 'Rate your service',
       ctaPay: 'Complete payment', view: 'View order', viewAll: 'View all',
       moreOne: 'more order', moreMany: 'more orders',
@@ -76,6 +78,10 @@
     if (o.source === 'request') return s.requested;
     if (o.payable) return s.pay;
     if (isRate(o)) return s.rate;
+    // A live in-service phase (provider check-in) takes precedence over the payment status,
+    // so an active customer sees "Specialist on the way" rather than just "Authorized".
+    var phaseLabel = s['ph_' + String(o.servicePhase || '').trim()];
+    if (phaseLabel) return phaseLabel;
     switch (String(o.status || '').trim().toLowerCase()) {
       case 'confirmed': return s.authorized;
       case 'scheduled': return s.scheduled;

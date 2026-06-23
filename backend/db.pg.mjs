@@ -117,6 +117,17 @@ export async function initDb() {
     ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS canceled_at TIMESTAMPTZ;
     ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS canceled_by TEXT;
 
+    -- In-service lifecycle snapshot (denormalized from order_lifecycle_events for cheap reads).
+    -- These NEVER touch the payment status column; they track the operational phase between
+    -- "Confirmed" (hold placed) and capture. All additive/nullable.
+    ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS service_phase TEXT;          -- en_route|arrived|started|completed
+    ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS service_phase_at TIMESTAMPTZ;
+    ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS last_provider_lat DOUBLE PRECISION;
+    ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS last_provider_lng DOUBLE PRECISION;
+    ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS last_location_at TIMESTAMPTZ;
+    ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS provider_link_token TEXT;
+    ALTER TABLE all_bookings ADD COLUMN IF NOT EXISTS provider_link_created_at TIMESTAMPTZ;
+
     DO $$
     BEGIN
       IF EXISTS (
@@ -144,6 +155,9 @@ export async function initDb() {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_all_bookings_retry_token
       ON all_bookings(retry_token)
       WHERE retry_token IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_all_bookings_provider_link_token
+      ON all_bookings(provider_link_token)
+      WHERE provider_link_token IS NOT NULL;
 
     -- Consent audit (per-booking)
     CREATE TABLE IF NOT EXISTS consented_offsession_bookings (
@@ -321,6 +335,29 @@ export async function initDb() {
       WHERE snoozed_until IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_ops_alerts_status
       ON ops_alerts(status);
+
+    -- Append-only in-service lifecycle log. One row per signal/check-in/contact/price event
+    -- that happens between "Confirmed" (hold placed) and capture. Deliberately separate from the
+    -- payment status state machine so it never collides with the forward-only webhook guards or
+    -- the Sheets forward-only status map. The denormalized all_bookings.service_phase* columns
+    -- mirror the latest milestone for cheap list reads.
+    CREATE TABLE IF NOT EXISTS order_lifecycle_events (
+      id           TEXT PRIMARY KEY,
+      order_id     TEXT NOT NULL REFERENCES all_bookings(id) ON DELETE CASCADE,
+      event_type   TEXT NOT NULL,   -- en_route|arrived|started|completed|provider_contacted|
+                                    -- client_contacted|location_shared|price_change_requested|
+                                    -- price_change_link_created|price_change_confirmed|note
+      source       TEXT NOT NULL,   -- provider|client|admin|system
+      actor_ref    TEXT,
+      channel      TEXT,            -- provider_link|admin_panel|account|wa|email
+      lat          DOUBLE PRECISION,
+      lng          DOUBLE PRECISION,
+      accuracy_m   INTEGER,
+      metadata     JSONB,
+      created_at   TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_ole_order ON order_lifecycle_events(order_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_ole_type  ON order_lifecycle_events(event_type, created_at DESC);
 
     CREATE INDEX IF NOT EXISTS idx_saved_servi_users_latest_pm
       ON saved_servi_users (latest_payment_method_id);

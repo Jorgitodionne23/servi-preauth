@@ -2635,6 +2635,118 @@ async function contactProviderForOrder(orderId) {
   }
 }
 
+// ─── Contact panel (Phase 2): templated, logged provider/client outreach ─────
+// Solves "hunting for the right contact in WhatsApp" — auto-resolves the order's provider/client,
+// offers bilingual templates, opens wa.me/mailto with the correct recipient, and logs each touch.
+async function ensureProviderLink(orderId) {
+  if (_providerLinkCache[orderId]) return _providerLinkCache[orderId];
+  try {
+    const res = await fetch(API + '/api/admin/orders/' + encodeURIComponent(orderId) + '/provider-link', { method: 'POST', headers: headers() });
+    const d = await res.json();
+    if (res.ok && d.url) { _providerLinkCache[orderId] = d.url; return d.url; }
+  } catch (_) {}
+  return '';
+}
+
+const PROVIDER_TEMPLATES = [
+  { id: 'did_it_start',  label: '¿Ya iniciaste?',     text: (o, c) => `Hola ${c.providerName || 'equipo'}, ¿ya iniciaste la orden ${c.code} de ${o.client_name || 'el cliente'}? Avísame para registrar el avance. Gracias.` },
+  { id: 'share_location', label: 'Pide ubicación',     text: (o, c) => `Hola ${c.providerName || 'equipo'}, ¿me confirmas tu estatus y compartes tu ubicación desde este link? ${c.providerLink}` },
+  { id: 'running_late',  label: '¿Vas en camino?',    text: (o, c) => `Hola ${c.providerName || 'equipo'}, el cliente pregunta si vas en camino para la orden ${c.code}. ¿Me confirmas tu hora estimada de llegada?` },
+  { id: 'price_change',  label: 'Cambio de precio',   text: (o, c) => `Hola ${c.providerName || 'equipo'}, si la orden ${c.code} requiere un costo adicional, propónlo desde este link y el cliente lo aprueba por SERVI: ${c.providerLink}` },
+  { id: 'reminder',      label: 'Recordatorio',       text: (o, c) => providerReminderMessage(o, c.provider) },
+];
+const CLIENT_TEMPLATES = [
+  { id: 'all_ok',       label: '¿Todo bien?',          text: (o, c) => `Hola ${c.clientFirstName || ''}, soy del equipo SERVI. ¿Todo bien con tu servicio de hoy (${c.code})? Quedamos al pendiente.` },
+  { id: 'on_the_way',   label: 'Va en camino',         text: (o, c) => `Hola ${c.clientFirstName || ''}, tu especialista va en camino para tu servicio ${c.code}. ¡Gracias por usar SERVI!` },
+  { id: 'price_pending', label: 'Cambio de precio',    text: (o, c) => `Hola ${c.clientFirstName || ''}, hay un cambio de precio pendiente de aprobación para tu orden ${c.code}. Puedes revisarlo y aprobarlo desde tu cuenta SERVI o con el link que te enviamos.` },
+];
+
+async function openContactPanel(orderId, target = 'provider') {
+  let order = _ordersCache[orderId] || (_detailOrderCache?.id === orderId ? _detailOrderCache : null);
+  if (!order) {
+    try {
+      const res = await fetch(API + '/api/admin/orders/' + encodeURIComponent(orderId), { headers: headers() });
+      const d = await res.json();
+      if (res.ok && d.order) { order = d.order; _ordersCache[orderId] = d.order; }
+    } catch (_) {}
+  }
+  if (!order) { toast('No se encontró la orden.', 'err'); return; }
+
+  let provider = null;
+  if (order.provider_id) { try { provider = await findProviderForOrder(order); } catch (_) {} }
+  const providerLink = await ensureProviderLink(orderId);
+  const ctx = {
+    code: order.public_code || order.id.slice(0, 8),
+    providerName: provider?.name || order.provider_name || '',
+    clientFirstName: (order.client_name || '').split(/\s+/)[0] || '',
+    provider, providerLink,
+  };
+
+  const overlay = document.createElement('div');
+  overlay.className = 'adm-overlay';
+  const close = () => { if (overlay.parentNode) document.body.removeChild(overlay); };
+
+  function render() {
+    const isProv = target === 'provider';
+    const templates = isProv ? PROVIDER_TEMPLATES : CLIENT_TEMPLATES;
+    const recipient = isProv
+      ? (provider?.phone ? `WhatsApp: ${escapeHtml(provider.phone)}` : '<span style="color:#ef4444">Proveedor sin teléfono</span>')
+      : (order.client_phone ? `WhatsApp: ${escapeHtml(order.client_phone)}` : (order.client_email ? `Email: ${escapeHtml(order.client_email)}` : '<span style="color:#ef4444">Cliente sin contacto</span>'));
+    const tabs = `
+      <div style="display:flex;gap:6px;margin-bottom:14px">
+        <button class="adm-btn ${isProv ? 'adm-btn--ok' : 'adm-btn--cancel'}" data-tab="provider" style="flex:1">Proveedor</button>
+        <button class="adm-btn ${!isProv ? 'adm-btn--ok' : 'adm-btn--cancel'}" data-tab="client" style="flex:1">Cliente</button>
+      </div>`;
+    const btns = templates.map(tpl =>
+      `<button class="action-btn" data-tpl="${tpl.id}" style="width:100%;text-align:left;margin-bottom:6px">${escapeHtml(tpl.label)}</button>`
+    ).join('');
+    overlay.innerHTML = `
+      <div class="adm-box" onclick="event.stopPropagation()" style="max-width:420px">
+        <h3>Contactar · ${escapeHtml(ctx.code)}</h3>
+        ${tabs}
+        <p style="font-size:12px;color:#aaa;margin:-4px 0 12px">${recipient}</p>
+        ${btns}
+        <div class="adm-row"><button class="adm-btn adm-btn--cancel" id="cp-close" style="width:100%">Cerrar</button></div>
+      </div>`;
+    overlay.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => { target = b.dataset.tab; render(); }));
+    overlay.querySelectorAll('[data-tpl]').forEach(b => b.addEventListener('click', () => sendTemplate(b.dataset.tpl)));
+    document.getElementById('cp-close').addEventListener('click', close);
+  }
+
+  async function sendTemplate(tplId) {
+    const isProv = target === 'provider';
+    const templates = isProv ? PROVIDER_TEMPLATES : CLIENT_TEMPLATES;
+    const tpl = templates.find(x => x.id === tplId);
+    if (!tpl) return;
+    const message = tpl.text(order, ctx);
+    let channel = 'wa', url = '';
+    if (isProv) {
+      const phone = normalizeWhatsappDigits(provider?.phone);
+      if (!phone) { toast('El proveedor no tiene teléfono registrado.', 'warn'); return; }
+      url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+    } else {
+      const phone = normalizeWhatsappDigits(order.client_phone);
+      if (phone) { url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`; channel = 'wa'; }
+      else if (order.client_email) { url = `mailto:${order.client_email}?subject=${encodeURIComponent('SERVI · ' + ctx.code)}&body=${encodeURIComponent(message)}`; channel = 'email'; }
+      else { toast('El cliente no tiene teléfono ni email.', 'warn'); return; }
+    }
+    window.open(url, '_blank', 'noopener');
+    try {
+      await fetch(API + '/api/admin/orders/' + encodeURIComponent(orderId) + '/contact-log', {
+        method: 'POST', headers: headers(),
+        body: JSON.stringify({ target, templateId: tplId, channel }),
+      });
+    } catch (_) {}
+    toast('Mensaje preparado y registrado.', 'ok');
+    if (_openDetailOrderId === orderId) loadOrderLifecycle(orderId);
+    close();
+  }
+
+  overlay.addEventListener('click', close);
+  document.body.appendChild(overlay);
+  render();
+}
+
 async function openOrderEditFromAction(orderId) {
   if (_detailOrderCache?.id === orderId) { openOrderEdit(orderId); return; }
   const cached = _ordersCache[orderId];
@@ -3297,6 +3409,10 @@ function renderOrderDetail(o, adjustments) {
         </div>
       </div>
       <div class="sp-sec">
+        <div class="sp-sec-t" style="display:flex;align-items:center;gap:8px">Servicio en curso<div style="margin-left:auto;display:flex;gap:6px"><button class="action-btn" onclick="genProviderLink('${o.id}')" title="Generar y copiar el link del proveedor para esta orden">🔗 Link de proveedor</button><button class="action-btn" onclick="openContactPanel('${o.id}','provider')" title="Contactar al proveedor o cliente">💬 Contactar</button></div></div>
+        <div id="op-lifecycle-list" style="font-size:12px;color:#666">Cargando…</div>
+      </div>
+      <div class="sp-sec">
         <div class="sp-sec-t">Desglose de precio</div>
         <div style="display:flex;flex-direction:column;gap:8px">
           <div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:#888">Proveedor</span><span>${fmtMoney(o.provider_amount)}</span></div>
@@ -3347,7 +3463,126 @@ function renderOrderDetail(o, adjustments) {
       <div class="sp-acts">${buildActionBtns(o)}</div>
     `;
   loadOrderChanges(o.id);
+  loadOrderLifecycle(o.id);
 }
+
+// ─── In-service lifecycle timeline (Phase 1) ─────────────────────────────────
+const LIFECYCLE_LABEL = {
+  en_route: 'En camino 🚗', arrived: 'Llegó 📍', started: 'Inició ▶️', completed: 'Terminó ✅',
+  provider_contacted: 'Contactó al proveedor 💬', client_contacted: 'Contactó al cliente 💬',
+  location_shared: 'Compartió ubicación 📍',
+  price_change_requested: 'Propuso cambio de precio 💲',
+  price_change_link_created: 'Generó link de cambio de precio 🔗',
+  price_change_confirmed: 'Cliente confirmó cambio de precio ✓',
+  note: 'Nota'
+};
+const LIFECYCLE_SOURCE = { provider: 'proveedor', client: 'cliente', admin: 'admin', system: 'sistema' };
+const PHASE_BADGE = {
+  en_route: 'En camino', arrived: 'Llegó', started: 'En servicio', completed: 'Terminado'
+};
+
+function timeAgoEs(ts) {
+  if (!ts) return '';
+  const then = new Date(ts).getTime();
+  if (isNaN(then)) return '';
+  const mins = Math.round((Date.now() - then) / 60000);
+  if (mins < 1) return 'ahora';
+  if (mins < 60) return `hace ${mins}m`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 48) return `hace ${hrs}h`;
+  return `hace ${Math.round(hrs / 24)}d`;
+}
+
+async function loadOrderLifecycle(orderId) {
+  const target = document.getElementById('op-lifecycle-list');
+  if (!target) return;
+  try {
+    const res = await fetch(API + '/api/admin/orders/' + encodeURIComponent(orderId) + '/lifecycle', { headers: headers() });
+    const d = await res.json();
+    const items = d.items || [];
+    let header = '';
+    if (d.phase) {
+      header += `<div style="margin-bottom:10px"><span class="badge badge-confirmed">${escapeHtml(PHASE_BADGE[d.phase] || d.phase)}</span> <span style="color:#888;font-size:11px">${escapeHtml(timeAgoEs(d.phaseAt))}</span></div>`;
+    }
+    if (d.lastLocation) {
+      header += `<div style="margin-bottom:10px;font-size:12px;color:#888">📍 Ubicación compartida ${escapeHtml(timeAgoEs(d.lastLocation.at))} · <a href="https://maps.google.com/?q=${d.lastLocation.lat},${d.lastLocation.lng}" target="_blank" rel="noopener" style="color:#60a5fa">Ver en mapa</a></div>`;
+    }
+    if (!items.length && !header) { target.innerHTML = '<div style="color:#555;font-size:12px">Sin actividad todavía</div>'; return; }
+    const list = items.map(ev => {
+      const label = LIFECYCLE_LABEL[ev.event_type] || ev.event_type;
+      const src = LIFECYCLE_SOURCE[ev.source] || ev.source || '';
+      let extra = '';
+      if (ev.event_type === 'location_shared' && ev.lat != null && ev.lng != null) {
+        extra = ` · <a href="https://maps.google.com/?q=${ev.lat},${ev.lng}" target="_blank" rel="noopener" style="color:#60a5fa">mapa</a>`;
+      }
+      const meta = ev.metadata && typeof ev.metadata === 'object' ? ev.metadata : null;
+      if (meta && meta.type) extra += ` · <span style="color:#a78bfa">${escapeHtml(PC_TYPE_LABEL[meta.type] || String(meta.type))}</span>`;
+      if (meta && meta.amount != null) extra += ` · ${fmtMoney(Number(meta.amount))}`;
+      if (meta && meta.note) extra += ` · <span style="color:#888">${escapeHtml(String(meta.note))}</span>`;
+      // A provider price-change request gets an inline "generate charge link" action.
+      let actionRow = '';
+      if (ev.event_type === 'price_change_requested' && meta && meta.providerPesos != null) {
+        actionRow = `<div style="margin-top:6px"><button class="action-btn" style="background:#1e3a2a;color:#10b981;border:1px solid #166534" data-pcbtn data-pesos="${escapeHtml(String(meta.providerPesos))}" data-type="${escapeHtml(String(meta.type || 'otro'))}" data-note="${escapeHtml(encodeURIComponent(meta.note || ''))}">Generar link de cambio de precio</button></div>`;
+      }
+      return `<div style="display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid #222">
+        <div><span style="color:#ddd">${escapeHtml(label)}</span> <span style="color:#666;font-size:11px">(${escapeHtml(src)})</span>${extra}${actionRow}</div>
+        <div style="color:#666;font-size:11px;white-space:nowrap">${escapeHtml(timeAgoEs(ev.created_at))}</div>
+      </div>`;
+    }).join('');
+    target.innerHTML = header + (list || '');
+    target.querySelectorAll('[data-pcbtn]').forEach(b => b.addEventListener('click', () => {
+      genPriceChangeLink(orderId, {
+        providerPesos: Number(b.dataset.pesos),
+        type: b.dataset.type || 'otro',
+        note: decodeURIComponent(b.dataset.note || ''),
+      });
+    }));
+  } catch (e) {
+    target.innerHTML = '<div style="color:#555;font-size:12px">Error al cargar la actividad</div>';
+  }
+}
+
+const PC_TYPE_LABEL = {
+  precio_corregido: 'Corrección de precio', horas_adicionales: 'Horas adicionales',
+  servicio_adicional: 'Servicio adicional', materiales: 'Materiales', otro: 'Otro',
+};
+
+async function genPriceChangeLink(orderId, { providerPesos, type, note }) {
+  const ok = await admModal({
+    title: 'Generar cobro por cambio de precio',
+    body: `Se creará un cobro adicional de $${Number(providerPesos).toLocaleString('es-MX')} MXN (servicio) · ${PC_TYPE_LABEL[type] || type}. El cliente lo aprueba y paga por SERVI.`,
+    confirmText: 'Generar link',
+  });
+  if (!ok) return;
+  try {
+    const res = await fetch(API + '/api/admin/orders/' + encodeURIComponent(orderId) + '/price-change', {
+      method: 'POST', headers: headers(),
+      body: JSON.stringify({ providerPesos, type, note }),
+    });
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.message || d.error || 'error');
+    const link = d.flow === 'book' ? d.bookUrl : d.payUrl;
+    if (link) { try { await navigator.clipboard.writeText(link); } catch (_) {} }
+    toast('Link de cambio de precio generado y copiado. Total: ' + fmtMoney(d.totalAmountCents), 'ok', 6000);
+    if (_openDetailOrderId === orderId) { loadOrderLifecycle(orderId); openOrderDetail(orderId); }
+  } catch (e) {
+    toast('Error al generar el cobro: ' + e.message, 'err');
+  }
+}
+
+async function genProviderLink(orderId) {
+  try {
+    const res = await fetch(API + '/api/admin/orders/' + encodeURIComponent(orderId) + '/provider-link', { method: 'POST', headers: headers() });
+    const d = await res.json();
+    if (!res.ok || !d.url) throw new Error(d.error || 'error');
+    _providerLinkCache[orderId] = d.url;
+    try { await navigator.clipboard.writeText(d.url); toast('Link de proveedor copiado al portapapeles', 'ok', 5000); }
+    catch (_) { toast('Link de proveedor: ' + d.url, 'info', 8000); }
+  } catch (e) {
+    toast('Error al generar el link de proveedor', 'err');
+  }
+}
+const _providerLinkCache = {};
 
 function closeOrderDetail() {
   _openDetailOrderId = null;

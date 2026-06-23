@@ -1448,6 +1448,12 @@ const TX = {
     tlCompleted: 'Servicio completado', tlCanceledTitle: 'Pedido cancelado',
     drawerTimeline: 'Estado del pedido', drawerService: 'Servicio', drawerSchedule: 'Fecha y hora',
     drawerAddress: 'Dirección', drawerProvider: 'Especialista', drawerSummary: 'Resumen de pago',
+    drawerPhase: 'Especialista',
+    priceChangeTitle: 'Cambio de precio', priceChangeApprove: 'Aprobar y pagar',
+    // ⚠️ OWNER-APPROVAL REQUIRED: soft retention nudge ONLY. Do NOT turn this into a specific
+    // guarantee/warranty promise (e.g. "protegido por N días") without owner/legal sign-off.
+    retentionNote: '¿Quedaste satisfecho? Puedes volver a contratar a tu especialista por SERVI cuando lo necesites.',
+    phEnRoute: 'En camino 🚗', phArrived: 'Llegó 📍', phStarted: 'Servicio en curso ▶️', phCompleted: 'Servicio terminado ✅',
     asap: 'Lo antes posible', toBeAssigned: 'Por asignar', notProvided: 'No especificada',
     priceProvider: 'Servicio', priceBooking: 'Tarifa de servicio', priceProcessing: 'Procesamiento',
     priceVat: 'IVA', priceTotal: 'Total', priceTotalCharged: 'Total cobrado', priceTotalHold: 'Total autorizado',
@@ -1638,6 +1644,11 @@ const TX = {
     tlCompleted: 'Service completed', tlCanceledTitle: 'Order canceled',
     drawerTimeline: 'Order status', drawerService: 'Service', drawerSchedule: 'Date & time',
     drawerAddress: 'Address', drawerProvider: 'Specialist', drawerSummary: 'Payment summary',
+    drawerPhase: 'Specialist',
+    priceChangeTitle: 'Price change', priceChangeApprove: 'Approve & pay',
+    // ⚠️ OWNER-APPROVAL REQUIRED: soft retention nudge ONLY — never a fixed guarantee/warranty claim.
+    retentionNote: 'Happy with the service? You can rebook your specialist through SERVI whenever you need.',
+    phEnRoute: 'On the way 🚗', phArrived: 'Arrived 📍', phStarted: 'Service in progress ▶️', phCompleted: 'Service finished ✅',
     asap: 'As soon as possible', toBeAssigned: 'To be assigned', notProvided: 'Not provided',
     priceProvider: 'Service', priceBooking: 'Service fee', priceProcessing: 'Processing',
     priceVat: 'VAT', priceTotal: 'Total', priceTotalCharged: 'Total charged', priceTotalHold: 'Total authorized',
@@ -2891,11 +2902,12 @@ function orderStatusMeta(item) {
       return { label: t.stPendingPay, cls: 'is-pending', step: 2, canceled: false };
   }
 }
-function orderTitle(item) { return categoryLabel(item.category); }
+function orderTitle(item) { return item.priceChange ? tr().priceChangeTitle : categoryLabel(item.category); }
 // Smart CTA label by what the order needs from the user: save a card (setup-style),
 // confirm a saved-card booking (book), or pay now (everything else).
 function orderCtaLabel(item) {
   const t = tr();
+  if (item.priceChange) return t.priceChangeApprove;
   const kind = String(item.kind || '').toLowerCase();
   const flow = String(item.payFlow || '').toLowerCase();
   if (kind === 'setup' || kind === 'setup_required') return t.actSaveCard;
@@ -3056,6 +3068,9 @@ function buildReorderUrl(itemOrCategory) {
   params.set('category', match.category);
   params.set('sub', match.sub);
   params.set('service', match.service);
+  // Anti-disintermediation: carry the same specialist as a preference so the rebook routes
+  // back through SERVI (service.html reads ?prefer=<providerId> for the trusted-specialist picker).
+  if (item.providerId) params.set('prefer', item.providerId);
   return '/service.html?' + params.toString();
 }
 
@@ -3301,7 +3316,8 @@ function orderCardHtml(item, idx) {
   const metaItems = [];
   if (when) metaItems.push(`<span class="order-meta-item">${ORDER_ICONS.calendar}<span>${escapeHtml(when)}</span></span>`);
   if (item.address) metaItems.push(`<span class="order-meta-item">${ORDER_ICONS.pin}<span>${escapeHtml(item.address)}</span></span>`);
-  else if (item.providerName) metaItems.push(`<span class="order-meta-item">${ORDER_ICONS.user}<span>${escapeHtml(item.providerName)}</span></span>`);
+  // Anti-disintermediation: show only the masked first name on client surfaces, never full name.
+  else if (item.providerMaskedName) metaItems.push(`<span class="order-meta-item">${ORDER_ICONS.user}<span>${escapeHtml(item.providerMaskedName)}</span></span>`);
 
   const actions = [];
   if (orderIsPayable(item)) actions.push(`<button class="order-cta" onclick="event.stopPropagation();startOrderPayment('${escapeHtml(item.id)}','${escapeHtml(item.payFlow || item.kind)}',this)">${escapeHtml(orderCtaLabel(item))}</button>`);
@@ -3928,6 +3944,16 @@ async function submitRecurring(btn) {
 }
 
 // ── Detail drawer ──
+function servicePhaseLabel(phase, t) {
+  switch (String(phase || '').trim()) {
+    case 'en_route':  return t.phEnRoute;
+    case 'arrived':   return t.phArrived;
+    case 'started':   return t.phStarted;
+    case 'completed': return t.phCompleted;
+    default: return null;
+  }
+}
+
 function orderTimelineHtml(item) {
   const t = tr();
   const meta = orderStatusMeta(item);
@@ -3954,7 +3980,13 @@ function orderDrawerInfoHtml(item) {
   if (item.description) rows.push(row(ORDER_ICONS.doc, t.drawerService, item.description));
   rows.push(row(ORDER_ICONS.calendar, t.drawerSchedule, orderScheduleLabel(item)));
   rows.push(row(ORDER_ICONS.pin, t.drawerAddress, item.address || t.notProvided));
-  if (item.source === 'order') rows.push(row(ORDER_ICONS.user, t.drawerProvider, item.providerName || t.toBeAssigned));
+  // Anti-disintermediation: client sees the masked first name only (full name/contact never sent).
+  if (item.source === 'order') rows.push(row(ORDER_ICONS.user, t.drawerProvider, item.providerMaskedName || t.toBeAssigned));
+  // Live in-service phase (provider check-in), shown while the service is active and not yet completed.
+  const phaseLabel = servicePhaseLabel(item.servicePhase, t);
+  if (item.source === 'order' && phaseLabel && item.bucket === 'active') {
+    rows.push(row(ORDER_ICONS.check, t.drawerPhase, phaseLabel));
+  }
   return rows.join('');
 }
 
@@ -4185,6 +4217,7 @@ function orderDrawerHtml(item) {
     </div>
     ${(item.source === 'order' && item.policy && item.policy.canRate) ? `<div class="drawer-section">${orderRatingHtml(item)}</div>` : ''}
     ${summary ? `<div class="drawer-section"><div class="drawer-section-title">${escapeHtml(t.drawerSummary)}</div>${summary}</div>` : ''}
+    ${(item.source === 'order' && !item.priceChange && item.bucket === 'past' && !meta.canceled) ? `<div class="drawer-section"><div class="order-note" style="font-size:12.5px;line-height:1.5;color:#6b7280">${escapeHtml(t.retentionNote)}</div></div>` : ''}
     ${orderDrawerActionsHtml(item)}`;
 }
 

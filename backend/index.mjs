@@ -2536,6 +2536,96 @@ async function reconcileOrderStatusFromStripe(row, opts = {}) {
   }
 }
 
+// ── In-service lifecycle (Phase 1) ────────────────────────────────────────────
+// Tracks operational signals between "Confirmed" (hold placed) and capture WITHOUT
+// touching the payment `status` state machine. Milestones advance a forward-only
+// `service_phase` snapshot on all_bookings so list reads stay cheap; every event is
+// also appended to order_lifecycle_events for the full audit trail/timeline.
+
+// Forward-only rank for the milestone phases. A stale event can never regress the snapshot.
+const SERVICE_PHASE_RANK = { en_route: 1, arrived: 2, started: 3, completed: 4 };
+const MILESTONE_EVENTS = new Set(['en_route', 'arrived', 'started', 'completed']);
+
+async function recordLifecycleEvent(orderId, {
+  eventType,
+  source,
+  actorRef = null,
+  channel = null,
+  lat = null,
+  lng = null,
+  accuracyM = null,
+  metadata = null,
+} = {}) {
+  if (!orderId || !eventType || !source) {
+    throw new Error('recordLifecycleEvent requires orderId, eventType, source');
+  }
+  const id = randomUUID();
+  await pool.query(
+    `INSERT INTO order_lifecycle_events
+       (id, order_id, event_type, source, actor_ref, channel, lat, lng, accuracy_m, metadata)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+    [id, orderId, eventType, source, actorRef, channel, lat, lng, accuracyM,
+     metadata ? JSON.stringify(metadata) : null]
+  );
+
+  // Denormalize the milestone snapshot (forward-only).
+  if (MILESTONE_EVENTS.has(eventType)) {
+    await pool.query(
+      `UPDATE all_bookings
+          SET service_phase = $1, service_phase_at = NOW()
+        WHERE id = $2
+          AND COALESCE($3, 0) >= COALESCE(
+                CASE service_phase
+                  WHEN 'en_route' THEN 1 WHEN 'arrived' THEN 2
+                  WHEN 'started' THEN 3 WHEN 'completed' THEN 4 ELSE 0 END, 0)`,
+      [eventType, orderId, SERVICE_PHASE_RANK[eventType] || 0]
+    );
+  }
+
+  // Persist last shared location alongside the event.
+  if (eventType === 'location_shared' && lat != null && lng != null) {
+    await pool.query(
+      `UPDATE all_bookings
+          SET last_provider_lat = $1, last_provider_lng = $2, last_location_at = NOW()
+        WHERE id = $3`,
+      [lat, lng, orderId]
+    );
+  }
+
+  // Mirror to the Sheet relay as a NEW type so it bypasses the order.status forward-only map.
+  postToGoogleWebhook({
+    type: 'order.lifecycle', orderId, eventType, source, channel: channel || ''
+  });
+
+  return id;
+}
+
+// Mint (or rotate) the per-order provider capability link token. Same crypto/storage shape as
+// retry_token (issueFreshOrderPaymentLink) but a DISTINCT column so the payment link and the
+// provider link have independent lifetimes/revocation.
+async function issueProviderLinkToken(orderId) {
+  const token = randomBytes(12).toString('base64url');
+  await pool.query(
+    `UPDATE all_bookings
+        SET provider_link_token = $1, provider_link_created_at = NOW()
+      WHERE id = $2`,
+    [token, orderId]
+  );
+  return token;
+}
+
+// Resolve an order row from a provider-link token (constant-time compare against the stored token).
+// Returns the row or null. The token itself is the capability — no separate provider auth.
+async function resolveProviderLinkOrder(orderId, providerToken) {
+  const token = String(providerToken || '').trim();
+  if (!orderId || !token) return null;
+  const { rows } = await pool.query('SELECT * FROM all_bookings WHERE id = $1', [orderId]);
+  const row = rows[0];
+  if (!row || !row.provider_link_token) return null;
+  if (!constantTimeEquals(row.provider_link_token, token)) return null;
+  return row;
+}
+
 // Reconciles a list of order rows in place — only the bounded subset that could actually advance
 // (card PI present, not cash, not already settled), capped and run in parallel so a list read
 // makes at most a handful of Stripe calls. Each worthy row triggers its own retrieve.
@@ -3602,6 +3692,22 @@ app.post('/tasks/preauth-due', adminRateLimit, requireAdminAuth, async (req, res
       console.warn('[preauth-due] revoked_sessions prune failed (non-blocking):', pruneErr?.message || pruneErr);
     }
 
+    // Privacy housekeeping: drop stored provider coordinates once an order is settled. Location
+    // is one-shot and only needed while a service is in progress; we don't retain it past capture.
+    let locationsCleared = 0;
+    try {
+      const clearRes = await pool.query(
+        `UPDATE all_bookings
+            SET last_provider_lat = NULL, last_provider_lng = NULL
+          WHERE last_provider_lat IS NOT NULL
+            AND (status IN ('Captured','Refunded','Pending Cash') OR status ILIKE 'cancel%')`
+      );
+      locationsCleared = clearRes.rowCount || 0;
+      if (locationsCleared) console.log('[preauth-due] cleared provider coordinates on settled orders:', locationsCleared);
+    } catch (locErr) {
+      console.warn('[preauth-due] location cleanup failed (non-blocking):', locErr?.message || locErr);
+    }
+
     // Same hourly trigger drives the Service Calendar: materialize due recurring-service
     // occurrences into intake requests. Best-effort — never blocks the preauth response.
     let recurring = null;
@@ -3612,7 +3718,7 @@ app.post('/tasks/preauth-due', adminRateLimit, requireAdminAuth, async (req, res
       console.warn('[preauth-due] recurring materialization failed (non-blocking):', recErr?.message || recErr);
     }
 
-    res.json({ ok: true, processed: results.length, results, revokedPruned, recurring });
+    res.json({ ok: true, processed: results.length, results, revokedPruned, locationsCleared, recurring });
   } catch (e) {
     console.error('preauth-due error:', e);
     res.status(500).json({ ok: false, error: e.message || 'internal' });
@@ -3985,17 +4091,17 @@ app.get('/book', async (req, res) => {
 
 // Create an adjustment child order; saved clients now confirm via book.html and guests via pay.html.
 // HONORS Sheets "Capture Type" via req.body.capture = 'automatic' | 'manual'
-app.post('/create-adjustment', adminRateLimit, requireAdminAuth, async (req, res) => {
-  try {
-    const { parentOrderId, amount, note, capture } = req.body || {};
-    if (!parentOrderId) return res.status(400).send({ error: 'missing_parent', message: 'parentOrderId required' });
+// Core adjustment-creation logic, shared by the admin /create-adjustment route and the Phase-4
+// price-change flow. Creates a child order (kind='adjustment') for an additional charge, recomputes
+// fees, copies contact/card from the parent, and returns the routing/link info. Throws Error with a
+// `.code` ('invalid_amount' | 'parent_not_found' | 'pricing_failed') so callers can map HTTP status.
+async function createAdjustmentChild({ parentOrderId, amount, note, capture }) {
+  const baseAmountCents = Number(amount);
+  if (!Number.isInteger(baseAmountCents) || baseAmountCents <= 0) {
+    throw Object.assign(new Error('amount must be a positive integer (cents)'), { code: 'invalid_amount' });
+  }
 
-    const baseAmountCents = Number(amount);
-    if (!Number.isInteger(baseAmountCents) || baseAmountCents <= 0) {
-      return res.status(400).send({ error: 'invalid_amount', message: 'amount must be a positive integer (cents)' });
-    }
-
-    const parentResult = await pool.query(
+  const parentResult = await pool.query(
       `SELECT customer_id,
               saved_payment_method_id,
               payment_intent_id,
@@ -4015,7 +4121,7 @@ app.post('/create-adjustment', adminRateLimit, requireAdminAuth, async (req, res
       [parentOrderId]
     );
     const parentOrder = parentResult.rows[0];
-    if (!parentOrder) return res.status(404).send({ error: 'parent_not_found', message: 'Parent order not found' });
+    if (!parentOrder) throw Object.assign(new Error('Parent order not found'), { code: 'parent_not_found' });
 
     const consent = await pool.query('SELECT 1 FROM consented_offsession_bookings WHERE order_id=$1', [parentOrderId]);
     const hasConsent = consent.rows.length > 0;
@@ -4026,13 +4132,12 @@ app.post('/create-adjustment', adminRateLimit, requireAdminAuth, async (req, res
     const providerPricePesos = baseAmountCents / 100;
     const parentBookingType = normalizeBookingType(parentOrder.booking_type);
     const parentBookingKey = bookingTypeKey(parentBookingType);
-    const parentProviderCents = Number(parentOrder.provider_amount || 0);
 
     let pricing;
     try {
       pricing = computePricing({ providerPricePesos });
     } catch (err) {
-      return res.status(400).send({ error: 'pricing_failed', message: err?.message || 'Unable to compute pricing for adjustment' });
+      throw Object.assign(new Error(err?.message || 'Unable to compute pricing for adjustment'), { code: 'pricing_failed' });
     }
 
     const {
@@ -4158,7 +4263,7 @@ app.post('/create-adjustment', adminRateLimit, requireAdminAuth, async (req, res
     });
 
     const links = buildFrontendLinks(childId);
-    return res.send({
+    return {
       childOrderId: childId,
       publicCode,
       mode: flow,
@@ -4178,12 +4283,30 @@ app.post('/create-adjustment', adminRateLimit, requireAdminAuth, async (req, res
       payUrl: links.payUrl,
       successUrl: links.successUrl,
       bookUrl: links.bookUrl
-    });
+    };
+}
+
+function adjustmentErrorToHttp(err) {
+  if (err?.code === 'invalid_amount') return { status: 400, body: { error: 'invalid_amount', message: err.message } };
+  if (err?.code === 'parent_not_found') return { status: 404, body: { error: 'parent_not_found', message: 'Parent order not found' } };
+  if (err?.code === 'pricing_failed') return { status: 400, body: { error: 'pricing_failed', message: err.message } };
+  return null;
+}
+
+app.post('/create-adjustment', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const { parentOrderId, amount, note, capture } = req.body || {};
+    if (!parentOrderId) return res.status(400).send({ error: 'missing_parent', message: 'parentOrderId required' });
+    const result = await createAdjustmentChild({ parentOrderId, amount, note, capture });
+    return res.send(result);
   } catch (err) {
+    const mapped = adjustmentErrorToHttp(err);
+    if (mapped) return res.status(mapped.status).send(mapped.body);
     console.error('[create-adjustment] error:', err);
     return res.status(500).send({ error: 'internal_error' });
   }
 });
+
 
 // 🚫 Cancel order (no refund; captured orders not cancelable)
 app.post('/cancel-order', adminRateLimit, requireAdminAuth, async (req, res) => {
@@ -4469,7 +4592,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
       const nextStatus = isPenaltyCapture ? 'Canceled (late fee)' : 'Captured';
       console.log(`${isPenaltyCapture ? '🚫 Canceled (late fee)' : '💰 Captured'} (payment_intent.succeeded):`, paymentIntentId);
 
-      const r = await pool.query('SELECT id, customer_id FROM all_bookings WHERE payment_intent_id = $1 LIMIT 1', [paymentIntentId]);
+      const r = await pool.query('SELECT id, customer_id, kind, parent_id_of_adjustment FROM all_bookings WHERE payment_intent_id = $1 LIMIT 1', [paymentIntentId]);
       const row = r.rows[0] || {};
 
       // Forward-only, mirroring the sibling handlers: never overwrite a refund, and never let a
@@ -4484,6 +4607,17 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
           `UPDATE all_bookings SET status = $1 WHERE payment_intent_id = $2 AND status <> 'Refunded' AND status NOT ILIKE 'Cancel%'`,
           [nextStatus, paymentIntentId]
         );
+      }
+
+      // Phase 4: a captured adjustment child means the client paid an approved price change.
+      // Log it on the PARENT order's lifecycle so the timeline closes the loop.
+      if (!isPenaltyCapture && row.kind === 'adjustment' && row.parent_id_of_adjustment) {
+        try {
+          await recordLifecycleEvent(row.parent_id_of_adjustment, {
+            eventType: 'price_change_confirmed', source: 'client', channel: 'system',
+            metadata: { adjustmentOrderId: row.id },
+          });
+        } catch (lcErr) { console.warn('[price_change_confirmed] lifecycle log failed:', lcErr?.message || lcErr); }
       }
 
       postToGoogleWebhook({ type: 'order.status', paymentIntentId, status: nextStatus, orderId: row.id || '', customerId: row.customer_id || '' });
@@ -8169,7 +8303,8 @@ app.get('/api/auth/orders', async (req, res) => {
               service_date, service_datetime, is_asap, service_address, provider_id, provider_name,
               amount, provider_amount, booking_fee_amount, processing_fee_amount,
               vat_amount, pricing_total_amount, final_captured_amount,
-              cash_selected, customer_id, payment_intent_id, created_at
+              cash_selected, customer_id, payment_intent_id, created_at,
+              service_phase, service_phase_at
          FROM all_bookings
         WHERE ${matchClause}
           AND COALESCE(parent_id_of_adjustment, '') = ''
@@ -8221,8 +8356,12 @@ app.get('/api/auth/orders', async (req, res) => {
       isAsap: !!r.is_asap,
       address: r.service_address || null,
       providerId: r.provider_id || null,
-      providerName: r.provider_name || null,
+      // Anti-disintermediation: the customer surface never receives the provider's full name or
+      // contact — only the masked "First L." form. (Admin uses /api/admin/orders for full detail.)
+      providerName: maskProviderName(r.provider_name),
       providerMaskedName: maskProviderName(r.provider_name),
+      servicePhase: r.service_phase || null,
+      servicePhaseAt: r.service_phase_at || null,
       rating: ratingByOrder[r.id] || null,
       rated: !!ratingByOrder[r.id],
       cashSelected: !!r.cash_selected,
@@ -8241,6 +8380,65 @@ app.get('/api/auth/orders', async (req, res) => {
         captured: r.final_captured_amount != null,
       },
     }));
+
+    // Phase 4: payable price-change adjustments (child orders) surfaced as their own
+    // "Cambio de precio" items so an account user can approve/pay them from My Orders.
+    const { rows: adjRows } = await pool.query(
+      `SELECT id, public_code, kind, status, category, service_description,
+              service_date, service_datetime, is_asap, service_address, provider_id, provider_name,
+              amount, provider_amount, booking_fee_amount, processing_fee_amount,
+              vat_amount, pricing_total_amount, final_captured_amount,
+              cash_selected, customer_id, payment_intent_id, created_at,
+              parent_id_of_adjustment, adjustment_reason
+         FROM all_bookings
+        WHERE ${matchClause}
+          AND kind = 'adjustment'
+          AND lower(COALESCE(status,'')) IN ('pending','new','pending (3ds)','setup required','setup created','scheduled','confirmed')
+        ORDER BY created_at DESC
+        LIMIT 50`,
+      ids
+    );
+    await reconcileOrderRows(adjRows);
+    adjRows.forEach((r) => {
+      orders.push({
+        id: r.id,
+        source: 'order',
+        priceChange: true,
+        parentOrderId: r.parent_id_of_adjustment || null,
+        adjustmentReason: r.adjustment_reason || null,
+        publicCode: r.public_code || null,
+        kind: 'adjustment',
+        status: r.status || null,
+        bucket: customerOrderBucket(r.status),
+        category: r.category || null,
+        description: r.adjustment_reason || r.service_description || null,
+        serviceDate: r.service_date || null,
+        serviceDateTime: r.service_datetime || null,
+        preferredTime: null,
+        isAsap: !!r.is_asap,
+        address: r.service_address || null,
+        providerId: r.provider_id || null,
+        providerName: maskProviderName(r.provider_name),
+        providerMaskedName: maskProviderName(r.provider_name),
+        rating: null,
+        rated: false,
+        cashSelected: !!r.cash_selected,
+        payable: isOrderPayableOnline(r),
+        payFlow: orderPayFlow(r),
+        policy: computeOrderActionPolicy(r),
+        createdAt: r.created_at,
+        pricing: {
+          total: r.pricing_total_amount ?? r.amount ?? null,
+          amount: r.amount ?? null,
+          providerAmount: r.provider_amount ?? null,
+          bookingFee: r.booking_fee_amount ?? null,
+          processingFee: r.processing_fee_amount ?? null,
+          vat: r.vat_amount ?? null,
+          finalCaptured: r.final_captured_amount ?? null,
+          captured: r.final_captured_amount != null,
+        },
+      });
+    });
 
     const requests = reqRows.map((r) => {
       const reqBucket = customerRequestBucket(r.status);
@@ -8310,7 +8508,7 @@ app.post('/api/auth/orders/:id/payment-link', publicFormLimit, async (req, res) 
          FROM all_bookings
         WHERE id = $${ids.length + 1}
           AND (${conds.join(' OR ')})
-          AND COALESCE(parent_id_of_adjustment, '') = ''
+          AND (COALESCE(parent_id_of_adjustment, '') = '' OR COALESCE(kind, '') = 'adjustment')
         LIMIT 1`,
       [...ids, req.params.id]
     );
@@ -9294,6 +9492,227 @@ app.post('/api/admin/orders/:id/changes', adminRateLimit, requireAdminAuth, asyn
   } catch (err) {
     console.error('[POST /api/admin/orders/:id/changes]', err);
     return res.status(500).json({ error: 'internal_error', message: err.message });
+  }
+});
+
+// ── In-service lifecycle (Phase 1) ────────────────────────────────────────────
+
+// Admin: read the in-service timeline (check-ins, contacts, location, price-change events).
+app.get('/api/admin/orders/:id/lifecycle', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { rows: orderRows } = await pool.query(
+      `SELECT service_phase, service_phase_at, last_provider_lat, last_provider_lng,
+              last_location_at, provider_link_token, provider_link_created_at
+         FROM all_bookings WHERE id = $1 LIMIT 1`,
+      [id]
+    );
+    if (!orderRows.length) return res.status(404).json({ error: 'not_found' });
+    const { rows: events } = await pool.query(
+      `SELECT id, event_type, source, actor_ref, channel, lat, lng, accuracy_m, metadata, created_at
+         FROM order_lifecycle_events WHERE order_id = $1 ORDER BY created_at DESC LIMIT 200`,
+      [id]
+    );
+    const o = orderRows[0];
+    return res.json({
+      items: events,
+      phase: o.service_phase || null,
+      phaseAt: o.service_phase_at || null,
+      lastLocation: (o.last_provider_lat != null && o.last_provider_lng != null)
+        ? { lat: o.last_provider_lat, lng: o.last_provider_lng, at: o.last_location_at }
+        : null,
+      providerLinkActive: Boolean(o.provider_link_token),
+    });
+  } catch (err) {
+    console.error('[GET /api/admin/orders/:id/lifecycle]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// Admin: log a contact attempt (provider or client). The wa.me/mailto link is opened client-side;
+// this endpoint only records the touch so the timeline has an audit trail. Channel-agnostic so a
+// future messaging API can write the same event server-side. (Phase 2)
+app.post('/api/admin/orders/:id/contact-log', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { target, templateId, channel } = req.body || {};
+    if (!['provider', 'client'].includes(String(target || ''))) {
+      return res.status(400).json({ error: 'invalid_target' });
+    }
+    const { rows } = await pool.query('SELECT id FROM all_bookings WHERE id = $1 LIMIT 1', [id]);
+    if (!rows.length) return res.status(404).json({ error: 'not_found' });
+    await recordLifecycleEvent(id, {
+      eventType: target === 'provider' ? 'provider_contacted' : 'client_contacted',
+      source: 'admin',
+      channel: ['wa', 'email'].includes(String(channel || '')) ? channel : null,
+      metadata: templateId ? { templateId: String(templateId).slice(0, 60) } : null,
+    });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('[POST /api/admin/orders/:id/contact-log]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// Admin: mint / rotate the per-order provider capability link.
+app.post('/api/admin/orders/:id/provider-link', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { rows } = await pool.query('SELECT id FROM all_bookings WHERE id = $1 LIMIT 1', [id]);
+    if (!rows.length) return res.status(404).json({ error: 'not_found' });
+    const token = await issueProviderLinkToken(id);
+    const url = buildFrontendUrl('/provider.html', { order: id, pt: token });
+    return res.json({ ok: true, url, token });
+  } catch (err) {
+    console.error('[POST /api/admin/orders/:id/provider-link]', err);
+    return res.status(500).json({ error: 'internal_error', message: err.message });
+  }
+});
+
+// Provider (public, token-gated): minimal order view for the provider link. Never exposes
+// client phone/email/full name or pricing — only what the provider needs to do the job.
+app.get('/api/provider/order', publicFormLimit, async (req, res) => {
+  try {
+    const row = await resolveProviderLinkOrder(req.query.order, req.query.pt);
+    if (!row) return res.status(404).json({ error: 'not_found' });
+    return res.json({
+      order: {
+        publicCode: row.public_code || null,
+        clientFirstName: maskProviderName(row.client_name),
+        category: row.category || null,
+        serviceDescription: row.service_description || null,
+        serviceAddress: row.service_address || null,
+        serviceDateTime: row.service_datetime || null,
+        serviceDate: row.service_date || null,
+        isAsap: !!row.is_asap,
+        servicePhase: row.service_phase || null,
+      },
+    });
+  } catch (err) {
+    console.error('[GET /api/provider/order]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// Provider (public, token-gated): milestone check-in (en_route|arrived|started|completed).
+app.post('/api/provider/checkin', publicFormLimit, async (req, res) => {
+  try {
+    const { order, pt, event } = req.body || {};
+    if (!MILESTONE_EVENTS.has(String(event || ''))) {
+      return res.status(400).json({ error: 'invalid_event' });
+    }
+    const row = await resolveProviderLinkOrder(order, pt);
+    if (!row) return res.status(404).json({ error: 'not_found' });
+    await recordLifecycleEvent(row.id, {
+      eventType: event, source: 'provider', actorRef: row.provider_id || null, channel: 'provider_link',
+    });
+    return res.json({ ok: true, phase: event });
+  } catch (err) {
+    console.error('[POST /api/provider/checkin]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// Allowed price-change types (provider-selected). Stored in event metadata + adjustment reason.
+const PRICE_CHANGE_TYPES = new Set(['precio_corregido', 'horas_adicionales', 'servicio_adicional', 'materiales', 'otro']);
+const PRICE_CHANGE_TYPE_LABEL = {
+  precio_corregido: 'Corrección de precio', horas_adicionales: 'Horas adicionales',
+  servicio_adicional: 'Servicio adicional', materiales: 'Materiales', otro: 'Otro',
+};
+
+// Provider (public, token-gated): propose a mid-service price change. Records the request and
+// returns a client-facing total preview. Does NOT move money — admin generates the charge link.
+app.post('/api/provider/price-change', publicFormLimit, async (req, res) => {
+  try {
+    const { order, pt, amount, type, note } = req.body || {};
+    const pesos = Number(amount);
+    if (!Number.isFinite(pesos) || pesos <= 0) return res.status(400).json({ error: 'invalid_amount' });
+    const changeType = PRICE_CHANGE_TYPES.has(String(type || '')) ? type : 'otro';
+    const row = await resolveProviderLinkOrder(order, pt);
+    if (!row) return res.status(404).json({ error: 'not_found' });
+
+    let preview = null;
+    try {
+      const pricing = computePricing({ providerPricePesos: pesos });
+      preview = { total: pricing.totalAmountCents, providerAmount: pricing.providerAmountCents };
+    } catch (_) { preview = null; }
+
+    await recordLifecycleEvent(row.id, {
+      eventType: 'price_change_requested', source: 'provider', actorRef: row.provider_id || null,
+      channel: 'provider_link',
+      metadata: {
+        type: changeType,
+        amount: Math.round(pesos * 100),            // cents, for the admin timeline
+        providerPesos: pesos,
+        note: String(note || '').slice(0, 500) || null,
+        previewTotal: preview ? preview.total : null,
+      },
+    });
+    return res.json({ ok: true, preview });
+  } catch (err) {
+    console.error('[POST /api/provider/price-change]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// Admin: turn a provider's price-change request into a chargeable adjustment + payment link
+// (reuses the existing extra-charge engine). Body: { providerPesos, type, note, capture? }.
+app.post('/api/admin/orders/:id/price-change', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { providerPesos, type, note, capture } = req.body || {};
+    const pesos = Number(providerPesos);
+    if (!Number.isFinite(pesos) || pesos <= 0) return res.status(400).json({ error: 'invalid_amount' });
+    const changeType = PRICE_CHANGE_TYPES.has(String(type || '')) ? type : 'otro';
+    const typeLabel = PRICE_CHANGE_TYPE_LABEL[changeType] || 'Cambio de precio';
+    const reason = `Cambio de precio · ${typeLabel}${note ? ' · ' + String(note).slice(0, 200) : ''}`;
+
+    let result;
+    try {
+      result = await createAdjustmentChild({
+        parentOrderId: id, amount: Math.round(pesos * 100), note: reason, capture,
+      });
+    } catch (err) {
+      const mapped = adjustmentErrorToHttp(err);
+      if (mapped) return res.status(mapped.status).json(mapped.body);
+      throw err;
+    }
+
+    await recordLifecycleEvent(id, {
+      eventType: 'price_change_link_created', source: 'admin', channel: 'admin_panel',
+      metadata: {
+        type: changeType, amount: result.totalAmountCents,
+        childOrderId: result.childOrderId, flow: result.flow,
+      },
+    });
+    return res.json(result);
+  } catch (err) {
+    console.error('[POST /api/admin/orders/:id/price-change]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// Provider (public, token-gated): one-shot location share (no continuous tracking).
+app.post('/api/provider/location', publicFormLimit, async (req, res) => {
+  try {
+    const { order, pt, lat, lng, accuracy } = req.body || {};
+    const latN = Number(lat), lngN = Number(lng);
+    if (!Number.isFinite(latN) || !Number.isFinite(lngN) ||
+        latN < -90 || latN > 90 || lngN < -180 || lngN > 180) {
+      return res.status(400).json({ error: 'invalid_coords' });
+    }
+    const accN = Number(accuracy);
+    const row = await resolveProviderLinkOrder(order, pt);
+    if (!row) return res.status(404).json({ error: 'not_found' });
+    await recordLifecycleEvent(row.id, {
+      eventType: 'location_shared', source: 'provider', actorRef: row.provider_id || null,
+      channel: 'provider_link', lat: latN, lng: lngN,
+      accuracyM: Number.isFinite(accN) ? Math.round(accN) : null,
+    });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('[POST /api/provider/location]', err);
+    return res.status(500).json({ error: 'internal_error' });
   }
 });
 
