@@ -1059,6 +1059,44 @@ function buildSubmissionAttachmentsInline(attachments) {
   return `<div class="submission-attachments">${shown}${more}</div>`;
 }
 
+function parseAiEvidence(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.map(String).filter(Boolean);
+  if (typeof value === 'object') return Object.values(value).map(String).filter(Boolean);
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) return parsed.map(String).filter(Boolean);
+    if (parsed && typeof parsed === 'object') return Object.values(parsed).map(String).filter(Boolean);
+  } catch (_) {}
+  return String(value).trim() ? [String(value).trim()] : [];
+}
+
+function aiStatusMeta(s) {
+  const raw = String(s.ai_status || '').toLowerCase();
+  if (raw === 'understood') return { label: 'AI entendido', bg: '#064e3b', fg: '#a7f3d0', border: '#047857' };
+  if (raw === 'unclear') return { label: 'AI no descifró', bg: '#451a03', fg: '#fed7aa', border: '#b45309' };
+  if (raw === 'manual_review') return { label: 'Revisión manual', bg: '#1f2937', fg: '#d1d5db', border: '#4b5563' };
+  if (['voice', 'video', 'photos'].includes(String(s.request_mode || '').toLowerCase()) && !s.matched_service) {
+    return { label: 'Revisión manual', bg: '#1f2937', fg: '#d1d5db', border: '#4b5563' };
+  }
+  return null;
+}
+
+function buildAiStatusBadge(s) {
+  const meta = aiStatusMeta(s);
+  if (!meta) return '';
+  return `<br><span class="badge" style="background:${meta.bg};color:${meta.fg};border:1px solid ${meta.border};margin-top:3px">AI · ${escapeHtml(meta.label)}</span>`;
+}
+
+function buildAiStatusNote(s) {
+  const meta = aiStatusMeta(s);
+  if (!meta) return '';
+  const evidence = parseAiEvidence(s.ai_evidence).slice(0, 2).join(' · ');
+  const reason = s.ai_reason ? String(s.ai_reason) : '';
+  const detail = evidence || reason;
+  return `<div style="margin-top:6px;font-size:11px;color:${meta.fg};background:${meta.bg};border:1px solid ${meta.border};border-radius:6px;padding:5px 7px">${escapeHtml(meta.label)}${detail ? ': ' + escapeHtml(detail) : ''}</div>`;
+}
+
 // ─── Toasts ──────────────────────────────────────────────────────────────────
 function toast(msg, type = 'ok', timeout = 4200) {
   const stack = document.getElementById('toast-stack');
@@ -2055,6 +2093,7 @@ function buildSubmissionRow(s) {
   _subsCache[s.id] = s;
   const detail = (s.category || '') + (s.description ? ' — ' + s.description.slice(0, 60) : '');
   const attachmentsHtml = buildSubmissionAttachmentsInline(s.attachments);
+  const aiStatusHtml = buildAiStatusNote(s);
   const isCanceled = /^cancel/i.test(String(s.status || ''));
   const border = isCanceled ? '#ef4444' : '#7c3aed';
   const code = isCanceled ? '#ef4444' : '#a78bfa';
@@ -2063,7 +2102,7 @@ function buildSubmissionRow(s) {
     : '';
   const badge = (isCanceled
     ? `<span class="badge badge-canceled">Cancelado · Cliente</span>`
-    : `<span class="badge badge-web">Web · Sin enlace</span>`) + trustedBadge;
+    : `<span class="badge badge-web">Web · Sin enlace</span>`) + buildAiStatusBadge(s) + trustedBadge;
   const action = isCanceled
     ? `<span style="color:#888;font-size:11px">Retirado por cliente</span>`
     : `<button class="action-btn" style="background:#3b0764;color:#c4b5fd;border:1px solid #6d28d9"
@@ -2075,6 +2114,7 @@ function buildSubmissionRow(s) {
       <td>${escapeHtml(s.client_name || '—')}<br><span style="color:#666;font-size:11px">${escapeHtml(s.client_phone || '')}</span></td>
       <td class="submission-detail" title="${escapeHtml(detail)}">
         <div class="submission-detail-text">${escapeHtml(detail)}</div>
+        ${aiStatusHtml}
         ${attachmentsHtml}
       </td>
       <td><span style="color:#555;font-size:11px">Sin precio</span></td>
@@ -2097,6 +2137,7 @@ function openSubmissionLinkModal(subId) {
     ? (sub.preferred_date + 'T' + sub.preferred_time)
     : '';
   const preferredSchedule = submissionSchedulePlainText(sub);
+  const aiStatusHtml = buildAiStatusNote(sub);
 
   const overlay = document.createElement('div');
   overlay.id = 'sub-modal-overlay';
@@ -2104,11 +2145,12 @@ function openSubmissionLinkModal(subId) {
   overlay.innerHTML = `
     <div class="adm-box" style="width:480px;max-width:96%" onclick="event.stopPropagation()">
       <h3 style="margin-bottom:6px">+ Crear enlace de pago</h3>
-      <p style="font-size:12px;color:#666;margin-bottom:16px">
+      <div style="font-size:12px;color:#666;margin-bottom:16px">
         ${escapeHtml(sub.client_name)} · ${escapeHtml(sub.client_phone)} · ${escapeHtml(sub.category || '')}
         ${sub.service_address ? '<br>' + escapeHtml(sub.service_address) : ''}
         ${sub.description ? '<br><span style="font-style:italic">"' + escapeHtml(sub.description.slice(0,80)) + (sub.description.length > 80 ? '…' : '') + '"</span>' : ''}
-      </p>
+        ${aiStatusHtml}
+      </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
         <div>
           <label class="form-label">Monto proveedor (MXN) *</label>

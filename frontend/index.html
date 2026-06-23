@@ -59,43 +59,37 @@
           onkeydown="if(event.key==='Enter'&&(event.metaKey||event.ctrlKey)){event.preventDefault();window._dashSubmitText()}"
         ></textarea>
         <div class="dash-hero__textarea-bar">
-          <button class="dash-hero__attach-btn" type="button" onclick="window._dashToggleAttachMenu(event)" aria-label="Adjuntar foto, video o audio" aria-haspopup="true" aria-expanded="false" id="dash-attach-btn">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6v12M6 12h12"/></svg>
-          </button>
           <button class="dash-hero__send-btn" type="button" onclick="window._dashSubmitText()" aria-label="Enviar">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
           </button>
         </div>
 
-        <!-- Attach menu (photo / voice / video capture) — revealed by the "+" button -->
-        <div class="dash-hero__attach-menu" id="dash-attach-menu" hidden role="menu" aria-labelledby="dash-attach-btn">
-          <p class="dash-hero__media-label" id="dash-media-label">Attach to description or send request using:</p>
-          <div class="dash-hero__media-row">
-            <button class="dash-hero__media-btn" type="button" onclick="window._dashShowCameraExplain()" aria-label="Cámara" id="dash-camera-btn">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
-              <span class="dash-hero__media-txt">
-                <span class="dash-hero__media-title" id="dash-camera-title">Agregar fotos</span>
-                <span class="dash-hero__media-sub" id="dash-camera-sub">Toma o sube</span>
-              </span>
-            </button>
-            <button class="dash-hero__media-btn" type="button" onclick="window._dashShowMicExplain()" aria-label="Micrófono" id="dash-mic-btn">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
-              <span class="dash-hero__media-txt">
-                <span class="dash-hero__media-title" id="dash-mic-title">Nota de voz</span>
-                <span class="dash-hero__media-sub" id="dash-mic-sub">Dilo en voz alta</span>
-              </span>
-            </button>
-            <button class="dash-hero__media-btn" type="button" onclick="window._dashShowVideoExplain()" aria-label="Video" id="dash-video-btn">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
-              <span class="dash-hero__media-txt">
-                <span class="dash-hero__media-title" id="dash-video-title">Grabar un video</span>
-                <span class="dash-hero__media-sub" id="dash-video-sub">Muestra el problema</span>
-              </span>
-            </button>
-          </div>
-        </div>
-
         <div class="dash-atts" id="dash-atts" hidden></div>
+      </div>
+
+      <p class="dash-hero__media-label" id="dash-media-label">O envía tu solicitud por:</p>
+      <div class="dash-hero__media-row">
+        <button class="dash-hero__media-btn" type="button" onclick="window._dashShowCameraExplain()" aria-label="Cámara" id="dash-camera-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
+          <span class="dash-hero__media-txt">
+            <span class="dash-hero__media-title" id="dash-camera-title">Agregar fotos</span>
+            <span class="dash-hero__media-sub" id="dash-camera-sub">Toma o sube</span>
+          </span>
+        </button>
+        <button class="dash-hero__media-btn" type="button" onclick="window._dashShowMicExplain()" aria-label="Micrófono" id="dash-mic-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+          <span class="dash-hero__media-txt">
+            <span class="dash-hero__media-title" id="dash-mic-title">Nota de voz</span>
+            <span class="dash-hero__media-sub" id="dash-mic-sub">Dilo en voz alta</span>
+          </span>
+        </button>
+        <button class="dash-hero__media-btn" type="button" onclick="window._dashShowVideoExplain()" aria-label="Video" id="dash-video-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+          <span class="dash-hero__media-txt">
+            <span class="dash-hero__media-title" id="dash-video-title">Grabar un video</span>
+            <span class="dash-hero__media-sub" id="dash-video-sub">Muestra el problema</span>
+          </span>
+        </button>
       </div>
 
       <div class="dash-hero__tour-action dash-hero__tour-action--desktop">
@@ -886,7 +880,7 @@
     const headline = document.getElementById('dash-headline');
     if (headline) headline.textContent = dh.headline || 'Solicita un servicio ahora';
     const mediaLabel = document.getElementById('dash-media-label');
-    if (mediaLabel) mediaLabel.textContent = dh.mediaLabel || 'Attach to description or send request using:';
+    if (mediaLabel) mediaLabel.textContent = dh.mediaLabel || 'O envía tu solicitud por:';
     const sr = tr.smartRequest || {};
     const setText = (id, value) => {
       const el = document.getElementById(id);
@@ -1156,7 +1150,6 @@
 
     // ── open / close the inline capture surface ──
     function openCapture(mode) {
-      closeAttachMenu();
       capMode = mode; dashMedia = []; dashRec = null;
       composeEls().forEach(el => { if (el) el.hidden = true; });
       const c = capEl(); if (c) c.hidden = false;
@@ -1199,13 +1192,14 @@
 	      if (r.phase === 'done') {
 	        const item = dashMedia.find(it => it.kind === 'voice') || r.item || {};
 	        const uploading = !!item.uploading;
+	        const uploadFailed = !!item.uploadError;
 	        return backBar() +
 	          '<div class="dash-cap__voice-done"><span class="dash-cap__play">' + IC.play + '</span>' +
 	          '<div class="dash-wave dash-wave--static">' + staticBars() + '</div>' +
 	          '<span class="dash-cap__dur">' + fmtTime(r.elapsed) + '</span></div>' +
 	          '<div class="dash-cap__actions">' +
 	            '<button type="button" class="dash-cap__btn dash-cap__btn--ghost" data-cap="voice-reset">' + IC.mic + (isEs() ? 'Repetir' : 'Re-record') + '</button>' +
-	            '<button type="button" class="dash-cap__btn dash-cap__btn--accent" data-cap="voice-use"' + (uploading ? ' disabled' : '') + '>' + (uploading ? (isEs() ? 'Subiendo…' : 'Uploading…') : (isEs() ? 'Usar grabación' : 'Use recording')) + IC.arrow + '</button>' +
+	            '<button type="button" class="dash-cap__btn dash-cap__btn--accent" data-cap="voice-use"' + (uploading || uploadFailed ? ' disabled' : '') + '>' + (uploadFailed ? (isEs() ? 'Error al subir' : 'Upload failed') : (uploading ? (isEs() ? 'Subiendo…' : 'Uploading…') : (isEs() ? 'Usar grabación' : 'Use recording'))) + IC.arrow + '</button>' +
 	          '</div>';
 	      }
       const rec = r.phase === 'recording';
@@ -1480,32 +1474,6 @@
       });
     };
 
-    // Attach menu — "+" button reveals the photo / voice / video capture options.
-    let attachDocHandler = null;
-    function closeAttachMenu() {
-      const menu = document.getElementById('dash-attach-menu');
-      const btn  = document.getElementById('dash-attach-btn');
-      if (menu) menu.hidden = true;
-      if (btn) btn.setAttribute('aria-expanded', 'false');
-      if (attachDocHandler) { document.removeEventListener('click', attachDocHandler); attachDocHandler = null; }
-    }
-    window._dashToggleAttachMenu = function (e) {
-      if (e) e.stopPropagation();
-      const menu = document.getElementById('dash-attach-menu');
-      const btn  = document.getElementById('dash-attach-btn');
-      if (!menu) return;
-      if (menu.hidden) {
-        menu.hidden = false;
-        if (btn) btn.setAttribute('aria-expanded', 'true');
-        attachDocHandler = function (ev) {
-          if (!menu.contains(ev.target) && !(btn && btn.contains(ev.target))) closeAttachMenu();
-        };
-        setTimeout(() => document.addEventListener('click', attachDocHandler), 0);
-      } else {
-        closeAttachMenu();
-      }
-    };
-
     // Inline media capture entry points (mic / camera / video buttons).
     window._dashShowCameraExplain = function () { openCapture('photos'); };
     window._dashShowMicExplain   = function () { openCapture('voice'); };
@@ -1557,10 +1525,10 @@
             exampleText: 'Necesito arreglar una fuga debajo del lavabo. Estoy en Santa Fe y me queda bien hoy por la tarde.',
           },
           {
-            selector: '.dash-hero__attach-btn',
+            selector: '.dash-hero__media-row',
             preferredPlacement: 'top',
             title: 'O envía foto, video o audio',
-            body: 'Toca el botón "+" para adjuntar una foto, video o nota de voz. SERVI AI revisa lo que envíes para identificar el problema y orientar la solicitud al servicio correcto.',
+            body: 'Toca cámara, video o micrófono. SERVI AI revisa lo que envíes para identificar el problema y orientar la solicitud al servicio correcto.',
           },
           {
             selector: '.dash-cats-grid',
@@ -1593,10 +1561,10 @@
           exampleText: 'I need a leak under the sink repaired. I am in Santa Fe and today afternoon works for me.',
         },
         {
-          selector: '.dash-hero__attach-btn',
+          selector: '.dash-hero__media-row',
           preferredPlacement: 'top',
           title: 'Or send a photo, video, or audio',
-          body: 'Tap the "+" button to attach a photo, video, or voice note. SERVI AI reviews what you send to identify the issue and route the request to the right service.',
+          body: 'Tap camera, video, or microphone. SERVI AI reviews what you send to identify the issue and route the request to the right service.',
         },
         {
           selector: '.dash-cats-grid',

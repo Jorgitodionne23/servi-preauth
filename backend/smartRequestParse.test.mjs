@@ -1,12 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildParseSystemPrompt, buildParseUserPrompt, parseModelResponse } from './smartRequestParse.mjs';
+import { buildMediaAnalysisSystemPrompt, buildParseSystemPrompt, buildParseUserPrompt, parseMediaModelResponse, parseModelResponse } from './smartRequestParse.mjs';
 
 test('system prompt embeds the grounded catalog', () => {
   const p = buildParseSystemPrompt();
   assert.ok(p.includes('plumbing'));
   assert.ok(p.includes('Sink or drain unclogging'));
   assert.ok(p.includes('"category"'));
+});
+
+test('media prompt embeds strict unclear status contract', () => {
+  const p = buildMediaAnalysisSystemPrompt();
+  assert.ok(p.includes('"status"'));
+  assert.ok(p.includes('unclear'));
+  assert.ok(p.includes('Sink or drain unclogging'));
 });
 
 test('user prompt carries text, language, and today', () => {
@@ -28,13 +35,15 @@ test('parseModelResponse parses clean JSON', () => {
 
 test('parseModelResponse extracts JSON embedded in prose/markdown', () => {
   const out = parseModelResponse('Sure!\n```json\n{"category":"cleaning","confidence":0.5,"urgency":"flexible"}\n```\nDone.');
-  assert.equal(out.category, 'cleaning');
+  assert.equal(out.aiStatus, 'unclear');
+  assert.equal(out.category, 'custom');
 });
 
 test('parseModelResponse normalizes bad values', () => {
   const out = parseModelResponse('{"category":"nonsense","confidence":5,"urgency":"whenever","inferredDate":"soon","followups":"nope"}');
   assert.equal(out.category, 'custom');
-  assert.equal(out.confidence, 1);
+  assert.equal(out.aiStatus, 'unclear');
+  assert.equal(out.confidence, 0.4);
   assert.equal(out.urgency, 'flexible');
   assert.equal(out.inferredDate, null);
   assert.deepEqual(out.followups, []);
@@ -56,6 +65,67 @@ test('parseModelResponse removes date and timing followups', () => {
     ],
   }));
   assert.deepEqual(out.followups, [{ q: 'Which fixture is affected?', key: 'fixture', chips: ['Sink', 'Toilet'] }]);
+});
+
+test('parseModelResponse rejects non-catalog service for catalog category', () => {
+  const out = parseModelResponse(JSON.stringify({
+    category: 'repair',
+    subKey: 'plumbing',
+    service: 'Mystery plumbing visit',
+    summary: 'Mystery issue',
+    confidence: 0.95,
+    urgency: 'flexible',
+  }));
+  assert.equal(out.aiStatus, 'unclear');
+  assert.equal(out.category, 'custom');
+  assert.equal(out.subKey, null);
+  assert.equal(out.service, null);
+  assert.equal(out.confidence, 0.4);
+});
+
+test('parseMediaModelResponse accepts high-confidence catalog-backed photo', () => {
+  const out = parseMediaModelResponse(JSON.stringify({
+    status: 'understood',
+    category: 'repair',
+    subKey: 'plumbing',
+    service: 'Sink or drain unclogging',
+    summary: 'Sink drain appears clogged',
+    confidence: 0.86,
+    evidence: ['standing water in sink', 'visible drain area'],
+  }));
+  assert.equal(out.aiStatus, 'understood');
+  assert.equal(out.category, 'repair');
+  assert.equal(out.subKey, 'plumbing');
+  assert.equal(out.service, 'Sink or drain unclogging');
+});
+
+test('parseMediaModelResponse makes weak or unrelated photos unclear', () => {
+  const out = parseMediaModelResponse(JSON.stringify({
+    status: 'understood',
+    category: 'repair',
+    subKey: 'plumbing',
+    service: 'Sink or drain unclogging',
+    summary: 'Maybe a sink',
+    confidence: 0.5,
+    evidence: ['a white surface'],
+  }));
+  assert.equal(out.aiStatus, 'unclear');
+  assert.equal(out.category, 'custom');
+  assert.equal(out.service, null);
+});
+
+test('parseMediaModelResponse rejects invalid catalog output', () => {
+  const out = parseMediaModelResponse(JSON.stringify({
+    status: 'understood',
+    category: 'repair',
+    subKey: 'plumbing',
+    service: 'Imaginary drain package',
+    summary: 'Drain issue',
+    confidence: 0.95,
+    evidence: ['water near a sink'],
+  }));
+  assert.equal(out.aiStatus, 'unclear');
+  assert.equal(out.aiReason, 'invalid_service');
 });
 
 test('parseModelResponse throws when no JSON present', () => {

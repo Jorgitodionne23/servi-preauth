@@ -211,6 +211,8 @@
 
     if (!match.best) {
       return {
+        aiStatus: 'unclear',
+        aiReason: 'no_catalog_match',
         category: 'custom',
         categoryLabel: 'Custom request',
         emoji: '✨',
@@ -233,6 +235,8 @@
       ? unique(match.candidates.slice(0, 3).map((c) => c.sub.label || c.sub.key))
       : [];
     return {
+      aiStatus: 'understood',
+      aiReason: null,
       category: best.catKey,
       categoryLabel: best.cat.label,
       emoji: best.cat.emoji,

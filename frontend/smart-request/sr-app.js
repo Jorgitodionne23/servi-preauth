@@ -211,13 +211,14 @@
 	    if (r.phase === 'done') {
 	      var item = (S.media || []).filter(function (m) { return m.kind === 'voice'; })[0] || r.item || {};
 	      var isUploading = !!item.uploading;
+	      var uploadFailed = !!item.uploadError;
 	      return '<div class="sr-capture sr-capture--voice">' +
 	        '<div class="sr-voice-done"><div class="sr-voice-play">' + I.play(18) + '</div>' +
 	        '<div class="sr-wave sr-wave--static">' + staticBars() + '</div>' +
 	        '<span class="sr-voice-dur">' + fmtTime(r.elapsed) + '</span></div>' +
 	        '<div class="sr-capture__actions">' +
 	          btn('ghost', 'sm', tr('reRecord'), { action: 'voice-reset', iconLeft: I.mic(16) }) +
-	          btn('accent', 'sm', isUploading ? tr('uploading') : tr('useRecording'), { action: 'voice-use', iconRight: I.arrow(16), disabled: isUploading }) + '</div>' +
+	          btn('accent', 'sm', uploadFailed ? tr('uploadFailed') : (isUploading ? tr('uploading') : tr('useRecording')), { action: 'voice-use', iconRight: I.arrow(16), disabled: isUploading || uploadFailed }) + '</div>' +
 	        '<p class="sr-capture__note">' + esc(tr('voiceNote')) + '</p>' +
 	        '</div>';
 	    }

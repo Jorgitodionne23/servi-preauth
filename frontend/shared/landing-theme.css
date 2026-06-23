@@ -2307,26 +2307,7 @@
   right: 16px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-}
-.dash-hero__attach-btn {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  border: 1.5px solid var(--color-border);
-  background: #fff;
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transition: border-color var(--duration-fast), color var(--duration-fast);
-  flex-shrink: 0;
-}
-.dash-hero__attach-btn:hover { border-color: var(--color-text); color: var(--color-text); }
-.dash-hero__attach-btn svg {
-  width: 19px;
-  height: 19px;
+  justify-content: flex-end;
 }
 .dash-hero__send-btn {
   width: 40px;
@@ -2364,36 +2345,6 @@
   font-weight: 700;
   color: var(--color-text);
   margin: 0;
-}
-
-/* ═══ Attach menu — popover revealed by the "+" button in the textarea bar ═══ */
-.dash-hero__attach-menu {
-  position: absolute;
-  left: 16px;
-  bottom: 60px;
-  z-index: 30;
-  background: #fff;
-  border: 1.5px solid var(--color-border);
-  border-radius: 18px;
-  padding: 16px;
-  box-shadow: 0 16px 40px -12px rgba(0,0,0,0.22);
-  width: max-content;
-  max-width: calc(100% - 32px);
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  transform-origin: bottom left;
-  animation: dashAttachIn var(--duration-fast) ease;
-}
-@keyframes dashAttachIn {
-  from { opacity: 0; transform: translateY(8px) scale(0.98); }
-  to   { opacity: 1; transform: translateY(0) scale(1); }
-}
-.dash-hero__attach-menu[hidden] { display: none; }
-.dash-hero__attach-menu .dash-hero__media-label {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--color-text-secondary);
 }
 
 .dash-hero__media-row {
@@ -2975,11 +2926,11 @@
   background: #fff;
   border: 1.5px solid #e8e8e8;
   border-radius: 16px;
-  padding: 18px 18px 14px;
+  padding: 16px 18px 12px;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  min-height: 128px;
+  justify-content: center;
+  min-height: 114px;
   position: relative;
   overflow: hidden;
   cursor: pointer;
@@ -3000,7 +2951,7 @@
   right: 12px;
   top: 50%;
   transform: translateY(-50%);
-  font-size: 52px;
+  font-size: 46px;
   line-height: 1;
   pointer-events: none;
   user-select: none;
@@ -3151,12 +3102,12 @@
     gap: 16px;
   }
   .dash-cat-card {
-    min-height: 148px;
-    padding: 22px 22px 18px;
+    min-height: 132px;
+    padding: 18px 22px 16px;
   }
   .dash-cat-card__emoji {
     right: 16px;
-    font-size: 58px;
+    font-size: 52px;
   }
   .dash-cat-card__name {
     font-size: 16px;
@@ -3904,7 +3855,7 @@
   .dash-cats-grid {
     grid-template-columns: none;
     grid-auto-flow: column;
-    grid-auto-columns: calc((100% - 30px) / 3.5);
+    grid-auto-columns: calc((100% - 30px) / 3.75);
     gap: 10px;
     overflow-x: auto;
     overflow-y: hidden;
@@ -3933,7 +3884,7 @@
     right: auto;
     top: auto;
     transform: none;
-    font-size: 30px;
+    font-size: 26px;
     margin: 0 auto;
   }
   .dash-cat-card__name {

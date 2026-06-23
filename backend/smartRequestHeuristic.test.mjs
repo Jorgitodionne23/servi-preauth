@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 globalThis.window = globalThis;
 await import('../frontend/smart-request/catalog.js');
 await import('../frontend/smart-request/heuristic.js');
+await import('../frontend/smart-request/parse.js');
 
 const today = new Date('2026-06-09T12:00:00');
 
@@ -87,4 +88,17 @@ test('heuristic removes timing followups from matched services', () => {
   const out = parse('necesito cuidado de niños');
   assert.equal(out.subKey, 'child-care');
   assert.equal(out.followups.some((f) => f.key === 'when' || /when|cuando|fecha|semana/i.test(f.q)), false);
+});
+
+test('voice analysis without a real transcript fails closed', async () => {
+  const out = await globalThis.serviAnalyzeVoice({});
+  assert.equal(out.aiStatus, 'unclear');
+  assert.equal(out.service, null);
+  assert.match(out.summary, /voz|voice/i);
+});
+
+test('photo analysis without uploaded media fails closed', async () => {
+  const out = await globalThis.serviAnalyzePhotos({ media: [] });
+  assert.equal(out.aiStatus, 'unclear');
+  assert.equal(out.service, null);
 });
