@@ -362,6 +362,7 @@
     .badge-confirmed { background:rgba(40,167,69,0.14);  color:var(--ok); }
     .badge-captured  { background:rgba(0,123,255,0.14);  color:#60a5fa; }
     .badge-canceled  { background:rgba(123,128,153,0.14);color:var(--text-mute); }
+    .badge-refunded  { background:rgba(167,139,250,0.14); color:#a78bfa; }
     .badge-contacted { background:rgba(149,204,213,0.14);color:var(--accent); }
     .badge-verified  { background:rgba(40,167,69,0.14);  color:var(--ok); }
     .badge-rejected  { background:rgba(220,53,69,0.14);  color:var(--danger-soft); }
@@ -1229,6 +1230,7 @@ function badgeClass(status) {
   // keep their color.
   if (s.startsWith('cancel')) return 'badge-canceled';
   if (s.startsWith('captured')) return 'badge-captured';
+  if (s.startsWith('refund')) return 'badge-refunded';
   if (s === 'pending') return 'badge-pending';
   if (s === 'new') return 'badge-new';
   if (s === 'confirmed') return 'badge-confirmed';

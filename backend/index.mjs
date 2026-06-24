@@ -9419,8 +9419,9 @@ app.post('/api/admin/orders/:id/mark-cash', adminRateLimit, requireAdminAuth, as
 
 // ─── Admin: Order Changes (reschedule / cancel / address_update / inline_edit) ─────
 
-// Keys are lowercase; always test with isEditableStatus()/isTerminalStatus() so a stored
-// 'pending' (lowercase, from the primary INSERT) matches the same as 'Pending'.
+// Keys are lowercase; always test with isEditableStatus()/isTerminalStatus() so a status
+// is matched case-insensitively (the primary INSERT now stores 'Pending', but legacy rows
+// and other paths may store lowercase 'pending').
 const ORDER_EDITABLE_STATUSES = new Set([
   'pending', 'setup required', 'setup created', 'pending (3ds)',
   'scheduled', 'confirmed', 'pending cash', 'new'
@@ -9575,6 +9576,38 @@ app.get('/api/provider/order', publicFormLimit, async (req, res) => {
   try {
     const row = await resolveProviderLinkOrder(req.query.order, req.query.pt);
     if (!row) return res.status(404).json({ error: 'not_found' });
+
+    // Reload-safe, pricing-safe extras for the provider timeline. Only provider-authored data:
+    // their own milestone timestamps + their own submitted surcharge previews. NEVER the base price.
+    const phaseTimes = {};
+    const myPriceChanges = [];
+    try {
+      const { rows: evs } = await pool.query(
+        `SELECT event_type, metadata, created_at
+           FROM order_lifecycle_events
+          WHERE order_id = $1
+            AND event_type IN ('en_route','arrived','started','completed','price_change_requested')
+          ORDER BY created_at ASC`,
+        [row.id]
+      );
+      for (const ev of evs) {
+        if (MILESTONE_EVENTS.has(ev.event_type)) {
+          if (!phaseTimes[ev.event_type]) phaseTimes[ev.event_type] = ev.created_at; // first time reached
+        } else if (ev.event_type === 'price_change_requested') {
+          const m = ev.metadata || {};
+          myPriceChanges.push({
+            type: m.type || 'otro',
+            providerPesos: (m.providerPesos != null) ? m.providerPesos : null,
+            note: m.note || null,
+            previewTotal: (m.previewTotal != null) ? m.previewTotal : null, // client-facing total (cents)
+            at: ev.created_at,
+          });
+        }
+      }
+    } catch (lcErr) {
+      console.warn('[GET /api/provider/order] timeline hydrate failed:', lcErr?.message || lcErr);
+    }
+
     return res.json({
       order: {
         publicCode: row.public_code || null,
@@ -9586,6 +9619,9 @@ app.get('/api/provider/order', publicFormLimit, async (req, res) => {
         serviceDate: row.service_date || null,
         isAsap: !!row.is_asap,
         servicePhase: row.service_phase || null,
+        phaseTimes,                                    // { en_route, arrived, started, completed } ISO ts
+        myPriceChanges,                                // provider's own submitted surcharges (no base price)
+        locationSharedAt: row.last_location_at || null,
       },
     });
   } catch (err) {
