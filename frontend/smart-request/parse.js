@@ -249,6 +249,26 @@
     };
   }
 
+  async function parseMediaDetails(kind, details) {
+    const text = String(details || '').trim();
+    if (!text) return null;
+    try {
+      const parsed = await ai(text);
+      return Object.assign(parsed, {
+        mode: kind,
+        supplementalDetails: text,
+        source: kind + '-details-ai',
+      });
+    } catch (e) {
+      const parsed = heuristic(text);
+      return Object.assign(parsed, {
+        mode: kind,
+        supplementalDetails: text,
+        source: kind + '-details-heuristic',
+      });
+    }
+  }
+
   window.serviParse = async function serviParse(text, opts) {
     const engine = (opts && opts.engine) || 'ai';
     if (engine === 'heuristic') return heuristic(text);
@@ -322,6 +342,8 @@
       const parsed = await ai(data.transcript);
       return Object.assign(parsed, { mode: 'voice', transcript: data.transcript, source: 'voice-text-ai' });
     }
+    const detailParsed = await parseMediaDetails('voice', data.details);
+    if (detailParsed) return detailParsed;
     const parsed = await callMediaBackend('voice', data);
     return Object.assign(parsed, { mode: 'voice' });
   };
@@ -329,22 +351,28 @@
   // PHOTOS → strict backend vision analysis.
   window.serviAnalyzePhotos = async function (payload) {
     const data = payload || {};
+    const detailParsed = await parseMediaDetails('photos', data.details);
     try {
       const parsed = await callMediaBackend('photos', data);
+      if (parsed && parsed.aiStatus !== 'understood' && detailParsed) return detailParsed;
       return Object.assign(parsed, { mode: 'photos' });
     } catch (e) {
+      if (detailParsed) return detailParsed;
       return unclearMedia('photos', 'analysis_failed');
     }
   };
 
   // VIDEO → Wizard-of-Oz. We *show* an AI-style analysis, but no service is
   // parsed: the admin team reviews the clip and follows up on WhatsApp.
-  window.serviAnalyzeVideo = function () {
-    return Promise.resolve({
+  window.serviAnalyzeVideo = async function (payload) {
+    const data = payload || {};
+    const detailParsed = await parseMediaDetails('video', data.details);
+    if (detailParsed) return detailParsed;
+    return {
       mode: 'video', adminReview: true, aiStatus: 'manual_review', aiReason: 'video_manual_review', aiEvidence: [],
       emoji: '🎬', categoryLabel: 'Video request', service: null,
       summary: 'Our specialists will review your video in detail.',
       followups: [], source: 'video-review',
-    });
+    };
   };
 })();

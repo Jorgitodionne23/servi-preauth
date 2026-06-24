@@ -425,8 +425,11 @@
     const lang = window.__lang || 'es';
     return `
       <div class="spp-toolbar">
+        <button type="button" class="spp-tool spp-tool--add" data-action="spp-attach-photos" aria-label="${lang === 'es' ? 'Adjuntar fotos' : 'Attach photos'}" title="${lang === 'es' ? 'Adjuntar fotos' : 'Attach photos'}">${ICON.camera}</button>
+        <button type="button" class="spp-tool spp-tool--add" data-action="spp-attach-video" aria-label="${lang === 'es' ? 'Adjuntar video' : 'Attach video'}" title="${lang === 'es' ? 'Adjuntar video' : 'Attach video'}">${ICON.video}</button>
         <button type="button" class="spp-submit-btn" data-action="spp-submit" aria-label="${lang === 'es' ? 'Enviar' : 'Submit'}">${ICON.arrow}</button>
       </div>
+      ${_textAttsHTML()}
     `;
   }
 
@@ -526,6 +529,49 @@
     _capRec = null;
   }
 
+  function _capDetailsBlock() {
+    return '<label class="dash-cap__details">' +
+      '<span class="dash-cap__details-label">' + (_isEs() ? 'Detalles adicionales' : 'Additional details') + '</span>' +
+      '<textarea class="dash-cap__details-input" id="spp-cap-details" rows="2" spellcheck="false" placeholder="' + (_isEs() ? 'Agrega contexto, medidas o instrucciones especiales...' : 'Add context, measurements, or special instructions...') + '">' + _capEsc(state._capDetails || '') + '</textarea>' +
+    '</label>';
+  }
+
+  function _textAttsHTML() {
+    if (!_textAtts.length) return '';
+    return '<div class="spp-atts">' + _textAtts.map((a, i) => {
+      const media = a.kind === 'video'
+        ? '<span class="spp-att__icon">' + ICON.video + '</span>'
+        : (a.url ? '<img src="' + _capEsc(a.url) + '" alt="">' : '<span class="spp-att__icon">' + ICON.camera + '</span>');
+      return '<div class="spp-att' + (a.uploading ? ' uploading' : '') + '">' + media +
+        '<button type="button" class="spp-att__x" data-action="spp-att-remove:' + i + '" aria-label="' + (_isEs() ? 'Quitar adjunto' : 'Remove attachment') + '">' + ICON.close + '</button></div>';
+    }).join('') + '</div>';
+  }
+
+  function _renderDescribePanel() {
+    const popover = document.getElementById('search-pill-popover');
+    if (!popover) return;
+    const panel = popover.querySelector('.spp-panel--describe');
+    if (!panel) return;
+    panel.innerHTML = _describeInner();
+    _showActivePanel('describe');
+  }
+
+  function _pickTextAttachment(kind) {
+    const isVideo = kind === 'video';
+    const max = 4;
+    if (_textAtts.length >= max) return;
+    _capPickFiles(isVideo ? 'video/*' : 'image/*', !isVideo, isVideo ? null : 'environment', files => {
+      files.slice(0, max - _textAtts.length).forEach(file => {
+        const item = { kind: isVideo ? 'video' : 'photo', url: URL.createObjectURL(file), name: file.name, uploading: true };
+        _textAtts.push(item);
+        _capUpload(file).then(d => { item.url = d.url; item.uploading = false; _renderDescribePanel(); })
+          .catch(() => { const i = _textAtts.indexOf(item); if (i > -1) _textAtts.splice(i, 1); _renderDescribePanel(); });
+      });
+      _textAtts = _textAtts.slice(0, max);
+      _renderDescribePanel();
+    });
+  }
+
   // Panels reuse the .dash-cap__* design system (loaded globally in landing-theme.css).
   function _capBackBar() { return '<button type="button" class="dash-cap__back" data-action="sppcap-back">' + ICON.back + (_isEs() ? 'Volver' : 'Back') + '</button>'; }
   function _capturePanel() {
@@ -537,6 +583,7 @@
       return '<div class="dash-cap__voice-done"><button type="button" class="dash-cap__play" data-action="sppcap-voice-play" aria-label="' + (_isEs() ? 'Reproducir grabación' : 'Play recording') + '">' + ICON.play + '</button>' +
         '<div class="dash-wave dash-wave--static">' + _capStaticBars() + '</div>' +
         '<span class="dash-cap__dur">' + _capFmt(r.elapsed) + '</span></div>' +
+        _capDetailsBlock() +
         '<div class="dash-cap__actions">' +
           '<button type="button" class="dash-cap__btn dash-cap__btn--ghost" data-action="sppcap-voice-reset">' + ICON.mic + (_isEs() ? 'Repetir' : 'Re-record') + '</button>' +
           '<button type="button" class="dash-cap__btn dash-cap__btn--accent" data-action="sppcap-voice-use">' + (_isEs() ? 'Usar grabación' : 'Use recording') + ICON.arrow + '</button>' +
@@ -567,6 +614,7 @@
         '<div class="dash-cap__media-chip' + (it.uploading ? ' uploading' : '') + '">' + ICON.video +
           '<span>' + (it.name ? _capEsc(it.name) : (_isEs() ? 'Video listo' : 'Video ready')) + (it.dur ? ' · ' + _capFmt(it.dur) : '') + '</span>' +
           '<button type="button" class="dash-cap__chip-x" data-action="sppcap-media-clear">' + ICON.close + '</button></div>' +
+        _capDetailsBlock() +
         '<div class="dash-cap__actions"><button type="button" class="dash-cap__btn dash-cap__btn--accent" data-action="sppcap-media-use">' + (_isEs() ? 'Continuar' : 'Continue') + ICON.arrow + '</button></div>';
     }
     return _capBackBar() + '<div class="dash-cap__drop"><div class="dash-cap__drop-ic">' + ICON.video + '</div>' +
@@ -583,6 +631,7 @@
         '<button type="button" class="dash-thumb__x" data-action="sppcap-media-remove:' + i + '">' + ICON.close + '</button></div>').join('');
       const add = _capMedia.length < maxPhotos ? '<button type="button" class="dash-thumb dash-thumb--add" data-action="sppcap-photo-capture" aria-label="' + (_isEs() ? 'Tomar otra foto' : 'Take another photo') + '">' + ICON.plus + '</button>' : '';
       return _capBackBar() + '<div class="dash-thumbs">' + thumbs + add + '</div>' +
+        _capDetailsBlock() +
         '<div class="dash-cap__actions"><button type="button" class="dash-cap__btn dash-cap__btn--accent" data-action="sppcap-media-use">' +
         (_isEs() ? 'Continuar (' + _capMedia.length + ')' : 'Continue (' + _capMedia.length + ')') + ICON.arrow + '</button></div>';
     }
@@ -757,13 +806,14 @@
   function _capReset() {
     _capStopWave();
     _capClearVoice();
-    _capMedia = []; state.capMode = null;
+    _capMedia = []; state.capMode = null; state._capDetails = '';
   }
   // Hand captured media to the Smart Request review screen — same sessionStorage
   // handoff the hero uses. This is the final submit step, not "opening a tool".
   function _capHandoff(payload) {
-    if (state._describeText && state._describeText.trim()) {
-      payload.text = state._describeText.trim();
+    const details = ((state._capDetails || '').trim() || (state._describeText || '').trim());
+    if (details) {
+      payload.text = details;
       if (typeof window.applyRequestLanguage === 'function') {
         payload.lang = window.applyRequestLanguage(payload.text) || payload.lang;
       }
@@ -946,9 +996,11 @@
     whenChoice: 'asap',   // 'asap' | 'date' — legacy hero-search handoff default (when is chosen on smart-request)
     whenDate: '',         // ISO date string when choice === 'date'
     _describeText: '',    // current describe compose text
+    _capDetails: '',      // optional written details attached to media capture
     capMode: null,        // null | 'photos' | 'voice' | 'video' — active in-pill capture surface
   };
   let _pillIndicatorTimer = null;
+  let _textAtts = [];     // media attached to a text request
   let _capMedia = [];     // captured media in the popover [{kind,url,dur,name,uploading,sample}]
   let _capRec = null;     // transient recorder {phase,elapsed,t0,timer}
   let _capWaveRAF = null, _capWaveStream = null;
@@ -1254,7 +1306,9 @@
   function openSearchPillMedia(mode) {
     const cap = mode === 'upload' ? 'photos' : mode;
     const targetSeg = cap === 'voice' ? 'voice' : 'camera';
+    const detailSeed = (state._capDetails || state._describeText || '').trim();
     _capReset();
+    state._capDetails = detailSeed;
     // Set the segment directly (not via openSegment, which would _capReset and
     // clear the capMode we want to land on) so the panel opens on the chosen
     // capture surface with no chooser flash.
@@ -1276,11 +1330,24 @@
       focusSearchPillDescribe();
       return;
     }
+    if (_textAtts.some(a => a.uploading)) return;
     closeSegment();
     const detectedLang = typeof window.applyRequestLanguage === 'function' ? window.applyRequestLanguage(text) : null;
+    const atts = _textAtts.map(a => ({ kind: a.kind, url: a.url, name: a.name })).filter(a => a.url);
     const url = new URL('/smart-request.html', window.location.origin);
-    url.searchParams.set('text', text);
-    url.searchParams.set('lang', detectedLang || (window.__lang === 'en' ? 'en' : 'es'));
+    if (atts.length) {
+      try {
+        sessionStorage.setItem('sr_handoff', JSON.stringify({
+          mode: 'text',
+          text,
+          lang: detectedLang || (window.__lang === 'en' ? 'en' : 'es'),
+          atts,
+        }));
+      } catch (_) {}
+    } else {
+      url.searchParams.set('text', text);
+      url.searchParams.set('lang', detectedLang || (window.__lang === 'en' ? 'en' : 'es'));
+    }
     url.searchParams.set('return', window.location.pathname + window.location.search + window.location.hash);
     window.location.href = url.toString();
   }
@@ -1457,6 +1524,19 @@
         openSearchPillMedia('upload');
         return;
       }
+      if (action === 'spp-attach-photos') {
+        _pickTextAttachment('photos');
+        return;
+      }
+      if (action === 'spp-attach-video') {
+        _pickTextAttachment('video');
+        return;
+      }
+      if (action && action.indexOf('spp-att-remove') === 0) {
+        _textAtts.splice(+action.split(':')[1], 1);
+        _renderDescribePanel();
+        return;
+      }
       if (action === 'spp-submit') {
         // Hand the typed description to smart-request.html.
         submitSearchPillDescribe();
@@ -1483,6 +1563,9 @@
     if (e.target && e.target.id === 'spp-describe-input') {
       state._describeText = e.target.value;
       _autoGrowDescribe();
+    }
+    if (e.target && e.target.id === 'spp-cap-details') {
+      state._capDetails = e.target.value;
     }
   }
 
