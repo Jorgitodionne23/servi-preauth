@@ -38,7 +38,7 @@ Backend, payments, and admin tooling for **SERVI** — an on-demand home service
 
 ```
 backend/
-  index.mjs          — all server routes and business logic (~9.6k lines)
+  index.mjs          — all server routes and business logic (~10.1k lines)
   db.pg.mjs          — PostgreSQL schema (CREATE TABLE IF NOT EXISTS) + connection pool
   pricing.mjs        — alpha-curve booking fee + Stripe processing fee with VAT
 
@@ -53,6 +53,7 @@ frontend/
   handbook.html      — provider guide index  +  handbook/ subpages
   helpcenter.html    — support index  +  helpcenter/ subpages
   legal.html         — términos, privacidad, cancelación, aviso legal
+  provider.html      — specialist's per-order tracking panel (tokenized link, no login)
   admin.html         — primary admin dashboard (inbox + orders, token-protected)
   pay.html           — Stripe Elements payment form (first-time card)
   book.html          — saved-card 1-click checkout
@@ -78,6 +79,13 @@ apps-script-provider-recruitment/
 
 docs/                — AUTH_STATE_MACHINE.md, AUTH_AUDIT.md, session-handoff.md, etc.
 tests/               — Playwright e2e suites (admin, auth) + preflight script
+
+native-app-reference/  — Expo + React Native + TypeScript prototype of a SERVI native
+                         mobile app. Mocked data only; isolated from the web app. Not
+                         production — kept as a design reference.
+dashboard.jsx          — Standalone React artifact from an admin-dashboard redesign
+                         (Claude-generated). Visual ideas are ported into admin.html;
+                         this file is kept as a reference only.
 ```
 
 ---
