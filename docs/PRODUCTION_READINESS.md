@@ -1,6 +1,8 @@
 # SERVI — Production Readiness Checklist
 
-Audit date: 2026-07-02. Each item explains, in simple terms, what needs work before real customers use the platform. Ordered by priority. No code has been changed yet — this is the task list.
+Audit date: 2026-07-02. Each item explains, in simple terms, what needs work before real customers use the platform. Ordered by priority.
+
+**Status (2026-07-02):** items 2, 3, 4 done; item 5 half done (CI workflow added, live smoke test still pending). Items 1 (new WhatsApp number) and 6 (pick an error tracker) need account/ops decisions outside the code.
 
 ---
 
@@ -10,21 +12,25 @@ Audit date: 2026-07-02. Each item explains, in simple terms, what needs work bef
 **What's wrong:** The old business number (`525525112588`) was resold and now reaches a stranger. Payment links are delivered *via WhatsApp* — the core payment flow has no delivery channel right now (email is a stopgap).
 **The fix:** Get a new phone number + WhatsApp Business account. Then one edit in `frontend/config.js`: set the new `WHATSAPP_NUMBER` and flip `CONTACT_MODE` back to `'whatsapp'`.
 
-### 2. Patch vulnerable dependencies
+### 2. Patch vulnerable dependencies ✅ DONE
 **What's wrong:** `npm audit` reports **22 vulnerabilities (1 critical, 6 high)** in production dependencies: `protobufjs` (critical — arbitrary code execution, pulled in by Firebase Admin), `multer` (DoS via uploads — SERVI accepts file uploads), `nodemailer` (SMTP command injection), `path-to-regexp` (ReDoS), `form-data`, `@grpc/grpc-js`.
 **The fix:** Run `npm audit fix` (all have non-breaking fixes available), rerun the unit tests, and smoke-test auth + uploads since Firebase Admin and multer are touched.
+**Done:** `npm audit fix` applied + `nodemailer` bumped 6.x → 9.x (same `createTransport`/`sendMail` API). Production deps now have **0 critical/high**; 8 moderates remain, all transitive under `firebase-admin`'s Google Cloud chain (needs an upstream release — `--force` would break firebase-admin). Unit tests pass.
 
-### 3. Add security headers to the backend
+### 3. Add security headers to the backend ✅ DONE
 **What's wrong:** Express serves everything with no `helmet`, no HSTS, no `X-Frame-Options`, no Content-Security-Policy. This leaves the payment pages more exposed to clickjacking and injection than they need to be.
 **The fix:** Add `helmet` with a config that doesn't break Stripe.js, Firebase, or Google Fonts, and verify `pay.html` / `book.html` still work.
+**Done:** `helmet` added in `backend/index.mjs` (CSP and COOP deliberately off — CDN scripts and Google Sign-In popups need them; HSTS, nosniff, frameguard, etc. on). Production pages are served by Cloudflare Pages, so a `frontend/_headers` file adds the same protections there. Verify payment + login flows during the live smoke test (item 5).
 
-### 4. Provider capability links never expire
+### 4. Provider capability links never expire ✅ DONE
 **What's wrong:** The new `provider.html` link (`?order=…&pt=…`) is a bearer token stored in `all_bookings.provider_link_token`. `resolveProviderLinkOrder()` checks the token but **never checks `provider_link_created_at`** — a leaked or forwarded link works forever, letting anyone check in, share location, or file price-change requests on that order.
 **The fix:** Reject tokens older than a sensible TTL (e.g., valid until ~48h after the service date) and/or clear the token once the order reaches a terminal status. Admin can already rotate links, so expiry is cheap to add.
+**Done:** new `backend/providerLink.mjs` policy, enforced in `resolveProviderLinkOrder()` (covers all `/api/provider/*` endpoints): links die immediately on refunded/declined/canceled orders, stop working 72h after the service date, and fall back to a 14-day lifetime from mint for orders with no parseable date. Unit-tested in `backend/providerLink.test.mjs`.
 
-### 5. End-to-end smoke test on the live domain
+### 5. End-to-end smoke test on the live domain 🟡 CI DONE, SMOKE TEST PENDING
 **What's wrong:** Already flagged in the project brief — no full pass over the real production stack has been done. Playwright e2e specs exist (`tests/`) but nothing runs them in CI; only the preauth cron has a workflow.
 **The fix:** One scripted pass on the live domain: phone OTP, email magic link, Google OAuth, browse → service → confirm booking, payment link (new card + saved card), capture/refund in admin, and the new provider link flow. Then add a GitHub Actions workflow that runs `test:unit` (and ideally the e2e suite against staging) on every push.
+**Done so far:** `.github/workflows/tests.yml` runs unit tests + a high/critical dependency audit on every push/PR to `main`/`dev`. (Also fixed `eslint.config.js`, which was broken by a stray CommonJS block and made `npx eslint` unusable.) The manual live smoke test is still pending.
 
 ### 6. Production error visibility
 **What's wrong:** The backend logs errors with ~230 `console.*` calls. If Stripe captures start failing at 2 a.m., nobody finds out unless they read Render logs. The only alerting that exists is the preauth cron filing a GitHub issue on failure.
