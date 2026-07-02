@@ -856,6 +856,7 @@
             <option value="verified" selected>Verified</option>
             <option value="removed">Removed</option>
           </select>
+          <button class="auth-btn" style="padding:8px 14px;white-space:nowrap" onclick="openAddProvider()">+ Agregar proveedor</button>
         </div>
         <div class="table-scroll">
           <table class="admin-table">
@@ -4101,6 +4102,53 @@ function openRosterDetail(providerId) {
       <button class="action-btn" onclick="toggleRosterStatus('${escapeHtml(p.provider_id)}','${toggle}')">${toggleLabel}</button>
     </div>
   `;
+}
+
+function openAddProvider() {
+  document.getElementById('prov-overlay').classList.add('open');
+  document.getElementById('prov-panel').classList.add('open');
+  document.getElementById('pp-title').textContent = 'Nuevo proveedor';
+  const specOpts = [
+    ['', '— Selecciona —'], ['cleaning','Limpieza'], ['repair','Armar, Reparar y Mantenimiento'],
+    ['wellness','Bienestar y Cuidado Personal'], ['maintenance','Mantenimiento'],
+    ['supply','Abastecimiento y Compras'], ['other','Personalizado / Otro'],
+  ].map(([v,l]) => `<option value="${v}">${l}</option>`).join('');
+  document.getElementById('pp-body').innerHTML = `
+    <div class="sp-sec">
+      <div class="sp-sec-t">Datos del proveedor</div>
+      <div class="sp-grid">
+        <div><div class="sp-lbl">Nombre *</div><input class="auth-input" id="np-name"></div>
+        <div><div class="sp-lbl">Teléfono</div><input class="auth-input" id="np-phone" placeholder="+5255..."></div>
+        <div style="grid-column:1/-1"><div class="sp-lbl">Email</div><input class="auth-input" id="np-email"></div>
+        <div><div class="sp-lbl">Especialidad</div><select class="auth-input" id="np-specialty" style="background:#222">${specOpts}</select></div>
+        <div><div class="sp-lbl">Ciudad</div><input class="auth-input" id="np-city"></div>
+      </div>
+      <button class="sp-save-btn" style="margin-top:12px" onclick="createProvider()">Crear proveedor</button>
+      <div id="np-error" style="color:#ef4444;font-size:13px;margin-top:8px;display:none"></div>
+    </div>`;
+}
+
+async function createProvider() {
+  const val = (id) => (document.getElementById(id)?.value || '').trim();
+  const errEl = document.getElementById('np-error');
+  const name = val('np-name');
+  if (!name) { errEl.textContent = 'El nombre es obligatorio.'; errEl.style.display = 'block'; return; }
+  errEl.style.display = 'none';
+  try {
+    const res = await fetch(API + '/api/admin/providers', {
+      method: 'POST', headers: headers(),
+      body: JSON.stringify({ name, phone: val('np-phone'), email: val('np-email'),
+                             specialty: val('np-specialty'), city: val('np-city') })
+    });
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.message || d.error || 'HTTP ' + res.status);
+    toast('Proveedor creado: ' + d.provider_id, 'ok');
+    closeProviderDetail();
+    _highlightRosterId = d.provider_id;
+    switchProvSub('roster');   // ensures roster tab + reload + highlights the new row
+  } catch (e) {
+    errEl.textContent = 'Error: ' + e.message; errEl.style.display = 'block';
+  }
 }
 
 async function saveRosterFields(providerId) {

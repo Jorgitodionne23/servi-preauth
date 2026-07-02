@@ -70,8 +70,6 @@
     suppliers: '🛒',
   };
 
-  const PREVIEW_ITEMS_PER_CATEGORY = 8;
-  const DISCOVERY_FILTER_ALL = 'all';
   const API = window.CONFIG?.API_BASE || '';
   const representativeServiceImageIndex = {
     cleaning: {
@@ -113,7 +111,6 @@
       'organic-vegetables': 0,
     },
   };
-  let activeDiscoveryFilter = DISCOVERY_FILTER_ALL;
   let favoriteIdsByKey = new Map();
   let pendingFavoritePayload = null;
 
@@ -167,18 +164,6 @@
     return sub.services[locale] || sub.services.es || sub.services.en || [];
   }
 
-  function getServiceKeyword(catKey, subKey, index) {
-    const sub = getSubcategoryConfig(catKey, subKey);
-    if (!sub || !Array.isArray(sub.serviceKeywords)) return '';
-    return sub.serviceKeywords[index] || '';
-  }
-
-  function getServiceImageId(catKey, subKey, index) {
-    const sub = getSubcategoryConfig(catKey, subKey);
-    if (!sub || !Array.isArray(sub.serviceImages)) return '';
-    return sub.serviceImages[index] || '';
-  }
-
   function getFavoriteKey(catKey, subKey, serviceName) {
     return [catKey || '', subKey || '', serviceName || ''].join('::');
   }
@@ -190,17 +175,6 @@
 
   function hasSession() {
     return !!(window.getSessionToken && window.getSessionToken());
-  }
-
-  function buildUnsplashUrl(photoId) {
-    return `https://images.unsplash.com/${photoId}?w=600&q=80&auto=format&fit=crop`;
-  }
-
-  function buildLoremFlickrUrl(keywords, lockSeed) {
-    const safe = encodeURIComponent(keywords).replace(/%2C/gi, ',');
-    let lock = 0;
-    for (let i = 0; i < lockSeed.length; i++) lock = ((lock << 5) - lock + lockSeed.charCodeAt(i)) | 0;
-    return `https://loremflickr.com/600/400/${safe}?lock=${Math.abs(lock)}`;
   }
 
   function slugifyServiceLabel(label) {
@@ -226,23 +200,6 @@
     if (!Array.isArray(englishServices) || !englishServices[index]) return '';
     const slug = slugifyServiceLabel(englishServices[index]);
     return slug ? `/assets/discovery/official/${folder}/${slug}.png` : '';
-  }
-
-  function getServiceCardVisuals(catKey, subKey, index) {
-    const subImage = getSubcategoryImage(catKey, subKey);
-    const categoryFallback = discoveryFallbackByCategory[catKey] || '/assets/partnerimage.png';
-    const photoId = getServiceImageId(catKey, subKey, index);
-    const keywords = getServiceKeyword(catKey, subKey, index);
-    const flickrUrl = keywords ? buildLoremFlickrUrl(keywords, `${catKey}-${subKey}-${index}`) : subImage;
-    const legacyPrimarySrc = photoId ? buildUnsplashUrl(photoId) : flickrUrl;
-    const officialSrc = getOfficialServiceImage(catKey, subKey, index);
-    const primarySrc = officialSrc || legacyPrimarySrc;
-    const fallbackUrls = officialSrc
-      ? [legacyPrimarySrc, flickrUrl, subImage, categoryFallback]
-      : (photoId
-          ? [flickrUrl, subImage, categoryFallback]
-          : (keywords ? [subImage, categoryFallback] : [categoryFallback]));
-    return { primarySrc, onerror: buildImageFallbackHandler(fallbackUrls) };
   }
 
   function buildImageFallbackHandler(urls) {
@@ -354,27 +311,15 @@
     } catch {}
   }
 
-  window._browseSetFilter = function(filterKey) {
-    activeDiscoveryFilter = filterKey || DISCOVERY_FILTER_ALL;
-    renderDiscovery();
+  window._browseScrollToCategory = function(catKey) {
+    const row = document.querySelector(`section[data-category="${catKey}"]`);
+    if (row) row.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    document.querySelectorAll('.dash-discovery__chip').forEach(chip => {
+      const isActive = chip.getAttribute('data-category') === catKey;
+      chip.classList.toggle('is-active', isActive);
+      chip.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    });
   };
-
-  window._browseOpenCategory = function(catKey, source) {
-    window._browseSetFilter(catKey);
-  };
-
-  function scrollToSubcategoryCarousel(catKey, subKey) {
-    const rowId = `${catKey}-${subKey}`;
-    const track = document.getElementById(`dash-carousel-${rowId}`);
-    const row = track && track.closest('.dash-discovery__row');
-    if (!track || !row) return;
-
-    row.scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'nearest' });
-    window.setTimeout(() => {
-      track.focus({ preventScroll: true });
-      updateDiscoveryArrowState(track);
-    }, 320);
-  }
 
   window._browseScrollCarousel = function(catKey, dir) {
     const track = document.getElementById(`dash-carousel-${catKey}`);
@@ -433,20 +378,33 @@
     if (source) drawer.setAttribute('data-source', source);
     else drawer.removeAttribute('data-source');
 
+    const discovery = (tr && tr.discovery) || {};
+    const searchTitle = discovery.searchCardTitle || "¿No encontraste lo que buscas?";
+    const searchBody = discovery.searchCardBody || "Descríbelo y lo encontramos.";
+
     titleEl.textContent = subName;
-    subtitleEl.textContent = browseStr.selectService || 'Selecciona un servicio';
-    listEl.innerHTML = services.map((serviceName, idx) => `
+    subtitleEl.textContent = browseStr.requestSubtitle || 'Solicítalo y añade los detalles en el siguiente paso';
+
+    const examplesLabel = browseStr.examplesLabel || 'Por ejemplo';
+    const examplesHtml = services.length ? `
+      <li class="browse-drawer__examples-label">${escapeAttr(examplesLabel)}</li>
+      ${services.map(serviceName => `
+        <li class="browse-drawer__example">${escapeAttr(serviceName)}</li>
+      `).join('')}
+    ` : '';
+
+    listEl.innerHTML = `
       <li>
-        <button class="browse-drawer__item" type="button" onclick="window._browseSelectService('${catKey}', '${subKey}', '${encodeURIComponent(serviceName)}')">
-          <span>${serviceName}</span>
+        <button class="browse-drawer__item browse-drawer__item--primary" type="button" onclick="window._browseSelectService('${catKey}', '${subKey}', '')">
+          <span>${escapeAttr(browseStr.requestThis || 'Solicitar este servicio')}</span>
           <span class="browse-drawer__item-actions">
             <span class="favorite-action favorite-action--drawer"
                   role="button"
                   tabindex="0"
-                  data-favorite-key="${escapeAttr(getFavoriteKey(catKey, subKey, serviceName))}"
+                  data-favorite-key="${escapeAttr(getFavoriteKey(catKey, subKey, ''))}"
                   aria-pressed="false"
-                  onclick="window._browseToggleFavorite(event, '${catKey}', '${subKey}', '${encodeURIComponent(serviceName)}', ${idx})"
-                  onkeydown="window._browseFavoriteKeydown(event, '${catKey}', '${subKey}', '${encodeURIComponent(serviceName)}', ${idx})">
+                  onclick="window._browseToggleFavorite(event, '${catKey}', '${subKey}', '', 0)"
+                  onkeydown="window._browseFavoriteKeydown(event, '${catKey}', '${subKey}', '', 0)">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7.2-4.5-9.5-9.1C.8 8.5 2.8 4.5 6.5 4.1c2-.2 3.7.8 5.5 2.8 1.8-2 3.5-3 5.5-2.8 3.7.4 5.7 4.4 4 7.8C19.2 16.5 12 21 12 21z"/></svg>
             </span>
             <span class="browse-drawer__item-arrow">
@@ -455,7 +413,21 @@
           </span>
         </button>
       </li>
-    `).join('');
+      ${examplesHtml}
+      <li>
+        <button class="browse-drawer__item browse-drawer__item--search" type="button" onclick="window._browseStartIntelligentSearch('${catKey}')">
+          <span>
+            <span class="browse-drawer__search-title">${escapeAttr(searchTitle)}</span>
+            <span class="browse-drawer__search-body">${escapeAttr(searchBody)}</span>
+          </span>
+          <span class="browse-drawer__item-actions">
+            <span class="browse-drawer__item-arrow">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </span>
+          </span>
+        </button>
+      </li>
+    `;
     updateFavoriteButtons();
 
     drawer.removeAttribute('hidden');
@@ -470,11 +442,6 @@
   };
 
   window._browseOpenSubcategory = function(catKey, subKey, source) {
-    if (source === 'discovery-card') {
-      window._browseSetFilter(catKey);
-      window.requestAnimationFrame(() => scrollToSubcategoryCarousel(catKey, subKey));
-      return;
-    }
     window._openBrowseDrawer(catKey, subKey, { source: source || 'subcategory-card' });
   };
 
@@ -508,7 +475,7 @@
 
     const catName = resolve(catI18n[catKey].name) || catKey;
     const subName = getSubcategoryLabel(catKey, subKey) || catName;
-    const visuals = getServiceCardVisuals(catKey, subKey, Number(index) || 0);
+    const visuals = getRepresentativeServiceImage(catKey, subKey);
     const params = new URLSearchParams();
     params.set('category', catKey || '');
     params.set('sub', subKey || '');
@@ -538,35 +505,8 @@
     window.location.href = '/index.html?' + params.toString();
   };
 
-  function buildSearchPathwayCard(catKey, discovery) {
-    const title = discovery.searchCardTitle || "Didn't find what you were looking for?";
-    const body = discovery.searchCardBody || "Describe it and we'll find it.";
-    const cta = discovery.searchCardCta || 'Describe service';
-    return `
-      <button class="dash-discovery__card dash-discovery__search-card" type="button"
-              onclick="window._browseStartIntelligentSearch('${catKey || ''}')"
-              aria-label="${escapeAttr(title + ' ' + body)}">
-        <span class="dash-discovery__search-media" aria-hidden="true">
-          <span class="dash-discovery__search-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14z"/>
-              <path d="M16.2 16.2 21 21"/>
-              <path d="M8.8 10.2h4.4"/>
-              <path d="M11 8v4.4"/>
-            </svg>
-          </span>
-        </span>
-        <span class="dash-discovery__search-copy">
-          <span class="dash-discovery__search-title">${escapeAttr(title)}</span>
-          <span class="dash-discovery__search-body">${escapeAttr(body)}</span>
-          <span class="dash-discovery__search-cta">${escapeAttr(cta)}</span>
-        </span>
-      </button>
-    `;
-  }
-
   function buildCategoryCards(catKey, categoryName, discovery) {
-    const services = getSubcategoryConfigs(catKey).slice(0, PREVIEW_ITEMS_PER_CATEGORY);
+    const services = getSubcategoryConfigs(catKey);
 
     if (!services.length) {
       return `<div class="dash-discovery__empty">${discovery.empty || 'Próximamente habrá más servicios.'}</div>`;
@@ -592,132 +532,59 @@
     }).join('');
   }
 
-  function buildSpecificServiceCards(catKey, subKey, subName, discovery) {
-    const serviceLimit = catKey === 'repair' && subKey === 'plumbing' ? 6 : 5;
-    const services = getSpecificServices(catKey, subKey).slice(0, serviceLimit);
-
-    if (!services.length) {
-      return `<div class="dash-discovery__empty">${discovery.empty || 'Próximamente habrá más servicios.'}</div>`;
-    }
-
-    return services.map((serviceName, idx) => {
-      const safeLabel = escapeAttr(serviceName);
-      const visuals = getServiceCardVisuals(catKey, subKey, idx);
-      const favoriteKey = escapeAttr(getFavoriteKey(catKey, subKey, serviceName));
-      return `
-        <button class="dash-discovery__card" type="button"
-                onclick="window._browseSelectService('${catKey}', '${subKey}', '${encodeURIComponent(serviceName)}')"
-                aria-label="${safeLabel}">
-          <span class="dash-discovery__media">
-            <img class="dash-discovery__img"
-                 src="${visuals.primarySrc}"
-                 alt="${safeLabel || subName}"
-                 loading="lazy"
-                 onerror="${visuals.onerror}">
-            <span class="favorite-action"
-                  role="button"
-                  tabindex="0"
-                  data-favorite-key="${favoriteKey}"
-                  aria-pressed="false"
-                  onclick="window._browseToggleFavorite(event, '${catKey}', '${subKey}', '${encodeURIComponent(serviceName)}', ${idx})"
-                  onkeydown="window._browseFavoriteKeydown(event, '${catKey}', '${subKey}', '${encodeURIComponent(serviceName)}', ${idx})">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7.2-4.5-9.5-9.1C.8 8.5 2.8 4.5 6.5 4.1c2-.2 3.7.8 5.5 2.8 1.8-2 3.5-3 5.5-2.8 3.7.4 5.7 4.4 4 7.8C19.2 16.5 12 21 12 21z"/></svg>
-            </span>
-          </span>
-          <span class="dash-discovery__label">${safeLabel}</span>
-        </button>
-      `;
-    }).join('') + buildSearchPathwayCard(catKey, discovery);
-  }
-
   function renderDiscovery() {
     const root = document.getElementById('dash-discovery-root');
     if (!root) return;
 
     const tr = t();
     const discovery = tr.discovery || {};
-    const filters = [DISCOVERY_FILTER_ALL].concat(catKeys);
 
     const titleEl = document.getElementById('browse-page-title');
     if (titleEl) titleEl.textContent = discovery.title || 'Explora por categoría';
     const subtitleEl = document.getElementById('browse-page-subtitle');
     if (subtitleEl) subtitleEl.textContent = discovery.subtitle || '';
 
-    const chipsHtml = filters.map(key => {
-      const isAll = key === DISCOVERY_FILTER_ALL;
-      const isActive = activeDiscoveryFilter === key;
-      const label = isAll ? (discovery.allChip || 'Todo') : (resolve(catI18n[key].name) || key);
-      const icon = isAll ? '✨' : (catEmoji[key] || '•');
+    const chipsHtml = catKeys.map(key => {
+      const label = resolve(catI18n[key].name) || key;
+      const icon = catEmoji[key] || '•';
       return `
-        <button class="dash-discovery__chip${isActive ? ' is-active' : ''}" type="button"
-                aria-pressed="${isActive ? 'true' : 'false'}"
-                onclick="window._browseSetFilter('${key}')">
+        <button class="dash-discovery__chip" type="button"
+                data-category="${key}"
+                aria-pressed="false"
+                onclick="window._browseScrollToCategory('${key}')">
           <span class="dash-discovery__chip-icon" aria-hidden="true">${icon}</span>
           <span>${label}</span>
         </button>
       `;
     }).join('');
 
-    const rowsHtml = activeDiscoveryFilter === DISCOVERY_FILTER_ALL
-      ? catKeys.map(catKey => {
-          const catName = resolve(catI18n[catKey].name) || catKey;
-          const rowCards = buildCategoryCards(catKey, catName, discovery);
-          return `
-            <section class="dash-discovery__row" data-category="${catKey}">
-              <div class="dash-discovery__row-head">
-                <h3 class="dash-discovery__row-title">${catName}</h3>
-                <button class="dash-discovery__see-all" type="button"
-                        onclick="window._browseOpenCategory('${catKey}', 'discovery-see-all')">
-                  ${discovery.seeAll || 'Ver todo'}
-                </button>
-              </div>
-              <div class="dash-discovery__carousel-wrap">
-                <button class="dash-discovery__arrow dash-discovery__arrow--left" type="button"
-                        aria-label="${escapeAttr(discovery.prev || 'Desplazar a la izquierda')}"
-                        onclick="window._browseScrollCarousel('${catKey}', -1)">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
-                </button>
-                <div class="dash-discovery__carousel" id="dash-carousel-${catKey}" tabindex="0"
-                     onkeydown="window._browseHandleCarouselKey(event, '${catKey}')">
-                  ${rowCards}
-                </div>
-                <button class="dash-discovery__arrow dash-discovery__arrow--right" type="button"
-                        aria-label="${escapeAttr(discovery.next || 'Desplazar a la derecha')}"
-                        onclick="window._browseScrollCarousel('${catKey}', 1)">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
-                </button>
-              </div>
-            </section>
-          `;
-        }).join('')
-      : getSubcategoryConfigs(activeDiscoveryFilter).map(sub => {
-          const subName = escapeAttr(getLocalizedText(sub.label));
-          const rowCards = buildSpecificServiceCards(activeDiscoveryFilter, sub.key, subName, discovery);
-          const rowId = `${activeDiscoveryFilter}-${sub.key}`;
-          return `
-            <section class="dash-discovery__row" data-category="${activeDiscoveryFilter}" data-subcategory="${sub.key}">
-              <div class="dash-discovery__row-head">
-                <h3 class="dash-discovery__row-title">${subName}</h3>
-              </div>
-              <div class="dash-discovery__carousel-wrap">
-                <button class="dash-discovery__arrow dash-discovery__arrow--left" type="button"
-                        aria-label="${escapeAttr(discovery.prev || 'Desplazar a la izquierda')}"
-                        onclick="window._browseScrollCarousel('${rowId}', -1)">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
-                </button>
-                <div class="dash-discovery__carousel" id="dash-carousel-${rowId}" tabindex="0"
-                     onkeydown="window._browseHandleCarouselKey(event, '${rowId}')">
-                  ${rowCards}
-                </div>
-                <button class="dash-discovery__arrow dash-discovery__arrow--right" type="button"
-                        aria-label="${escapeAttr(discovery.next || 'Desplazar a la derecha')}"
-                        onclick="window._browseScrollCarousel('${rowId}', 1)">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
-                </button>
-              </div>
-            </section>
-          `;
-        }).join('');
+    const rowsHtml = catKeys.map(catKey => {
+      const catName = resolve(catI18n[catKey].name) || catKey;
+      const rowCards = buildCategoryCards(catKey, catName, discovery);
+      return `
+        <section class="dash-discovery__row" data-category="${catKey}">
+          <div class="dash-discovery__row-head">
+            <h3 class="dash-discovery__row-title">${catName}</h3>
+          </div>
+          <div class="dash-discovery__carousel-wrap">
+            <button class="dash-discovery__arrow dash-discovery__arrow--left" type="button"
+                    aria-label="${escapeAttr(discovery.prev || 'Desplazar a la izquierda')}"
+                    onclick="window._browseScrollCarousel('${catKey}', -1)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+            </button>
+            <div class="dash-discovery__carousel" id="dash-carousel-${catKey}" tabindex="0"
+                 onkeydown="window._browseHandleCarouselKey(event, '${catKey}')">
+              ${rowCards}
+            </div>
+            <button class="dash-discovery__arrow dash-discovery__arrow--right" type="button"
+                    aria-label="${escapeAttr(discovery.next || 'Desplazar a la derecha')}"
+                    onclick="window._browseScrollCarousel('${catKey}', 1)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+            </button>
+          </div>
+        </section>
+      `;
+    }).join('');
 
     root.innerHTML = `
       <div class="dash-discovery__chips" role="toolbar" aria-label="${escapeAttr(discovery.chipsLabel || 'Filtrar por categoría')}">
@@ -731,14 +598,15 @@
     updateFavoriteButtons();
   }
 
-  function initFilterFromUrl() {
-    const params = new URLSearchParams(window.location.search);
-    const category = params.get('category');
-    if (category && catKeys.includes(category)) activeDiscoveryFilter = category;
-  }
-
-  initFilterFromUrl();
   renderDiscovery();
+
+  (function scrollToCategoryFromUrl() {
+    const category = new URLSearchParams(window.location.search).get('category');
+    if (category && catKeys.includes(category)) {
+      window.requestAnimationFrame(() => window._browseScrollToCategory(category));
+    }
+  })();
+
   loadFavorites();
   window.addEventListener('servi-auth-success', loadFavorites);
   window.addEventListener('langchange', renderDiscovery);

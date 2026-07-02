@@ -180,6 +180,8 @@ const T = {
       back: "Volver",
       selectService: "Selecciona un servicio",
       requestThis: "Solicitar este servicio",
+      requestSubtitle: "Solicítalo y añade los detalles en el siguiente paso",
+      examplesLabel: "Por ejemplo",
     },
     servicePage: {
       priceLabel: "Precio a confirmar",
@@ -197,6 +199,7 @@ const T = {
       timeWhenever: "Cuando sea",
       addressLabel: "Dirección del servicio",
       addressPlaceholder: "Calle, número, colonia",
+      detailsQuestionsLabel: "Cuéntanos más (opcional)",
       detailsLabel: "Detalles adicionales (opcional)",
       detailsPlaceholderRepair: "Describe el problema con más detalle…",
       detailsPlaceholderCleaning: "¿Qué áreas necesitas limpiar?",
@@ -947,6 +950,8 @@ const T = {
       back: "Back",
       selectService: "Select a service",
       requestThis: "Request this service",
+      requestSubtitle: "Request it and add the details in the next step",
+      examplesLabel: "For example",
     },
     servicePage: {
       priceLabel: "Price to be confirmed",
@@ -964,6 +969,7 @@ const T = {
       timeWhenever: "Whenever",
       addressLabel: "Service address",
       addressPlaceholder: "Street, number, neighborhood",
+      detailsQuestionsLabel: "Tell us more (optional)",
       detailsLabel: "Additional details (optional)",
       detailsPlaceholderRepair: "Describe the issue in more detail…",
       detailsPlaceholderCleaning: "Which areas need cleaning?",

@@ -10021,6 +10021,30 @@ app.get('/api/admin/providers', adminRateLimit, requireAdminAuth, async (req, re
   }
 });
 
+// Manually add a verified provider (no application funnel) — mints a prov-NNNNNN id and
+// inserts a 'verified' row directly. Mirrors the id mint + insert from the promote route below.
+app.post('/api/admin/providers', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const name = (b.name || '').trim();
+    if (!name) return res.status(400).json({ error: 'name_required' });
+    const clean = (v) => { const s = (v == null ? '' : String(v)).trim(); return s || null; };
+    const { rows: seqRows } = await pool.query(
+      `SELECT 'prov-' || lpad(nextval('provider_id_seq')::text, 6, '0') AS pid`
+    );
+    const providerId = seqRows[0].pid;
+    await pool.query(
+      `INSERT INTO providers (provider_id, status, name, phone, email, specialty, city)
+       VALUES ($1, 'verified', $2, $3, $4, $5, $6)`,
+      [providerId, name, clean(b.phone), clean(b.email), clean(b.specialty), clean(b.city)]
+    );
+    return res.json({ ok: true, provider_id: providerId });
+  } catch (err) {
+    console.error('[POST /api/admin/providers]', err);
+    return res.status(500).json({ error: 'internal_error', message: err.message });
+  }
+});
+
 app.post('/api/admin/partner-applications/:appId/promote', adminRateLimit, requireAdminAuth, async (req, res) => {
   const client = await pool.connect();
   try {
