@@ -205,13 +205,8 @@ Rules: 1-3 followups, only ones that genuinely help; prefer questions with quick
   window.serviInferDate = inferDate;
 
   /* ═══════════════════════════════════════════════════════════════════════
-     MULTIMODAL ANALYSIS — voice & photos get the same "Here's what I
-     understood" flow; video is Wizard-of-Oz (looks AI, reviewed by admin).
-
-     PROTOTYPE NOTE: window.claude.complete is text-only, so here we analyze a
-     transcript (voice) / caption (photos) string through the same text engine.
-     In PRODUCTION, replace the body of `callMediaBackend` with a real call to
-     a multimodal endpoint (speech-to-text + vision) — see SERVI-INTEGRATION.md.
+     MULTIMODAL ANALYSIS — fail closed by default. Demo samples are available
+     only when opened with ?sr_debug=1.
      ═══════════════════════════════════════════════════════════════════════ */
 
   // Representative transcripts/captions for the in-prototype demo only.
@@ -227,13 +222,48 @@ Rules: 1-3 followups, only ones that genuinely help; prefer questions with quick
       'Photo shows a wooden shelf that has detached from the wall, with anchors pulled out.',
     ],
   };
-  let sampleIdx = { voice: 0, photos: 0 };
-  window.__serviSampleText = function (kind) {
-    const pool = SAMPLES[kind] || SAMPLES.voice;
-    const v = pool[sampleIdx[kind] % pool.length];
-    sampleIdx[kind] = (sampleIdx[kind] || 0) + 1;
-    return v;
-  };
+  function srDebug() {
+    try {
+      return new URLSearchParams(window.location.search).get('sr_debug') === '1';
+    } catch (e) {
+      return false;
+    }
+  }
+
+  if (srDebug()) {
+    let sampleIdx = { voice: 0, photos: 0 };
+    window.__serviSampleText = function (kind) {
+      const pool = SAMPLES[kind] || SAMPLES.voice;
+      const v = pool[sampleIdx[kind] % pool.length];
+      sampleIdx[kind] = (sampleIdx[kind] || 0) + 1;
+      return v;
+    };
+  }
+
+  function unclearMedia(kind, reason) {
+    return {
+      mode: kind,
+      adminReview: true,
+      aiStatus: 'unclear',
+      aiReason: reason || 'unable_to_decipher',
+      aiEvidence: [],
+      emoji: '✨',
+      category: 'custom',
+      categoryLabel: 'Custom request',
+      subKey: null,
+      subLabel: null,
+      service: null,
+      summary: kind === 'voice'
+        ? 'I could not decipher the voice note.'
+        : 'I could not identify the service with enough certainty.',
+      confidence: 0,
+      urgency: 'flexible',
+      inferredDate: null,
+      inferredDateLabel: null,
+      followups: [],
+      source: kind === 'voice' ? 'voice-manual-review' : 'photo-unclear',
+    };
+  }
 
   // PRODUCTION SWAP POINT — replace with a real multimodal backend request.
   async function callMediaBackend(kind, payload) {
@@ -247,7 +277,8 @@ Rules: 1-3 followups, only ones that genuinely help; prefer questions with quick
   // VOICE → transcribe (prod) → parse. Returns an understanding object.
   window.serviAnalyzeVoice = async function (payload) {
     const data = payload || {};
-    const transcript = data.transcript || window.__serviSampleText('voice');
+    const transcript = data.transcript || (window.__serviSampleText ? window.__serviSampleText('voice') : '');
+    if (!transcript) return unclearMedia('voice', 'audio_transcription_unavailable');
     try {
       const parsed = await callMediaBackend('voice', { transcript });
       return Object.assign(parsed, { mode: 'voice', transcript, source: 'voice-ai' });
@@ -260,7 +291,8 @@ Rules: 1-3 followups, only ones that genuinely help; prefer questions with quick
   // PHOTOS → vision caption (prod) → parse. Returns an understanding object.
   window.serviAnalyzePhotos = async function (payload) {
     const data = payload || {};
-    const caption = data.caption || window.__serviSampleText('photos');
+    const caption = data.caption || (window.__serviSampleText ? window.__serviSampleText('photos') : '');
+    if (!caption) return unclearMedia('photos', 'insufficient_visual_evidence');
     try {
       const parsed = await callMediaBackend('photos', { caption });
       return Object.assign(parsed, { mode: 'photos', caption, source: 'photo-ai' });
@@ -274,7 +306,7 @@ Rules: 1-3 followups, only ones that genuinely help; prefer questions with quick
   // parsed: the admin team reviews the clip and follows up on WhatsApp.
   window.serviAnalyzeVideo = function () {
     return Promise.resolve({
-      mode: 'video', adminReview: true,
+      mode: 'video', adminReview: true, aiStatus: 'manual_review', aiReason: 'video_manual_review', aiEvidence: [],
       emoji: '🎬', categoryLabel: 'Video request', service: null,
       summary: 'Our specialists will review your video in detail.',
       followups: [], source: 'video-review',

@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="/shared/shared-styles.css">
   <link rel="stylesheet" href="/shared/landing-theme.css">
   <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script src="/shared/browse-data.js"></script>
   <style>
     .account-page {
       --account-accent-soft: rgba(149, 204, 213, 0.14);
@@ -34,7 +35,8 @@
       mask-image: linear-gradient(to bottom, #000 0%, #000 38%, transparent 100%);
     }
     .account-page > .container { position: relative; z-index: 1; }
-    .account-layout { display: grid; grid-template-columns: 240px 1fr; gap: 32px; align-items: start; }
+    .account-layout { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 32px; align-items: start; min-width: 0; }
+    #account-content { min-width: 0; }
     .account-sidebar {
       background: rgba(255, 255, 255, 0.8);
       border: 1px solid var(--color-border);
@@ -589,7 +591,7 @@
     .action-address-form { margin: 14px 0 12px; }
     .action-address-form .servi-addr { gap: 12px; }
     /* ─── Orders hub (promoted workspace header) ────────────────────────── */
-    .orders-hub { display: grid; grid-template-columns: 1.55fr 1fr; grid-auto-rows: minmax(0, 1fr); gap: 16px; margin-bottom: 26px; }
+    .orders-hub { display: grid; grid-template-columns: 1.55fr 1fr; grid-auto-rows: minmax(0, 1fr); gap: 10px 16px; height: 242px; margin-bottom: 22px; }
     .hub-tile {
       position: relative;
       display: flex; flex-direction: column;
@@ -598,39 +600,94 @@
       background: rgba(255, 255, 255, 0.82);
       backdrop-filter: blur(16px);
       box-shadow: 0 24px 48px -34px rgba(17, 17, 17, 0.22);
-      padding: 22px; cursor: pointer;
+      padding: 16px 18px; cursor: pointer;
       font-family: var(--font-body);
-      transition: transform var(--duration-fast), box-shadow var(--duration-fast), border-color var(--duration-fast);
+      overflow: hidden;
+      transition: transform var(--duration-fast), box-shadow var(--duration-fast), border-color var(--duration-fast), background var(--duration-fast);
     }
-    .hub-tile:hover { transform: translateY(-2px); border-color: var(--account-accent-ring); box-shadow: 0 26px 52px -30px rgba(17, 17, 17, 0.3); }
+    .hub-tile::after {
+      content: "";
+      position: absolute;
+      inset: auto -20% -42% 36%;
+      height: 86px;
+      background: radial-gradient(circle, rgba(149, 204, 213, 0.18), transparent 66%);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity var(--duration-fast), transform var(--duration-fast);
+    }
+    .hub-tile:hover { transform: translateY(-2px); border-color: var(--account-accent-ring); background: rgba(255, 255, 255, 0.92); box-shadow: 0 26px 52px -30px rgba(17, 17, 17, 0.3); }
+    .hub-tile:hover::after { opacity: 1; transform: translateY(-4px); }
     .hub-tile:focus-visible { outline: none; border-color: var(--color-accent); box-shadow: 0 0 0 4px var(--account-accent-ring); }
     .hub-tile:active { transform: translateY(0); }
     .hub-tile.active { border-color: var(--color-accent); box-shadow: 0 0 0 1.5px var(--color-accent), 0 24px 48px -34px rgba(17, 17, 17, 0.22); }
     .hub-tile-orders { grid-row: span 2; }
-    .hub-tile-head { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+    .hub-tile-small { padding-block: 16px 14px; }
+    .hub-tile-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+    .hub-tile-small .hub-tile-head { margin-bottom: 0; }
     .hub-tile-icon {
-      width: 42px; height: 42px; flex: 0 0 42px; border-radius: 13px;
+      width: 32px; height: 32px; flex: 0 0 32px; border-radius: 10px;
       display: inline-flex; align-items: center; justify-content: center;
       background: var(--account-accent-soft); color: var(--color-accent);
     }
-    .hub-tile-icon svg { width: 22px; height: 22px; stroke: currentColor; fill: none; }
+    .hub-tile-icon svg { width: 18px; height: 18px; stroke: currentColor; fill: none; }
     .hub-tile-label { font-family: var(--font-heading); font-size: 15px; font-weight: 800; letter-spacing: -0.01em; color: var(--color-text); line-height: 1.2; }
-    .hub-tile-orders .hub-tile-label { font-size: 19px; }
-    .hub-metrics { display: flex; align-items: flex-end; gap: 22px; }
-    .hub-metric { display: flex; flex-direction: column; gap: 4px; }
-    .hub-metric-num { font-family: var(--font-heading); font-weight: 800; letter-spacing: -0.02em; color: var(--color-text); line-height: 0.95; font-size: 26px; }
-    .hub-tile-orders .hub-metric-num.is-primary { font-size: 40px; }
-    .hub-metric-cap { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-text-muted); }
-    .hub-spacer { flex: 1 1 auto; min-height: 10px; }
-    .hub-status { font-size: 13px; color: var(--color-text-secondary); line-height: 1.45; }
+    .hub-tile-orders .hub-tile-label { font-size: 18px; }
+    .hub-summary { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; min-width: 0; }
+    .hub-metrics { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .hub-metric { display: inline-flex; align-items: center; gap: 5px; min-width: 0; }
+    .hub-metric-num { font-family: var(--font-heading); font-weight: 800; letter-spacing: 0; color: var(--color-text); line-height: 1; font-size: 17px; font-variant-numeric: tabular-nums; }
+    .hub-tile-orders .hub-metric-num.is-primary { font-size: 20px; }
+    .hub-metric-cap { font-size: 11px; font-weight: 750; color: var(--color-text-muted); line-height: 1.25; }
+    .hub-spacer { flex: 1 1 auto; min-height: 0; }
+    .hub-status { display: block; min-width: 0; font-size: 13px; color: var(--color-text-secondary); line-height: 1.45; }
     .hub-status.is-action { color: #a16207; font-weight: 700; }
-    .hub-cta { align-self: flex-start; margin-top: 16px; }
+    .hub-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+    .hub-tile-small .hub-actions { margin-top: 8px; }
+    .hub-tile-orders .hub-actions { align-items: flex-end; }
+    .hub-action {
+      position: relative;
+      z-index: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 36px;
+      padding: 9px 14px;
+      border: 1px solid rgba(16, 18, 19, 0.14);
+      border-radius: 12px;
+      background: var(--color-text);
+      color: #fff;
+      font-family: var(--font-body);
+      font-size: 12.5px;
+      font-weight: 800;
+      line-height: 1;
+      text-decoration: none;
+      white-space: nowrap;
+      cursor: pointer;
+      box-shadow: 0 16px 28px -22px rgba(17, 17, 17, 0.72);
+      transition: transform var(--duration-fast), background var(--duration-fast), border-color var(--duration-fast), box-shadow var(--duration-fast);
+    }
+    .hub-action.is-secondary {
+      background: rgba(255, 255, 255, 0.86);
+      border-color: rgba(17, 17, 17, 0.14);
+      color: var(--color-text);
+      box-shadow: none;
+    }
+    .hub-tile:hover .hub-action { background: var(--color-accent-hover); border-color: var(--color-accent-hover); box-shadow: 0 18px 30px -20px rgba(63, 142, 157, 0.48); }
+    .hub-tile.active .hub-action { background: var(--color-accent); border-color: var(--color-accent); color: #fff; }
+    .hub-tile:hover .hub-action.is-secondary,
+    .hub-tile.active .hub-action.is-secondary {
+      background: rgba(255, 255, 255, 0.9);
+      border-color: rgba(17, 17, 17, 0.14);
+      color: var(--color-text);
+      box-shadow: none;
+    }
+    .hub-cta { position: relative; z-index: 1; align-self: flex-start; margin-top: 0; padding: 9px 13px; min-height: 36px; border-radius: 12px; font-size: 12.5px; box-shadow: none; }
     /* skeleton placeholders while a count loads */
     .hub-sk { color: transparent !important; border-radius: 8px;
       background: linear-gradient(100deg, rgba(17,17,17,0.05) 28%, rgba(17,17,17,0.09) 50%, rgba(17,17,17,0.05) 72%);
       background-size: 220% 100%; animation: skShimmer 1.3s ease-in-out infinite; }
-    .hub-metric-num.hub-sk { display: inline-block; width: 48px; height: 28px; }
-    .hub-tile-orders .hub-metric-num.is-primary.hub-sk { width: 64px; height: 38px; }
+    .hub-metric-num.hub-sk { display: inline-block; width: 28px; height: 18px; }
+    .hub-tile-orders .hub-metric-num.is-primary.hub-sk { width: 34px; height: 20px; }
     .hub-status.hub-sk { display: inline-block; width: 150px; height: 13px; }
     /* ─── Orders / history ─────────────────────────────────────────────── */
     .orders-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
@@ -723,8 +780,10 @@
     .order-status { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 999px; font-size: 11px; font-weight: 800; white-space: nowrap; }
     .order-status::before { content: ""; width: 6px; height: 6px; border-radius: 999px; background: currentColor; }
     .order-status.is-pending { background: rgba(161, 98, 7, 0.12); color: #a16207; }
-    .order-status.is-progress { background: rgba(49, 120, 131, 0.13); color: #2b6d77; }
-    .order-status.is-authorized { background: var(--account-accent-soft); color: #2b6d77; }
+    .order-status.is-request { background: rgba(49, 120, 131, 0.13); color: #2b6d77; }
+    .order-status.is-booked { background: rgba(91, 111, 216, 0.13); color: #4b5cc4; }
+    .order-status.is-progress { background: rgba(91, 111, 216, 0.13); color: #4b5cc4; }
+    .order-status.is-authorized { background: rgba(31, 122, 58, 0.13); color: #1f7a3a; }
     .order-status.is-done { background: rgba(31, 122, 58, 0.13); color: #1f7a3a; }
     .order-status.is-canceled { background: rgba(17, 17, 17, 0.06); color: #7c7c7c; }
     .order-status.is-declined { background: var(--account-danger-soft); color: var(--account-danger); }
@@ -748,6 +807,130 @@
     .order-empty-emoji { font-size: 34px; line-height: 1; margin-bottom: 14px; }
     .order-empty-title { font-size: 16px; font-weight: 800; color: var(--color-text); margin-bottom: 6px; }
     .order-empty-text { font-size: 13px; color: var(--color-text-secondary); line-height: 1.5; margin-bottom: 18px; max-width: 360px; margin-left: auto; margin-right: auto; }
+    /* ─── Orders view switch (List / Calendar) ─────────────────────────── */
+    .orders-viewtabs { display: inline-flex; gap: 4px; padding: 4px; background: rgba(255,255,255,0.7); border: 1px solid var(--color-border); border-radius: 14px; flex: 0 0 auto; }
+    .ov-tab { display: inline-flex; align-items: center; gap: 7px; padding: 9px 15px; border: none; background: none; cursor: pointer; font-family: var(--font-body); font-size: 13px; font-weight: 700; color: var(--color-text-secondary); border-radius: 10px; transition: background var(--duration-fast), color var(--duration-fast); }
+    .ov-tab svg { width: 15px; height: 15px; stroke: currentColor; fill: none; }
+    .ov-tab:hover { color: var(--color-text); }
+    .ov-tab.active { background: var(--color-text); color: #fff; }
+    /* ─── Service Calendar ─────────────────────────────────────────────── */
+    .cal-wrap { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+    .cal-main { border: 1px solid var(--color-border); border-radius: 22px; background: rgba(255,255,255,0.82); backdrop-filter: blur(14px); padding: 18px; }
+    .cal-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+    .cal-title { font-family: var(--font-heading); font-size: 18px; font-weight: 800; letter-spacing: -0.01em; color: var(--color-text); text-transform: capitalize; }
+    .cal-nav { display: inline-flex; align-items: center; gap: 6px; }
+    .cal-nav-btn { width: 34px; height: 34px; border-radius: 11px; border: 1px solid var(--color-border); background: #fff; color: var(--color-text); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; font-size: 16px; transition: background var(--duration-fast), border-color var(--duration-fast); }
+    .cal-nav-btn:hover { background: var(--color-surface); border-color: var(--account-accent-ring); }
+    .cal-today-btn { padding: 0 13px; height: 34px; border-radius: 11px; border: 1px solid var(--color-border); background: #fff; color: var(--color-text); font-family: var(--font-body); font-size: 12.5px; font-weight: 700; cursor: pointer; transition: background var(--duration-fast); }
+    .cal-today-btn:hover { background: var(--color-surface); }
+    .cal-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-bottom: 6px; }
+    .cal-weekday { text-align: center; font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-text-muted); padding: 4px 0; }
+    .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+    .cal-cell { position: relative; min-height: 64px; border: 1px solid transparent; border-radius: 13px; background: rgba(17,17,17,0.022); padding: 7px 8px 6px; cursor: pointer; display: flex; flex-direction: column; gap: 4px; transition: background var(--duration-fast), border-color var(--duration-fast), transform var(--duration-fast); text-align: left; }
+    .cal-cell:hover { background: rgba(17,17,17,0.05); }
+    .cal-cell.empty { background: transparent; cursor: default; pointer-events: none; }
+    .cal-cell.has-events { background: var(--account-accent-soft); }
+    .cal-cell.selected { border-color: var(--color-accent); background: #fff; box-shadow: 0 0 0 1.5px var(--color-accent); }
+    .cal-cell.today .cal-daynum { background: var(--color-text); color: #fff; }
+    .cal-cell.past { opacity: 0.55; }
+    .cal-daynum { font-size: 12.5px; font-weight: 700; color: var(--color-text); width: 23px; height: 23px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; }
+    .cal-dots { display: flex; flex-wrap: wrap; gap: 3px; margin-top: auto; }
+    .cal-dot { width: 7px; height: 7px; border-radius: 999px; background: var(--dot, #95ccd5); }
+    .cal-dot.ring { background: #fff; box-shadow: inset 0 0 0 2px var(--dot, #95ccd5); }
+    .cal-more { font-size: 9.5px; font-weight: 800; color: var(--color-text-muted); line-height: 1; }
+    .cal-side { display: flex; flex-direction: column; gap: 16px; }
+    .cal-agenda, .cal-recurring { border: 1px solid var(--color-border); border-radius: 20px; background: rgba(255,255,255,0.82); backdrop-filter: blur(14px); padding: 18px; }
+    .cal-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
+    .cal-panel-title { font-family: var(--font-heading); font-size: 15px; font-weight: 800; letter-spacing: -0.01em; color: var(--color-text); }
+    .cal-panel-sub { font-size: 12px; color: var(--color-text-muted); font-weight: 600; }
+    .cal-add-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 13px; border-radius: 11px; border: none; background: var(--color-text); color: #fff; font-family: var(--font-body); font-size: 12px; font-weight: 700; cursor: pointer; transition: background var(--duration-fast), transform var(--duration-fast); white-space: nowrap; }
+    .cal-add-btn:hover { background: var(--color-accent); transform: translateY(-1px); }
+    .cal-event { display: grid; grid-template-columns: 42px 1fr auto; gap: 12px; align-items: center; padding: 11px 0; cursor: pointer; }
+    .cal-event + .cal-event { border-top: 1px solid rgba(17,17,17,0.06); }
+    .cal-event-icon { width: 42px; height: 42px; border-radius: 13px; display: inline-flex; align-items: center; justify-content: center; font-size: 19px; background: var(--order-tint, var(--color-surface)); }
+    .cal-event-main { min-width: 0; }
+    .cal-event-title { font-size: 14px; font-weight: 800; color: var(--color-text); line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cal-event-meta { font-size: 12px; color: var(--color-text-muted); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cal-event-time { font-size: 12.5px; font-weight: 800; color: var(--color-text-secondary); white-space: nowrap; text-align: right; }
+    .cal-tag { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; }
+    .cal-tag.recurring { background: rgba(146,166,228,0.18); color: #4f5bb0; }
+    .cal-empty { text-align: center; padding: 22px 12px; color: var(--color-text-muted); font-size: 13px; line-height: 1.5; }
+    .cal-legend { display: flex; flex-wrap: wrap; gap: 9px 14px; margin-top: 14px; padding-top: 14px; border-top: 1px solid rgba(17,17,17,0.06); }
+    .cal-legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 600; color: var(--color-text-secondary); }
+    .cal-legend-dot { width: 9px; height: 9px; border-radius: 999px; background: var(--dot, #95ccd5); }
+    /* Recurring plan cards */
+    .rec-card { border: 1px solid var(--color-border); border-radius: 16px; background: rgba(255,255,255,0.7); padding: 14px; }
+    .rec-card + .rec-card { margin-top: 12px; }
+    .rec-card.paused { opacity: 0.72; }
+    .rec-card-top { display: grid; grid-template-columns: 40px 1fr auto; gap: 12px; align-items: start; }
+    .rec-icon { width: 40px; height: 40px; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; font-size: 19px; background: var(--order-tint, var(--color-surface)); }
+    .rec-title { font-size: 14.5px; font-weight: 800; color: var(--color-text); line-height: 1.25; }
+    .rec-cadence { font-size: 12.5px; color: var(--color-text-secondary); margin-top: 2px; font-weight: 600; }
+    .rec-meta { font-size: 12px; color: var(--color-text-muted); margin-top: 4px; display: flex; flex-wrap: wrap; gap: 3px 12px; }
+    .rec-status { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 999px; font-size: 10.5px; font-weight: 800; white-space: nowrap; }
+    .rec-status::before { content: ""; width: 6px; height: 6px; border-radius: 999px; background: currentColor; }
+    .rec-status.active { background: rgba(31,122,58,0.13); color: #1f7a3a; }
+    .rec-status.paused { background: rgba(161,98,7,0.12); color: #a16207; }
+    .rec-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(17,17,17,0.06); }
+    .rec-empty { border: 1.5px dashed rgba(149,204,213,0.55); border-radius: 16px; padding: 22px 16px; text-align: center; background: rgba(255,255,255,0.55); }
+    .rec-empty-title { font-size: 14.5px; font-weight: 800; color: var(--color-text); margin-bottom: 5px; }
+    .rec-empty-text { font-size: 12.5px; color: var(--color-text-secondary); line-height: 1.5; margin-bottom: 14px; }
+    /* Recurring setup modal */
+    .rec-form { display: flex; flex-direction: column; gap: 14px; margin: 16px 0; text-align: left; }
+    .rec-field { display: flex; flex-direction: column; gap: 6px; }
+    .rec-field-label { font-size: 12px; font-weight: 800; color: var(--color-text-secondary); text-transform: uppercase; letter-spacing: 0.04em; }
+    .rec-field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .rec-input, .rec-select, .rec-textarea { width: 100%; padding: 11px 13px; border: 1.5px solid var(--color-border-input); border-radius: 12px; font-family: var(--font-body); font-size: 14px; color: var(--color-text); background: #fff; }
+    .rec-input:focus, .rec-select:focus, .rec-textarea:focus { outline: none; border-color: var(--color-accent); box-shadow: 0 0 0 3px var(--account-accent-ring); }
+    .rec-textarea { resize: vertical; min-height: 64px; }
+    .rec-weekdays { display: flex; gap: 6px; flex-wrap: wrap; }
+    .rec-wd { width: 38px; height: 38px; border-radius: 11px; border: 1.5px solid var(--color-border-input); background: #fff; color: var(--color-text-secondary); font-family: var(--font-body); font-size: 12.5px; font-weight: 700; cursor: pointer; transition: all var(--duration-fast); }
+    .rec-wd.on { background: var(--color-text); color: #fff; border-color: var(--color-text); }
+    .rec-freq-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+    .rec-chip { padding: 9px 14px; border-radius: 11px; border: 1.5px solid var(--color-border-input); background: #fff; color: var(--color-text-secondary); font-family: var(--font-body); font-size: 13px; font-weight: 700; cursor: pointer; transition: all var(--duration-fast); }
+    .rec-chip.on { background: var(--account-accent-soft); color: #2b6d77; border-color: var(--color-accent); }
+    .confirm-box.rec-modal-box { width: 560px; max-height: 90vh; overflow-y: auto; }
+    @media (max-width: 900px) {
+      .cal-wrap { grid-template-columns: 1fr; }
+      .cal-cell { min-height: 52px; }
+      .rec-field-row { grid-template-columns: 1fr; }
+      .confirm-box.rec-modal-box { width: 94%; }
+    }
+    @media (max-width: 480px) {
+      .cal-main,
+      .cal-agenda,
+      .cal-recurring {
+        padding: 12px;
+        border-radius: 18px;
+      }
+      .cal-toolbar { gap: 8px; }
+      .cal-title { font-size: 16px; }
+      .cal-nav { gap: 4px; }
+      .cal-nav-btn,
+      .cal-today-btn { height: 30px; border-radius: 10px; }
+      .cal-nav-btn { width: 30px; }
+      .cal-today-btn { padding: 0 10px; }
+      .cal-weekdays,
+      .cal-grid { gap: 3px; }
+      .cal-weekday { font-size: 9px; letter-spacing: 0; }
+      .cal-cell {
+        min-height: 43px;
+        padding: 5px 2px 4px;
+        border-radius: 10px;
+        align-items: center;
+      }
+      .cal-daynum { width: 21px; height: 21px; font-size: 11.5px; }
+      .cal-dots { justify-content: center; }
+      .cal-panel-head {
+        flex-wrap: wrap;
+        align-items: flex-start;
+      }
+      .cal-add-btn {
+        width: 100%;
+        justify-content: center;
+        white-space: normal;
+      }
+    }
     /* Detail drawer */
     .order-drawer-overlay { position: fixed; inset: 0; background: rgba(17, 17, 17, 0.42); backdrop-filter: blur(4px); z-index: 10000; opacity: 0; pointer-events: none; transition: opacity 0.32s ease; }
     .order-drawer-overlay.open { opacity: 1; pointer-events: auto; }
@@ -800,9 +983,21 @@
     .drawer-actions .btn-save, .drawer-actions .btn-outline { width: 100%; }
     @media (max-width: 900px) {
       .account-page { padding: 112px 0 72px; }
+      .account-page .container { padding-left: 16px; padding-right: 16px; }
       .account-layout { grid-template-columns: 1fr; }
       .account-sidebar { display: none; }
-      .mobile-tabs { display: flex; }
+      .mobile-tabs {
+        display: flex;
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+        overflow-x: auto;
+        overscroll-behavior-inline: contain;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+      }
+      .mobile-tabs::-webkit-scrollbar { display: none; }
+      .mobile-tab { padding: 10px 14px; }
       .profile-row { grid-template-columns: 1fr; gap: 7px; align-items: start; }
       .profile-actions,
       .profile-edit-actions { width: 100%; }
@@ -812,20 +1007,88 @@
       .form-row { grid-template-columns: 1fr; }
       .favorite-list { grid-template-columns: 1fr; }
       .favorite-card { grid-template-columns: 96px 1fr; }
-      .orders-hub { grid-template-columns: 1fr; }
+      .orders-hub {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-auto-rows: auto;
+        gap: 6px;
+        height: auto;
+        margin-bottom: 16px;
+      }
       .hub-tile-orders { grid-row: auto; }
-      .hub-tile { padding: 20px; }
+      .hub-tile {
+        aspect-ratio: 1 / 0.68;
+        min-height: 0;
+        padding: 6px;
+        border-radius: 12px;
+        box-shadow: 0 14px 28px -24px rgba(17, 17, 17, 0.24);
+      }
+      .hub-tile::after { display: none; }
+      .hub-tile-head {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 6px;
+        margin-bottom: 0;
+      }
+      .hub-tile-icon {
+        width: 22px;
+        height: 22px;
+        flex-basis: 22px;
+        border-radius: 7px;
+      }
+      .hub-tile-icon svg { width: 14px; height: 14px; }
+      .hub-tile-label,
+      .hub-tile-orders .hub-tile-label {
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        font-size: 13.5px;
+        line-height: 1.12;
+        letter-spacing: 0;
+      }
+      .hub-summary { display: none; }
+      .hub-spacer { display: none; }
+      .hub-actions {
+        display: flex;
+        width: 100%;
+        margin-top: auto;
+      }
+      .hub-tile-orders .hub-actions,
+      .hub-tile-small .hub-actions { display: none; }
+      .hub-action,
+      .hub-cta {
+        width: 100%;
+        min-width: 0;
+        min-height: 28px;
+        padding: 6px 8px;
+        border-radius: 9px;
+        font-size: 10.5px;
+        white-space: normal;
+        line-height: 1.15;
+        text-align: center;
+        box-shadow: none;
+      }
       .orders-head { flex-direction: column; align-items: stretch; }
+      .orders-viewtabs { width: 100%; }
+      .ov-tab { flex: 1 1 0; justify-content: center; min-width: 0; padding-left: 10px; padding-right: 10px; }
       .orders-new-btn { width: 100%; }
-      .orders-segment { display: grid; grid-template-columns: 1fr 1fr; }
-      .orders-seg-btn { justify-content: center; }
+      .orders-segment { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .orders-seg-btn { justify-content: center; min-width: 0; padding-left: 8px; padding-right: 8px; font-size: 12.5px; }
+      .orders-seg-count { padding-left: 5px; padding-right: 5px; }
       .order-card { padding: 16px; }
       .order-card-top { grid-template-columns: 46px 1fr; }
       .order-icon { width: 46px; height: 46px; font-size: 21px; }
       .order-right { grid-column: 1 / -1; flex-direction: row; justify-content: space-between; align-items: center; gap: 12px; margin-top: 13px; padding-top: 12px; border-top: 1px solid rgba(17,17,17,0.06); }
       .account-card,
       .danger-zone { padding: 24px; border-radius: 20px; }
+      .account-card > div[style*="justify-content:space-between"] {
+        flex-wrap: wrap;
+        align-items: flex-start !important;
+        gap: 10px;
+      }
       .verify-warning { flex-direction: column; }
+      .verify-warning-body,
+      .verify-warning-body > div { min-width: 0; }
       .verify-warning-action { width: 100%; }
       .security-panel-head { flex-direction: column; gap: 10px; }
       .security-row { grid-template-columns: 32px 1fr; }
@@ -882,16 +1145,49 @@
               <div class="section-title" id="title-orders">Mis pedidos</div>
               <div class="section-sub" id="sub-orders" style="margin-bottom:0">Da seguimiento a tus solicitudes y revisa tu historial.</div>
             </div>
+            <div class="orders-viewtabs" id="orders-viewtabs" role="tablist">
+              <button class="ov-tab active" data-view="list" role="tab" onclick="switchOrdersView('list')">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>
+                <span id="ov-list-label">Lista</span>
+              </button>
+              <button class="ov-tab" data-view="calendar" role="tab" onclick="switchOrdersView('calendar')">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16" rx="2.5"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/></svg>
+                <span id="ov-cal-label">Calendario</span>
+              </button>
+            </div>
           </div>
-          <div class="orders-segment" id="orders-segment" role="tablist">
-            <button class="orders-seg-btn active" role="tab" data-bucket="active" onclick="switchOrdersBucket('active')">
-              <span id="orders-seg-active">Activos</span><span class="orders-seg-count" id="orders-count-active" hidden></span>
-            </button>
-            <button class="orders-seg-btn" role="tab" data-bucket="past" onclick="switchOrdersBucket('past')">
-              <span id="orders-seg-past">Historial</span><span class="orders-seg-count" id="orders-count-past" hidden></span>
-            </button>
+
+          <!-- List view -->
+          <div id="orders-list-view">
+            <div class="orders-segment" id="orders-segment" role="tablist">
+              <button class="orders-seg-btn" role="tab" data-bucket="requests" onclick="switchOrdersBucket('requests')">
+                <span id="orders-seg-requests">Solicitudes</span><span class="orders-seg-count" id="orders-count-requests" hidden></span>
+              </button>
+              <button class="orders-seg-btn active" role="tab" data-bucket="active" onclick="switchOrdersBucket('active')">
+                <span id="orders-seg-active">Reservados</span><span class="orders-seg-count" id="orders-count-active" hidden></span>
+              </button>
+              <button class="orders-seg-btn" role="tab" data-bucket="past" onclick="switchOrdersBucket('past')">
+                <span id="orders-seg-past">Historial</span><span class="orders-seg-count" id="orders-count-past" hidden></span>
+              </button>
+            </div>
+            <div class="orders-list" id="orders-list"></div>
           </div>
-          <div class="orders-list" id="orders-list"></div>
+
+          <!-- Calendar view (rendered by renderCalendar()) -->
+          <div id="orders-calendar-view" hidden>
+            <div class="cal-wrap">
+              <div class="cal-main">
+                <div class="cal-toolbar" id="cal-toolbar"></div>
+                <div class="cal-weekdays" id="cal-weekdays"></div>
+                <div class="cal-grid" id="cal-grid"></div>
+                <div class="cal-legend" id="cal-legend"></div>
+              </div>
+              <aside class="cal-side">
+                <div class="cal-agenda" id="cal-agenda"></div>
+                <div class="cal-recurring" id="cal-recurring"></div>
+              </aside>
+            </div>
+          </div>
         </section>
 
         <!-- Personal Info -->
@@ -1122,23 +1418,29 @@ const TX = {
     titleOrders: 'Mis pedidos', subOrders: 'Da seguimiento a tus solicitudes y revisa tu historial.',
     ordersNew: 'Nueva solicitud',
     // Orders hub (promoted workspace)
-    hubActiveCap: 'Activos', hubPastCap: 'Historial',
+    hubRequestsCap: 'Solicitudes', hubActiveCap: 'Reservados', hubPastCap: 'Historial',
+    hubOrdersView: 'Ver pedidos',
+    hubSpecManage: 'Gestionar especialistas',
+    hubFavView: 'Ver favoritos',
     hubOrdersAction: (n) => n === 1 ? '1 pedido necesita tu atención' : `${n} pedidos necesitan tu atención`,
-    hubOrdersInProgress: (n) => n === 1 ? '1 servicio en curso' : `${n} servicios en curso`,
+    hubOrdersInProgress: (n) => n === 1 ? '1 servicio reservado' : `${n} servicios reservados`,
+    hubOrdersRequests: (n) => n === 1 ? '1 solicitud recibida' : `${n} solicitudes recibidas`,
     hubOrdersNone: 'Sin pedidos activos por ahora',
     hubSpecReady: (n) => n === 1 ? '1 especialista guardado' : `${n} especialistas guardados`,
     hubSpecEmpty: 'Guarda a tus especialistas de confianza',
     hubFavReady: (n) => n === 1 ? '1 servicio guardado' : `${n} servicios guardados`,
     hubFavEmpty: 'Guarda tus servicios favoritos',
-    ordersSegActive: 'Activos', ordersSegPast: 'Historial',
+    ordersSegRequests: 'Solicitudes', ordersSegActive: 'Reservados', ordersSegPast: 'Historial',
     ordersLoadError: 'No pudimos cargar tus pedidos.', ordersRetry: 'Reintentar',
-    ordersEmptyActiveTitle: 'No tienes pedidos activos',
-    ordersEmptyActiveText: 'Cuando solicites un servicio podrás darle seguimiento aquí en tiempo real.',
+    ordersEmptyRequestsTitle: 'No tienes solicitudes pendientes',
+    ordersEmptyRequestsText: 'Las solicitudes recibidas aparecerán aquí hasta que se conviertan en una reserva.',
+    ordersEmptyActiveTitle: 'No tienes servicios reservados',
+    ordersEmptyActiveText: 'Cuando una solicitud quede reservada podrás darle seguimiento aquí.',
     ordersEmptyPastTitle: 'Aún no tienes historial',
     ordersEmptyPastText: 'Tus servicios completados y cancelados aparecerán aquí.',
     ordersEmptyCta: 'Solicitar un servicio',
     stRequested: 'Solicitud recibida', stPendingPay: 'Pendiente de pago', stPay3ds: 'Verificación de pago',
-    stCash: 'Pago en efectivo', stScheduled: 'Programado', stAuthorized: 'Autorizado',
+    stCash: 'Pago en efectivo', stScheduled: 'Reservado', stAuthorized: 'Autorizado',
     stCompleted: 'Completado', stCanceled: 'Cancelado', stCanceledFee: 'Cancelado (con tarifa)', stDeclined: 'Rechazado', stRefunded: 'Reembolsado',
     stNeedCard: 'Falta método de pago', stConfirmBooking: 'Confirma tu reserva',
     noteScheduled: 'Listo. Autorizaremos tu tarjeta ~24 h antes del servicio.',
@@ -1146,6 +1448,12 @@ const TX = {
     tlCompleted: 'Servicio completado', tlCanceledTitle: 'Pedido cancelado',
     drawerTimeline: 'Estado del pedido', drawerService: 'Servicio', drawerSchedule: 'Fecha y hora',
     drawerAddress: 'Dirección', drawerProvider: 'Especialista', drawerSummary: 'Resumen de pago',
+    drawerPhase: 'Especialista',
+    priceChangeTitle: 'Cambio de precio', priceChangeApprove: 'Aprobar y pagar',
+    // ⚠️ OWNER-APPROVAL REQUIRED: soft retention nudge ONLY. Do NOT turn this into a specific
+    // guarantee/warranty promise (e.g. "protegido por N días") without owner/legal sign-off.
+    retentionNote: '¿Quedaste satisfecho? Puedes volver a contratar a tu especialista por SERVI cuando lo necesites.',
+    phEnRoute: 'En camino 🚗', phArrived: 'Llegó 📍', phStarted: 'Servicio en curso ▶️', phCompleted: 'Servicio terminado ✅',
     asap: 'Lo antes posible', toBeAssigned: 'Por asignar', notProvided: 'No especificada',
     priceProvider: 'Servicio', priceBooking: 'Tarifa de servicio', priceProcessing: 'Procesamiento',
     priceVat: 'IVA', priceTotal: 'Total', priceTotalCharged: 'Total cobrado', priceTotalHold: 'Total autorizado',
@@ -1173,6 +1481,35 @@ const TX = {
     payGenerating: 'Generando enlace…',
     payNotAvailable: 'Este pedido ya no está disponible para pago en línea. Contáctanos por WhatsApp si necesitas ayuda.',
     payError: 'No pudimos abrir el pago. Intenta de nuevo.',
+    // Service Calendar
+    ovList: 'Lista', ovCalendar: 'Calendario',
+    calToday: 'Hoy', calPrev: 'Mes anterior', calNext: 'Mes siguiente',
+    calUpcoming: 'Próximos servicios', calUpcomingEmpty: 'No tienes servicios programados próximamente.',
+    calDayEmpty: 'Sin servicios este día.',
+    calOneService: '1 servicio', calNServices: (n) => `${n} servicios`,
+    calClear: 'Ver próximos', calRecurringTag: 'Recurrente',
+    calRecurringTitle: 'Servicios recurrentes', calNewRecurring: 'Programar recurrente',
+    calRecEmptyTitle: 'Crea una rutina con tu especialista',
+    calRecEmptyText: 'Programa un servicio que se repita —semanal, quincenal o mensual— con tu especialista de confianza. Nosotros lo organizamos por ti.',
+    calNext: 'Próximo', calActive: 'Activo', calPaused: 'En pausa',
+    calPause: 'Pausar', calResume: 'Reanudar', calEdit: 'Editar', calCancelPlan: 'Cancelar',
+    calCancelConfirm: '¿Cancelar este servicio recurrente? No se generarán nuevas solicitudes.',
+    calCancelGeneric: 'No pudimos completar la acción. Intenta de nuevo.',
+    calCanceledDone: 'Servicio recurrente cancelado.',
+    calNewTitle: 'Programar servicio recurrente', calEditTitle: 'Editar servicio recurrente',
+    calCategory: 'Categoría', calSpecialist: 'Especialista', calSpecialistHint: 'Es una preferencia. Si no está disponible, asignaremos a otro especialista verificado.',
+    calNoPreference: 'Sin preferencia',
+    calFrequency: 'Frecuencia',
+    calFreqDaily: 'Diario', calFreqWeekly: 'Semanal', calFreqBiweekly: 'Quincenal', calFreqMonthly: 'Mensual', calFreqCustom: 'Personalizado',
+    calOnDays: 'Días de la semana', calDayOfMonth: 'Día del mes', calEveryNDays: 'Cada cuántos días',
+    calTime: 'Hora', calStart: 'Inicia', calAddress: 'Dirección (opcional)', calAddressPh: 'Calle, número, colonia…',
+    calDetails: 'Detalles (opcional)', calDetailsPh: '¿Algo que el especialista deba saber?',
+    calCreatePlan: 'Crear', calSavePlan: 'Guardar cambios',
+    calCreatedDone: 'Servicio recurrente programado.', calSavedDone: 'Cambios guardados.',
+    calErrCategory: 'Elige una categoría.', calErrStart: 'Elige una fecha de inicio.',
+    calErrWeekdays: 'Elige al menos un día de la semana.', calErrInterval: 'Indica cada cuántos días se repite.',
+    calErrProvider: 'Este especialista no está disponible. Elige otro o quita la preferencia.',
+    calErrPhone: 'Verifica tu teléfono para programar servicios recurrentes.',
     titleInfo: 'Información personal', subInfo: 'Actualiza tu nombre, correo y teléfono.',
     titleSecurity: 'Seguridad', subSecurity: 'Información de acceso a tu cuenta.',
     titleAddresses: 'Mis direcciones', subAddresses: 'Guarda tus domicilios para agilizar tus solicitudes.',
@@ -1277,23 +1614,29 @@ const TX = {
     titleOrders: 'My orders', subOrders: 'Track your requests and browse your history.',
     ordersNew: 'New request',
     // Orders hub (promoted workspace)
-    hubActiveCap: 'Active', hubPastCap: 'History',
+    hubRequestsCap: 'Requests', hubActiveCap: 'Booked', hubPastCap: 'History',
+    hubOrdersView: 'View orders',
+    hubSpecManage: 'Manage specialists',
+    hubFavView: 'View favorites',
     hubOrdersAction: (n) => n === 1 ? '1 order needs your attention' : `${n} orders need your attention`,
-    hubOrdersInProgress: (n) => n === 1 ? '1 service in progress' : `${n} services in progress`,
+    hubOrdersInProgress: (n) => n === 1 ? '1 booked service' : `${n} booked services`,
+    hubOrdersRequests: (n) => n === 1 ? '1 request received' : `${n} requests received`,
     hubOrdersNone: 'No active orders right now',
     hubSpecReady: (n) => n === 1 ? '1 saved specialist' : `${n} saved specialists`,
     hubSpecEmpty: 'Save your trusted specialists',
     hubFavReady: (n) => n === 1 ? '1 saved service' : `${n} saved services`,
     hubFavEmpty: 'Save your favorite services',
-    ordersSegActive: 'Active', ordersSegPast: 'History',
+    ordersSegRequests: 'Requests', ordersSegActive: 'Booked', ordersSegPast: 'History',
     ordersLoadError: 'We could not load your orders.', ordersRetry: 'Retry',
-    ordersEmptyActiveTitle: 'No active orders',
-    ordersEmptyActiveText: 'When you request a service, you can track it here in real time.',
+    ordersEmptyRequestsTitle: 'No pending requests',
+    ordersEmptyRequestsText: 'Received requests will appear here until they become a booking.',
+    ordersEmptyActiveTitle: 'No booked services',
+    ordersEmptyActiveText: 'Once a request is booked, you can track it here.',
     ordersEmptyPastTitle: 'No history yet',
     ordersEmptyPastText: 'Your completed and canceled services will show up here.',
     ordersEmptyCta: 'Request a service',
     stRequested: 'Request received', stPendingPay: 'Payment pending', stPay3ds: 'Payment verification',
-    stCash: 'Cash payment', stScheduled: 'Scheduled', stAuthorized: 'Authorized',
+    stCash: 'Cash payment', stScheduled: 'Booked', stAuthorized: 'Authorized',
     stCompleted: 'Completed', stCanceled: 'Canceled', stCanceledFee: 'Canceled (fee applied)', stDeclined: 'Declined', stRefunded: 'Refunded',
     stNeedCard: 'Add payment method', stConfirmBooking: 'Confirm booking',
     noteScheduled: "All set. We'll authorize your card ~24h before service.",
@@ -1301,6 +1644,11 @@ const TX = {
     tlCompleted: 'Service completed', tlCanceledTitle: 'Order canceled',
     drawerTimeline: 'Order status', drawerService: 'Service', drawerSchedule: 'Date & time',
     drawerAddress: 'Address', drawerProvider: 'Specialist', drawerSummary: 'Payment summary',
+    drawerPhase: 'Specialist',
+    priceChangeTitle: 'Price change', priceChangeApprove: 'Approve & pay',
+    // ⚠️ OWNER-APPROVAL REQUIRED: soft retention nudge ONLY — never a fixed guarantee/warranty claim.
+    retentionNote: 'Happy with the service? You can rebook your specialist through SERVI whenever you need.',
+    phEnRoute: 'On the way 🚗', phArrived: 'Arrived 📍', phStarted: 'Service in progress ▶️', phCompleted: 'Service finished ✅',
     asap: 'As soon as possible', toBeAssigned: 'To be assigned', notProvided: 'Not provided',
     priceProvider: 'Service', priceBooking: 'Service fee', priceProcessing: 'Processing',
     priceVat: 'VAT', priceTotal: 'Total', priceTotalCharged: 'Total charged', priceTotalHold: 'Total authorized',
@@ -1328,6 +1676,35 @@ const TX = {
     payGenerating: 'Generating link…',
     payNotAvailable: 'This order is no longer available for online payment. Contact us on WhatsApp if you need help.',
     payError: 'We could not open the payment. Please try again.',
+    // Service Calendar
+    ovList: 'List', ovCalendar: 'Calendar',
+    calToday: 'Today', calPrev: 'Previous month', calNext: 'Next month',
+    calUpcoming: 'Upcoming services', calUpcomingEmpty: 'You have no services scheduled soon.',
+    calDayEmpty: 'No services on this day.',
+    calOneService: '1 service', calNServices: (n) => `${n} services`,
+    calClear: 'See upcoming', calRecurringTag: 'Recurring',
+    calRecurringTitle: 'Recurring services', calNewRecurring: 'Schedule recurring',
+    calRecEmptyTitle: 'Set a routine with your specialist',
+    calRecEmptyText: 'Schedule a service that repeats —weekly, biweekly, or monthly— with your trusted specialist. We organize it for you.',
+    calNext: 'Next', calActive: 'Active', calPaused: 'Paused',
+    calPause: 'Pause', calResume: 'Resume', calEdit: 'Edit', calCancelPlan: 'Cancel',
+    calCancelConfirm: 'Cancel this recurring service? No new requests will be generated.',
+    calCancelGeneric: 'We could not complete the action. Please try again.',
+    calCanceledDone: 'Recurring service canceled.',
+    calNewTitle: 'Schedule recurring service', calEditTitle: 'Edit recurring service',
+    calCategory: 'Category', calSpecialist: 'Specialist', calSpecialistHint: "It's a preference. If they're unavailable, we'll assign another verified specialist.",
+    calNoPreference: 'No preference',
+    calFrequency: 'Frequency',
+    calFreqDaily: 'Daily', calFreqWeekly: 'Weekly', calFreqBiweekly: 'Every 2 weeks', calFreqMonthly: 'Monthly', calFreqCustom: 'Custom',
+    calOnDays: 'Days of the week', calDayOfMonth: 'Day of month', calEveryNDays: 'Every how many days',
+    calTime: 'Time', calStart: 'Starts', calAddress: 'Address (optional)', calAddressPh: 'Street, number, neighborhood…',
+    calDetails: 'Details (optional)', calDetailsPh: 'Anything the specialist should know?',
+    calCreatePlan: 'Create', calSavePlan: 'Save changes',
+    calCreatedDone: 'Recurring service scheduled.', calSavedDone: 'Changes saved.',
+    calErrCategory: 'Choose a category.', calErrStart: 'Choose a start date.',
+    calErrWeekdays: 'Choose at least one weekday.', calErrInterval: 'Set how many days between services.',
+    calErrProvider: 'This specialist is unavailable. Pick another or remove the preference.',
+    calErrPhone: 'Verify your phone to schedule recurring services.',
     titleInfo: 'Personal information', subInfo: 'Update your name, email, and phone.',
     titleSecurity: 'Security', subSecurity: 'Your account access information.',
     titleAddresses: 'My addresses', subAddresses: 'Save your addresses to speed up your requests.',
@@ -1518,20 +1895,23 @@ function hubKey(e, section) {
   if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); switchSection(section); }
 }
 
-function hubSmallTile(section, icon, label, loaded, count, readyCopyFn, emptyCopy) {
-  let body;
-  if (!loaded) {
-    body = `<div class="hub-metrics"><div class="hub-metric"><span class="hub-metric-num hub-sk">0</span></div></div>
-      <div class="hub-spacer"></div><span class="hub-status hub-sk">·</span>`;
-  } else {
-    const status = count ? readyCopyFn(count) : emptyCopy;
-    body = `<div class="hub-metrics"><div class="hub-metric"><span class="hub-metric-num">${count}</span></div></div>
-      <div class="hub-spacer"></div><span class="hub-status">${escapeHtml(status)}</span>`;
-  }
+function hubActionHtml(label) {
+  return `<span class="hub-action">${escapeHtml(label)}</span>`;
+}
+
+function scheduleRecurringFromHub() {
+  switchSection('orders');
+  switchOrdersView('calendar');
+  if (!_recurringLoaded && !_recurringLoading) loadRecurring();
+  openRecurringModal();
+}
+
+function hubSmallTile(section, icon, label, actionLabel) {
   return `<div class="hub-tile hub-tile-small${activeSection === section ? ' active' : ''}" role="button" tabindex="0"
     aria-label="${escapeHtml(label)}" onclick="switchSection('${section}')" onkeydown="hubKey(event,'${section}')">
     <div class="hub-tile-head"><span class="hub-tile-icon">${icon}</span><span class="hub-tile-label">${escapeHtml(label)}</span></div>
-    ${body}
+    <div class="hub-spacer"></div>
+    <div class="hub-actions">${hubActionHtml(actionLabel)}</div>
   </div>`;
 }
 
@@ -1544,32 +1924,46 @@ function renderOrdersHub() {
   let ordersBody;
   if (!_ordersLoaded) {
     ordersBody = `
-      <div class="hub-metrics"><div class="hub-metric"><span class="hub-metric-num is-primary hub-sk">0</span><span class="hub-metric-cap">${escapeHtml(t.hubActiveCap)}</span></div></div>
-      <div class="hub-spacer"></div><span class="hub-status hub-sk">·</span>`;
+      <div class="hub-summary"><div class="hub-metrics"><div class="hub-metric"><span class="hub-metric-num is-primary hub-sk">0</span><span class="hub-metric-cap">${escapeHtml(t.hubActiveCap)}</span></div></div>
+      <span class="hub-status hub-sk">·</span></div>`;
   } else {
     const active = _orders.filter(o => o.bucket !== 'past');
+    const requests = active.filter(orderIsActiveRequest);
+    const booked = active.filter(o => !orderIsActiveRequest(o));
     const past = _orders.filter(o => o.bucket === 'past');
     const actionable = active.filter(o => orderStatusMeta(o).cls === 'is-pending');
     let status = t.hubOrdersNone, statusCls = '';
     if (actionable.length) { status = t.hubOrdersAction(actionable.length); statusCls = ' is-action'; }
-    else if (active.length) { status = t.hubOrdersInProgress(active.length); }
+    else if (booked.length) { status = t.hubOrdersInProgress(booked.length); }
+    else if (requests.length) { status = t.hubOrdersRequests(requests.length); }
     ordersBody = `
+      <div class="hub-summary">
       <div class="hub-metrics">
-        <div class="hub-metric"><span class="hub-metric-num is-primary">${active.length}</span><span class="hub-metric-cap">${escapeHtml(t.hubActiveCap)}</span></div>
+        <div class="hub-metric"><span class="hub-metric-num is-primary">${booked.length}</span><span class="hub-metric-cap">${escapeHtml(t.hubActiveCap)}</span></div>
+        <div class="hub-metric"><span class="hub-metric-num">${requests.length}</span><span class="hub-metric-cap">${escapeHtml(t.hubRequestsCap)}</span></div>
         <div class="hub-metric"><span class="hub-metric-num">${past.length}</span><span class="hub-metric-cap">${escapeHtml(t.hubPastCap)}</span></div>
       </div>
-      <div class="hub-spacer"></div><span class="hub-status${statusCls}">${escapeHtml(status)}</span>`;
+      <span class="hub-status${statusCls}">${escapeHtml(status)}</span></div>`;
   }
+
+  const ordersExtraActions = activeSection === 'orders' ? `
+        <a class="hub-action is-secondary" href="/browse.html" onclick="event.stopPropagation()">${escapeHtml(t.browseFavorites)}</a>
+        <button class="hub-action is-secondary" type="button" onclick="event.stopPropagation();scheduleRecurringFromHub()">${escapeHtml(t.calNewRecurring)}</button>` : '';
 
   hub.innerHTML = `
     <div class="hub-tile hub-tile-orders${activeSection === 'orders' ? ' active' : ''}" role="button" tabindex="0"
       aria-label="${escapeHtml(t.navOrders)}" onclick="switchSection('orders')" onkeydown="hubKey(event,'orders')">
       <div class="hub-tile-head"><span class="hub-tile-icon">${HUB_ICONS.orders}</span><span class="hub-tile-label">${escapeHtml(t.navOrders)}</span></div>
       ${ordersBody}
-      <a class="btn-save hub-cta" href="/smart-request.html" onclick="event.stopPropagation()">${escapeHtml(t.ordersNew)}</a>
+      <div class="hub-spacer"></div>
+      <div class="hub-actions">
+        ${hubActionHtml(t.hubOrdersView)}
+        <a class="btn-save hub-cta" href="/smart-request.html" onclick="event.stopPropagation()">${escapeHtml(t.ordersNew)}</a>
+        ${ordersExtraActions}
+      </div>
     </div>
-    ${hubSmallTile('specialists', HUB_ICONS.specialists, t.navSpecialists, _specialistsLoaded, _specialists.length, t.hubSpecReady, t.hubSpecEmpty)}
-    ${hubSmallTile('favorites', HUB_ICONS.favorites, t.navFavorites, _favoritesLoaded, _favoriteServices.length, t.hubFavReady, t.hubFavEmpty)}`;
+    ${hubSmallTile('specialists', HUB_ICONS.specialists, t.navSpecialists, t.hubSpecManage)}
+    ${hubSmallTile('favorites', HUB_ICONS.favorites, t.navFavorites, t.hubFavView)}`;
 }
 
 // ─── Pre-fill personal info ───────────────────────────────────────────────────
@@ -2477,7 +2871,7 @@ function orderStatusMeta(item) {
   if (item.source === 'request') {
     // A withdrawn intake request becomes 'canceled'; otherwise it's still in the intake step.
     if (/^cancel/i.test(String(item.status || ''))) return { label: t.stCanceled, cls: 'is-canceled', step: 1, canceled: true };
-    return { label: t.stRequested, cls: 'is-progress', step: 1, canceled: false };
+    return { label: t.stRequested, cls: 'is-request', step: 1, canceled: false };
   }
   const raw = String(item.status || '').trim();
   const kind = String(item.kind || '').toLowerCase();
@@ -2495,7 +2889,7 @@ function orderStatusMeta(item) {
   if (/^blocked/i.test(raw)) return { label: t.stNeedCard, cls: 'is-pending', step: 2, canceled: false };
   switch (raw) {
     case 'Confirmed':                return { label: t.stAuthorized, cls: 'is-authorized', step: 3, canceled: false };
-    case 'Scheduled':                return { label: t.stScheduled,  cls: 'is-progress',   step: 2, canceled: false };
+    case 'Scheduled':                return { label: t.stScheduled,  cls: 'is-booked',     step: 2, canceled: false };
     case 'Pending Cash':             return { label: t.stCash,       cls: 'is-progress',   step: 2, canceled: false };
     case 'Pending (3DS)':            return { label: t.stPay3ds,     cls: 'is-pending',    step: 2, canceled: false };
     case 'Declined':                 return { label: t.stDeclined,   cls: 'is-declined',   step: 1, canceled: true };
@@ -2508,11 +2902,12 @@ function orderStatusMeta(item) {
       return { label: t.stPendingPay, cls: 'is-pending', step: 2, canceled: false };
   }
 }
-function orderTitle(item) { return categoryLabel(item.category); }
+function orderTitle(item) { return item.priceChange ? tr().priceChangeTitle : categoryLabel(item.category); }
 // Smart CTA label by what the order needs from the user: save a card (setup-style),
 // confirm a saved-card booking (book), or pay now (everything else).
 function orderCtaLabel(item) {
   const t = tr();
+  if (item.priceChange) return t.priceChangeApprove;
   const kind = String(item.kind || '').toLowerCase();
   const flow = String(item.payFlow || '').toLowerCase();
   if (kind === 'setup' || kind === 'setup_required') return t.actSaveCard;
@@ -2540,6 +2935,13 @@ function orderPolicy(item) {
   if (item.policy && typeof item.policy === 'object') return item.policy;
   const past = (item.bucket === 'past');
   return { canCancel: false, cancelTier: 'none', cancelFeeCents: 0, canEditAddress: false, canRequestReschedule: false, canReorder: past && !!item.category, isCaptured: false };
+}
+function orderIsActiveRequest(item) {
+  return item && item.bucket !== 'past' && item.source === 'request';
+}
+function orderListBucket(item) {
+  if (!item || item.bucket === 'past') return 'past';
+  return orderIsActiveRequest(item) ? 'requests' : 'active';
 }
 function orderCanReorder(item) { return !!orderPolicy(item).canReorder && !!item.category; }
 function orderWhenLabel(item) {
@@ -2607,11 +3009,78 @@ async function startOrderPayment(id, flow, btn) {
     restore();
   }
 }
-function reorder(category) {
+function normalizeOrderServiceText(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ');
+}
+
+function descriptionServicePrefix(description) {
+  const raw = String(description || '').trim();
+  if (!raw) return '';
+  return raw.split(/\s+[—-]\s+/)[0].trim();
+}
+
+function findCatalogService(category, subKey, serviceName) {
   const cat = String(category || '').toLowerCase();
-  window.location.href = ORDER_KNOWN_CATEGORIES.includes(cat)
-    ? '/service.html?category=' + encodeURIComponent(cat)
-    : '/browse.html';
+  const catalog = window.browseCategoryData && window.browseCategoryData[cat];
+  if (!catalog || !Array.isArray(catalog.subcategories)) return null;
+  const wantedSub = String(subKey || '').trim();
+  const wantedService = normalizeOrderServiceText(serviceName);
+  const subcategories = wantedSub
+    ? catalog.subcategories.filter(s => s.key === wantedSub)
+    : catalog.subcategories;
+
+  for (const sub of subcategories) {
+    const servicesByLang = sub.services || {};
+    const serviceSets = [servicesByLang.es, servicesByLang.en].filter(Array.isArray);
+    for (const services of serviceSets) {
+      const index = services.findIndex(s => normalizeOrderServiceText(s) === wantedService);
+      if (index === -1) continue;
+      return {
+        category: cat,
+        sub: sub.key,
+        service: (servicesByLang[isEs() ? 'es' : 'en'] || services)[index] || services[index],
+      };
+    }
+  }
+  return null;
+}
+
+function inferOrderCatalogService(item) {
+  if (!item) return null;
+  return findCatalogService(item.category, item.matchedSubKey, item.matchedService)
+    || findCatalogService(item.category, null, item.matchedService)
+    || findCatalogService(item.category, item.matchedSubKey, descriptionServicePrefix(item.description))
+    || findCatalogService(item.category, null, descriptionServicePrefix(item.description));
+}
+
+function buildReorderUrl(itemOrCategory) {
+  const item = typeof itemOrCategory === 'object' && itemOrCategory ? itemOrCategory : { category: itemOrCategory };
+  const cat = String(item.category || '').toLowerCase();
+  if (!ORDER_KNOWN_CATEGORIES.includes(cat) || cat === 'custom') return '/browse.html';
+  const match = inferOrderCatalogService(item);
+  if (!match) return '/browse.html?category=' + encodeURIComponent(cat);
+  const params = new URLSearchParams();
+  params.set('category', match.category);
+  params.set('sub', match.sub);
+  params.set('service', match.service);
+  // Anti-disintermediation: carry the same specialist as a preference so the rebook routes
+  // back through SERVI (service.html reads ?prefer=<providerId> for the trusted-specialist picker).
+  if (item.providerId) params.set('prefer', item.providerId);
+  return '/service.html?' + params.toString();
+}
+
+function reorder(itemOrCategory) {
+  window.location.href = buildReorderUrl(itemOrCategory);
+}
+
+function reorderOrderById(id) {
+  const item = _orders.find(o => o.id === id);
+  reorder(item || null);
 }
 
 // ─── Trusted Specialists ────────────────────────────────────────────────────
@@ -2669,6 +3138,7 @@ function specialistCardHtml(s) {
   if (s.available) {
     if (!s.isPreferred) actions.push(`<button class="addr-btn default-btn" onclick="setPreferredSpecialist('${escapeHtml(s.id)}')">${escapeHtml(t.specPreferNext)}</button>`);
     actions.push(`<button class="addr-btn default-btn" onclick="bookAgainSpecialist('${escapeHtml(s.providerId)}','${escapeHtml(s.category)}')">${escapeHtml(t.specBookAgain)}</button>`);
+    actions.push(`<button class="addr-btn default-btn" onclick="scheduleRecurringWithSpecialist('${escapeHtml(s.providerId)}','${escapeHtml(s.category)}')">${escapeHtml(t.calNewRecurring)}</button>`);
   }
   actions.push(`<button class="addr-btn default-btn" onclick="editSpecialistNickname('${escapeHtml(s.id)}')">${escapeHtml(t.specEditNick)}</button>`);
   actions.push(`<button class="addr-btn delete-btn" onclick="removeTrustedSpecialist('${escapeHtml(s.id)}')">${escapeHtml(t.specRemove)}</button>`);
@@ -2824,13 +3294,16 @@ function ordersErrorHtml() {
 }
 function ordersEmptyHtml() {
   const t = tr();
-  const active = _ordersBucket === 'active';
+  const isRequests = _ordersBucket === 'requests';
+  const isActive = _ordersBucket === 'active';
+  const title = isRequests ? t.ordersEmptyRequestsTitle : (isActive ? t.ordersEmptyActiveTitle : t.ordersEmptyPastTitle);
+  const text = isRequests ? t.ordersEmptyRequestsText : (isActive ? t.ordersEmptyActiveText : t.ordersEmptyPastText);
   return `
     <div class="order-empty">
-      <div class="order-empty-emoji">${active ? '📋' : '🗂️'}</div>
-      <div class="order-empty-title">${escapeHtml(active ? t.ordersEmptyActiveTitle : t.ordersEmptyPastTitle)}</div>
-      <div class="order-empty-text">${escapeHtml(active ? t.ordersEmptyActiveText : t.ordersEmptyPastText)}</div>
-      ${active ? `<a class="btn-save" href="/smart-request.html">${escapeHtml(t.ordersEmptyCta)}</a>` : ''}
+      <div class="order-empty-emoji">${isRequests ? '📨' : (isActive ? '📋' : '🗂️')}</div>
+      <div class="order-empty-title">${escapeHtml(title)}</div>
+      <div class="order-empty-text">${escapeHtml(text)}</div>
+      ${_ordersBucket !== 'past' ? `<a class="btn-save" href="/smart-request.html">${escapeHtml(t.ordersEmptyCta)}</a>` : ''}
     </div>`;
 }
 
@@ -2843,12 +3316,13 @@ function orderCardHtml(item, idx) {
   const metaItems = [];
   if (when) metaItems.push(`<span class="order-meta-item">${ORDER_ICONS.calendar}<span>${escapeHtml(when)}</span></span>`);
   if (item.address) metaItems.push(`<span class="order-meta-item">${ORDER_ICONS.pin}<span>${escapeHtml(item.address)}</span></span>`);
-  else if (item.providerName) metaItems.push(`<span class="order-meta-item">${ORDER_ICONS.user}<span>${escapeHtml(item.providerName)}</span></span>`);
+  // Anti-disintermediation: show only the masked first name on client surfaces, never full name.
+  else if (item.providerMaskedName) metaItems.push(`<span class="order-meta-item">${ORDER_ICONS.user}<span>${escapeHtml(item.providerMaskedName)}</span></span>`);
 
   const actions = [];
   if (orderIsPayable(item)) actions.push(`<button class="order-cta" onclick="event.stopPropagation();startOrderPayment('${escapeHtml(item.id)}','${escapeHtml(item.payFlow || item.kind)}',this)">${escapeHtml(orderCtaLabel(item))}</button>`);
   // "Order again" only on closed/past orders (server-authoritative). Cancel/modify live in the drawer.
-  if (orderCanReorder(item)) actions.push(`<button class="addr-btn default-btn" onclick="event.stopPropagation();reorder('${escapeHtml(item.category)}')">${escapeHtml(t.actReorder)}</button>`);
+  if (orderCanReorder(item)) actions.push(`<button class="addr-btn default-btn" onclick="event.stopPropagation();reorderOrderById('${escapeHtml(item.id)}')">${escapeHtml(t.actReorder)}</button>`);
   // "Rate" on a completed, not-yet-rated order — opens the drawer where the 👍/👎 widget lives.
   if (item.policy && item.policy.canRate && !item.rated) actions.push(`<button class="addr-btn default-btn" onclick="event.stopPropagation();openOrderDrawer('${escapeHtml(item.id)}')">${escapeHtml(t.actRate)}</button>`);
   const note = orderNote(item);
@@ -2907,23 +3381,579 @@ async function loadOrders(opts = {}) {
 function renderOrders() {
   const list = document.getElementById('orders-list');
   if (!list) return;
-  let active = 0, past = 0;
-  _orders.forEach(o => { (o.bucket === 'past') ? past++ : active++; });
+  let requests = 0, active = 0, past = 0;
+  _orders.forEach(o => {
+    const bucket = orderListBucket(o);
+    if (bucket === 'requests') requests++;
+    else if (bucket === 'past') past++;
+    else active++;
+  });
+  setOrdersCount('requests', requests);
   setOrdersCount('active', active);
   setOrdersCount('past', past);
-  const items = _orders.filter(o => (o.bucket === 'past' ? 'past' : 'active') === _ordersBucket);
+  const items = _orders.filter(o => orderListBucket(o) === _ordersBucket);
   list.innerHTML = items.length ? items.map((it, i) => orderCardHtml(it, i)).join('') : ordersEmptyHtml();
   renderOrdersHub();
+  // Keep the calendar in sync when it's the active view (orders reload on tab return / actions).
+  if (_ordersView === 'calendar') renderCalendar();
 }
 
 function switchOrdersBucket(bucket) {
-  if (bucket !== 'active' && bucket !== 'past') return;
+  if (bucket !== 'requests' && bucket !== 'active' && bucket !== 'past') return;
   _ordersBucket = bucket;
   document.querySelectorAll('.orders-seg-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.bucket === bucket));
   renderOrders();
 }
 
+// ═══ Service Calendar ══════════════════════════════════════════════════════════
+// A month view of the user's scheduled services + projected recurring occurrences,
+// plus a panel to manage recurring plans. Reads the already-loaded _orders array and
+// a _recurring list (GET /api/auth/recurring-services); recurring occurrences are
+// projected client-side with the same civil-date math the backend cron uses.
+let _ordersView = 'list';
+let _recurring = [];
+let _recurringLoaded = false;
+let _recurringLoading = false;
+let _calMonth = null;          // Date anchored to the 1st of the visible month (local)
+let _calSelectedDay = null;    // 'YYYY-MM-DD' or null (null → upcoming agenda)
+
+// Solid category colors for calendar dots/legend (readable on white).
+const CATEGORY_DOT = {
+  cleaning: '#3a9bb0', repair: '#cf8a1e', moving: '#5b6fd8',
+  wellness: '#cf6a9b', suppliers: '#3aa85a', custom: '#9b7fd4',
+};
+function categoryDot(cat) { return CATEGORY_DOT[String(cat || '').toLowerCase()] || CATEGORY_DOT.custom; }
+
+// ── Civil-date helpers (mirror backend enumerateOccurrences) ──
+function _ymdU(ymd) { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(ymd || '')); if (!m) return null; const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])); return isNaN(d.getTime()) ? null : d; }
+function _uYmd(d) { return d.toISOString().slice(0, 10); }
+function _addU(d, n) { const x = new Date(d.getTime()); x.setUTCDate(x.getUTCDate() + n); return x; }
+function ymdLocal(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
+function todayYmd() { return ymdLocal(new Date()); }
+function parseWdCsvArr(arr) { return [...new Set((Array.isArray(arr) ? arr : String(arr || '').split(',')).map(n => parseInt(n, 10)).filter(n => Number.isInteger(n) && n >= 0 && n <= 6))].sort((a, b) => a - b); }
+
+// Project recurring occurrence date-keys for a plan within [fromYmd, toYmd] inclusive.
+function projectRecurring(plan, fromYmd, toYmd, max = 60) {
+  const c = plan.cadence || {};
+  const start = _ymdU(plan.startDate);
+  const windowEnd = _ymdU(toYmd);
+  if (!start || !windowEnd) return [];
+  const wsRaw = _ymdU(fromYmd);
+  let ws = wsRaw && wsRaw.getTime() > start.getTime() ? wsRaw : start;
+  const planEnd = plan.endDate ? _ymdU(plan.endDate) : null;
+  const hardEnd = planEnd && planEnd.getTime() < windowEnd.getTime() ? planEnd : windowEnd;
+  if (ws.getTime() > hardEnd.getTime()) return [];
+  const freq = String(c.frequency || '').toLowerCase();
+  const interval = Math.max(1, parseInt(c.intervalCount, 10) || 1);
+  const out = [];
+  if (freq === 'daily' || freq === 'custom') {
+    const step = freq === 'daily' ? 1 : interval;
+    const diff = Math.floor((ws.getTime() - start.getTime()) / 86400000);
+    const k = Math.max(0, Math.ceil(diff / step));
+    let d = _addU(start, k * step);
+    while (d.getTime() <= hardEnd.getTime() && out.length < max) { if (d.getTime() >= ws.getTime()) out.push(_uYmd(d)); d = _addU(d, step); }
+  } else if (freq === 'weekly' || freq === 'biweekly') {
+    const weekStep = freq === 'biweekly' ? 2 : interval;
+    let wds = parseWdCsvArr(c.weekdays); if (!wds.length) wds = [start.getUTCDay()];
+    const anchor = _addU(start, -start.getUTCDay());
+    const wsSun = _addU(ws, -ws.getUTCDay());
+    let wi = Math.max(0, Math.floor((wsSun.getTime() - anchor.getTime()) / (7 * 86400000)));
+    wi -= (wi % weekStep);
+    let wkStart = _addU(anchor, wi * 7);
+    while (wkStart.getTime() <= hardEnd.getTime() && out.length < max) {
+      for (const wd of wds) { const d = _addU(wkStart, wd); if (d.getTime() >= start.getTime() && d.getTime() >= ws.getTime() && d.getTime() <= hardEnd.getTime()) out.push(_uYmd(d)); }
+      wkStart = _addU(wkStart, weekStep * 7);
+    }
+    out.sort();
+  } else if (freq === 'monthly') {
+    let dom = parseInt(c.dayOfMonth, 10); if (!Number.isInteger(dom) || dom < 1 || dom > 31) dom = start.getUTCDate();
+    let y = ws.getUTCFullYear(), mo = ws.getUTCMonth();
+    while (out.length < max) {
+      const last = new Date(Date.UTC(y, mo + 1, 0)).getUTCDate();
+      const d = new Date(Date.UTC(y, mo, Math.min(dom, last)));
+      if (d.getTime() > hardEnd.getTime()) break;
+      if (d.getTime() >= start.getTime() && d.getTime() >= ws.getTime()) out.push(_uYmd(d));
+      mo += 1; if (mo > 11) { mo = 0; y += 1; }
+    }
+  }
+  return out.slice(0, max);
+}
+
+// Build calendar events (orders/requests with a date + projected recurring) in [fromYmd,toYmd].
+function buildCalendarEvents(fromYmd, toYmd) {
+  const events = [];
+  const concreteKeys = new Set();
+  _orders.forEach(o => {
+    let date = null, time = null;
+    if (o.serviceDateTime) { const d = parseDateValue(o.serviceDateTime); if (d) { date = ymdLocal(d); time = d.toLocaleTimeString(isEs() ? 'es-MX' : 'en-US', { hour: '2-digit', minute: '2-digit' }); } }
+    else if (o.serviceDate) { date = String(o.serviceDate).slice(0, 10); time = o.preferredTime || null; }
+    if (!date || date < fromYmd || date > toYmd) return;
+    concreteKeys.add(date + '|' + String(o.category || '').toLowerCase());
+    events.push({ date, time, sortKey: (time || '99:99'), evType: o.source, category: o.category, title: orderTitle(o), refId: o.id, statusMeta: orderStatusMeta(o), maskedProvider: o.providerMaskedName, bucket: o.bucket });
+  });
+  _recurring.forEach(plan => {
+    if (plan.status !== 'active') return;
+    projectRecurring(plan, fromYmd, toYmd).forEach(date => {
+      // Don't double-show a projection on a date already covered by a real order/request of the same category.
+      if (concreteKeys.has(date + '|' + String(plan.category || '').toLowerCase())) return;
+      events.push({ date, time: plan.preferredTime || null, sortKey: (plan.preferredTime || '99:99'), evType: 'recurring', category: plan.category, title: categoryLabel(plan.category), refId: plan.id, maskedProvider: plan.providerMaskedName, projected: true });
+    });
+  });
+  events.sort((a, b) => (a.date === b.date ? a.sortKey.localeCompare(b.sortKey) : a.date.localeCompare(b.date)));
+  return events;
+}
+
+function weekdayShortNames() {
+  const out = [];
+  for (let i = 0; i < 7; i++) { const d = new Date(2024, 0, 7 + i); out.push(d.toLocaleDateString(isEs() ? 'es-MX' : 'en-US', { weekday: 'short' }).replace('.', '')); }
+  return out; // index 0=Sun .. 6=Sat
+}
+const MON_FIRST = [1, 2, 3, 4, 5, 6, 0];
+
+function recCadenceLabel(plan) {
+  const c = plan.cadence || {}; const wn = weekdayShortNames(); const es = isEs(); const parts = [];
+  const days = () => (c.weekdays && c.weekdays.length) ? c.weekdays.slice().sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7)).map(d => wn[d]).join(', ') : '';
+  switch (c.frequency) {
+    case 'daily': parts.push(es ? 'Diario' : 'Daily'); break;
+    case 'weekly': parts.push(es ? 'Semanal' : 'Weekly'); if (days()) parts.push(days()); break;
+    case 'biweekly': parts.push(es ? 'Quincenal' : 'Every 2 weeks'); if (days()) parts.push(days()); break;
+    case 'monthly': parts.push(es ? 'Mensual' : 'Monthly'); if (c.dayOfMonth) parts.push((es ? 'día ' : 'day ') + c.dayOfMonth); break;
+    case 'custom': parts.push((es ? 'Cada ' : 'Every ') + (c.intervalCount || 1) + (es ? ' días' : ' days')); break;
+    default: parts.push(c.frequency || '');
+  }
+  if (plan.preferredTime) parts.push(plan.preferredTime);
+  return parts.join(' · ');
+}
+
+function switchOrdersView(view) {
+  if (view !== 'list' && view !== 'calendar') return;
+  _ordersView = view;
+  document.querySelectorAll('.ov-tab').forEach(b => b.classList.toggle('active', b.dataset.view === view));
+  const listView = document.getElementById('orders-list-view');
+  const calView = document.getElementById('orders-calendar-view');
+  if (listView) listView.hidden = view !== 'list';
+  if (calView) calView.hidden = view !== 'calendar';
+  if (view === 'calendar') {
+    if (!_recurringLoaded && !_recurringLoading) loadRecurring();
+    renderCalendar();
+  }
+}
+
+async function loadRecurring() {
+  if (_recurringLoading) return;
+  _recurringLoading = true;
+  try {
+    const res = await fetch(API + '/api/auth/recurring-services', { headers: authHeaders() });
+    if (!res.ok) return;
+    const d = await res.json();
+    _recurring = Array.isArray(d.recurring) ? d.recurring : [];
+    _recurringLoaded = true;
+    if (_ordersView === 'calendar') renderCalendar();
+  } catch {} finally { _recurringLoading = false; }
+}
+
+// ── Calendar rendering ──
+function renderCalendar() {
+  if (!_calMonth) { const n = new Date(); _calMonth = new Date(n.getFullYear(), n.getMonth(), 1); }
+  renderCalToolbar();
+  renderCalWeekdays();
+  renderCalGrid();
+  renderCalLegend();
+  renderCalAgenda();
+  renderRecurringPanel();
+}
+
+function calShiftMonth(delta) {
+  if (!_calMonth) _calMonth = new Date();
+  _calMonth = new Date(_calMonth.getFullYear(), _calMonth.getMonth() + delta, 1);
+  renderCalendar();
+}
+function calGoToday() {
+  const n = new Date();
+  _calMonth = new Date(n.getFullYear(), n.getMonth(), 1);
+  _calSelectedDay = todayYmd();
+  renderCalendar();
+}
+
+function renderCalToolbar() {
+  const el = document.getElementById('cal-toolbar'); if (!el) return;
+  const t = tr();
+  const monthLabel = _calMonth.toLocaleDateString(isEs() ? 'es-MX' : 'en-US', { month: 'long', year: 'numeric' });
+  el.innerHTML = `
+    <div class="cal-title">${escapeHtml(monthLabel)}</div>
+    <div class="cal-nav">
+      <button class="cal-today-btn" onclick="calGoToday()">${escapeHtml(t.calToday)}</button>
+      <button class="cal-nav-btn" aria-label="${escapeHtml(t.calPrev)}" onclick="calShiftMonth(-1)">‹</button>
+      <button class="cal-nav-btn" aria-label="${escapeHtml(t.calNext)}" onclick="calShiftMonth(1)">›</button>
+    </div>`;
+}
+
+function renderCalWeekdays() {
+  const el = document.getElementById('cal-weekdays'); if (!el) return;
+  const wn = weekdayShortNames();
+  el.innerHTML = MON_FIRST.map(i => `<div class="cal-weekday">${escapeHtml(wn[i])}</div>`).join('');
+}
+
+function renderCalGrid() {
+  const el = document.getElementById('cal-grid'); if (!el) return;
+  const year = _calMonth.getFullYear(), month = _calMonth.getMonth();
+  const first = new Date(year, month, 1);
+  const lead = (first.getDay() + 6) % 7; // Monday-first leading blanks
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const monthStart = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+  const monthEnd = `${year}-${String(month + 1).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
+  const events = buildCalendarEvents(monthStart, monthEnd);
+  const byDate = {};
+  events.forEach(ev => { (byDate[ev.date] = byDate[ev.date] || []).push(ev); });
+  const today = todayYmd();
+  const cells = [];
+  for (let i = 0; i < lead; i++) cells.push('<div class="cal-cell empty"></div>');
+  for (let day = 1; day <= daysInMonth; day++) {
+    const ymd = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const evs = byDate[ymd] || [];
+    const cls = ['cal-cell'];
+    if (evs.length) cls.push('has-events');
+    if (ymd === today) cls.push('today');
+    if (ymd < today) cls.push('past');
+    if (ymd === _calSelectedDay) cls.push('selected');
+    const shown = evs.slice(0, 4);
+    const dots = shown.map(ev => `<span class="cal-dot${ev.projected ? ' ring' : ''}" style="--dot:${categoryDot(ev.category)}"></span>`).join('');
+    const more = evs.length > 4 ? `<span class="cal-more">+${evs.length - 4}</span>` : '';
+    cells.push(`<button class="${cls.join(' ')}" onclick="selectCalDay('${ymd}')">
+      <span class="cal-daynum">${day}</span>
+      <span class="cal-dots">${dots}${more}</span>
+    </button>`);
+  }
+  while (cells.length % 7 !== 0) cells.push('<div class="cal-cell empty"></div>');
+  el.innerHTML = cells.join('');
+}
+
+function renderCalLegend() {
+  const el = document.getElementById('cal-legend'); if (!el) return;
+  const cats = ORDER_KNOWN_CATEGORIES;
+  el.innerHTML = cats.map(c => `<span class="cal-legend-item"><span class="cal-legend-dot" style="--dot:${categoryDot(c)}"></span>${escapeHtml(categoryLabel(c))}</span>`).join('');
+}
+
+function selectCalDay(ymd) {
+  _calSelectedDay = (_calSelectedDay === ymd) ? null : ymd;
+  renderCalGrid();
+  renderCalAgenda();
+}
+
+function calEventRowHtml(ev) {
+  const t = tr();
+  const cat = categoryMeta(ev.category);
+  const timeLabel = ev.time || (ev.evType !== 'recurring' ? t.asap : '');
+  const metaBits = [];
+  if (ev.maskedProvider) metaBits.push(ev.maskedProvider);
+  if (ev.evType === 'recurring') metaBits.push(`<span class="cal-tag recurring">${escapeHtml(t.calRecurringTag)}</span>`);
+  else if (ev.statusMeta) metaBits.push(`<span class="order-status ${ev.statusMeta.cls}" style="font-size:10px;padding:3px 8px">${escapeHtml(ev.statusMeta.label)}</span>`);
+  const onclick = ev.evType === 'recurring' ? `openRecurringPlanById('${escapeHtml(ev.refId)}')` : `openOrderDrawer('${escapeHtml(ev.refId)}')`;
+  return `<div class="cal-event" onclick="${onclick}">
+    <div class="cal-event-icon" style="--order-tint:${cat.tint}">${cat.icon}</div>
+    <div class="cal-event-main">
+      <div class="cal-event-title">${escapeHtml(ev.title)}</div>
+      <div class="cal-event-meta">${metaBits.join(' · ')}</div>
+    </div>
+    <div class="cal-event-time">${escapeHtml(timeLabel || '')}</div>
+  </div>`;
+}
+
+function renderCalAgenda() {
+  const el = document.getElementById('cal-agenda'); if (!el) return;
+  const t = tr();
+  let headTitle, headSub, events;
+  if (_calSelectedDay) {
+    const d = parseDateValue(_calSelectedDay);
+    headTitle = d ? d.toLocaleDateString(isEs() ? 'es-MX' : 'en-US', { weekday: 'long', day: 'numeric', month: 'long' }) : _calSelectedDay;
+    events = buildCalendarEvents(_calSelectedDay, _calSelectedDay);
+    headSub = events.length ? (events.length === 1 ? t.calOneService : t.calNServices(events.length)) : '';
+  } else {
+    const today = todayYmd();
+    const horizon = _uYmd(_addU(_ymdU(today), 90));
+    headTitle = t.calUpcoming;
+    events = buildCalendarEvents(today, horizon).slice(0, 8);
+    headSub = '';
+  }
+  let lastDate = null;
+  const body = events.length
+    ? events.map(ev => {
+        const showDate = !_calSelectedDay && ev.date !== lastDate;
+        lastDate = ev.date;
+        const dlabel = showDate ? `<div class="cal-panel-sub" style="margin:8px 0 -2px;text-transform:capitalize">${escapeHtml(formatDateShort(ev.date) || ev.date)}</div>` : '';
+        return dlabel + calEventRowHtml(ev);
+      }).join('')
+    : `<div class="cal-empty">${escapeHtml(_calSelectedDay ? t.calDayEmpty : t.calUpcomingEmpty)}</div>`;
+  el.innerHTML = `
+    <div class="cal-panel-head">
+      <div>
+        <div class="cal-panel-title" style="text-transform:capitalize">${escapeHtml(headTitle)}</div>
+        ${headSub ? `<div class="cal-panel-sub">${escapeHtml(headSub)}</div>` : ''}
+      </div>
+      ${_calSelectedDay ? `<button class="cal-today-btn" onclick="selectCalDay('${_calSelectedDay}')">${escapeHtml(t.calClear)}</button>` : ''}
+    </div>
+    ${body}`;
+}
+
+function renderRecurringPanel() {
+  const el = document.getElementById('cal-recurring'); if (!el) return;
+  const t = tr();
+  const head = `<div class="cal-panel-head">
+      <div class="cal-panel-title">${escapeHtml(t.calRecurringTitle)}</div>
+      <button class="cal-add-btn" onclick="openRecurringModal({})">+ <span>${escapeHtml(t.calNewRecurring)}</span></button>
+    </div>`;
+  if (!_recurringLoaded) { el.innerHTML = head + `<div class="cal-empty">·</div>`; return; }
+  if (!_recurring.length) {
+    el.innerHTML = head + `<div class="rec-empty">
+      <div class="rec-empty-title">${escapeHtml(t.calRecEmptyTitle)}</div>
+      <div class="rec-empty-text">${escapeHtml(t.calRecEmptyText)}</div>
+      <button class="btn-save" onclick="openRecurringModal({})">${escapeHtml(t.calNewRecurring)}</button>
+    </div>`;
+    return;
+  }
+  const sorted = _recurring.slice().sort((a, b) => (a.status === b.status ? 0 : a.status === 'active' ? -1 : 1));
+  el.innerHTML = head + sorted.map(p => recurringCardHtml(p)).join('');
+}
+
+function recurringCardHtml(p) {
+  const t = tr();
+  const cat = categoryMeta(p.category);
+  const paused = p.status === 'paused';
+  const meta = [];
+  if (p.providerMaskedName) meta.push(escapeHtml(p.providerMaskedName));
+  if (p.nextOccurrence) meta.push(`${escapeHtml(t.calNext)}: ${escapeHtml(formatDateShort(p.nextOccurrence) || p.nextOccurrence)}`);
+  return `<div class="rec-card ${paused ? 'paused' : ''}">
+    <div class="rec-card-top">
+      <div class="rec-icon" style="--order-tint:${cat.tint}">${cat.icon}</div>
+      <div style="min-width:0">
+        <div class="rec-title">${escapeHtml(categoryLabel(p.category))}</div>
+        <div class="rec-cadence">${escapeHtml(recCadenceLabel(p))}</div>
+        ${meta.length ? `<div class="rec-meta">${meta.map(m => `<span>${m}</span>`).join('')}</div>` : ''}
+      </div>
+      <span class="rec-status ${paused ? 'paused' : 'active'}">${escapeHtml(paused ? t.calPaused : t.calActive)}</span>
+    </div>
+    <div class="rec-actions">
+      <button class="addr-btn default-btn" onclick="toggleRecurringStatus('${escapeHtml(p.id)}')">${escapeHtml(paused ? t.calResume : t.calPause)}</button>
+      <button class="addr-btn default-btn" onclick="openRecurringPlanById('${escapeHtml(p.id)}')">${escapeHtml(t.calEdit)}</button>
+      <button class="addr-btn delete-btn" onclick="cancelRecurring('${escapeHtml(p.id)}')">${escapeHtml(t.calCancelPlan)}</button>
+    </div>
+  </div>`;
+}
+
+async function toggleRecurringStatus(id) {
+  const p = _recurring.find(x => x.id === id); if (!p) return;
+  const next = p.status === 'active' ? 'paused' : 'active';
+  try {
+    const res = await fetch(API + '/api/auth/recurring-services/' + encodeURIComponent(id), { method: 'PATCH', headers: authHeaders(), body: JSON.stringify({ status: next }) });
+    if (!res.ok) throw new Error('failed');
+    const d = await res.json().catch(() => ({}));
+    if (d.recurring) { const i = _recurring.findIndex(x => x.id === id); if (i >= 0) _recurring[i] = d.recurring; }
+    renderCalendar();
+  } catch { showOrderToast(tr().actionError); }
+}
+
+async function cancelRecurring(id) {
+  const t = tr();
+  if (!confirm(t.calCancelConfirm)) return;
+  try {
+    const res = await fetch(API + '/api/auth/recurring-services/' + encodeURIComponent(id), { method: 'DELETE', headers: authHeaders() });
+    if (!res.ok) throw new Error('failed');
+    _recurring = _recurring.filter(x => x.id !== id);
+    renderCalendar();
+    showOrderToast(t.calCanceledDone);
+  } catch { showOrderToast(t.actionError); }
+}
+
+function openRecurringPlanById(id) {
+  const p = _recurring.find(x => x.id === id);
+  if (p) openRecurringModal({ plan: p });
+}
+
+// Entry point from a Trusted Specialist card: jump to the calendar and open the setup
+// modal prefilled with that specialist + category.
+function scheduleRecurringWithSpecialist(providerId, category) {
+  switchSection('orders');
+  switchOrdersView('calendar');
+  if (!_recurringLoaded && !_recurringLoading) loadRecurring();
+  openRecurringModal({ category: String(category || '').toLowerCase(), providerId });
+}
+
+// ── Recurring setup / edit modal ──
+let _recOverlay = null;
+let _recModalState = { editingId: null, frequency: 'weekly', weekdays: [] };
+
+function openRecurringModal(opts = {}) {
+  const t = tr();
+  const plan = opts.plan || null;
+  _recModalState = {
+    editingId: plan ? plan.id : null,
+    frequency: plan ? (plan.cadence && plan.cadence.frequency) || 'weekly' : 'weekly',
+    weekdays: plan && plan.cadence && plan.cadence.weekdays ? plan.cadence.weekdays.slice() : [],
+  };
+  const presetCat = plan ? plan.category : (opts.category || 'cleaning');
+  const presetProvider = plan ? plan.providerId : (opts.providerId || '');
+  const catOptions = ORDER_KNOWN_CATEGORIES.map(c => `<option value="${c}" ${c === presetCat ? 'selected' : ''}>${escapeHtml(categoryLabel(c))}</option>`).join('');
+  const freqs = [['daily', t.calFreqDaily], ['weekly', t.calFreqWeekly], ['biweekly', t.calFreqBiweekly], ['monthly', t.calFreqMonthly], ['custom', t.calFreqCustom]];
+  const freqChips = freqs.map(([k, lbl]) => `<button type="button" class="rec-chip ${k === _recModalState.frequency ? 'on' : ''}" data-freq="${k}" onclick="recSelectFreq('${k}')">${escapeHtml(lbl)}</button>`).join('');
+  const minDate = todayYmd();
+  const startVal = plan && plan.startDate ? plan.startDate : minDate;
+  // New weekly/biweekly plan with no selection yet → default to the start date's weekday.
+  if (!plan && !_recModalState.weekdays.length && (_recModalState.frequency === 'weekly' || _recModalState.frequency === 'biweekly')) {
+    const sd = _ymdU(startVal); if (sd) _recModalState.weekdays = [sd.getUTCDay()];
+  }
+  _recOverlay = buildActionModal(`
+    <h3>${escapeHtml(plan ? t.calEditTitle : t.calNewTitle)}</h3>
+    <div class="rec-form">
+      <div class="rec-field">
+        <label class="rec-field-label" for="rec_category">${escapeHtml(t.calCategory)}</label>
+        <select class="rec-select" id="rec_category" onchange="recRenderProviders()">${catOptions}</select>
+      </div>
+      <div class="rec-field">
+        <label class="rec-field-label" for="rec_provider">${escapeHtml(t.calSpecialist)}</label>
+        <select class="rec-select" id="rec_provider"></select>
+        <div class="cal-panel-sub" style="font-weight:600">${escapeHtml(t.calSpecialistHint)}</div>
+      </div>
+      <div class="rec-field">
+        <label class="rec-field-label">${escapeHtml(t.calFrequency)}</label>
+        <div class="rec-freq-chips" id="rec_freq_chips">${freqChips}</div>
+      </div>
+      <div id="rec-cond"></div>
+      <div class="rec-field-row">
+        <div class="rec-field">
+          <label class="rec-field-label" for="rec_time">${escapeHtml(t.calTime)}</label>
+          <input type="time" class="rec-input" id="rec_time" value="${escapeHtml(plan && plan.preferredTime ? plan.preferredTime : '10:00')}">
+        </div>
+        <div class="rec-field">
+          <label class="rec-field-label" for="rec_start">${escapeHtml(t.calStart)}</label>
+          <input type="date" class="rec-input" id="rec_start" min="${minDate}" value="${escapeHtml(startVal)}">
+        </div>
+      </div>
+      <div class="rec-field">
+        <label class="rec-field-label" for="rec_address">${escapeHtml(t.calAddress)}</label>
+        <input type="text" class="rec-input" id="rec_address" placeholder="${escapeHtml(t.calAddressPh)}" value="${escapeHtml(plan && plan.address ? plan.address : '')}">
+      </div>
+      <div class="rec-field">
+        <label class="rec-field-label" for="rec_desc">${escapeHtml(t.calDetails)}</label>
+        <textarea class="rec-textarea" id="rec_desc" placeholder="${escapeHtml(t.calDetailsPh)}">${escapeHtml(plan && plan.description ? plan.description : '')}</textarea>
+      </div>
+      <div id="rec-modal-error" style="font-size:13px;color:#c55d49;min-height:16px"></div>
+    </div>
+    <div class="confirm-row">
+      <button class="confirm-cancel" onclick="closeRecModal()">${escapeHtml(t.cancelBtn)}</button>
+      <button class="btn-save" onclick="submitRecurring(this)">${escapeHtml(plan ? t.calSavePlan : t.calCreatePlan)}</button>
+    </div>`, { boxClass: 'rec-modal-box' });
+  recRenderProviders(presetProvider);
+  recRenderConditional(plan);
+}
+
+function closeRecModal() { if (_recOverlay) { _recOverlay.remove(); _recOverlay = null; } }
+
+function recSelectFreq(freq) {
+  _recModalState.frequency = freq;
+  document.querySelectorAll('#rec_freq_chips .rec-chip').forEach(c => c.classList.toggle('on', c.dataset.freq === freq));
+  recRenderConditional(null);
+}
+
+function recToggleWeekday(n) {
+  const i = _recModalState.weekdays.indexOf(n);
+  if (i >= 0) _recModalState.weekdays.splice(i, 1); else _recModalState.weekdays.push(n);
+  document.querySelectorAll('#rec_weekdays .rec-wd').forEach(b => b.classList.toggle('on', _recModalState.weekdays.includes(parseInt(b.dataset.wd, 10))));
+}
+
+function recRenderProviders(preset) {
+  const sel = document.getElementById('rec_provider'); if (!sel) return;
+  const t = tr();
+  const cat = (document.getElementById('rec_category') || {}).value || 'cleaning';
+  const current = preset != null ? preset : sel.value;
+  const matches = _specialists.filter(s => String(s.category).toLowerCase() === String(cat).toLowerCase() && s.available);
+  const opts = [`<option value="">${escapeHtml(t.calNoPreference)}</option>`]
+    .concat(matches.map(s => `<option value="${escapeHtml(s.providerId)}" ${s.providerId === current ? 'selected' : ''}>${escapeHtml(s.nickname || s.maskedName)}</option>`));
+  sel.innerHTML = opts.join('');
+}
+
+function recRenderConditional(plan) {
+  const el = document.getElementById('rec-cond'); if (!el) return;
+  const t = tr();
+  const freq = _recModalState.frequency;
+  if (freq === 'weekly' || freq === 'biweekly') {
+    if (!_recModalState.weekdays.length && plan && plan.cadence && plan.cadence.weekdays) _recModalState.weekdays = plan.cadence.weekdays.slice();
+    const wn = weekdayShortNames();
+    const chips = MON_FIRST.map(i => `<button type="button" class="rec-wd ${_recModalState.weekdays.includes(i) ? 'on' : ''}" data-wd="${i}" onclick="recToggleWeekday(${i})">${escapeHtml(wn[i])}</button>`).join('');
+    el.innerHTML = `<div class="rec-field"><label class="rec-field-label">${escapeHtml(t.calOnDays)}</label><div class="rec-weekdays" id="rec_weekdays">${chips}</div></div>`;
+  } else if (freq === 'monthly') {
+    const dom = plan && plan.cadence && plan.cadence.dayOfMonth ? plan.cadence.dayOfMonth : (new Date().getDate());
+    el.innerHTML = `<div class="rec-field"><label class="rec-field-label" for="rec_dom">${escapeHtml(t.calDayOfMonth)}</label><input type="number" class="rec-input" id="rec_dom" min="1" max="31" value="${dom}"></div>`;
+  } else if (freq === 'custom') {
+    const iv = plan && plan.cadence && plan.cadence.intervalCount ? plan.cadence.intervalCount : 3;
+    el.innerHTML = `<div class="rec-field"><label class="rec-field-label" for="rec_interval">${escapeHtml(t.calEveryNDays)}</label><input type="number" class="rec-input" id="rec_interval" min="1" max="365" value="${iv}"></div>`;
+  } else {
+    el.innerHTML = '';
+  }
+}
+
+async function submitRecurring(btn) {
+  const t = tr();
+  const errEl = document.getElementById('rec-modal-error');
+  const setErr = (m) => { if (errEl) errEl.textContent = m; };
+  setErr('');
+  const category = (document.getElementById('rec_category') || {}).value || '';
+  const providerId = (document.getElementById('rec_provider') || {}).value || '';
+  const frequency = _recModalState.frequency;
+  const preferredTime = (document.getElementById('rec_time') || {}).value || '';
+  const startDate = (document.getElementById('rec_start') || {}).value || '';
+  const serviceAddress = (document.getElementById('rec_address') || {}).value.trim();
+  const description = (document.getElementById('rec_desc') || {}).value.trim();
+  if (!category) return setErr(t.calErrCategory);
+  if (!startDate) return setErr(t.calErrStart);
+  const payload = { category, frequency, preferredTime, startDate, lang: isEs() ? 'es' : 'en' };
+  if (providerId) payload.providerId = providerId;
+  if (serviceAddress) payload.serviceAddress = serviceAddress;
+  if (description) payload.description = description;
+  if (frequency === 'weekly' || frequency === 'biweekly') {
+    if (!_recModalState.weekdays.length) return setErr(t.calErrWeekdays);
+    payload.weekdays = _recModalState.weekdays;
+  } else if (frequency === 'monthly') {
+    payload.dayOfMonth = parseInt((document.getElementById('rec_dom') || {}).value, 10) || new Date().getDate();
+  } else if (frequency === 'custom') {
+    const iv = parseInt((document.getElementById('rec_interval') || {}).value, 10);
+    if (!iv || iv < 1) return setErr(t.calErrInterval);
+    payload.intervalCount = iv;
+  }
+  const editingId = _recModalState.editingId;
+  const prev = btn.textContent; btn.disabled = true; btn.textContent = '…';
+  try {
+    const url = API + '/api/auth/recurring-services' + (editingId ? '/' + encodeURIComponent(editingId) : '');
+    const res = await fetch(url, { method: editingId ? 'PATCH' : 'POST', headers: authHeaders(), body: JSON.stringify(payload) });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      if (d.error === 'provider_unavailable') return finish(t.calErrProvider);
+      if (d.error === 'phone_required') return finish(t.calErrPhone);
+      return finish(d.message || t.actionError);
+    }
+    if (d.recurring) {
+      if (editingId) { const i = _recurring.findIndex(x => x.id === editingId); if (i >= 0) _recurring[i] = d.recurring; }
+      else { _recurring.unshift(d.recurring); }
+    } else { _recurringLoaded = false; await loadRecurring(); }
+    closeRecModal();
+    renderCalendar();
+    showOrderToast(editingId ? t.calSavedDone : t.calCreatedDone);
+  } catch {
+    finish(t.actionError);
+  }
+  function finish(msg) { btn.disabled = false; btn.textContent = prev; setErr(msg); }
+}
+
 // ── Detail drawer ──
+function servicePhaseLabel(phase, t) {
+  switch (String(phase || '').trim()) {
+    case 'en_route':  return t.phEnRoute;
+    case 'arrived':   return t.phArrived;
+    case 'started':   return t.phStarted;
+    case 'completed': return t.phCompleted;
+    default: return null;
+  }
+}
+
 function orderTimelineHtml(item) {
   const t = tr();
   const meta = orderStatusMeta(item);
@@ -2950,7 +3980,13 @@ function orderDrawerInfoHtml(item) {
   if (item.description) rows.push(row(ORDER_ICONS.doc, t.drawerService, item.description));
   rows.push(row(ORDER_ICONS.calendar, t.drawerSchedule, orderScheduleLabel(item)));
   rows.push(row(ORDER_ICONS.pin, t.drawerAddress, item.address || t.notProvided));
-  if (item.source === 'order') rows.push(row(ORDER_ICONS.user, t.drawerProvider, item.providerName || t.toBeAssigned));
+  // Anti-disintermediation: client sees the masked first name only (full name/contact never sent).
+  if (item.source === 'order') rows.push(row(ORDER_ICONS.user, t.drawerProvider, item.providerMaskedName || t.toBeAssigned));
+  // Live in-service phase (provider check-in), shown while the service is active and not yet completed.
+  const phaseLabel = servicePhaseLabel(item.servicePhase, t);
+  if (item.source === 'order' && phaseLabel && item.bucket === 'active') {
+    rows.push(row(ORDER_ICONS.check, t.drawerPhase, phaseLabel));
+  }
   return rows.join('');
 }
 
@@ -3181,6 +4217,7 @@ function orderDrawerHtml(item) {
     </div>
     ${(item.source === 'order' && item.policy && item.policy.canRate) ? `<div class="drawer-section">${orderRatingHtml(item)}</div>` : ''}
     ${summary ? `<div class="drawer-section"><div class="drawer-section-title">${escapeHtml(t.drawerSummary)}</div>${summary}</div>` : ''}
+    ${(item.source === 'order' && !item.priceChange && item.bucket === 'past' && !meta.canceled) ? `<div class="drawer-section"><div class="order-note" style="font-size:12.5px;line-height:1.5;color:#6b7280">${escapeHtml(t.retentionNote)}</div></div>` : ''}
     ${orderDrawerActionsHtml(item)}`;
 }
 
@@ -3547,7 +4584,8 @@ function applyTranslations() {
   const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
   const ph = (id, val) => { const el = document.getElementById(id); if (el) el.placeholder = val; };
   set('title-orders', t.titleOrders);   set('sub-orders', t.subOrders);
-  set('orders-seg-active', t.ordersSegActive); set('orders-seg-past', t.ordersSegPast);
+  set('orders-seg-requests', t.ordersSegRequests); set('orders-seg-active', t.ordersSegActive); set('orders-seg-past', t.ordersSegPast);
+  set('ov-list-label', t.ovList);       set('ov-cal-label', t.ovCalendar);
   set('title-info', t.titleInfo);       set('sub-info', t.subInfo);
   set('title-security', t.titleSecurity); set('sub-security', t.subSecurity);
   set('security-2step-title', t.security2StepTitle); set('security-2step-sub', t.security2StepSub);
@@ -3649,6 +4687,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadAddresses();
     loadTrustedSpecialists();
     loadFavoriteServices();
+    loadRecurring();
     loadPaymentMethods();
     buildNav();
 
@@ -3671,6 +4710,7 @@ document.addEventListener('DOMContentLoaded', () => {
     renderTrustedSpecialists();
     renderFavoriteServices();
     if (_ordersLoaded) renderOrders();
+    if (_ordersView === 'calendar') renderCalendar();
     // Re-render payment methods list with updated language (data is already cached in DOM)
     const pmList = document.getElementById('pm-list');
     if (pmList && pmList.querySelector('.pm-card')) loadPaymentMethods();

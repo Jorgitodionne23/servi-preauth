@@ -278,6 +278,12 @@
     .action-btn--capture  { background:rgba(0,123,255,0.14); color:#5fa3ff; border-color:rgba(0,123,255,0.32); }
     .action-btn--cancel   { background:rgba(220,53,69,0.10); color:var(--danger-soft); border-color:rgba(220,53,69,0.28); }
     .action-btn--refund   { background:rgba(167,139,250,0.12); color:#a78bfa; border-color:rgba(167,139,250,0.3); }
+    .action-btn--schedule { background:#2b2513; color:#f1c40f; border-color:#57491f; }
+    .action-btn--link     { background:#1f2937; color:#93c5fd; border-color:#334155; }
+    .action-btn--cash     { background:#1f1a0d; color:#fbbf24; border-color:#4a3a1a; }
+    .action-btn--provider { background:rgba(40,167,69,0.12); color:#4ade80; border-color:rgba(40,167,69,0.30); }
+    .action-btn--review   { background:rgba(116,184,196,0.10); color:var(--accent); border-color:rgba(116,184,196,0.28); }
+    .action-btn--muted    { background:#20232f; color:#aeb4c8; border-color:#34394d; }
     .action-btns { display:flex; gap:6px; flex-wrap:wrap; }
 
     /* ─── Lightweight admin modal ─────────────────────────────────────────── */
@@ -356,6 +362,7 @@
     .badge-confirmed { background:rgba(40,167,69,0.14);  color:var(--ok); }
     .badge-captured  { background:rgba(0,123,255,0.14);  color:#60a5fa; }
     .badge-canceled  { background:rgba(123,128,153,0.14);color:var(--text-mute); }
+    .badge-refunded  { background:rgba(167,139,250,0.14); color:#a78bfa; }
     .badge-contacted { background:rgba(149,204,213,0.14);color:var(--accent); }
     .badge-verified  { background:rgba(40,167,69,0.14);  color:var(--ok); }
     .badge-rejected  { background:rgba(220,53,69,0.14);  color:var(--danger-soft); }
@@ -849,6 +856,7 @@
             <option value="verified" selected>Verified</option>
             <option value="removed">Removed</option>
           </select>
+          <button class="auth-btn" style="padding:8px 14px;white-space:nowrap" onclick="openAddProvider()">+ Agregar proveedor</button>
         </div>
         <div class="table-scroll">
           <table class="admin-table">
@@ -999,6 +1007,7 @@ let ordersTimer = null;
 let ordersAttentionOnly = false;
 let _lastOpsRadar = null;
 const _subsCache = {};
+const _ordersCache = {};
 
 function headers() { return { 'Authorization': 'Bearer ' + TOKEN, 'Content-Type': 'application/json' }; }
 function escapeHtml(value) {
@@ -1050,6 +1059,44 @@ function buildSubmissionAttachmentsInline(attachments) {
   }).join('');
   const more = urls.length > 3 ? `<span class="submission-attachment-more">+${urls.length - 3}</span>` : '';
   return `<div class="submission-attachments">${shown}${more}</div>`;
+}
+
+function parseAiEvidence(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.map(String).filter(Boolean);
+  if (typeof value === 'object') return Object.values(value).map(String).filter(Boolean);
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) return parsed.map(String).filter(Boolean);
+    if (parsed && typeof parsed === 'object') return Object.values(parsed).map(String).filter(Boolean);
+  } catch (_) {}
+  return String(value).trim() ? [String(value).trim()] : [];
+}
+
+function aiStatusMeta(s) {
+  const raw = String(s.ai_status || '').toLowerCase();
+  if (raw === 'understood') return { label: 'AI entendido', bg: '#064e3b', fg: '#a7f3d0', border: '#047857' };
+  if (raw === 'unclear') return { label: 'AI no descifró', bg: '#451a03', fg: '#fed7aa', border: '#b45309' };
+  if (raw === 'manual_review') return { label: 'Revisión manual', bg: '#1f2937', fg: '#d1d5db', border: '#4b5563' };
+  if (['voice', 'video', 'photos'].includes(String(s.request_mode || '').toLowerCase()) && !s.matched_service) {
+    return { label: 'Revisión manual', bg: '#1f2937', fg: '#d1d5db', border: '#4b5563' };
+  }
+  return null;
+}
+
+function buildAiStatusBadge(s) {
+  const meta = aiStatusMeta(s);
+  if (!meta) return '';
+  return `<br><span class="badge" style="background:${meta.bg};color:${meta.fg};border:1px solid ${meta.border};margin-top:3px">AI · ${escapeHtml(meta.label)}</span>`;
+}
+
+function buildAiStatusNote(s) {
+  const meta = aiStatusMeta(s);
+  if (!meta) return '';
+  const evidence = parseAiEvidence(s.ai_evidence).slice(0, 2).join(' · ');
+  const reason = s.ai_reason ? String(s.ai_reason) : '';
+  const detail = evidence || reason;
+  return `<div style="margin-top:6px;font-size:11px;color:${meta.fg};background:${meta.bg};border:1px solid ${meta.border};border-radius:6px;padding:5px 7px">${escapeHtml(meta.label)}${detail ? ': ' + escapeHtml(detail) : ''}</div>`;
 }
 
 // ─── Toasts ──────────────────────────────────────────────────────────────────
@@ -1139,10 +1186,17 @@ function scheduleDetailHtml(o) {
       </div>`;
   }
   if (o.service_datetime) {
+    const status = orderStatusKey(o.status);
+    const badgeLabel = status === 'confirmed'
+      ? 'Confirmado'
+      : status === 'scheduled'
+        ? 'Agendado'
+        : 'Hora definida';
+    const badgeCls = (status === 'confirmed' || status === 'scheduled') ? '' : ' schedule-badge--partial';
     return `
       <div class="schedule-card">
         <div class="schedule-card__top">
-          <span class="schedule-badge">Confirmado</span>
+          <span class="schedule-badge${badgeCls}">${badgeLabel}</span>
           <span class="schedule-card__meta">${escapeHtml(ht.label !== '—' ? 'Faltan ' + ht.label : 'Sin contador')}</span>
         </div>
         <div class="schedule-card__main">${escapeHtml(fmtServiceDate(o.service_datetime))}</div>
@@ -1177,6 +1231,7 @@ function badgeClass(status) {
   // keep their color.
   if (s.startsWith('cancel')) return 'badge-canceled';
   if (s.startsWith('captured')) return 'badge-captured';
+  if (s.startsWith('refund')) return 'badge-refunded';
   if (s === 'pending') return 'badge-pending';
   if (s === 'new') return 'badge-new';
   if (s === 'confirmed') return 'badge-confirmed';
@@ -1229,6 +1284,61 @@ function orderStatusLabel(status) {
     'new': 'New',
   };
   return exact[s] || titleCase(raw);
+}
+
+function orderStatusKey(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function orderHasPaymentIntent(o) {
+  return /^pi_/.test(String(o?.payment_intent_id || '').trim());
+}
+
+function orderHasExactTime(o) {
+  return Boolean(o?.service_datetime);
+}
+
+function orderServiceTarget(o) {
+  const raw = o?.service_datetime || o?.service_date || '';
+  if (!raw) return null;
+  const dt = isDateOnly(raw) ? new Date(raw + 'T00:00:00') : new Date(raw);
+  return isNaN(dt.getTime()) ? null : dt;
+}
+
+function orderHoursToService(o) {
+  const target = orderServiceTarget(o);
+  if (!target) return null;
+  return (target.getTime() - Date.now()) / 3.6e6;
+}
+
+function orderIsCapturedStatus(status) {
+  return orderStatusKey(status).startsWith('captured');
+}
+
+function orderIsCashStatus(o) {
+  return Boolean(o?.cash_selected) || orderStatusKey(o?.status) === 'pending cash';
+}
+
+function orderIsTerminalStatus(status) {
+  const s = orderStatusKey(status);
+  return s.startsWith('captured')
+    || s.startsWith('cancel')
+    || s === 'refunded'
+    || s === 'pending cash';
+}
+
+function orderIsPaymentFailedStatus(status) {
+  const s = orderStatusKey(status);
+  return s.includes('declined')
+    || s.includes('failed')
+    || s.includes('requires_action')
+    || s.includes('authentication_required')
+    || s.includes('payment update')
+    || s.includes('update payment');
+}
+
+function jsArg(value) {
+  return JSON.stringify(String(value ?? ''));
 }
 
 function opsSeverityLabel(severity) {
@@ -1295,21 +1405,21 @@ function buildOpsActionBtns(o, { includeSnooze = true } = {}) {
   const ops = o?.ops || {};
   if (!ops.code || ops.code === 'safe') return [];
   const id = o.id;
-  const authorized = Number(o.pricing_total_amount || o.amount || 0);
+  const authorized = authorizedAmountForOrder(o);
   const btns = [];
   if (ops.code === 'preauth_due' || (ops.code === 'starting_soon' && ops.actionLabel === 'Autorizar ahora')) {
-    btns.push(`<button class="action-btn action-btn--capture" onclick="preauthNow('${id}')" title="Intentar autorización con tarjeta guardada">Autorizar ahora</button>`);
+    btns.push(renderActionButton(actionPreauth(id)));
   } else if (ops.code === 'capture_due' || ops.code === 'capture_overdue') {
-    btns.push(`<button class="action-btn action-btn--capture" onclick="captureOrder('${id}', ${authorized})" title="Capturar pago">Capturar</button>`);
+    btns.push(renderActionButton(actionCapture(id, authorized, 'Capturar pago')));
   } else if (ops.code === 'needs_schedule') {
-    btns.push(`<button class="action-btn" style="background:#2b2513;color:#f1c40f;border:1px solid #57491f" onclick="openOrderEdit('${id}')" title="Asignar fecha y hora">Agendar</button>`);
+    btns.push(renderActionButton(actionSchedule(id)));
   } else if (ops.code === 'payment_failed') {
-    btns.push(`<button class="action-btn" style="background:#1f2937;color:#93c5fd;border:1px solid #334155" onclick="regenerateLink('${id}')" title="Enviar enlace actualizado">Enviar enlace</button>`);
+    btns.push(renderActionButton(actionLink(id, 'Enviar enlace', 'Enviar enlace actualizado')));
   } else {
-    btns.push(`<button class="action-btn" onclick="openOrderDetail('${id}')" title="Revisar orden">Revisar</button>`);
+    btns.push(renderActionButton(actionReview(id)));
   }
   if (includeSnooze && !ops.isSnoozed) {
-    btns.push(`<button class="action-btn" style="background:#20232f;color:#aeb4c8;border:1px solid #34394d" onclick="snoozeOps('${id}', '${ops.code}', '15m')" title="Ocultar de Ops Radar por 15 minutos">Snooze</button>`);
+    btns.push(renderActionButton(actionSnooze(id, ops.code)));
   }
   return btns;
 }
@@ -1902,6 +2012,7 @@ async function loadOrders() {
 
     const orderItems = ordersAttentionOnly ? (d.items || []).filter(orderNeedsAttention) : (d.items || []);
     const orderRows = orderItems.map(o => {
+      _ordersCache[o.id] = o;
       const ht = computeHoursToService(o);
       const rowClass = opsRowClass(o, ht.rowClass);
       const cellClass = opsCellClass(o, ht.cellClass);
@@ -1919,7 +2030,7 @@ async function loadOrders() {
         <td>${scheduleRowText(o)}</td>
         <td class="hours-cell ${cellClass}">${escapeHtml(timeLabel)}</td>
         <td><span class="badge ${badgeClass(o.status)}">${escapeHtml(orderStatusLabel(o.status))}</span>${o.has_pending_change ? ' <span class="badge badge-pending" title="Solicitud de cambio pendiente por revisar">⏳ Cambio</span>' : ''}${opsLine}</td>
-        <td onclick="event.stopPropagation()">${buildActionBtns(o)}</td>
+        <td onclick="event.stopPropagation()">${buildPrimaryActionBtns(o)}</td>
       </tr>`;
     }).join('');
 
@@ -1985,6 +2096,7 @@ function buildSubmissionRow(s) {
   _subsCache[s.id] = s;
   const detail = (s.category || '') + (s.description ? ' — ' + s.description.slice(0, 60) : '');
   const attachmentsHtml = buildSubmissionAttachmentsInline(s.attachments);
+  const aiStatusHtml = buildAiStatusNote(s);
   const isCanceled = /^cancel/i.test(String(s.status || ''));
   const border = isCanceled ? '#ef4444' : '#7c3aed';
   const code = isCanceled ? '#ef4444' : '#a78bfa';
@@ -1993,7 +2105,7 @@ function buildSubmissionRow(s) {
     : '';
   const badge = (isCanceled
     ? `<span class="badge badge-canceled">Cancelado · Cliente</span>`
-    : `<span class="badge badge-web">Web · Sin enlace</span>`) + trustedBadge;
+    : `<span class="badge badge-web">Web · Sin enlace</span>`) + buildAiStatusBadge(s) + trustedBadge;
   const action = isCanceled
     ? `<span style="color:#888;font-size:11px">Retirado por cliente</span>`
     : `<button class="action-btn" style="background:#3b0764;color:#c4b5fd;border:1px solid #6d28d9"
@@ -2005,6 +2117,7 @@ function buildSubmissionRow(s) {
       <td>${escapeHtml(s.client_name || '—')}<br><span style="color:#666;font-size:11px">${escapeHtml(s.client_phone || '')}</span></td>
       <td class="submission-detail" title="${escapeHtml(detail)}">
         <div class="submission-detail-text">${escapeHtml(detail)}</div>
+        ${aiStatusHtml}
         ${attachmentsHtml}
       </td>
       <td><span style="color:#555;font-size:11px">Sin precio</span></td>
@@ -2027,6 +2140,7 @@ function openSubmissionLinkModal(subId) {
     ? (sub.preferred_date + 'T' + sub.preferred_time)
     : '';
   const preferredSchedule = submissionSchedulePlainText(sub);
+  const aiStatusHtml = buildAiStatusNote(sub);
 
   const overlay = document.createElement('div');
   overlay.id = 'sub-modal-overlay';
@@ -2034,11 +2148,12 @@ function openSubmissionLinkModal(subId) {
   overlay.innerHTML = `
     <div class="adm-box" style="width:480px;max-width:96%" onclick="event.stopPropagation()">
       <h3 style="margin-bottom:6px">+ Crear enlace de pago</h3>
-      <p style="font-size:12px;color:#666;margin-bottom:16px">
+      <div style="font-size:12px;color:#666;margin-bottom:16px">
         ${escapeHtml(sub.client_name)} · ${escapeHtml(sub.client_phone)} · ${escapeHtml(sub.category || '')}
         ${sub.service_address ? '<br>' + escapeHtml(sub.service_address) : ''}
         ${sub.description ? '<br><span style="font-style:italic">"' + escapeHtml(sub.description.slice(0,80)) + (sub.description.length > 80 ? '…' : '') + '"</span>' : ''}
-      </p>
+        ${aiStatusHtml}
+      </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
         <div>
           <label class="form-label">Monto proveedor (MXN) *</label>
@@ -2238,44 +2353,418 @@ function copySubLink() {
 }
 
 // ─── Action button builder ───────────────────────────────────────────────────
-function buildActionBtns(o) {
-  const s = (o.status || '').toLowerCase();
-  const id = o.id;
-  const authorized = Number(o.pricing_total_amount || o.amount || 0);
+function authorizedAmountForOrder(o) {
+  return Number(o?.pricing_total_amount || o?.amount || 0);
+}
+
+function makeAction({ key, label, variant = 'review', title = '', handler = '', primary = false }) {
+  return { key, label, variant, title: title || label, handler, primary };
+}
+
+function actionPreauth(id) {
+  return makeAction({
+    key: 'preauth',
+    label: 'Autorizar ahora',
+    variant: 'capture',
+    title: 'Intentar autorización con tarjeta guardada',
+    handler: `preauthNow(${jsArg(id)})`,
+    primary: true
+  });
+}
+
+function actionCapture(id, authorized, title = 'Capturar pago (total o parcial)') {
+  return makeAction({
+    key: 'capture',
+    label: 'Capturar',
+    variant: 'capture',
+    title,
+    handler: `captureOrder(${jsArg(id)}, ${Number(authorized) || 0})`,
+    primary: true
+  });
+}
+
+function actionSchedule(id) {
+  return makeAction({
+    key: 'schedule',
+    label: 'Agendar',
+    variant: 'schedule',
+    title: 'Asignar fecha y hora',
+    handler: `openOrderEditFromAction(${jsArg(id)})`,
+    primary: true
+  });
+}
+
+function actionLink(id, label = 'Enlace', title = 'Regenerar enlace de pago') {
+  return makeAction({
+    key: 'link',
+    label,
+    variant: 'link',
+    title,
+    handler: `regenerateLink(${jsArg(id)})`,
+    primary: true
+  });
+}
+
+function actionReview(id) {
+  return makeAction({
+    key: 'review',
+    label: 'Revisar',
+    variant: 'review',
+    title: 'Revisar orden',
+    handler: `openOrderDetail(${jsArg(id)})`,
+    primary: true
+  });
+}
+
+function actionAssignProvider(id) {
+  return makeAction({
+    key: 'assign_provider',
+    label: 'Asignar proveedor',
+    variant: 'schedule',
+    title: 'Asignar proveedor antes del servicio',
+    handler: `openOrderEditFromAction(${jsArg(id)})`,
+    primary: true
+  });
+}
+
+function actionProviderReminder(id) {
+  return makeAction({
+    key: 'provider_reminder',
+    label: 'Recordar proveedor',
+    variant: 'provider',
+    title: 'Enviar recordatorio por WhatsApp al proveedor',
+    handler: `contactProviderForOrder(${jsArg(id)})`,
+    primary: true
+  });
+}
+
+function actionCancel(id) {
+  return makeAction({
+    key: 'cancel',
+    label: 'Cancelar',
+    variant: 'cancel',
+    title: 'Cancelar orden',
+    handler: `cancelOrder(${jsArg(id)})`
+  });
+}
+
+function actionRefund(id, authorized) {
+  return makeAction({
+    key: 'refund',
+    label: 'Reembolso',
+    variant: 'refund',
+    title: 'Reembolsar',
+    handler: `refundOrder(${jsArg(id)}, ${Number(authorized) || 0})`,
+    primary: true
+  });
+}
+
+function actionCash(id) {
+  return makeAction({
+    key: 'cash',
+    label: 'Efectivo',
+    variant: 'cash',
+    title: 'Marcar como pago en efectivo',
+    handler: `markAsCash(${jsArg(id)})`
+  });
+}
+
+function actionSnooze(id, code) {
+  return makeAction({
+    key: 'snooze',
+    label: 'Snooze',
+    variant: 'muted',
+    title: 'Ocultar de Ops Radar por 15 minutos',
+    handler: `snoozeOps(${jsArg(id)}, ${jsArg(code)}, '15m')`
+  });
+}
+
+function renderActionButton(action) {
+  if (!action) return '';
+  const cls = `action-btn action-btn--${action.variant || 'review'}`;
+  return `<button class="${escapeHtml(cls)}" onclick="${escapeHtml(action.handler)}" title="${escapeHtml(action.title)}">${escapeHtml(action.label)}</button>`;
+}
+
+function renderActionButtons(actions) {
+  const html = (actions || []).filter(Boolean).map(renderActionButton).join('');
+  return html ? `<div class="action-btns">${html}</div>` : '<span style="color:#444;font-size:11px">—</span>';
+}
+
+function orderNeedsSchedulingAction(o) {
+  if (orderIsTerminalStatus(o?.status) || orderIsCashStatus(o)) return false;
+  return o?.ops?.code === 'needs_schedule'
+    || (orderIsAsap(o) && !orderHasExactTime(o))
+    || !orderHasExactTime(o);
+}
+
+function orderIsPendingLike(status) {
+  const s = orderStatusKey(status);
+  return ['pending', 'new', 'setup required', 'setup created', 'pending (3ds)', 'blocked'].includes(s);
+}
+
+function orderCanRegenerateLink(o) {
+  const s = orderStatusKey(o?.status);
+  if (orderIsTerminalStatus(s) || orderIsCashStatus(o)) return false;
+  if (o?.ops?.code === 'payment_failed') return true;
+  if (s === 'scheduled' || s === 'confirmed') return false;
+  return orderIsPendingLike(s) || orderIsPaymentFailedStatus(s);
+}
+
+function orderCanCancel(o) {
+  const s = orderStatusKey(o?.status);
+  return !orderIsTerminalStatus(s)
+    && !orderIsCashStatus(o)
+    && !['declined', 'failed'].includes(s);
+}
+
+function orderCanCash(o) {
+  return ['pending', 'scheduled', 'confirmed', 'new'].includes(orderStatusKey(o?.status))
+    && !orderIsCashStatus(o);
+}
+
+function providerReminderWindowOpen(o) {
+  const h = orderHoursToService(o);
+  return h !== null && h >= 0 && h <= 6;
+}
+
+function primaryOrderAction(o) {
+  const s = orderStatusKey(o?.status);
+  const id = o?.id;
+  if (!id || orderIsCashStatus(o)) return null;
+
   const opsCode = o?.ops?.code || '';
-  const btns = buildOpsActionBtns(o);
+  const authorized = authorizedAmountForOrder(o);
+  const hasPi = orderHasPaymentIntent(o);
+  const h = orderHoursToService(o);
+  const insidePreauthWindow = h !== null && h >= 0 && h <= 24;
 
-  // Capture (full or partial) — only for orders in manual pre-auth state
-  const capturable = s === 'scheduled' || s === 'confirmed';
-  if (capturable && !['capture_due', 'capture_overdue'].includes(opsCode)) {
-    btns.push(`<button class="action-btn action-btn--capture" onclick="captureOrder('${id}', ${authorized})" title="Capturar pago (total o parcial)">⚡ Capturar</button>`);
+  if (orderIsCapturedStatus(s)) return actionRefund(id, authorized);
+  if (orderIsTerminalStatus(s)) return null;
+  if (opsCode === 'capture_due' || opsCode === 'capture_overdue') return actionCapture(id, authorized, 'Capturar pago');
+  if (orderNeedsSchedulingAction(o)) return actionSchedule(id);
+  if (opsCode === 'payment_failed' || orderIsPaymentFailedStatus(s)) return actionLink(id, 'Enviar enlace', 'Enviar enlace actualizado');
+  if (opsCode === 'preauth_due' || (opsCode === 'starting_soon' && o?.ops?.actionLabel === 'Autorizar ahora')) return actionPreauth(id);
+  if (s === 'scheduled' && insidePreauthWindow && !hasPi) return actionPreauth(id);
+  if (s === 'confirmed' && hasPi) return actionCapture(id, authorized);
+
+  if ((s === 'scheduled' || s === 'confirmed') && providerReminderWindowOpen(o)) {
+    return o.provider_id ? actionProviderReminder(id) : actionAssignProvider(id);
   }
 
-  // Cancel — anything not already captured/canceled/refunded
-  const notCancelable = new Set(['captured', 'canceled', 'cancelled', 'refunded', 'declined', 'failed', 'canceled (expired)', 'captured (partial refund)', 'pending cash']);
-  if (!notCancelable.has(s)) {
-    btns.push(`<button class="action-btn action-btn--cancel" onclick="cancelOrder('${id}')" title="Cancelar orden">✕ Cancelar</button>`);
+  if (orderCanRegenerateLink(o)) return actionLink(id);
+  if (opsCode && opsCode !== 'safe') return actionReview(id);
+  return null;
+}
+
+function secondaryOrderActions(o, primary) {
+  const id = o?.id;
+  if (!id) return [];
+  const authorized = authorizedAmountForOrder(o);
+  const actions = [];
+
+  if (orderCanCancel(o)) actions.push(actionCancel(id));
+  if (orderCanRegenerateLink(o)) actions.push(actionLink(id));
+  if (orderCanCash(o)) actions.push(actionCash(id));
+
+  const s = orderStatusKey(o?.status);
+  if ((s === 'scheduled' || s === 'confirmed') && providerReminderWindowOpen(o)) {
+    actions.push(o.provider_id ? actionProviderReminder(id) : actionAssignProvider(id));
+  }
+  if (orderIsCapturedStatus(s)) actions.push(actionRefund(id, authorized));
+
+  const seen = new Set(primary ? [primary.key] : []);
+  return actions.filter(action => {
+    if (!action || seen.has(action.key)) return false;
+    seen.add(action.key);
+    return true;
+  });
+}
+
+function buildOrderActions(o, { includeSecondary = true } = {}) {
+  const primary = primaryOrderAction(o);
+  return [primary, ...(includeSecondary ? secondaryOrderActions(o, primary) : [])].filter(Boolean);
+}
+
+function buildPrimaryActionBtns(o) {
+  return renderActionButtons(buildOrderActions(o, { includeSecondary: false }));
+}
+
+function buildActionBtns(o) {
+  return renderActionButtons(buildOrderActions(o, { includeSecondary: true }));
+}
+
+function normalizeWhatsappDigits(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (digits.length === 10) return '52' + digits;
+  return digits;
+}
+
+function providerReminderMessage(order, provider) {
+  const code = order.public_code || order.id?.slice(0, 8) || 'orden';
+  const providerName = provider?.name || order.provider_name || '';
+  const parts = [
+    `Hola ${providerName || 'equipo'}, soy del equipo SERVI.`,
+    `Te escribo para confirmar la orden ${code} de ${order.client_name || 'cliente'}.`,
+    `Servicio: ${fmtServiceDateTime(order.service_date, order.service_datetime)}.`,
+  ];
+  if (order.service_address) parts.push(`Direccion: ${order.service_address}.`);
+  parts.push('Me confirmas por favor que sigues disponible y listo para atenderla?');
+  return parts.join('\n');
+}
+
+async function findProviderForOrder(order) {
+  const providerId = String(order?.provider_id || '').trim();
+  if (!providerId) return null;
+  const params = new URLSearchParams({ search: providerId, limit: 25 });
+  const res = await fetch(API + '/api/admin/providers?' + params, { headers: headers() });
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(d.message || d.error || `HTTP ${res.status}`);
+  return (d.items || []).find(p => String(p.provider_id || '') === providerId) || null;
+}
+
+async function contactProviderForOrder(orderId) {
+  const order = _ordersCache[orderId] || (_detailOrderCache?.id === orderId ? _detailOrderCache : null);
+  if (!order) { toast('No se encontró la orden en el panel. Abre el detalle e intenta de nuevo.', 'err'); return; }
+  if (!order.provider_id) { openOrderEditFromAction(orderId); return; }
+  try {
+    const provider = await findProviderForOrder(order);
+    if (!provider) { toast('No se encontró el proveedor asignado en el roster.', 'err'); return; }
+    const phone = normalizeWhatsappDigits(provider.phone);
+    if (!phone) { toast('El proveedor no tiene teléfono registrado.', 'warn'); return; }
+    const url = `https://wa.me/${phone}?text=${encodeURIComponent(providerReminderMessage(order, provider))}`;
+    window.open(url, '_blank', 'noopener');
+  } catch (err) {
+    toast('No se pudo preparar el recordatorio: ' + err.message, 'err');
+  }
+}
+
+// ─── Contact panel (Phase 2): templated, logged provider/client outreach ─────
+// Solves "hunting for the right contact in WhatsApp" — auto-resolves the order's provider/client,
+// offers bilingual templates, opens wa.me/mailto with the correct recipient, and logs each touch.
+async function ensureProviderLink(orderId) {
+  if (_providerLinkCache[orderId]) return _providerLinkCache[orderId];
+  try {
+    const res = await fetch(API + '/api/admin/orders/' + encodeURIComponent(orderId) + '/provider-link', { method: 'POST', headers: headers() });
+    const d = await res.json();
+    if (res.ok && d.url) { _providerLinkCache[orderId] = d.url; return d.url; }
+  } catch (_) {}
+  return '';
+}
+
+const PROVIDER_TEMPLATES = [
+  { id: 'did_it_start',  label: '¿Ya iniciaste?',     text: (o, c) => `Hola ${c.providerName || 'equipo'}, ¿ya iniciaste la orden ${c.code} de ${o.client_name || 'el cliente'}? Avísame para registrar el avance. Gracias.` },
+  { id: 'share_location', label: 'Pide ubicación',     text: (o, c) => `Hola ${c.providerName || 'equipo'}, ¿me confirmas tu estatus y compartes tu ubicación desde este link? ${c.providerLink}` },
+  { id: 'running_late',  label: '¿Vas en camino?',    text: (o, c) => `Hola ${c.providerName || 'equipo'}, el cliente pregunta si vas en camino para la orden ${c.code}. ¿Me confirmas tu hora estimada de llegada?` },
+  { id: 'price_change',  label: 'Cambio de precio',   text: (o, c) => `Hola ${c.providerName || 'equipo'}, si la orden ${c.code} requiere un costo adicional, propónlo desde este link y el cliente lo aprueba por SERVI: ${c.providerLink}` },
+  { id: 'reminder',      label: 'Recordatorio',       text: (o, c) => providerReminderMessage(o, c.provider) },
+];
+const CLIENT_TEMPLATES = [
+  { id: 'all_ok',       label: '¿Todo bien?',          text: (o, c) => `Hola ${c.clientFirstName || ''}, soy del equipo SERVI. ¿Todo bien con tu servicio de hoy (${c.code})? Quedamos al pendiente.` },
+  { id: 'on_the_way',   label: 'Va en camino',         text: (o, c) => `Hola ${c.clientFirstName || ''}, tu especialista va en camino para tu servicio ${c.code}. ¡Gracias por usar SERVI!` },
+  { id: 'price_pending', label: 'Cambio de precio',    text: (o, c) => `Hola ${c.clientFirstName || ''}, hay un cambio de precio pendiente de aprobación para tu orden ${c.code}. Puedes revisarlo y aprobarlo desde tu cuenta SERVI o con el link que te enviamos.` },
+];
+
+async function openContactPanel(orderId, target = 'provider') {
+  let order = _ordersCache[orderId] || (_detailOrderCache?.id === orderId ? _detailOrderCache : null);
+  if (!order) {
+    try {
+      const res = await fetch(API + '/api/admin/orders/' + encodeURIComponent(orderId), { headers: headers() });
+      const d = await res.json();
+      if (res.ok && d.order) { order = d.order; _ordersCache[orderId] = d.order; }
+    } catch (_) {}
+  }
+  if (!order) { toast('No se encontró la orden.', 'err'); return; }
+
+  let provider = null;
+  if (order.provider_id) { try { provider = await findProviderForOrder(order); } catch (_) {} }
+  const providerLink = await ensureProviderLink(orderId);
+  const ctx = {
+    code: order.public_code || order.id.slice(0, 8),
+    providerName: provider?.name || order.provider_name || '',
+    clientFirstName: (order.client_name || '').split(/\s+/)[0] || '',
+    provider, providerLink,
+  };
+
+  const overlay = document.createElement('div');
+  overlay.className = 'adm-overlay';
+  const close = () => { if (overlay.parentNode) document.body.removeChild(overlay); };
+
+  function render() {
+    const isProv = target === 'provider';
+    const templates = isProv ? PROVIDER_TEMPLATES : CLIENT_TEMPLATES;
+    const recipient = isProv
+      ? (provider?.phone ? `WhatsApp: ${escapeHtml(provider.phone)}` : '<span style="color:#ef4444">Proveedor sin teléfono</span>')
+      : (order.client_phone ? `WhatsApp: ${escapeHtml(order.client_phone)}` : (order.client_email ? `Email: ${escapeHtml(order.client_email)}` : '<span style="color:#ef4444">Cliente sin contacto</span>'));
+    const tabs = `
+      <div style="display:flex;gap:6px;margin-bottom:14px">
+        <button class="adm-btn ${isProv ? 'adm-btn--ok' : 'adm-btn--cancel'}" data-tab="provider" style="flex:1">Proveedor</button>
+        <button class="adm-btn ${!isProv ? 'adm-btn--ok' : 'adm-btn--cancel'}" data-tab="client" style="flex:1">Cliente</button>
+      </div>`;
+    const btns = templates.map(tpl =>
+      `<button class="action-btn" data-tpl="${tpl.id}" style="width:100%;text-align:left;margin-bottom:6px">${escapeHtml(tpl.label)}</button>`
+    ).join('');
+    overlay.innerHTML = `
+      <div class="adm-box" onclick="event.stopPropagation()" style="max-width:420px">
+        <h3>Contactar · ${escapeHtml(ctx.code)}</h3>
+        ${tabs}
+        <p style="font-size:12px;color:#aaa;margin:-4px 0 12px">${recipient}</p>
+        ${btns}
+        <div class="adm-row"><button class="adm-btn adm-btn--cancel" id="cp-close" style="width:100%">Cerrar</button></div>
+      </div>`;
+    overlay.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => { target = b.dataset.tab; render(); }));
+    overlay.querySelectorAll('[data-tpl]').forEach(b => b.addEventListener('click', () => sendTemplate(b.dataset.tpl)));
+    document.getElementById('cp-close').addEventListener('click', close);
   }
 
-  // Refund — only for captured orders
-  const refundable = s === 'captured' || s === 'captured (partial refund)';
-  if (refundable) {
-    btns.push(`<button class="action-btn action-btn--refund" onclick="refundOrder('${id}', ${authorized})" title="Reembolsar">↩ Reembolso</button>`);
+  async function sendTemplate(tplId) {
+    const isProv = target === 'provider';
+    const templates = isProv ? PROVIDER_TEMPLATES : CLIENT_TEMPLATES;
+    const tpl = templates.find(x => x.id === tplId);
+    if (!tpl) return;
+    const message = tpl.text(order, ctx);
+    let channel = 'wa', url = '';
+    if (isProv) {
+      const phone = normalizeWhatsappDigits(provider?.phone);
+      if (!phone) { toast('El proveedor no tiene teléfono registrado.', 'warn'); return; }
+      url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+    } else {
+      const phone = normalizeWhatsappDigits(order.client_phone);
+      if (phone) { url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`; channel = 'wa'; }
+      else if (order.client_email) { url = `mailto:${order.client_email}?subject=${encodeURIComponent('SERVI · ' + ctx.code)}&body=${encodeURIComponent(message)}`; channel = 'email'; }
+      else { toast('El cliente no tiene teléfono ni email.', 'warn'); return; }
+    }
+    window.open(url, '_blank', 'noopener');
+    try {
+      await fetch(API + '/api/admin/orders/' + encodeURIComponent(orderId) + '/contact-log', {
+        method: 'POST', headers: headers(),
+        body: JSON.stringify({ target, templateId: tplId, channel }),
+      });
+    } catch (_) {}
+    toast('Mensaje preparado y registrado.', 'ok');
+    if (_openDetailOrderId === orderId) loadOrderLifecycle(orderId);
+    close();
   }
 
-  // Regenerate payment link — for any order awaiting payment (not yet captured/canceled/refunded)
-  const linkRegenerable = !['captured', 'canceled', 'cancelled', 'refunded', 'captured (partial refund)', 'pending cash'].includes(s);
-  if (linkRegenerable && opsCode !== 'payment_failed') {
-    btns.push(`<button class="action-btn" style="background:#1f2937;color:#93c5fd;border:1px solid #334155" onclick="regenerateLink('${id}')" title="Regenerar enlace de pago (extiende 2h)">🔗 Enlace</button>`);
-  }
+  overlay.addEventListener('click', close);
+  document.body.appendChild(overlay);
+  render();
+}
 
-  // Mark as cash — only for orders in pending/scheduled/confirmed states
-  const cashable = ['pending', 'scheduled', 'confirmed', 'new'].includes(s);
-  if (cashable) {
-    btns.push(`<button class="action-btn" style="background:#1f1a0d;color:#fbbf24;border:1px solid #4a3a1a" onclick="markAsCash('${id}')" title="Marcar como pago en efectivo">💵 Efectivo</button>`);
-  }
-
-  return btns.length ? `<div class="action-btns">${btns.join('')}</div>` : '<span style="color:#444;font-size:11px">—</span>';
+async function openOrderEditFromAction(orderId) {
+  if (_detailOrderCache?.id === orderId) { openOrderEdit(orderId); return; }
+  const cached = _ordersCache[orderId];
+  if (cached) _detailOrderCache = cached;
+  try {
+    const res = await fetch(API + '/api/admin/orders/' + encodeURIComponent(orderId), { headers: headers() });
+    if (res.ok) {
+      const d = await res.json();
+      if (d.order) {
+        _ordersCache[orderId] = d.order;
+        _detailOrderCache = d.order;
+      }
+    }
+  } catch (_) {}
+  openOrderEdit(orderId);
 }
 
 // ─── Lightweight in-page modal ────────────────────────────────────────────────
@@ -2889,6 +3378,7 @@ async function openOrderDetail(orderId) {
 function renderOrderDetail(o, adjustments) {
   document.getElementById('op-title').textContent = o.public_code || o.id.slice(0,8);
   _detailOrderCache = o;
+  _ordersCache[o.id] = o;
   const piLink = o.payment_intent_id
       ? `<a class="sp-stripe-btn" href="https://dashboard.stripe.com/payments/${encodeURIComponent(o.payment_intent_id)}" target="_blank" rel="noopener">Ver en Stripe ↗</a>`
       : '';
@@ -2920,6 +3410,10 @@ function renderOrderDetail(o, adjustments) {
           <div><div class="sp-lbl">Tipo</div><div class="sp-val">${escapeHtml(o.kind || '—')}</div></div>
           <div><div class="sp-lbl">Estado</div><div class="sp-val"><span class="badge ${badgeClass(o.status)}">${escapeHtml(orderStatusLabel(o.status))}</span></div></div>
         </div>
+      </div>
+      <div class="sp-sec">
+        <div class="sp-sec-t" style="display:flex;align-items:center;gap:8px">Servicio en curso<div style="margin-left:auto;display:flex;gap:6px"><button class="action-btn" onclick="genProviderLink('${o.id}')" title="Generar y copiar el link del proveedor para esta orden">🔗 Link de proveedor</button><button class="action-btn" onclick="openContactPanel('${o.id}','provider')" title="Contactar al proveedor o cliente">💬 Contactar</button></div></div>
+        <div id="op-lifecycle-list" style="font-size:12px;color:#666">Cargando…</div>
       </div>
       <div class="sp-sec">
         <div class="sp-sec-t">Desglose de precio</div>
@@ -2972,7 +3466,126 @@ function renderOrderDetail(o, adjustments) {
       <div class="sp-acts">${buildActionBtns(o)}</div>
     `;
   loadOrderChanges(o.id);
+  loadOrderLifecycle(o.id);
 }
+
+// ─── In-service lifecycle timeline (Phase 1) ─────────────────────────────────
+const LIFECYCLE_LABEL = {
+  en_route: 'En camino 🚗', arrived: 'Llegó 📍', started: 'Inició ▶️', completed: 'Terminó ✅',
+  provider_contacted: 'Contactó al proveedor 💬', client_contacted: 'Contactó al cliente 💬',
+  location_shared: 'Compartió ubicación 📍',
+  price_change_requested: 'Propuso cambio de precio 💲',
+  price_change_link_created: 'Generó link de cambio de precio 🔗',
+  price_change_confirmed: 'Cliente confirmó cambio de precio ✓',
+  note: 'Nota'
+};
+const LIFECYCLE_SOURCE = { provider: 'proveedor', client: 'cliente', admin: 'admin', system: 'sistema' };
+const PHASE_BADGE = {
+  en_route: 'En camino', arrived: 'Llegó', started: 'En servicio', completed: 'Terminado'
+};
+
+function timeAgoEs(ts) {
+  if (!ts) return '';
+  const then = new Date(ts).getTime();
+  if (isNaN(then)) return '';
+  const mins = Math.round((Date.now() - then) / 60000);
+  if (mins < 1) return 'ahora';
+  if (mins < 60) return `hace ${mins}m`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 48) return `hace ${hrs}h`;
+  return `hace ${Math.round(hrs / 24)}d`;
+}
+
+async function loadOrderLifecycle(orderId) {
+  const target = document.getElementById('op-lifecycle-list');
+  if (!target) return;
+  try {
+    const res = await fetch(API + '/api/admin/orders/' + encodeURIComponent(orderId) + '/lifecycle', { headers: headers() });
+    const d = await res.json();
+    const items = d.items || [];
+    let header = '';
+    if (d.phase) {
+      header += `<div style="margin-bottom:10px"><span class="badge badge-confirmed">${escapeHtml(PHASE_BADGE[d.phase] || d.phase)}</span> <span style="color:#888;font-size:11px">${escapeHtml(timeAgoEs(d.phaseAt))}</span></div>`;
+    }
+    if (d.lastLocation) {
+      header += `<div style="margin-bottom:10px;font-size:12px;color:#888">📍 Ubicación compartida ${escapeHtml(timeAgoEs(d.lastLocation.at))} · <a href="https://maps.google.com/?q=${d.lastLocation.lat},${d.lastLocation.lng}" target="_blank" rel="noopener" style="color:#60a5fa">Ver en mapa</a></div>`;
+    }
+    if (!items.length && !header) { target.innerHTML = '<div style="color:#555;font-size:12px">Sin actividad todavía</div>'; return; }
+    const list = items.map(ev => {
+      const label = LIFECYCLE_LABEL[ev.event_type] || ev.event_type;
+      const src = LIFECYCLE_SOURCE[ev.source] || ev.source || '';
+      let extra = '';
+      if (ev.event_type === 'location_shared' && ev.lat != null && ev.lng != null) {
+        extra = ` · <a href="https://maps.google.com/?q=${ev.lat},${ev.lng}" target="_blank" rel="noopener" style="color:#60a5fa">mapa</a>`;
+      }
+      const meta = ev.metadata && typeof ev.metadata === 'object' ? ev.metadata : null;
+      if (meta && meta.type) extra += ` · <span style="color:#a78bfa">${escapeHtml(PC_TYPE_LABEL[meta.type] || String(meta.type))}</span>`;
+      if (meta && meta.amount != null) extra += ` · ${fmtMoney(Number(meta.amount))}`;
+      if (meta && meta.note) extra += ` · <span style="color:#888">${escapeHtml(String(meta.note))}</span>`;
+      // A provider price-change request gets an inline "generate charge link" action.
+      let actionRow = '';
+      if (ev.event_type === 'price_change_requested' && meta && meta.providerPesos != null) {
+        actionRow = `<div style="margin-top:6px"><button class="action-btn" style="background:#1e3a2a;color:#10b981;border:1px solid #166534" data-pcbtn data-pesos="${escapeHtml(String(meta.providerPesos))}" data-type="${escapeHtml(String(meta.type || 'otro'))}" data-note="${escapeHtml(encodeURIComponent(meta.note || ''))}">Generar link de cambio de precio</button></div>`;
+      }
+      return `<div style="display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid #222">
+        <div><span style="color:#ddd">${escapeHtml(label)}</span> <span style="color:#666;font-size:11px">(${escapeHtml(src)})</span>${extra}${actionRow}</div>
+        <div style="color:#666;font-size:11px;white-space:nowrap">${escapeHtml(timeAgoEs(ev.created_at))}</div>
+      </div>`;
+    }).join('');
+    target.innerHTML = header + (list || '');
+    target.querySelectorAll('[data-pcbtn]').forEach(b => b.addEventListener('click', () => {
+      genPriceChangeLink(orderId, {
+        providerPesos: Number(b.dataset.pesos),
+        type: b.dataset.type || 'otro',
+        note: decodeURIComponent(b.dataset.note || ''),
+      });
+    }));
+  } catch (e) {
+    target.innerHTML = '<div style="color:#555;font-size:12px">Error al cargar la actividad</div>';
+  }
+}
+
+const PC_TYPE_LABEL = {
+  precio_corregido: 'Corrección de precio', horas_adicionales: 'Horas adicionales',
+  servicio_adicional: 'Servicio adicional', materiales: 'Materiales', otro: 'Otro',
+};
+
+async function genPriceChangeLink(orderId, { providerPesos, type, note }) {
+  const ok = await admModal({
+    title: 'Generar cobro por cambio de precio',
+    body: `Se creará un cobro adicional de $${Number(providerPesos).toLocaleString('es-MX')} MXN (servicio) · ${PC_TYPE_LABEL[type] || type}. El cliente lo aprueba y paga por SERVI.`,
+    confirmText: 'Generar link',
+  });
+  if (!ok) return;
+  try {
+    const res = await fetch(API + '/api/admin/orders/' + encodeURIComponent(orderId) + '/price-change', {
+      method: 'POST', headers: headers(),
+      body: JSON.stringify({ providerPesos, type, note }),
+    });
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.message || d.error || 'error');
+    const link = d.flow === 'book' ? d.bookUrl : d.payUrl;
+    if (link) { try { await navigator.clipboard.writeText(link); } catch (_) {} }
+    toast('Link de cambio de precio generado y copiado. Total: ' + fmtMoney(d.totalAmountCents), 'ok', 6000);
+    if (_openDetailOrderId === orderId) { loadOrderLifecycle(orderId); openOrderDetail(orderId); }
+  } catch (e) {
+    toast('Error al generar el cobro: ' + e.message, 'err');
+  }
+}
+
+async function genProviderLink(orderId) {
+  try {
+    const res = await fetch(API + '/api/admin/orders/' + encodeURIComponent(orderId) + '/provider-link', { method: 'POST', headers: headers() });
+    const d = await res.json();
+    if (!res.ok || !d.url) throw new Error(d.error || 'error');
+    _providerLinkCache[orderId] = d.url;
+    try { await navigator.clipboard.writeText(d.url); toast('Link de proveedor copiado al portapapeles', 'ok', 5000); }
+    catch (_) { toast('Link de proveedor: ' + d.url, 'info', 8000); }
+  } catch (e) {
+    toast('Error al generar el link de proveedor', 'err');
+  }
+}
+const _providerLinkCache = {};
 
 function closeOrderDetail() {
   _openDetailOrderId = null;
@@ -3489,6 +4102,53 @@ function openRosterDetail(providerId) {
       <button class="action-btn" onclick="toggleRosterStatus('${escapeHtml(p.provider_id)}','${toggle}')">${toggleLabel}</button>
     </div>
   `;
+}
+
+function openAddProvider() {
+  document.getElementById('prov-overlay').classList.add('open');
+  document.getElementById('prov-panel').classList.add('open');
+  document.getElementById('pp-title').textContent = 'Nuevo proveedor';
+  const specOpts = [
+    ['', '— Selecciona —'], ['cleaning','Limpieza'], ['repair','Armar, Reparar y Mantenimiento'],
+    ['wellness','Bienestar y Cuidado Personal'], ['maintenance','Mantenimiento'],
+    ['supply','Abastecimiento y Compras'], ['other','Personalizado / Otro'],
+  ].map(([v,l]) => `<option value="${v}">${l}</option>`).join('');
+  document.getElementById('pp-body').innerHTML = `
+    <div class="sp-sec">
+      <div class="sp-sec-t">Datos del proveedor</div>
+      <div class="sp-grid">
+        <div><div class="sp-lbl">Nombre *</div><input class="auth-input" id="np-name"></div>
+        <div><div class="sp-lbl">Teléfono</div><input class="auth-input" id="np-phone" placeholder="+5255..."></div>
+        <div style="grid-column:1/-1"><div class="sp-lbl">Email</div><input class="auth-input" id="np-email"></div>
+        <div><div class="sp-lbl">Especialidad</div><select class="auth-input" id="np-specialty" style="background:#222">${specOpts}</select></div>
+        <div><div class="sp-lbl">Ciudad</div><input class="auth-input" id="np-city"></div>
+      </div>
+      <button class="sp-save-btn" style="margin-top:12px" onclick="createProvider()">Crear proveedor</button>
+      <div id="np-error" style="color:#ef4444;font-size:13px;margin-top:8px;display:none"></div>
+    </div>`;
+}
+
+async function createProvider() {
+  const val = (id) => (document.getElementById(id)?.value || '').trim();
+  const errEl = document.getElementById('np-error');
+  const name = val('np-name');
+  if (!name) { errEl.textContent = 'El nombre es obligatorio.'; errEl.style.display = 'block'; return; }
+  errEl.style.display = 'none';
+  try {
+    const res = await fetch(API + '/api/admin/providers', {
+      method: 'POST', headers: headers(),
+      body: JSON.stringify({ name, phone: val('np-phone'), email: val('np-email'),
+                             specialty: val('np-specialty'), city: val('np-city') })
+    });
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.message || d.error || 'HTTP ' + res.status);
+    toast('Proveedor creado: ' + d.provider_id, 'ok');
+    closeProviderDetail();
+    _highlightRosterId = d.provider_id;
+    switchProvSub('roster');   // ensures roster tab + reload + highlights the new row
+  } catch (e) {
+    errEl.textContent = 'Error: ' + e.message; errEl.style.display = 'block';
+  }
 }
 
 async function saveRosterFields(providerId) {

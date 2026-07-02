@@ -18,6 +18,7 @@ import { dirname } from 'path';
 import fetch from 'node-fetch';
 import { randomUUID, randomBytes, createHash, createHmac, scryptSync, timingSafeEqual } from 'crypto';
 import { rateLimit } from 'express-rate-limit';
+import helmet from 'helmet';
 import firebaseAdmin from 'firebase-admin';
 import multer from 'multer';
 import nodemailer from 'nodemailer';
@@ -26,7 +27,16 @@ import { NodeHttpHandler } from '@smithy/node-http-handler';
 import https from 'https';
 import Anthropic from '@anthropic-ai/sdk';
 import { classifyOrderOps, sortOpsItems, summarizeOps } from './ops-radar.mjs';
-import { buildParseSystemPrompt, buildParseUserPrompt, parseModelResponse, MAX_TEXT } from './smartRequestParse.mjs';
+import { providerLinkExpired } from './providerLink.mjs';
+import {
+  buildMediaAnalysisSystemPrompt,
+  buildMediaAnalysisUserPrompt,
+  buildParseSystemPrompt,
+  buildParseUserPrompt,
+  parseMediaModelResponse,
+  parseModelResponse,
+  MAX_TEXT
+} from './smartRequestParse.mjs';
 
 // --- R2 / S3 Client ---
 const r2 = new S3Client({
@@ -1038,6 +1048,17 @@ const FRONTEND_DIR = path.join(__dirname, '..', 'frontend');
 const app = express();
 app.set('trust proxy', 1); // Render sits behind a load balancer; trust first proxy for real client IP
 
+// Security headers. CSP is off: the backend also serves the static frontend (locally and on
+// Render), whose pages load Stripe.js, Firebase, Google Fonts, and GSAP from CDNs — a strict
+// policy here would break pay.html/book.html. COOP is off because Google Sign-In and Firebase
+// auth popups need window.opener. CORP is relaxed so the Cloudflare Pages frontend can embed
+// backend-served assets. Everything else keeps helmet defaults (HSTS, nosniff, frameguard, …).
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginOpenerPolicy: false,
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+}));
+
 const adminRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 200,
@@ -1079,6 +1100,7 @@ const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD || '';
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
 const anthropic = ANTHROPIC_API_KEY ? new Anthropic({ apiKey: ANTHROPIC_API_KEY }) : null;
 const PARSE_SYSTEM_PROMPT = buildParseSystemPrompt();
+const MEDIA_ANALYSIS_SYSTEM_PROMPT = buildMediaAnalysisSystemPrompt();
 const emailTransporter = (GMAIL_USER && GMAIL_APP_PASSWORD)
   ? nodemailer.createTransport({
       host: 'smtp.gmail.com',
@@ -2527,6 +2549,98 @@ async function reconcileOrderStatusFromStripe(row, opts = {}) {
   }
 }
 
+// ── In-service lifecycle (Phase 1) ────────────────────────────────────────────
+// Tracks operational signals between "Confirmed" (hold placed) and capture WITHOUT
+// touching the payment `status` state machine. Milestones advance a forward-only
+// `service_phase` snapshot on all_bookings so list reads stay cheap; every event is
+// also appended to order_lifecycle_events for the full audit trail/timeline.
+
+// Forward-only rank for the milestone phases. A stale event can never regress the snapshot.
+const SERVICE_PHASE_RANK = { en_route: 1, arrived: 2, started: 3, completed: 4 };
+const MILESTONE_EVENTS = new Set(['en_route', 'arrived', 'started', 'completed']);
+
+async function recordLifecycleEvent(orderId, {
+  eventType,
+  source,
+  actorRef = null,
+  channel = null,
+  lat = null,
+  lng = null,
+  accuracyM = null,
+  metadata = null,
+} = {}) {
+  if (!orderId || !eventType || !source) {
+    throw new Error('recordLifecycleEvent requires orderId, eventType, source');
+  }
+  const id = randomUUID();
+  await pool.query(
+    `INSERT INTO order_lifecycle_events
+       (id, order_id, event_type, source, actor_ref, channel, lat, lng, accuracy_m, metadata)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+    [id, orderId, eventType, source, actorRef, channel, lat, lng, accuracyM,
+     metadata ? JSON.stringify(metadata) : null]
+  );
+
+  // Denormalize the milestone snapshot (forward-only).
+  if (MILESTONE_EVENTS.has(eventType)) {
+    await pool.query(
+      `UPDATE all_bookings
+          SET service_phase = $1, service_phase_at = NOW()
+        WHERE id = $2
+          AND COALESCE($3, 0) >= COALESCE(
+                CASE service_phase
+                  WHEN 'en_route' THEN 1 WHEN 'arrived' THEN 2
+                  WHEN 'started' THEN 3 WHEN 'completed' THEN 4 ELSE 0 END, 0)`,
+      [eventType, orderId, SERVICE_PHASE_RANK[eventType] || 0]
+    );
+  }
+
+  // Persist last shared location alongside the event.
+  if (eventType === 'location_shared' && lat != null && lng != null) {
+    await pool.query(
+      `UPDATE all_bookings
+          SET last_provider_lat = $1, last_provider_lng = $2, last_location_at = NOW()
+        WHERE id = $3`,
+      [lat, lng, orderId]
+    );
+  }
+
+  // Mirror to the Sheet relay as a NEW type so it bypasses the order.status forward-only map.
+  postToGoogleWebhook({
+    type: 'order.lifecycle', orderId, eventType, source, channel: channel || ''
+  });
+
+  return id;
+}
+
+// Mint (or rotate) the per-order provider capability link token. Same crypto/storage shape as
+// retry_token (issueFreshOrderPaymentLink) but a DISTINCT column so the payment link and the
+// provider link have independent lifetimes/revocation.
+async function issueProviderLinkToken(orderId) {
+  const token = randomBytes(12).toString('base64url');
+  await pool.query(
+    `UPDATE all_bookings
+        SET provider_link_token = $1, provider_link_created_at = NOW()
+      WHERE id = $2`,
+    [token, orderId]
+  );
+  return token;
+}
+
+// Resolve an order row from a provider-link token (constant-time compare against the stored token).
+// Returns the row or null. The token itself is the capability — no separate provider auth — so
+// expired/dead links are rejected here (see providerLink.mjs for the expiry policy).
+async function resolveProviderLinkOrder(orderId, providerToken) {
+  const token = String(providerToken || '').trim();
+  if (!orderId || !token) return null;
+  const { rows } = await pool.query('SELECT * FROM all_bookings WHERE id = $1', [orderId]);
+  const row = rows[0];
+  if (!row || !row.provider_link_token) return null;
+  if (!constantTimeEquals(row.provider_link_token, token)) return null;
+  if (providerLinkExpired(row)) return null;
+  return row;
+}
+
 // Reconciles a list of order rows in place — only the bounded subset that could actually advance
 // (card PI present, not cash, not already settled), capped and run in parallel so a list read
 // makes at most a handful of Stripe calls. Each worthy row triggers its own retrieve.
@@ -3355,6 +3469,114 @@ app.post('/create-standalone-setup', async (req, res) => {
 });
 
 
+// Materialize due recurring-service occurrences into service_requests. For each active plan,
+// create one intake request per occurrence falling within [today, today + lead_time_days] that
+// hasn't been generated yet. Idempotent via the (recurring_service_id, recurring_occurrence_date)
+// unique index + ON CONFLICT DO NOTHING. Best-effort; one bad plan never blocks the others.
+// Helpers (todayYmdMX/enumerateOccurrences/RECURRING_SELECT/…) are defined with the recurring
+// routes further down but only read at call time, so the forward reference is safe.
+async function materializeDueRecurringServices({ limit = 200 } = {}) {
+  const today = todayYmdMX();
+  const todayUTC = ymdToUTC(today);
+  const { rows: plans } = await pool.query(
+    `SELECT ${RECURRING_SELECT} FROM recurring_services
+       WHERE status = 'active' AND (end_date IS NULL OR end_date >= $1)
+       ORDER BY COALESCE(next_occurrence_date, start_date) ASC
+       LIMIT $2`,
+    [today, limit]
+  );
+
+  let plansTouched = 0, requestsCreated = 0;
+  const results = [];
+  for (const plan of plans) {
+    try {
+      const { rows: uRows } = await pool.query(
+        'SELECT name, phone, email, phone_verified FROM auth_users WHERE id = $1', [plan.user_id]
+      );
+      const user = uRows[0];
+      if (!user || !user.phone || !user.phone_verified) { results.push({ id: plan.id, skipped: 'user_unverified' }); continue; }
+
+      const horizon = utcToYmd(addUTCDays(todayUTC, Math.max(0, plan.lead_time_days ?? 3)));
+      // Never (re)generate the past or anything already materialized.
+      let from = maxYmd(plan.start_date, today);
+      if (plan.last_occurrence_date) from = maxYmd(from, utcToYmd(addUTCDays(ymdToUTC(plan.last_occurrence_date), 1)));
+      const occurrences = enumerateOccurrences(plan, from, horizon, { max: 60 });
+
+      // Re-validate the preferred specialist each run (preference, not guarantee).
+      let prefProviderId = plan.provider_id || null;
+      let prefProviderName = plan.provider_name || null;
+      if (prefProviderId) {
+        const { rows: pp } = await pool.query('SELECT status, name FROM providers WHERE provider_id = $1 LIMIT 1', [prefProviderId]);
+        if (!pp[0] || pp[0].status !== 'verified') { prefProviderId = null; prefProviderName = null; }
+        else if (pp[0].name) prefProviderName = pp[0].name;
+      }
+
+      let created = 0;
+      let lastOcc = plan.last_occurrence_date || null;
+      for (const occ of occurrences) {
+        const reqId = randomUUID();
+        const ins = await pool.query(
+          `INSERT INTO service_requests
+             (id, category, description, preferred_date, preferred_time, is_asap, service_address,
+              service_address_details, client_name, client_phone, client_email, customer_id, lang,
+              request_mode, preferred_provider_id, preferred_provider_name,
+              recurring_service_id, recurring_occurrence_date)
+           VALUES ($1,$2,$3,$4,$5,false,$6,$7,$8,$9,$10,$11,$12,'recurring',$13,$14,$15,$16)
+           ON CONFLICT (recurring_service_id, recurring_occurrence_date) WHERE recurring_service_id IS NOT NULL DO NOTHING
+           RETURNING id`,
+          [reqId, plan.category, plan.description || null, occ, plan.preferred_time || null,
+           plan.service_address || null, plan.service_address_details || null,
+           user.name || 'Cliente SERVI', user.phone, user.email || null, plan.user_id, plan.lang || 'es',
+           prefProviderId, prefProviderName, plan.id, occ]
+        );
+        if (ins.rows[0]) {
+          created += 1;
+          if (!lastOcc || occ > lastOcc) lastOcc = occ;
+          postToGoogleWebhook({
+            type: 'service_request.created', requestId: ins.rows[0].id, category: plan.category,
+            clientName: user.name || '', clientPhone: user.phone, clientEmail: user.email || '',
+            serviceAddress: plan.service_address || '', isAsap: false, preferredDate: occ, preferredTime: plan.preferred_time || '',
+          });
+        }
+      }
+
+      const nextOcc = nextOccurrenceOnOrAfter(plan, maxYmd(today, plan.start_date));
+      await pool.query(
+        `UPDATE recurring_services
+            SET last_run_at = NOW(),
+                last_occurrence_date = COALESCE($2, last_occurrence_date),
+                next_occurrence_date = $3,
+                times_generated = times_generated + $4,
+                updated_at = NOW()
+          WHERE id = $1`,
+        [plan.id, lastOcc, nextOcc, created]
+      );
+      // Auto-close a plan once its end_date has fully elapsed.
+      if (plan.end_date && ymdToUTC(plan.end_date).getTime() < todayUTC.getTime()) {
+        await pool.query(`UPDATE recurring_services SET status = 'canceled', updated_at = NOW() WHERE id = $1`, [plan.id]);
+      }
+      plansTouched += 1; requestsCreated += created;
+      results.push({ id: plan.id, created });
+    } catch (planErr) {
+      console.error('[recurring-due] plan failed', plan.id, planErr?.message || planErr);
+      results.push({ id: plan.id, error: planErr?.message || 'failed' });
+    }
+  }
+  return { plans: plansTouched, requestsCreated, results };
+}
+
+// Standalone admin trigger (manual/testing). The hourly preauth-due cron also calls
+// materializeDueRecurringServices() so no extra scheduled job is required.
+app.post('/tasks/recurring-due', adminRateLimit, requireAdminAuth, async (_req, res) => {
+  try {
+    const out = await materializeDueRecurringServices();
+    res.json({ ok: true, ...out });
+  } catch (e) {
+    console.error('recurring-due error:', e);
+    res.status(500).json({ ok: false, error: e.message || 'internal' });
+  }
+});
+
 app.post('/tasks/preauth-due', adminRateLimit, requireAdminAuth, async (req, res) => {
   try {
     // force:true bypasses ONLY the 24h window bounds (for manual/testing dispatch). All
@@ -3485,7 +3707,33 @@ app.post('/tasks/preauth-due', adminRateLimit, requireAdminAuth, async (req, res
       console.warn('[preauth-due] revoked_sessions prune failed (non-blocking):', pruneErr?.message || pruneErr);
     }
 
-    res.json({ ok: true, processed: results.length, results, revokedPruned });
+    // Privacy housekeeping: drop stored provider coordinates once an order is settled. Location
+    // is one-shot and only needed while a service is in progress; we don't retain it past capture.
+    let locationsCleared = 0;
+    try {
+      const clearRes = await pool.query(
+        `UPDATE all_bookings
+            SET last_provider_lat = NULL, last_provider_lng = NULL
+          WHERE last_provider_lat IS NOT NULL
+            AND (status IN ('Captured','Refunded','Pending Cash') OR status ILIKE 'cancel%')`
+      );
+      locationsCleared = clearRes.rowCount || 0;
+      if (locationsCleared) console.log('[preauth-due] cleared provider coordinates on settled orders:', locationsCleared);
+    } catch (locErr) {
+      console.warn('[preauth-due] location cleanup failed (non-blocking):', locErr?.message || locErr);
+    }
+
+    // Same hourly trigger drives the Service Calendar: materialize due recurring-service
+    // occurrences into intake requests. Best-effort — never blocks the preauth response.
+    let recurring = null;
+    try {
+      recurring = await materializeDueRecurringServices();
+      if (recurring.requestsCreated) console.log('[preauth-due] recurring requests created:', recurring.requestsCreated);
+    } catch (recErr) {
+      console.warn('[preauth-due] recurring materialization failed (non-blocking):', recErr?.message || recErr);
+    }
+
+    res.json({ ok: true, processed: results.length, results, revokedPruned, locationsCleared, recurring });
   } catch (e) {
     console.error('preauth-due error:', e);
     res.status(500).json({ ok: false, error: e.message || 'internal' });
@@ -3858,17 +4106,17 @@ app.get('/book', async (req, res) => {
 
 // Create an adjustment child order; saved clients now confirm via book.html and guests via pay.html.
 // HONORS Sheets "Capture Type" via req.body.capture = 'automatic' | 'manual'
-app.post('/create-adjustment', adminRateLimit, requireAdminAuth, async (req, res) => {
-  try {
-    const { parentOrderId, amount, note, capture } = req.body || {};
-    if (!parentOrderId) return res.status(400).send({ error: 'missing_parent', message: 'parentOrderId required' });
+// Core adjustment-creation logic, shared by the admin /create-adjustment route and the Phase-4
+// price-change flow. Creates a child order (kind='adjustment') for an additional charge, recomputes
+// fees, copies contact/card from the parent, and returns the routing/link info. Throws Error with a
+// `.code` ('invalid_amount' | 'parent_not_found' | 'pricing_failed') so callers can map HTTP status.
+async function createAdjustmentChild({ parentOrderId, amount, note, capture }) {
+  const baseAmountCents = Number(amount);
+  if (!Number.isInteger(baseAmountCents) || baseAmountCents <= 0) {
+    throw Object.assign(new Error('amount must be a positive integer (cents)'), { code: 'invalid_amount' });
+  }
 
-    const baseAmountCents = Number(amount);
-    if (!Number.isInteger(baseAmountCents) || baseAmountCents <= 0) {
-      return res.status(400).send({ error: 'invalid_amount', message: 'amount must be a positive integer (cents)' });
-    }
-
-    const parentResult = await pool.query(
+  const parentResult = await pool.query(
       `SELECT customer_id,
               saved_payment_method_id,
               payment_intent_id,
@@ -3888,7 +4136,7 @@ app.post('/create-adjustment', adminRateLimit, requireAdminAuth, async (req, res
       [parentOrderId]
     );
     const parentOrder = parentResult.rows[0];
-    if (!parentOrder) return res.status(404).send({ error: 'parent_not_found', message: 'Parent order not found' });
+    if (!parentOrder) throw Object.assign(new Error('Parent order not found'), { code: 'parent_not_found' });
 
     const consent = await pool.query('SELECT 1 FROM consented_offsession_bookings WHERE order_id=$1', [parentOrderId]);
     const hasConsent = consent.rows.length > 0;
@@ -3899,13 +4147,12 @@ app.post('/create-adjustment', adminRateLimit, requireAdminAuth, async (req, res
     const providerPricePesos = baseAmountCents / 100;
     const parentBookingType = normalizeBookingType(parentOrder.booking_type);
     const parentBookingKey = bookingTypeKey(parentBookingType);
-    const parentProviderCents = Number(parentOrder.provider_amount || 0);
 
     let pricing;
     try {
       pricing = computePricing({ providerPricePesos });
     } catch (err) {
-      return res.status(400).send({ error: 'pricing_failed', message: err?.message || 'Unable to compute pricing for adjustment' });
+      throw Object.assign(new Error(err?.message || 'Unable to compute pricing for adjustment'), { code: 'pricing_failed' });
     }
 
     const {
@@ -4031,7 +4278,7 @@ app.post('/create-adjustment', adminRateLimit, requireAdminAuth, async (req, res
     });
 
     const links = buildFrontendLinks(childId);
-    return res.send({
+    return {
       childOrderId: childId,
       publicCode,
       mode: flow,
@@ -4051,12 +4298,30 @@ app.post('/create-adjustment', adminRateLimit, requireAdminAuth, async (req, res
       payUrl: links.payUrl,
       successUrl: links.successUrl,
       bookUrl: links.bookUrl
-    });
+    };
+}
+
+function adjustmentErrorToHttp(err) {
+  if (err?.code === 'invalid_amount') return { status: 400, body: { error: 'invalid_amount', message: err.message } };
+  if (err?.code === 'parent_not_found') return { status: 404, body: { error: 'parent_not_found', message: 'Parent order not found' } };
+  if (err?.code === 'pricing_failed') return { status: 400, body: { error: 'pricing_failed', message: err.message } };
+  return null;
+}
+
+app.post('/create-adjustment', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const { parentOrderId, amount, note, capture } = req.body || {};
+    if (!parentOrderId) return res.status(400).send({ error: 'missing_parent', message: 'parentOrderId required' });
+    const result = await createAdjustmentChild({ parentOrderId, amount, note, capture });
+    return res.send(result);
   } catch (err) {
+    const mapped = adjustmentErrorToHttp(err);
+    if (mapped) return res.status(mapped.status).send(mapped.body);
     console.error('[create-adjustment] error:', err);
     return res.status(500).send({ error: 'internal_error' });
   }
 });
+
 
 // 🚫 Cancel order (no refund; captured orders not cancelable)
 app.post('/cancel-order', adminRateLimit, requireAdminAuth, async (req, res) => {
@@ -4342,7 +4607,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
       const nextStatus = isPenaltyCapture ? 'Canceled (late fee)' : 'Captured';
       console.log(`${isPenaltyCapture ? '🚫 Canceled (late fee)' : '💰 Captured'} (payment_intent.succeeded):`, paymentIntentId);
 
-      const r = await pool.query('SELECT id, customer_id FROM all_bookings WHERE payment_intent_id = $1 LIMIT 1', [paymentIntentId]);
+      const r = await pool.query('SELECT id, customer_id, kind, parent_id_of_adjustment FROM all_bookings WHERE payment_intent_id = $1 LIMIT 1', [paymentIntentId]);
       const row = r.rows[0] || {};
 
       // Forward-only, mirroring the sibling handlers: never overwrite a refund, and never let a
@@ -4357,6 +4622,17 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
           `UPDATE all_bookings SET status = $1 WHERE payment_intent_id = $2 AND status <> 'Refunded' AND status NOT ILIKE 'Cancel%'`,
           [nextStatus, paymentIntentId]
         );
+      }
+
+      // Phase 4: a captured adjustment child means the client paid an approved price change.
+      // Log it on the PARENT order's lifecycle so the timeline closes the loop.
+      if (!isPenaltyCapture && row.kind === 'adjustment' && row.parent_id_of_adjustment) {
+        try {
+          await recordLifecycleEvent(row.parent_id_of_adjustment, {
+            eventType: 'price_change_confirmed', source: 'client', channel: 'system',
+            metadata: { adjustmentOrderId: row.id },
+          });
+        } catch (lcErr) { console.warn('[price_change_confirmed] lifecycle log failed:', lcErr?.message || lcErr); }
       }
 
       postToGoogleWebhook({ type: 'order.status', paymentIntentId, status: nextStatus, orderId: row.id || '', customerId: row.customer_id || '' });
@@ -5505,11 +5781,82 @@ app.post('/api/parse-request', publicFormLimit, async (req, res) => {
   }
 });
 
+function unclearMediaAnalysis(reason, summary = '') {
+  return {
+    aiStatus: 'unclear',
+    aiReason: reason,
+    aiEvidence: [],
+    category: 'custom',
+    subKey: null,
+    service: null,
+    summary,
+    confidence: 0,
+    urgency: 'flexible',
+    inferredDate: null,
+    followups: [],
+  };
+}
+
+function imageUrlsFromMedia(media) {
+  const items = Array.isArray(media) ? media : [];
+  return items
+    .map((item) => typeof item === 'string' ? item : item?.url)
+    .map((url) => String(url || '').trim())
+    .filter((url) => {
+      try {
+        const parsed = new URL(url);
+        return parsed.protocol === 'https:' || parsed.protocol === 'http:';
+      } catch (_) {
+        return false;
+      }
+    })
+    .slice(0, 5);
+}
+
+// --- Public: AI analysis for uploaded Smart Request media ---
+// Voice stays manual-review under the Anthropic-only constraint; this endpoint is for photos.
+app.post('/api/analyze-media', publicFormLimit, async (req, res) => {
+  try {
+    const { mode, media, lang } = req.body || {};
+    if (mode !== 'photos') {
+      return res.json(unclearMediaAnalysis('unsupported_media_mode'));
+    }
+    const imageUrls = imageUrlsFromMedia(media);
+    if (!imageUrls.length) {
+      return res.json(unclearMediaAnalysis('no_public_image_url'));
+    }
+    if (!anthropic) {
+      return res.json(unclearMediaAnalysis('ai_unavailable'));
+    }
+
+    const langCode = lang === 'en' ? 'en' : 'es';
+    const content = [
+      { type: 'text', text: buildMediaAnalysisUserPrompt(langCode, imageUrls.length) },
+      ...imageUrls.map((url) => ({
+        type: 'image',
+        source: { type: 'url', url },
+      })),
+    ];
+    const msg = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 700,
+      system: [{ type: 'text', text: MEDIA_ANALYSIS_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
+      messages: [{ role: 'user', content }],
+    });
+    const raw = (msg.content || []).map((b) => b.text || '').join('');
+    return res.json(parseMediaModelResponse(raw));
+  } catch (err) {
+    console.error('[POST /api/analyze-media]', err && err.message);
+    return res.json(unclearMediaAnalysis('analysis_failed'));
+  }
+});
+
 // --- Public: Submit a service request ---
 app.post('/api/service-requests', publicFormLimit, async (req, res) => {
   try {
     const { category, description, preferredDate, preferredTime, isAsap, serviceAddress, serviceAddressDetails, clientName, clientPhone, clientEmail, customerId, lang, attachments, clientRequestId,
       requestMode, matchedService, matchedSubKey, aiSummary, aiConfidence, aiSource, detailAnswers,
+      aiStatus, aiReason, aiEvidence,
       preferredProviderId, preferred_provider_id, preferredProviderName, preferred_provider_name } = req.body || {};
     if (!category || !clientName || !clientPhone) {
       return res.status(400).json({ error: 'missing_required_fields', message: 'category, clientName, and clientPhone are required' });
@@ -5612,7 +5959,13 @@ app.post('/api/service-requests', publicFormLimit, async (req, res) => {
     const detailAnswersStr = detailAnswers && typeof detailAnswers === 'object'
       ? JSON.stringify(detailAnswers)
       : null;
+    const aiEvidenceStr = aiEvidence != null
+      ? JSON.stringify(Array.isArray(aiEvidence) || typeof aiEvidence === 'object' ? aiEvidence : [String(aiEvidence)])
+      : null;
     const aiConfidenceNum = (typeof aiConfidence === 'number' && Number.isFinite(aiConfidence)) ? aiConfidence : null;
+    const aiStatusNorm = ['understood', 'unclear', 'manual_review'].includes(String(aiStatus || ''))
+      ? String(aiStatus)
+      : null;
 
     // Trusted Specialists: a customer can prefer a specific specialist for this rebooking. It's a
     // PREFERENCE, not a guarantee — we only carry it forward if the provider is currently verified;
@@ -5639,10 +5992,10 @@ app.post('/api/service-requests', publicFormLimit, async (req, res) => {
     const id = randomUUID();
     try {
       await pool.query(
-        `INSERT INTO service_requests (id, category, description, preferred_date, preferred_time, is_asap, service_address, service_address_details, client_name, client_phone, client_email, client_request_id, customer_id, lang, attachments, request_mode, matched_service, matched_sub_key, ai_summary, ai_confidence, ai_source, detail_answers, preferred_provider_id, preferred_provider_name)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)`,
+        `INSERT INTO service_requests (id, category, description, preferred_date, preferred_time, is_asap, service_address, service_address_details, client_name, client_phone, client_email, client_request_id, customer_id, lang, attachments, request_mode, matched_service, matched_sub_key, ai_summary, ai_confidence, ai_source, ai_status, ai_reason, ai_evidence, detail_answers, preferred_provider_id, preferred_provider_name)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)`,
         [id, category, description || null, preferredDate || null, preferredTime || null, !!isAsap, serviceAddress || null, addressDetailsStr, clientName, clientPhone, clientEmail || null, clientRequestIdNorm || null, effectiveCustomerId, lang || 'es', attachmentsStr,
-          requestMode || null, matchedService || null, matchedSubKey || null, aiSummary || null, aiConfidenceNum, aiSource || null, detailAnswersStr, prefProviderId, prefProviderName]
+          requestMode || null, matchedService || null, matchedSubKey || null, aiSummary || null, aiConfidenceNum, aiSource || null, aiStatusNorm, aiReason || null, aiEvidenceStr, detailAnswersStr, prefProviderId, prefProviderName]
       );
     } catch (insertErr) {
       if (insertErr.code === '23505' && clientRequestIdNorm) {
@@ -7358,6 +7711,376 @@ app.patch('/api/auth/trusted-specialists/:id/preferred', publicFormLimit, async 
   }
 });
 
+// ─── Service Calendar: recurring services ─────────────────────────────────────
+// A client schedules a repeating service (weekly cleaning, monthly deep-clean, …),
+// optionally pinned to a trusted specialist. The hourly cron materializes one
+// service_request per due occurrence (lead_time_days ahead) into the normal admin
+// pipeline — only the *schedule* lives here, so calendar, pricing, pre-auth, and
+// capture are all unchanged downstream. Provider preference is re-validated each run
+// (never guaranteed). All recurrence math runs on plain civil dates ('YYYY-MM-DD')
+// in UTC to stay stable across the America/Mexico_City offset.
+
+const RECURRENCE_FREQUENCIES = new Set(['daily', 'weekly', 'biweekly', 'monthly', 'custom']);
+const RECURRING_TIME_RE = /^([01]?\d|2[0-3]):[0-5]\d$/;
+const RECURRING_MAX_LEAD_DAYS = 14;
+
+function ymdToUTC(ymd) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(ymd || '').trim());
+  if (!m) return null;
+  const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+  return isNaN(d.getTime()) ? null : d;
+}
+function utcToYmd(d) { return d.toISOString().slice(0, 10); }
+function addUTCDays(d, n) { const x = new Date(d.getTime()); x.setUTCDate(x.getUTCDate() + n); return x; }
+function maxYmd(a, b) {
+  const da = ymdToUTC(a), db = ymdToUTC(b);
+  if (!da) return b; if (!db) return a;
+  return da.getTime() >= db.getTime() ? a : b;
+}
+// 'today' in the service time zone, as a 'YYYY-MM-DD' key (en-CA → ISO date).
+function todayYmdMX() {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Mexico_City', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
+}
+function parseWeekdaysCsv(csv) {
+  return [...new Set(String(csv || '')
+    .split(',')
+    .map((s) => parseInt(s, 10))
+    .filter((n) => Number.isInteger(n) && n >= 0 && n <= 6))]
+    .sort((a, b) => a - b);
+}
+
+// Enumerate occurrence date keys for a plan within [fromYmd, toYmd] inclusive.
+// Hard-capped at `max` so a misconfigured open-ended daily plan can never run away.
+function enumerateOccurrences(plan, fromYmd, toYmd, { max = 366 } = {}) {
+  const start = ymdToUTC(plan.start_date);
+  const windowEnd = ymdToUTC(toYmd);
+  if (!start || !windowEnd) return [];
+  const windowStartRaw = ymdToUTC(fromYmd);
+  let windowStart = windowStartRaw && windowStartRaw.getTime() > start.getTime() ? windowStartRaw : start;
+  const planEnd = plan.end_date ? ymdToUTC(plan.end_date) : null;
+  const hardEnd = planEnd && planEnd.getTime() < windowEnd.getTime() ? planEnd : windowEnd;
+  if (windowStart.getTime() > hardEnd.getTime()) return [];
+
+  const freq = String(plan.frequency || '').toLowerCase();
+  const interval = Math.max(1, parseInt(plan.interval_count, 10) || 1);
+  const out = [];
+
+  if (freq === 'daily' || freq === 'custom') {
+    const step = freq === 'daily' ? 1 : interval;
+    const dayDiff = Math.floor((windowStart.getTime() - start.getTime()) / 86400000);
+    const k = Math.max(0, Math.ceil(dayDiff / step));
+    let d = addUTCDays(start, k * step);
+    while (d.getTime() <= hardEnd.getTime() && out.length < max) {
+      if (d.getTime() >= windowStart.getTime()) out.push(utcToYmd(d));
+      d = addUTCDays(d, step);
+    }
+  } else if (freq === 'weekly' || freq === 'biweekly') {
+    const weekStep = freq === 'biweekly' ? 2 : interval;
+    let weekdays = parseWeekdaysCsv(plan.weekdays);
+    if (!weekdays.length) weekdays = [start.getUTCDay()];
+    const anchor = addUTCDays(start, -start.getUTCDay());              // Sunday of the start week
+    const wsSunday = addUTCDays(windowStart, -windowStart.getUTCDay());
+    let weekIdx = Math.max(0, Math.floor((wsSunday.getTime() - anchor.getTime()) / (7 * 86400000)));
+    weekIdx -= (weekIdx % weekStep);                                   // align to the step parity
+    let weekStart = addUTCDays(anchor, weekIdx * 7);
+    while (weekStart.getTime() <= hardEnd.getTime() && out.length < max) {
+      for (const wd of weekdays) {
+        const d = addUTCDays(weekStart, wd);
+        if (d.getTime() >= start.getTime() && d.getTime() >= windowStart.getTime() && d.getTime() <= hardEnd.getTime()) {
+          out.push(utcToYmd(d));
+        }
+      }
+      weekStart = addUTCDays(weekStart, weekStep * 7);
+    }
+    out.sort();
+  } else if (freq === 'monthly') {
+    let dom = parseInt(plan.day_of_month, 10);
+    if (!Number.isInteger(dom) || dom < 1 || dom > 31) dom = start.getUTCDate();
+    let y = windowStart.getUTCFullYear();
+    let mo = windowStart.getUTCMonth();
+    while (out.length < max) {
+      const lastDay = new Date(Date.UTC(y, mo + 1, 0)).getUTCDate();
+      const d = new Date(Date.UTC(y, mo, Math.min(dom, lastDay)));
+      if (d.getTime() > hardEnd.getTime()) break;
+      if (d.getTime() >= start.getTime() && d.getTime() >= windowStart.getTime()) out.push(utcToYmd(d));
+      mo += 1; if (mo > 11) { mo = 0; y += 1; }
+    }
+  }
+  return out.slice(0, max);
+}
+
+// The soonest occurrence on or after a date (open-ended-safe ~18-month look-ahead).
+function nextOccurrenceOnOrAfter(plan, fromYmd) {
+  const horizon = utcToYmd(addUTCDays(ymdToUTC(fromYmd) || ymdToUTC(todayYmdMX()), 550));
+  const occ = enumerateOccurrences(plan, fromYmd, horizon, { max: 1 });
+  return occ.length ? occ[0] : null;
+}
+
+// Human-free cadence descriptor the frontend turns into a localized label.
+function recurringCadence(plan) {
+  return {
+    frequency: plan.frequency,
+    intervalCount: plan.interval_count || 1,
+    weekdays: parseWeekdaysCsv(plan.weekdays),
+    dayOfMonth: plan.day_of_month || null,
+  };
+}
+
+function mapRecurringRow(r, today = todayYmdMX()) {
+  const next = (r.status === 'active') ? nextOccurrenceOnOrAfter(r, today) : null;
+  return {
+    id: r.id,
+    category: r.category,
+    description: r.description || null,
+    providerId: r.provider_id || null,
+    providerMaskedName: maskProviderName(r.provider_name),
+    cadence: recurringCadence(r),
+    preferredTime: r.preferred_time || null,
+    address: r.service_address || null,
+    startDate: r.start_date || null,
+    endDate: r.end_date || null,
+    leadTimeDays: r.lead_time_days ?? 3,
+    status: r.status,
+    nextOccurrence: next,
+    timesGenerated: r.times_generated || 0,
+    createdAt: r.created_at,
+  };
+}
+
+// Column list with DATE fields rendered as 'YYYY-MM-DD' text so the JS date math above
+// never has to reason about node-postgres' local-midnight Date parsing.
+const RECURRING_SELECT = `id, user_id, category, description, provider_id, provider_name,
+  frequency, interval_count, weekdays, day_of_month, preferred_time, service_address,
+  service_address_details, lead_time_days, status, times_generated,
+  to_char(start_date,'YYYY-MM-DD') AS start_date,
+  to_char(end_date,'YYYY-MM-DD') AS end_date,
+  to_char(last_occurrence_date,'YYYY-MM-DD') AS last_occurrence_date,
+  to_char(next_occurrence_date,'YYYY-MM-DD') AS next_occurrence_date,
+  created_at, updated_at`;
+
+// Validate + normalize a recurrence payload (shared by POST/PATCH). Returns
+// { ok:true, value } or { ok:false, error, message }. `partial` skips required-field checks.
+function normalizeRecurrenceInput(body, { partial = false } = {}) {
+  const out = {};
+  const has = (k) => Object.prototype.hasOwnProperty.call(body, k);
+
+  if (!partial || has('category')) {
+    const category = normalizeTrustCategory(body.category);
+    if (!category) return { ok: false, error: 'missing_category' };
+    out.category = category;
+  }
+  if (!partial || has('frequency')) {
+    const frequency = String(body.frequency || '').trim().toLowerCase();
+    if (!RECURRENCE_FREQUENCIES.has(frequency)) return { ok: false, error: 'invalid_frequency' };
+    out.frequency = frequency;
+  }
+  if (!partial || has('startDate') || has('start_date')) {
+    const startDate = String(body.startDate ?? body.start_date ?? '').trim();
+    if (!ymdToUTC(startDate)) return { ok: false, error: 'invalid_start_date' };
+    out.start_date = startDate.slice(0, 10);
+  }
+  if (has('endDate') || has('end_date')) {
+    const raw = body.endDate ?? body.end_date;
+    if (raw == null || raw === '') out.end_date = null;
+    else { const v = String(raw).trim(); if (!ymdToUTC(v)) return { ok: false, error: 'invalid_end_date' }; out.end_date = v.slice(0, 10); }
+  }
+  if (has('intervalCount') || has('interval_count')) {
+    const n = parseInt(body.intervalCount ?? body.interval_count, 10);
+    out.interval_count = (Number.isInteger(n) && n >= 1 && n <= 365) ? n : 1;
+  }
+  if (has('weekdays')) {
+    const arr = Array.isArray(body.weekdays) ? body.weekdays : String(body.weekdays || '').split(',');
+    const csv = parseWeekdaysCsv(arr.join(','));
+    out.weekdays = csv.length ? csv.join(',') : null;
+  }
+  if (has('dayOfMonth') || has('day_of_month')) {
+    const n = parseInt(body.dayOfMonth ?? body.day_of_month, 10);
+    out.day_of_month = (Number.isInteger(n) && n >= 1 && n <= 31) ? n : null;
+  }
+  if (has('preferredTime') || has('preferred_time')) {
+    const raw = String(body.preferredTime ?? body.preferred_time ?? '').trim();
+    if (raw && !RECURRING_TIME_RE.test(raw)) return { ok: false, error: 'invalid_time' };
+    out.preferred_time = raw || null;
+  }
+  if (has('description')) out.description = body.description ? String(body.description).slice(0, 1000) : null;
+  if (has('serviceAddress') || has('service_address')) {
+    const raw = body.serviceAddress ?? body.service_address;
+    out.service_address = raw ? String(raw).slice(0, 1000) : null;
+  }
+  if (has('serviceAddressDetails') || has('service_address_details')) {
+    const raw = body.serviceAddressDetails ?? body.service_address_details;
+    out.service_address_details = (raw && typeof raw === 'object') ? JSON.stringify(raw) : (raw ? String(raw).slice(0, 4000) : null);
+  }
+  if (has('leadTimeDays') || has('lead_time_days')) {
+    const n = parseInt(body.leadTimeDays ?? body.lead_time_days, 10);
+    out.lead_time_days = (Number.isInteger(n) && n >= 0) ? Math.min(n, RECURRING_MAX_LEAD_DAYS) : 3;
+  }
+  return { ok: true, value: out };
+}
+
+// Resolve + verify a preferred specialist (must be a currently-verified provider).
+// Returns { providerId, providerName } or throws makeError on an unavailable pick.
+async function resolveRecurringProvider(providerIdRaw) {
+  const providerId = String(providerIdRaw || '').trim();
+  if (!providerId) return { providerId: null, providerName: null };
+  const { rows } = await pool.query('SELECT status, name FROM providers WHERE provider_id = $1 LIMIT 1', [providerId]);
+  if (!rows[0] || rows[0].status !== 'verified') {
+    throw makeError('provider_unavailable', 'Este especialista no está disponible actualmente.', 409);
+  }
+  return { providerId, providerName: rows[0].name || null };
+}
+
+// GET /api/auth/recurring-services — the user's recurring plans (active + paused).
+app.get('/api/auth/recurring-services', async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const { rows } = await pool.query(
+      `SELECT ${RECURRING_SELECT} FROM recurring_services
+        WHERE user_id = $1 AND status <> 'canceled'
+        ORDER BY status ASC, created_at DESC`,
+      [payload.user_id]
+    );
+    const today = todayYmdMX();
+    res.set('Cache-Control', 'no-store');
+    return res.json({ recurring: rows.map((r) => mapRecurringRow(r, today)) });
+  } catch (err) {
+    console.error('[GET /api/auth/recurring-services]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// POST /api/auth/recurring-services — create a recurring plan.
+app.post('/api/auth/recurring-services', publicFormLimit, async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    // Mirror the booking gate intent: a recurring plan generates real intake requests, so the
+    // owner must at least have a verified phone (always required to place an order).
+    const { rows: uRows } = await pool.query(
+      'SELECT name, phone, email, phone_verified FROM auth_users WHERE id = $1', [payload.user_id]
+    );
+    const user = uRows[0];
+    if (!user) return res.status(404).json({ error: 'user_not_found' });
+    if (!user.phone_verified) return res.status(409).json({ error: 'phone_required', message: 'Verifica tu teléfono para programar servicios recurrentes.' });
+
+    const norm = normalizeRecurrenceInput(req.body || {}, { partial: false });
+    if (!norm.ok) return res.status(400).json(norm);
+    const v = norm.value;
+
+    let provider;
+    try { provider = await resolveRecurringProvider((req.body || {}).providerId ?? (req.body || {}).provider_id); }
+    catch (e) { if (e.status) return res.status(e.status).json({ error: e.code, message: e.message }); throw e; }
+
+    const id = randomUUID();
+    const planForNext = {
+      start_date: v.start_date, end_date: v.end_date ?? null, frequency: v.frequency,
+      interval_count: v.interval_count ?? 1, weekdays: v.weekdays ?? null, day_of_month: v.day_of_month ?? null,
+    };
+    const today = todayYmdMX();
+    const nextOcc = nextOccurrenceOnOrAfter(planForNext, maxYmd(today, v.start_date));
+
+    const { rows } = await pool.query(
+      `INSERT INTO recurring_services
+         (id, user_id, category, description, provider_id, provider_name, frequency, interval_count,
+          weekdays, day_of_month, preferred_time, service_address, service_address_details,
+          start_date, end_date, lead_time_days, status, next_occurrence_date, lang)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,'active',$17,$18)
+       RETURNING ${RECURRING_SELECT}`,
+      [
+        id, payload.user_id, v.category, v.description ?? null, provider.providerId, provider.providerName,
+        v.frequency, v.interval_count ?? 1, v.weekdays ?? null, v.day_of_month ?? null, v.preferred_time ?? null,
+        v.service_address ?? null, v.service_address_details ?? null, v.start_date, v.end_date ?? null,
+        v.lead_time_days ?? 3, nextOcc, String((req.body || {}).lang || 'es').slice(0, 5),
+      ]
+    );
+    return res.status(201).json({ recurring: mapRecurringRow(rows[0], today) });
+  } catch (err) {
+    console.error('[POST /api/auth/recurring-services]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// PATCH /api/auth/recurring-services/:id — edit / pause / resume a plan.
+app.patch('/api/auth/recurring-services/:id', publicFormLimit, async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const { rows: curRows } = await pool.query(
+      `SELECT ${RECURRING_SELECT} FROM recurring_services WHERE id = $1 AND user_id = $2 LIMIT 1`,
+      [req.params.id, payload.user_id]
+    );
+    const cur = curRows[0];
+    if (!cur) return res.status(404).json({ error: 'not_found' });
+
+    const body = req.body || {};
+    const updates = {};
+
+    // Status transitions: active ⇄ paused (and canceled, which the DELETE route also covers).
+    if (Object.prototype.hasOwnProperty.call(body, 'status')) {
+      const status = String(body.status || '').trim().toLowerCase();
+      if (!['active', 'paused', 'canceled'].includes(status)) return res.status(400).json({ error: 'invalid_status' });
+      updates.status = status;
+    }
+
+    const norm = normalizeRecurrenceInput(body, { partial: true });
+    if (!norm.ok) return res.status(400).json(norm);
+    Object.assign(updates, norm.value);
+
+    if (Object.prototype.hasOwnProperty.call(body, 'providerId') || Object.prototype.hasOwnProperty.call(body, 'provider_id')) {
+      try {
+        const provider = await resolveRecurringProvider(body.providerId ?? body.provider_id);
+        updates.provider_id = provider.providerId;
+        updates.provider_name = provider.providerName;
+      } catch (e) { if (e.status) return res.status(e.status).json({ error: e.code, message: e.message }); throw e; }
+    }
+
+    if (!Object.keys(updates).length) return res.status(400).json({ error: 'no_fields' });
+
+    // Recompute the cached next occurrence from the merged plan.
+    const merged = { ...cur, ...updates };
+    const today = todayYmdMX();
+    updates.next_occurrence_date = (String(merged.status) === 'active')
+      ? nextOccurrenceOnOrAfter(merged, maxYmd(today, merged.start_date))
+      : null;
+
+    const cols = Object.keys(updates);
+    const setSql = cols.map((c, i) => `${c} = $${i + 1}`).join(', ');
+    const params = cols.map((c) => updates[c]);
+    params.push(req.params.id, payload.user_id);
+    const { rows } = await pool.query(
+      `UPDATE recurring_services SET ${setSql}, updated_at = NOW()
+        WHERE id = $${cols.length + 1} AND user_id = $${cols.length + 2}
+        RETURNING ${RECURRING_SELECT}`,
+      params
+    );
+    return res.json({ recurring: mapRecurringRow(rows[0], today) });
+  } catch (err) {
+    console.error('[PATCH /api/auth/recurring-services/:id]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// DELETE /api/auth/recurring-services/:id — cancel a plan. Already-generated requests/orders
+// are independent and are left untouched.
+app.delete('/api/auth/recurring-services/:id', async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const { rowCount } = await pool.query(
+      'DELETE FROM recurring_services WHERE id = $1 AND user_id = $2',
+      [req.params.id, payload.user_id]
+    );
+    if (!rowCount) return res.status(404).json({ error: 'not_found' });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('[DELETE /api/auth/recurring-services/:id]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
 // GET /api/auth/favorites
 app.get('/api/auth/favorites', async (req, res) => {
   const payload = await requireUserAuth(req, res);
@@ -7595,7 +8318,8 @@ app.get('/api/auth/orders', async (req, res) => {
               service_date, service_datetime, is_asap, service_address, provider_id, provider_name,
               amount, provider_amount, booking_fee_amount, processing_fee_amount,
               vat_amount, pricing_total_amount, final_captured_amount,
-              cash_selected, customer_id, payment_intent_id, created_at
+              cash_selected, customer_id, payment_intent_id, created_at,
+              service_phase, service_phase_at
          FROM all_bookings
         WHERE ${matchClause}
           AND COALESCE(parent_id_of_adjustment, '') = ''
@@ -7623,7 +8347,7 @@ app.get('/api/auth/orders', async (req, res) => {
     // Pending intake requests that have not yet been turned into an order.
     const { rows: reqRows } = await pool.query(
       `SELECT id, category, description, preferred_date, preferred_time, is_asap,
-              service_address, status, created_at
+              service_address, status, matched_service, matched_sub_key, created_at
          FROM service_requests
         WHERE ${matchClause}
           AND COALESCE(converted_order_id, '') = ''
@@ -7647,8 +8371,12 @@ app.get('/api/auth/orders', async (req, res) => {
       isAsap: !!r.is_asap,
       address: r.service_address || null,
       providerId: r.provider_id || null,
-      providerName: r.provider_name || null,
+      // Anti-disintermediation: the customer surface never receives the provider's full name or
+      // contact — only the masked "First L." form. (Admin uses /api/admin/orders for full detail.)
+      providerName: maskProviderName(r.provider_name),
       providerMaskedName: maskProviderName(r.provider_name),
+      servicePhase: r.service_phase || null,
+      servicePhaseAt: r.service_phase_at || null,
       rating: ratingByOrder[r.id] || null,
       rated: !!ratingByOrder[r.id],
       cashSelected: !!r.cash_selected,
@@ -7668,6 +8396,65 @@ app.get('/api/auth/orders', async (req, res) => {
       },
     }));
 
+    // Phase 4: payable price-change adjustments (child orders) surfaced as their own
+    // "Cambio de precio" items so an account user can approve/pay them from My Orders.
+    const { rows: adjRows } = await pool.query(
+      `SELECT id, public_code, kind, status, category, service_description,
+              service_date, service_datetime, is_asap, service_address, provider_id, provider_name,
+              amount, provider_amount, booking_fee_amount, processing_fee_amount,
+              vat_amount, pricing_total_amount, final_captured_amount,
+              cash_selected, customer_id, payment_intent_id, created_at,
+              parent_id_of_adjustment, adjustment_reason
+         FROM all_bookings
+        WHERE ${matchClause}
+          AND kind = 'adjustment'
+          AND lower(COALESCE(status,'')) IN ('pending','new','pending (3ds)','setup required','setup created','scheduled','confirmed')
+        ORDER BY created_at DESC
+        LIMIT 50`,
+      ids
+    );
+    await reconcileOrderRows(adjRows);
+    adjRows.forEach((r) => {
+      orders.push({
+        id: r.id,
+        source: 'order',
+        priceChange: true,
+        parentOrderId: r.parent_id_of_adjustment || null,
+        adjustmentReason: r.adjustment_reason || null,
+        publicCode: r.public_code || null,
+        kind: 'adjustment',
+        status: r.status || null,
+        bucket: customerOrderBucket(r.status),
+        category: r.category || null,
+        description: r.adjustment_reason || r.service_description || null,
+        serviceDate: r.service_date || null,
+        serviceDateTime: r.service_datetime || null,
+        preferredTime: null,
+        isAsap: !!r.is_asap,
+        address: r.service_address || null,
+        providerId: r.provider_id || null,
+        providerName: maskProviderName(r.provider_name),
+        providerMaskedName: maskProviderName(r.provider_name),
+        rating: null,
+        rated: false,
+        cashSelected: !!r.cash_selected,
+        payable: isOrderPayableOnline(r),
+        payFlow: orderPayFlow(r),
+        policy: computeOrderActionPolicy(r),
+        createdAt: r.created_at,
+        pricing: {
+          total: r.pricing_total_amount ?? r.amount ?? null,
+          amount: r.amount ?? null,
+          providerAmount: r.provider_amount ?? null,
+          bookingFee: r.booking_fee_amount ?? null,
+          processingFee: r.processing_fee_amount ?? null,
+          vat: r.vat_amount ?? null,
+          finalCaptured: r.final_captured_amount ?? null,
+          captured: r.final_captured_amount != null,
+        },
+      });
+    });
+
     const requests = reqRows.map((r) => {
       const reqBucket = customerRequestBucket(r.status);
       return {
@@ -7679,6 +8466,8 @@ app.get('/api/auth/orders', async (req, res) => {
         bucket: reqBucket,
         category: r.category || null,
         description: r.description || null,
+        matchedService: r.matched_service || null,
+        matchedSubKey: r.matched_sub_key || null,
         serviceDate: r.preferred_date || null,
         serviceDateTime: null,
         preferredTime: r.preferred_time || null,
@@ -7734,7 +8523,7 @@ app.post('/api/auth/orders/:id/payment-link', publicFormLimit, async (req, res) 
          FROM all_bookings
         WHERE id = $${ids.length + 1}
           AND (${conds.join(' OR ')})
-          AND COALESCE(parent_id_of_adjustment, '') = ''
+          AND (COALESCE(parent_id_of_adjustment, '') = '' OR COALESCE(kind, '') = 'adjustment')
         LIMIT 1`,
       [...ids, req.params.id]
     );
@@ -8645,8 +9434,9 @@ app.post('/api/admin/orders/:id/mark-cash', adminRateLimit, requireAdminAuth, as
 
 // ─── Admin: Order Changes (reschedule / cancel / address_update / inline_edit) ─────
 
-// Keys are lowercase; always test with isEditableStatus()/isTerminalStatus() so a stored
-// 'pending' (lowercase, from the primary INSERT) matches the same as 'Pending'.
+// Keys are lowercase; always test with isEditableStatus()/isTerminalStatus() so a status
+// is matched case-insensitively (the primary INSERT now stores 'Pending', but legacy rows
+// and other paths may store lowercase 'pending').
 const ORDER_EDITABLE_STATUSES = new Set([
   'pending', 'setup required', 'setup created', 'pending (3ds)',
   'scheduled', 'confirmed', 'pending cash', 'new'
@@ -8718,6 +9508,262 @@ app.post('/api/admin/orders/:id/changes', adminRateLimit, requireAdminAuth, asyn
   } catch (err) {
     console.error('[POST /api/admin/orders/:id/changes]', err);
     return res.status(500).json({ error: 'internal_error', message: err.message });
+  }
+});
+
+// ── In-service lifecycle (Phase 1) ────────────────────────────────────────────
+
+// Admin: read the in-service timeline (check-ins, contacts, location, price-change events).
+app.get('/api/admin/orders/:id/lifecycle', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { rows: orderRows } = await pool.query(
+      `SELECT service_phase, service_phase_at, last_provider_lat, last_provider_lng,
+              last_location_at, provider_link_token, provider_link_created_at
+         FROM all_bookings WHERE id = $1 LIMIT 1`,
+      [id]
+    );
+    if (!orderRows.length) return res.status(404).json({ error: 'not_found' });
+    const { rows: events } = await pool.query(
+      `SELECT id, event_type, source, actor_ref, channel, lat, lng, accuracy_m, metadata, created_at
+         FROM order_lifecycle_events WHERE order_id = $1 ORDER BY created_at DESC LIMIT 200`,
+      [id]
+    );
+    const o = orderRows[0];
+    return res.json({
+      items: events,
+      phase: o.service_phase || null,
+      phaseAt: o.service_phase_at || null,
+      lastLocation: (o.last_provider_lat != null && o.last_provider_lng != null)
+        ? { lat: o.last_provider_lat, lng: o.last_provider_lng, at: o.last_location_at }
+        : null,
+      providerLinkActive: Boolean(o.provider_link_token),
+    });
+  } catch (err) {
+    console.error('[GET /api/admin/orders/:id/lifecycle]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// Admin: log a contact attempt (provider or client). The wa.me/mailto link is opened client-side;
+// this endpoint only records the touch so the timeline has an audit trail. Channel-agnostic so a
+// future messaging API can write the same event server-side. (Phase 2)
+app.post('/api/admin/orders/:id/contact-log', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { target, templateId, channel } = req.body || {};
+    if (!['provider', 'client'].includes(String(target || ''))) {
+      return res.status(400).json({ error: 'invalid_target' });
+    }
+    const { rows } = await pool.query('SELECT id FROM all_bookings WHERE id = $1 LIMIT 1', [id]);
+    if (!rows.length) return res.status(404).json({ error: 'not_found' });
+    await recordLifecycleEvent(id, {
+      eventType: target === 'provider' ? 'provider_contacted' : 'client_contacted',
+      source: 'admin',
+      channel: ['wa', 'email'].includes(String(channel || '')) ? channel : null,
+      metadata: templateId ? { templateId: String(templateId).slice(0, 60) } : null,
+    });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('[POST /api/admin/orders/:id/contact-log]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// Admin: mint / rotate the per-order provider capability link.
+app.post('/api/admin/orders/:id/provider-link', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { rows } = await pool.query('SELECT id FROM all_bookings WHERE id = $1 LIMIT 1', [id]);
+    if (!rows.length) return res.status(404).json({ error: 'not_found' });
+    const token = await issueProviderLinkToken(id);
+    const url = buildFrontendUrl('/provider.html', { order: id, pt: token });
+    return res.json({ ok: true, url, token });
+  } catch (err) {
+    console.error('[POST /api/admin/orders/:id/provider-link]', err);
+    return res.status(500).json({ error: 'internal_error', message: err.message });
+  }
+});
+
+// Provider (public, token-gated): minimal order view for the provider link. Never exposes
+// client phone/email/full name or pricing — only what the provider needs to do the job.
+app.get('/api/provider/order', publicFormLimit, async (req, res) => {
+  try {
+    const row = await resolveProviderLinkOrder(req.query.order, req.query.pt);
+    if (!row) return res.status(404).json({ error: 'not_found' });
+
+    // Reload-safe, pricing-safe extras for the provider timeline. Only provider-authored data:
+    // their own milestone timestamps + their own submitted surcharge previews. NEVER the base price.
+    const phaseTimes = {};
+    const myPriceChanges = [];
+    try {
+      const { rows: evs } = await pool.query(
+        `SELECT event_type, metadata, created_at
+           FROM order_lifecycle_events
+          WHERE order_id = $1
+            AND event_type IN ('en_route','arrived','started','completed','price_change_requested')
+          ORDER BY created_at ASC`,
+        [row.id]
+      );
+      for (const ev of evs) {
+        if (MILESTONE_EVENTS.has(ev.event_type)) {
+          if (!phaseTimes[ev.event_type]) phaseTimes[ev.event_type] = ev.created_at; // first time reached
+        } else if (ev.event_type === 'price_change_requested') {
+          const m = ev.metadata || {};
+          myPriceChanges.push({
+            type: m.type || 'otro',
+            providerPesos: (m.providerPesos != null) ? m.providerPesos : null,
+            note: m.note || null,
+            previewTotal: (m.previewTotal != null) ? m.previewTotal : null, // client-facing total (cents)
+            at: ev.created_at,
+          });
+        }
+      }
+    } catch (lcErr) {
+      console.warn('[GET /api/provider/order] timeline hydrate failed:', lcErr?.message || lcErr);
+    }
+
+    return res.json({
+      order: {
+        publicCode: row.public_code || null,
+        clientFirstName: maskProviderName(row.client_name),
+        category: row.category || null,
+        serviceDescription: row.service_description || null,
+        serviceAddress: row.service_address || null,
+        serviceDateTime: row.service_datetime || null,
+        serviceDate: row.service_date || null,
+        isAsap: !!row.is_asap,
+        servicePhase: row.service_phase || null,
+        phaseTimes,                                    // { en_route, arrived, started, completed } ISO ts
+        myPriceChanges,                                // provider's own submitted surcharges (no base price)
+        locationSharedAt: row.last_location_at || null,
+      },
+    });
+  } catch (err) {
+    console.error('[GET /api/provider/order]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// Provider (public, token-gated): milestone check-in (en_route|arrived|started|completed).
+app.post('/api/provider/checkin', publicFormLimit, async (req, res) => {
+  try {
+    const { order, pt, event } = req.body || {};
+    if (!MILESTONE_EVENTS.has(String(event || ''))) {
+      return res.status(400).json({ error: 'invalid_event' });
+    }
+    const row = await resolveProviderLinkOrder(order, pt);
+    if (!row) return res.status(404).json({ error: 'not_found' });
+    await recordLifecycleEvent(row.id, {
+      eventType: event, source: 'provider', actorRef: row.provider_id || null, channel: 'provider_link',
+    });
+    return res.json({ ok: true, phase: event });
+  } catch (err) {
+    console.error('[POST /api/provider/checkin]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// Allowed price-change types (provider-selected). Stored in event metadata + adjustment reason.
+const PRICE_CHANGE_TYPES = new Set(['precio_corregido', 'horas_adicionales', 'servicio_adicional', 'materiales', 'otro']);
+const PRICE_CHANGE_TYPE_LABEL = {
+  precio_corregido: 'Corrección de precio', horas_adicionales: 'Horas adicionales',
+  servicio_adicional: 'Servicio adicional', materiales: 'Materiales', otro: 'Otro',
+};
+
+// Provider (public, token-gated): propose a mid-service price change. Records the request and
+// returns a client-facing total preview. Does NOT move money — admin generates the charge link.
+app.post('/api/provider/price-change', publicFormLimit, async (req, res) => {
+  try {
+    const { order, pt, amount, type, note } = req.body || {};
+    const pesos = Number(amount);
+    if (!Number.isFinite(pesos) || pesos <= 0) return res.status(400).json({ error: 'invalid_amount' });
+    const changeType = PRICE_CHANGE_TYPES.has(String(type || '')) ? type : 'otro';
+    const row = await resolveProviderLinkOrder(order, pt);
+    if (!row) return res.status(404).json({ error: 'not_found' });
+
+    let preview = null;
+    try {
+      const pricing = computePricing({ providerPricePesos: pesos });
+      preview = { total: pricing.totalAmountCents, providerAmount: pricing.providerAmountCents };
+    } catch (_) { preview = null; }
+
+    await recordLifecycleEvent(row.id, {
+      eventType: 'price_change_requested', source: 'provider', actorRef: row.provider_id || null,
+      channel: 'provider_link',
+      metadata: {
+        type: changeType,
+        amount: Math.round(pesos * 100),            // cents, for the admin timeline
+        providerPesos: pesos,
+        note: String(note || '').slice(0, 500) || null,
+        previewTotal: preview ? preview.total : null,
+      },
+    });
+    return res.json({ ok: true, preview });
+  } catch (err) {
+    console.error('[POST /api/provider/price-change]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// Admin: turn a provider's price-change request into a chargeable adjustment + payment link
+// (reuses the existing extra-charge engine). Body: { providerPesos, type, note, capture? }.
+app.post('/api/admin/orders/:id/price-change', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { providerPesos, type, note, capture } = req.body || {};
+    const pesos = Number(providerPesos);
+    if (!Number.isFinite(pesos) || pesos <= 0) return res.status(400).json({ error: 'invalid_amount' });
+    const changeType = PRICE_CHANGE_TYPES.has(String(type || '')) ? type : 'otro';
+    const typeLabel = PRICE_CHANGE_TYPE_LABEL[changeType] || 'Cambio de precio';
+    const reason = `Cambio de precio · ${typeLabel}${note ? ' · ' + String(note).slice(0, 200) : ''}`;
+
+    let result;
+    try {
+      result = await createAdjustmentChild({
+        parentOrderId: id, amount: Math.round(pesos * 100), note: reason, capture,
+      });
+    } catch (err) {
+      const mapped = adjustmentErrorToHttp(err);
+      if (mapped) return res.status(mapped.status).json(mapped.body);
+      throw err;
+    }
+
+    await recordLifecycleEvent(id, {
+      eventType: 'price_change_link_created', source: 'admin', channel: 'admin_panel',
+      metadata: {
+        type: changeType, amount: result.totalAmountCents,
+        childOrderId: result.childOrderId, flow: result.flow,
+      },
+    });
+    return res.json(result);
+  } catch (err) {
+    console.error('[POST /api/admin/orders/:id/price-change]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// Provider (public, token-gated): one-shot location share (no continuous tracking).
+app.post('/api/provider/location', publicFormLimit, async (req, res) => {
+  try {
+    const { order, pt, lat, lng, accuracy } = req.body || {};
+    const latN = Number(lat), lngN = Number(lng);
+    if (!Number.isFinite(latN) || !Number.isFinite(lngN) ||
+        latN < -90 || latN > 90 || lngN < -180 || lngN > 180) {
+      return res.status(400).json({ error: 'invalid_coords' });
+    }
+    const accN = Number(accuracy);
+    const row = await resolveProviderLinkOrder(order, pt);
+    if (!row) return res.status(404).json({ error: 'not_found' });
+    await recordLifecycleEvent(row.id, {
+      eventType: 'location_shared', source: 'provider', actorRef: row.provider_id || null,
+      channel: 'provider_link', lat: latN, lng: lngN,
+      accuracyM: Number.isFinite(accN) ? Math.round(accN) : null,
+    });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('[POST /api/provider/location]', err);
+    return res.status(500).json({ error: 'internal_error' });
   }
 });
 
@@ -8987,6 +10033,30 @@ app.get('/api/admin/providers', adminRateLimit, requireAdminAuth, async (req, re
   } catch (err) {
     console.error('[GET /api/admin/providers]', err);
     return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// Manually add a verified provider (no application funnel) — mints a prov-NNNNNN id and
+// inserts a 'verified' row directly. Mirrors the id mint + insert from the promote route below.
+app.post('/api/admin/providers', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const name = (b.name || '').trim();
+    if (!name) return res.status(400).json({ error: 'name_required' });
+    const clean = (v) => { const s = (v == null ? '' : String(v)).trim(); return s || null; };
+    const { rows: seqRows } = await pool.query(
+      `SELECT 'prov-' || lpad(nextval('provider_id_seq')::text, 6, '0') AS pid`
+    );
+    const providerId = seqRows[0].pid;
+    await pool.query(
+      `INSERT INTO providers (provider_id, status, name, phone, email, specialty, city)
+       VALUES ($1, 'verified', $2, $3, $4, $5, $6)`,
+      [providerId, name, clean(b.phone), clean(b.email), clean(b.specialty), clean(b.city)]
+    );
+    return res.json({ ok: true, provider_id: providerId });
+  } catch (err) {
+    console.error('[POST /api/admin/providers]', err);
+    return res.status(500).json({ error: 'internal_error', message: err.message });
   }
 });
 

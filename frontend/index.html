@@ -47,7 +47,8 @@
         <button class="dash-hero__location-change" id="dash-change-address" type="button" onclick="window._dashShowAddressModal()">Cambiar dirección</button>
       </div>
 
-      <h1 class="dash-hero__headline" id="dash-headline">Solicita un servicio ahora</h1>
+      <h1 class="dash-hero__headline" id="dash-headline">Pide cualquier servicio para tu hogar</h1>
+      <p class="dash-hero__media-label-subtitle" id="dash-media-label-subtitle">SERVI encuentra y coordina al especialista por ti.</p>
 
       <div class="dash-hero__textarea-wrap">
         <textarea
@@ -59,48 +60,53 @@
           onkeydown="if(event.key==='Enter'&&(event.metaKey||event.ctrlKey)){event.preventDefault();window._dashSubmitText()}"
         ></textarea>
         <div class="dash-hero__textarea-bar">
-          <button class="dash-hero__attach-btn" type="button" onclick="window._dashShowAttachMenu()" aria-label="Adjuntar">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-          </button>
+          <div class="dash-hero__textarea-tools" aria-label="Adjuntos opcionales">
+            <button class="dash-hero__attach-btn" type="button" onclick="window._dashShowAttachMenu('photos')" aria-label="Adjuntar fotos" title="Adjuntar fotos">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
+            </button>
+            <button class="dash-hero__attach-btn" type="button" onclick="window._dashShowAttachMenu('video')" aria-label="Adjuntar video" title="Adjuntar video">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+            </button>
+          </div>
           <button class="dash-hero__send-btn" type="button" onclick="window._dashSubmitText()" aria-label="Enviar">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
           </button>
         </div>
+
         <div class="dash-atts" id="dash-atts" hidden></div>
       </div>
 
-      <!-- Inline media capture (mic / video / photos) — rendered by the hero capture engine -->
-      <div class="dash-capture" id="dash-capture" hidden></div>
-
-      <p class="dash-hero__media-label" id="dash-media-label">O envía tu solicitud por:</p>
+      <p class="dash-hero__media-label" id="dash-media-label">
+        <span class="dash-hero__media-label-title" id="dash-media-label-title">Cuéntanos qué necesitas por texto, foto, voz o video.</span>
+      </p>
       <div class="dash-hero__media-row">
         <button class="dash-hero__media-btn" type="button" onclick="window._dashShowCameraExplain()" aria-label="Cámara" id="dash-camera-btn">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
           <span class="dash-hero__media-txt">
             <span class="dash-hero__media-title" id="dash-camera-title">Agregar fotos</span>
-            <span class="dash-hero__media-sub" id="dash-camera-sub">Toma o sube</span>
           </span>
         </button>
         <button class="dash-hero__media-btn" type="button" onclick="window._dashShowMicExplain()" aria-label="Micrófono" id="dash-mic-btn">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
           <span class="dash-hero__media-txt">
             <span class="dash-hero__media-title" id="dash-mic-title">Nota de voz</span>
-            <span class="dash-hero__media-sub" id="dash-mic-sub">Dilo en voz alta</span>
           </span>
         </button>
         <button class="dash-hero__media-btn" type="button" onclick="window._dashShowVideoExplain()" aria-label="Video" id="dash-video-btn">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
           <span class="dash-hero__media-txt">
             <span class="dash-hero__media-title" id="dash-video-title">Grabar un video</span>
-            <span class="dash-hero__media-sub" id="dash-video-sub">Muestra el problema</span>
           </span>
         </button>
       </div>
+
+      <!-- Inline media capture (mic / video / photos) — rendered by the hero capture engine -->
+      <div class="dash-capture" id="dash-capture" hidden></div>
     </div>
 
     <!-- RIGHT — Browse categories -->
     <div class="dash-hero__right">
-      <h2 class="dash-hero__browse-title" id="dash-browse-title">O explora</h2>
+      <a class="dash-hero__browse-title" id="dash-browse-title" href="/browse.html">O explora</a>
       <div class="dash-cats-grid" id="dash-cats-grid"></div>
     </div>
 
@@ -135,7 +141,7 @@
     <h2 class="servi-tour__title" id="servi-tour-title"></h2>
     <p class="servi-tour__body" id="servi-tour-body"></p>
     <div class="servi-tour__example" id="servi-tour-example-wrap" hidden>
-      <button class="servi-tour__example-btn" type="button" id="servi-tour-example"></button>
+      <button type="button" id="servi-tour-example"></button>
     </div>
     <div class="servi-tour__rail" aria-hidden="true"></div>
     <div class="servi-tour__actions">
@@ -193,7 +199,9 @@
 <section id="testimonials" class="section">
   <div class="container">
     <h2 class="heading-lg" data-i18n="testimonials.title" style="margin-bottom:48px" data-reveal>Nuestros clientes</h2>
-    <div class="grid-3" id="testimonials-grid" style="gap:20px" data-reveal></div>
+    <div class="testimonials-carousel" data-reveal>
+      <div class="grid-3 testimonials-carousel__track" id="testimonials-grid" style="gap:20px"></div>
+    </div>
   </div>
 </section>
 
@@ -338,7 +346,12 @@
     opts = opts || {};
     const url = new URL('/smart-request.html', window.location.origin);
     if (opts.mode) url.searchParams.set('mode', opts.mode);
-    if (opts.text) url.searchParams.set('text', String(opts.text));
+    if (opts.text) {
+      const text = String(opts.text);
+      const detectedLang = typeof window.applyRequestLanguage === 'function' ? window.applyRequestLanguage(text) : null;
+      url.searchParams.set('text', text);
+      url.searchParams.set('lang', detectedLang || (window.__lang === 'en' ? 'en' : 'es'));
+    }
     url.searchParams.set('return', window.location.pathname + window.location.search + window.location.hash);
     window.location.href = url.toString();
   };
@@ -471,11 +484,17 @@
   let dashPlaceholderIndex = 0;
   let dashPlaceholderBound = false;
 
+  const dashPlaceholderIntro = {
+    es: 'Cuéntanos qué necesitas…',
+    en: 'Tell us what you need…',
+  };
+
   function getDashPlaceholderExamples() {
     const dh = t().dashHero || {};
     const examples = Array.isArray(dh.placeholderExamples) ? dh.placeholderExamples.filter(Boolean) : [];
-    if (examples.length) return examples;
-    return dashPlaceholderFallbacks[getLocale()] || dashPlaceholderFallbacks.es;
+    const rotating = examples.length ? examples : (dashPlaceholderFallbacks[getLocale()] || dashPlaceholderFallbacks.es);
+    const intro = dashPlaceholderIntro[getLocale()] || dashPlaceholderIntro.es;
+    return [intro, ...rotating];
   }
 
   function stopDashPlaceholderRotation() {
@@ -524,6 +543,9 @@
         stopDashPlaceholderRotation();
         ta.placeholder = '';
       }
+      if (typeof window.applyRequestLanguage === 'function') {
+        window.applyRequestLanguage(ta.value);
+      }
     });
     ta.addEventListener('blur', () => {
       if (!ta.value.trim()) startDashPlaceholderRotation();
@@ -538,29 +560,62 @@
   // ─── Address Change Modal ────────────────────────────────────
   const DASH_DEFAULT_ADDRESS = 'CDMX';
   const DASH_LEGACY_DEFAULT_ADDRESS = 'Santa Fe, CDMX';
+  const DASH_LOCATION_LABEL_MAX_LENGTH = 34;
 
   function normalizeDashDefaultAddress(address) {
     return String(address || '').trim() === DASH_LEGACY_DEFAULT_ADDRESS ? DASH_DEFAULT_ADDRESS : String(address || '').trim();
+  }
+
+  function formatDashLocationLabel(address) {
+    const full = normalizeDashDefaultAddress(address);
+    if (!full || full.length <= DASH_LOCATION_LABEL_MAX_LENGTH) return full;
+
+    const parts = full.split(',').map(part => part.trim()).filter(Boolean);
+    if (parts.length >= 3) {
+      const cityPart = parts.find(part => /\b(cdmx|ciudad de m[eé]xico|mexico city)\b/i.test(part)) || parts[parts.length - 1];
+      const neighborhoodPart = parts[1];
+      const neighborhoodCity = [neighborhoodPart, cityPart].filter(Boolean).join(', ');
+      if (neighborhoodCity.length <= DASH_LOCATION_LABEL_MAX_LENGTH) return neighborhoodCity;
+      if (neighborhoodPart.length <= DASH_LOCATION_LABEL_MAX_LENGTH) return neighborhoodPart;
+    }
+
+    if (parts.length >= 2) {
+      const firstAndLast = [parts[0], parts[parts.length - 1]].join(', ');
+      if (firstAndLast.length <= DASH_LOCATION_LABEL_MAX_LENGTH) return firstAndLast;
+      if (parts[0].length <= DASH_LOCATION_LABEL_MAX_LENGTH) return parts[0];
+    }
+
+    const truncated = full.slice(0, DASH_LOCATION_LABEL_MAX_LENGTH - 3).trimEnd();
+    return truncated + '...';
+  }
+
+  function setDashLocationLabel(address) {
+    const label = document.getElementById('dash-location-label');
+    if (!label) return;
+    const full = normalizeDashDefaultAddress(address) || DASH_DEFAULT_ADDRESS;
+    label.dataset.fullAddress = full;
+    label.title = full;
+    label.textContent = formatDashLocationLabel(full);
   }
 
   function getDashAddress() {
     const saved = localStorage.getItem('dash_hero_address');
     if (saved && saved.trim()) return normalizeDashDefaultAddress(saved);
     const label = document.getElementById('dash-location-label');
-    return normalizeDashDefaultAddress(label?.textContent);
+    return normalizeDashDefaultAddress(label?.dataset.fullAddress || label?.textContent);
   }
 
   function setDashAddress(newAddr) {
-    const label = document.getElementById('dash-location-label');
-    if (label) label.textContent = newAddr;
+    const fullAddress = normalizeDashDefaultAddress(newAddr);
+    setDashLocationLabel(fullAddress);
 
     const input = document.getElementById('address-input');
-    if (input) input.value = newAddr;
+    if (input) input.value = fullAddress;
 
     const smartAddressInput = document.getElementById('sr-addr');
-    if (smartAddressInput) smartAddressInput.value = newAddr;
+    if (smartAddressInput) smartAddressInput.value = fullAddress;
 
-    localStorage.setItem('dash_hero_address', newAddr);
+    localStorage.setItem('dash_hero_address', fullAddress);
   }
 
   function setAddressModalStatus(message, tone) {
@@ -776,10 +831,7 @@
   // Load saved address from localStorage on init
   function loadSavedAddress() {
     const saved = getDashAddress();
-    if (saved) {
-      const label = document.getElementById('dash-location-label');
-      if (label) label.textContent = saved;
-    }
+    if (saved) setDashLocationLabel(saved);
   }
 
   // ─── Render dynamic sections ─────────────────────────────────
@@ -819,25 +871,24 @@
     grid.innerHTML = cards + customCard;
 
     // Update static i18n labels in the dashboard hero
-    const locLabel = document.getElementById('dash-location-label');
-    if (locLabel) locLabel.textContent = getDashAddress() || dh.location || DASH_DEFAULT_ADDRESS;
+    setDashLocationLabel(getDashAddress() || dh.location || DASH_DEFAULT_ADDRESS);
     const changeBtn = document.getElementById('dash-change-address');
     if (changeBtn) changeBtn.textContent = dh.changeAddress || 'Cambiar dirección';
     const headline = document.getElementById('dash-headline');
     if (headline) headline.textContent = dh.headline || 'Solicita un servicio ahora';
-    const mediaLabel = document.getElementById('dash-media-label');
-    if (mediaLabel) mediaLabel.textContent = dh.mediaLabel || 'O envía tu solicitud por:';
+    const mediaLabelTitle = document.getElementById('dash-media-label-title');
+    const mediaLabelSubtitle = document.getElementById('dash-media-label-subtitle');
+    const fallbackMediaLabel = dh.mediaLabel || 'O envía tu solicitud por:';
+    if (mediaLabelTitle) mediaLabelTitle.textContent = dh.mediaTitle || fallbackMediaLabel;
+    if (mediaLabelSubtitle) mediaLabelSubtitle.textContent = dh.mediaSubtitle || '';
     const sr = tr.smartRequest || {};
     const setText = (id, value) => {
       const el = document.getElementById(id);
       if (el && value) el.textContent = value;
     };
     setText('dash-camera-title', sr.modePhotos || 'Agregar fotos');
-    setText('dash-camera-sub', sr.modePhotosSub || 'Toma o sube');
     setText('dash-mic-title', sr.modeVoice || 'Nota de voz');
-    setText('dash-mic-sub', sr.modeVoiceSub || 'Dilo en voz alta');
     setText('dash-video-title', sr.modeVideo || 'Grabar un video');
-    setText('dash-video-sub', sr.modeVideoSub || 'Muestra el problema');
     const cameraBtn = document.getElementById('dash-camera-btn');
     if (cameraBtn && sr.modePhotos) cameraBtn.setAttribute('aria-label', sr.modePhotos);
     const micBtn = document.getElementById('dash-mic-btn');
@@ -847,8 +898,9 @@
     const browseTitle = document.getElementById('dash-browse-title');
     if (browseTitle) browseTitle.textContent = dh.browseTitle || 'O explora';
     updatePlaceholders();
-    const tourLabel = document.getElementById('dash-tour-label');
-    if (tourLabel) tourLabel.textContent = getTourCopy().replay;
+    document.querySelectorAll('.dash-tour-label').forEach(label => {
+      label.textContent = getTourCopy().replay;
+    });
 
     renderPopularServices();
   }
@@ -1012,13 +1064,14 @@
       document.querySelector('.dash-hero__textarea-wrap'),
       document.getElementById('dash-media-label'),
       document.querySelector('.dash-hero__media-row'),
-      document.getElementById('dash-tour-btn'),
     ];
 
-    let dashAtts = [];   // photos attached to a TEXT request  [{url,uploading}]
+    let dashAtts = [];   // media attached to a TEXT request  [{kind,url,name,uploading}]
     let dashMedia = [];  // captured media for the active mode
+    let dashDetails = ''; // optional written details attached to media capture
     let dashRec = null;  // recorder transient {phase,elapsed,t0,timer}
     let capMode = null;  // 'voice' | 'video' | 'photos'
+    const VIDEO_MAX_SECONDS = 30;
 
     function fmtTime(s) { const m = Math.floor(s / 60), sec = Math.floor(s % 60); return m + ':' + String(sec).padStart(2, '0'); }
     function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
@@ -1047,9 +1100,6 @@
       inp.addEventListener('change', () => { cb(Array.from(inp.files || [])); inp.remove(); });
       inp.click();
     }
-    function shouldOpenNativeVideoCapture() {
-      return window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
-    }
     function uploadAttachment(file) {
       const API = (window.CONFIG && window.CONFIG.API_BASE) || '';
       const fd = new FormData(); fd.append('file', file);
@@ -1057,9 +1107,28 @@
         .then(r => { if (!r.ok) throw new Error('upload-' + r.status); return r.json(); });
     }
 
-    // ── waveform animation (real mic if available, else simulated) ──
-    let waveRAF = null, waveStream = null;
-    function startWave(id) {
+	    // ── waveform animation (real mic if available, else simulated) ──
+	    let waveRAF = null, waveStream = null;
+	    function startWaveFromStream(id, stream) {
+	      const wrap = document.getElementById(id); if (!wrap || !stream) return;
+	      const wb = wrap.querySelectorAll('span');
+	      try {
+	        waveStream = stream;
+	        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+	        const src = ctx.createMediaStreamSource(stream);
+	        const an = ctx.createAnalyser(); an.fftSize = 64; src.connect(an);
+	        const data = new Uint8Array(an.frequencyBinCount);
+	        (function loop() {
+	          an.getByteFrequencyData(data);
+	          for (let i = 0; i < wb.length; i++) {
+	            const v = data[Math.floor(i / wb.length * data.length)] / 255;
+	            wb[i].style.transform = 'scaleY(' + Math.max(0.12, v) + ')';
+	          }
+	          waveRAF = requestAnimationFrame(loop);
+	        })();
+	      } catch (_) { fakeWave(wb); }
+	    }
+	    function startWave(id) {
       const wrap = document.getElementById(id); if (!wrap) return;
       const wb = wrap.querySelectorAll('span');
       if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
@@ -1078,20 +1147,30 @@
 
     // ── open / close the inline capture surface ──
     function openCapture(mode) {
-      capMode = mode; dashMedia = []; dashRec = null;
+      const ta = document.getElementById('dash-textarea');
+      capMode = mode; dashMedia = []; dashRec = null; dashDetails = ta ? ta.value.trim() : '';
       composeEls().forEach(el => { if (el) el.hidden = true; });
       const c = capEl(); if (c) c.hidden = false;
       renderCapture();
-    }
-    function closeCapture() {
-      stopWave(); if (dashRec && dashRec.timer) clearInterval(dashRec.timer);
-      dashRec = null; dashMedia = []; capMode = null;
+	    }
+	    function closeCapture() {
+	      clearVideoRec(true);
+	      stopWave();
+	      dashRec = null; dashMedia = []; capMode = null;
       const c = capEl(); if (c) { c.hidden = true; c.innerHTML = ''; }
       composeEls().forEach(el => { if (el) el.hidden = false; });
     }
 
     // ── handoff → review screen on /smart-request.html ──
     function goToReview(payload) {
+      const ta = document.getElementById('dash-textarea');
+      const text = (dashDetails && dashDetails.trim()) || (ta ? ta.value.trim() : '');
+      if (text) {
+        payload.text = text;
+        payload.lang = (typeof window.applyRequestLanguage === 'function')
+          ? (window.applyRequestLanguage(text) || payload.lang)
+          : (payload.lang || (window.__lang === 'en' ? 'en' : 'es'));
+      }
       try { sessionStorage.setItem('sr_handoff', JSON.stringify(payload)); } catch (_) {}
       const url = new URL('/smart-request.html', window.location.origin);
       url.searchParams.set('return', window.location.pathname + window.location.search + window.location.hash);
@@ -1101,25 +1180,50 @@
 
     // ── render the active capture panel ──
     function backBar() { return '<button type="button" class="dash-cap__back" data-cap="back">' + IC.back + (isEs() ? 'Volver' : 'Back') + '</button>'; }
+    function capSubtitle() {
+      const sr = (window.__t && window.__t.smartRequest) || {};
+      const fallback = {
+        photos: isEs() ? 'Toma o sube' : 'Snap or upload',
+        voice: isEs() ? 'Dilo en voz alta' : 'Say it out loud',
+        video: isEs() ? 'Muestra el problema' : 'Show the problem',
+      };
+      const text = capMode === 'voice'
+        ? (sr.modeVoiceSub || fallback.voice)
+        : capMode === 'video'
+          ? (sr.modeVideoSub || fallback.video)
+          : (sr.modePhotosSub || fallback.photos);
+      return '<p class="dash-cap__subtitle">' + esc(text) + '</p>';
+    }
+    function captureHeader() { return backBar() + capSubtitle(); }
+    function detailsBlock() {
+      return '<label class="dash-cap__details">' +
+        '<span class="dash-cap__details-label">' + (isEs() ? 'Detalles adicionales' : 'Additional details') + '</span>' +
+        '<textarea class="dash-cap__details-input" id="dash-cap-details" rows="2" spellcheck="false" placeholder="' + (isEs() ? 'Agrega contexto, medidas o instrucciones especiales...' : 'Add context, measurements, or special instructions...') + '">' + esc(dashDetails) + '</textarea>' +
+      '</label>';
+    }
     function renderCapture() {
       const c = capEl(); if (!c) return;
       c.innerHTML = capMode === 'voice' ? voicePanel() : capMode === 'video' ? videoPanel() : photosPanel();
     }
 
-    function voicePanel() {
-      const r = dashRec || { phase: 'idle', elapsed: 0 };
-      if (r.phase === 'done') {
-        return backBar() +
-          '<div class="dash-cap__voice-done"><span class="dash-cap__play">' + IC.play + '</span>' +
-          '<div class="dash-wave dash-wave--static">' + staticBars() + '</div>' +
-          '<span class="dash-cap__dur">' + fmtTime(r.elapsed) + '</span></div>' +
-          '<div class="dash-cap__actions">' +
-            '<button type="button" class="dash-cap__btn dash-cap__btn--ghost" data-cap="voice-reset">' + IC.mic + (isEs() ? 'Repetir' : 'Re-record') + '</button>' +
-            '<button type="button" class="dash-cap__btn dash-cap__btn--accent" data-cap="voice-use">' + (isEs() ? 'Usar grabación' : 'Use recording') + IC.arrow + '</button>' +
-          '</div>';
+	    function voicePanel() {
+	      const r = dashRec || { phase: 'idle', elapsed: 0 };
+	      if (r.phase === 'done') {
+	        const item = dashMedia.find(it => it.kind === 'voice') || r.item || {};
+	        const uploading = !!item.uploading;
+	        const uploadFailed = !!item.uploadError;
+	        return captureHeader() +
+	          '<div class="dash-cap__voice-done"><span class="dash-cap__play">' + IC.play + '</span>' +
+	          '<div class="dash-wave dash-wave--static">' + staticBars() + '</div>' +
+	          '<span class="dash-cap__dur">' + fmtTime(r.elapsed) + '</span></div>' +
+            detailsBlock() +
+	          '<div class="dash-cap__actions">' +
+	            '<button type="button" class="dash-cap__btn dash-cap__btn--ghost" data-cap="voice-reset">' + IC.mic + (isEs() ? 'Repetir' : 'Re-record') + '</button>' +
+	            '<button type="button" class="dash-cap__btn dash-cap__btn--accent" data-cap="voice-use"' + (uploading || uploadFailed ? ' disabled' : '') + '>' + (uploadFailed ? (isEs() ? 'Error al subir' : 'Upload failed') : (uploading ? (isEs() ? 'Subiendo…' : 'Uploading…') : (isEs() ? 'Usar grabación' : 'Use recording'))) + IC.arrow + '</button>' +
+	          '</div>';
       }
       const rec = r.phase === 'recording';
-      return backBar() +
+      return captureHeader() +
         '<div class="dash-cap__voice">' +
           '<button type="button" class="dash-mic' + (rec ? ' rec' : '') + '" data-cap="mic-toggle" aria-label="' + (rec ? 'Stop' : 'Record') + '">' + (rec ? IC.stop : IC.mic) + '</button>' +
           (rec ? '<div class="dash-wave" id="dash-wave">' + bars() + '</div>' : '<div class="dash-wave dash-wave--idle">' + bars() + '</div>') +
@@ -1131,20 +1235,23 @@
 
     function videoPanel() {
       if (dashRec && dashRec.phase === 'vidrec') {
-        return backBar() + '<div class="dash-cap__video-rec">' +
-          '<span class="dash-cap__time dash-cap__time--lg"><i class="dash-cap__dot"></i><span id="dash-rec-elapsed">' + fmtTime(dashRec.elapsed) + '</span> / ' + fmtTime(90) + '</span>' +
+        return captureHeader() + '<div class="dash-cap__video-rec">' +
+          '<video class="dash-cap__video-preview" id="dash-video-preview" autoplay playsinline muted></video>' +
+          '<span class="dash-cap__time dash-cap__time--lg"><i class="dash-cap__dot"></i><span id="dash-rec-elapsed">' + fmtTime(dashRec.elapsed) + '</span> / ' + fmtTime(VIDEO_MAX_SECONDS) + '</span>' +
           '<p class="dash-cap__hint">' + (isEs() ? 'Graba el problema' : 'Film the problem') + '</p>' +
           '<div class="dash-cap__actions"><button type="button" class="dash-cap__btn dash-cap__btn--accent" data-cap="vid-stop">' + IC.stop + (isEs() ? 'Detener' : 'Stop') + '</button></div></div>';
       }
       if (dashMedia.length) {
         const it = dashMedia[0];
-        return backBar() +
+        return captureHeader() +
+          '<video class="dash-cap__video-playback" controls playsinline preload="metadata" src="' + esc(it.previewUrl || it.url || '') + '"></video>' +
           '<div class="dash-cap__media-chip' + (it.uploading ? ' uploading' : '') + '">' + IC.video +
             '<span>' + (it.name ? esc(it.name) : (isEs() ? 'Video listo' : 'Video ready')) + (it.dur ? ' · ' + fmtTime(it.dur) : '') + '</span>' +
             '<button type="button" class="dash-cap__chip-x" data-cap="media-clear">' + IC.x + '</button></div>' +
+          detailsBlock() +
           '<div class="dash-cap__actions"><button type="button" class="dash-cap__btn dash-cap__btn--accent" data-cap="media-use">' + (isEs() ? 'Continuar' : 'Continue') + IC.arrow + '</button></div>';
       }
-      return backBar() + '<div class="dash-cap__drop"><div class="dash-cap__drop-ic">' + IC.video + '</div>' +
+      return captureHeader() + '<div class="dash-cap__drop"><div class="dash-cap__drop-ic">' + IC.video + '</div>' +
         '<p class="dash-cap__drop-title">' + (isEs() ? 'Sube o graba un video' : 'Upload or record a video') + '</p>' +
         '<div class="dash-cap__drop-btns">' +
           '<button type="button" class="dash-cap__btn dash-cap__btn--secondary" data-cap="vid-upload">' + IC.upload + (isEs() ? 'Subir video' : 'Upload video') + '</button>' +
@@ -1157,41 +1264,165 @@
           '<div class="dash-thumb' + (it.uploading ? ' uploading' : '') + '">' + (it.url ? '<img src="' + it.url + '" alt="">' : IC.cam) +
           '<button type="button" class="dash-thumb__x" data-cap="media-remove:' + i + '">' + IC.x + '</button></div>').join('');
         const add = dashMedia.length < 5 ? '<button type="button" class="dash-thumb dash-thumb--add" data-cap="photos-add">' + IC.plus + '</button>' : '';
-        return backBar() + '<div class="dash-thumbs">' + thumbs + add + '</div>' +
+        return captureHeader() + '<div class="dash-thumbs">' + thumbs + add + '</div>' +
+          detailsBlock() +
           '<div class="dash-cap__actions"><button type="button" class="dash-cap__btn dash-cap__btn--accent" data-cap="media-use">' +
           (isEs() ? 'Continuar (' + dashMedia.length + ')' : 'Continue (' + dashMedia.length + ')') + IC.arrow + '</button></div>';
       }
-      return backBar() + '<div class="dash-cap__drop"><div class="dash-cap__drop-ic">' + IC.cam + '</div>' +
+      return captureHeader() + '<div class="dash-cap__drop"><div class="dash-cap__drop-ic">' + IC.cam + '</div>' +
         '<p class="dash-cap__drop-title">' + (isEs() ? 'Agrega fotos del problema' : 'Add photos of the problem') + '</p>' +
-        '<div class="dash-cap__drop-btns"><button type="button" class="dash-cap__btn dash-cap__btn--secondary" data-cap="photos-add">' + IC.upload + (isEs() ? 'Elegir fotos' : 'Choose photos') + '</button></div></div>';
+        '<div class="dash-cap__drop-btns">' +
+          '<button type="button" class="dash-cap__btn dash-cap__btn--secondary" data-cap="photos-capture">' + IC.cam + (isEs() ? 'Tomar foto' : 'Take photo') + '</button>' +
+          '<button type="button" class="dash-cap__btn dash-cap__btn--secondary" data-cap="photos-add">' + IC.upload + (isEs() ? 'Elegir fotos' : 'Choose photos') + '</button>' +
+        '</div></div>';
     }
 
-    // ── recorders ──
-    function startVoice() {
-      dashRec = { phase: 'recording', elapsed: 0, t0: Date.now() };
-      renderCapture();
-      dashRec.timer = setInterval(() => {
-        dashRec.elapsed = (Date.now() - dashRec.t0) / 1000;
-        const el = document.getElementById('dash-rec-elapsed'); if (el) el.textContent = fmtTime(dashRec.elapsed);
-        if (dashRec.elapsed >= 60) finishVoice();
-      }, 100);
-      startWave('dash-wave');
+	    // ── recorders ──
+	    function audioMimeType() {
+	      if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return '';
+	      const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'];
+	      return types.find(t => MediaRecorder.isTypeSupported(t)) || '';
+	    }
+	    function startVoice() {
+	      function beginFallback() {
+	        dashRec = { phase: 'recording', elapsed: 0, t0: Date.now(), noRecorder: true };
+	        renderCapture();
+	        dashRec.timer = setInterval(() => {
+	          dashRec.elapsed = (Date.now() - dashRec.t0) / 1000;
+	          const el = document.getElementById('dash-rec-elapsed'); if (el) el.textContent = fmtTime(dashRec.elapsed);
+	          if (dashRec.elapsed >= 60) finishVoice();
+	        }, 100);
+	        startWave('dash-wave');
+	      }
+	      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
+	        beginFallback();
+	        return;
+	      }
+	      navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+	        const chunks = [];
+	        const mimeType = audioMimeType();
+	        const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+	        const rec = { phase: 'recording', elapsed: 0, t0: Date.now(), stream, recorder, chunks };
+	        dashRec = rec;
+	        renderCapture();
+	        rec.timer = setInterval(() => {
+	          rec.elapsed = (Date.now() - rec.t0) / 1000;
+	          const el = document.getElementById('dash-rec-elapsed'); if (el) el.textContent = fmtTime(rec.elapsed);
+	          if (rec.elapsed >= 60) finishVoice();
+	        }, 100);
+	        startWaveFromStream('dash-wave', stream);
+	        recorder.addEventListener('dataavailable', e => {
+	          if (e.data && e.data.size) chunks.push(e.data);
+	        });
+	        recorder.addEventListener('stop', () => {
+	          stream.getTracks().forEach(t => t.stop());
+	          if (rec.discard) return;
+	          const type = recorder.mimeType || mimeType || 'audio/webm';
+	          const blob = new Blob(chunks, { type });
+	          const d = Math.max(1, Math.round(rec.elapsed || ((Date.now() - rec.t0) / 1000)));
+	          const file = typeof File === 'function'
+	            ? new File([blob], 'servi-voice-note.webm', { type })
+	            : blob;
+	          const previewUrl = URL.createObjectURL(blob);
+	          const item = { kind: 'voice', url: previewUrl, previewUrl, name: 'Voice note', dur: d, uploading: true };
+	          dashMedia = [item];
+	          dashRec = { phase: 'done', elapsed: d, item };
+	          renderCapture();
+	          uploadAttachment(file).then(data => { item.url = data.url; item.uploading = false; renderCapture(); })
+	            .catch(() => { item.uploading = false; item.uploadError = true; renderCapture(); });
+	        });
+	        recorder.start(250);
+	      }).catch(() => beginFallback());
+	    }
+	    function finishVoice() {
+	      if (!dashRec) return;
+	      const rec = dashRec;
+	      rec.elapsed = (Date.now() - rec.t0) / 1000;
+	      clearInterval(rec.timer);
+	      if (rec.recorder && rec.recorder.state !== 'inactive') {
+	        if (waveRAF) cancelAnimationFrame(waveRAF);
+	        waveRAF = null; waveStream = null;
+	        rec.recorder.stop();
+	        return;
+	      }
+	      stopWave();
+	      rec.phase = 'done';
+	      renderCapture();
+	    }
+    function videoMimeType() {
+      if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return '';
+      const types = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
+      return types.find(t => MediaRecorder.isTypeSupported(t)) || '';
     }
-    function finishVoice() { if (!dashRec) return; clearInterval(dashRec.timer); stopWave(); dashRec.phase = 'done'; renderCapture(); }
+    function attachVideoPreview(stream) {
+      const video = document.getElementById('dash-video-preview');
+      if (!video) return;
+      video.srcObject = stream;
+      video.play().catch(() => {});
+    }
+    function clearVideoRec(discard) {
+      if (!dashRec) return;
+      clearInterval(dashRec.timer);
+      clearTimeout(dashRec.limitTimer);
+      if (discard) dashRec.discard = true;
+      if (dashRec.recorder && dashRec.recorder.state !== 'inactive') dashRec.recorder.stop();
+      else if (dashRec.stream) dashRec.stream.getTracks().forEach(t => t.stop());
+    }
     function startVid() {
-      dashRec = { phase: 'vidrec', elapsed: 0, t0: Date.now() };
-      renderCapture();
-      dashRec.timer = setInterval(() => {
-        dashRec.elapsed = (Date.now() - dashRec.t0) / 1000;
-        const el = document.getElementById('dash-rec-elapsed'); if (el) el.textContent = fmtTime(dashRec.elapsed);
-        if (dashRec.elapsed >= 90) stopVid();
-      }, 100);
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
+        pickVideo(true);
+        return;
+      }
+      navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' } },
+        audio: true
+      }).then(stream => {
+        const chunks = [];
+        const mimeType = videoMimeType();
+        const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+        const rec = { phase: 'vidrec', elapsed: 0, t0: Date.now(), stream, recorder, chunks };
+        dashRec = rec;
+        renderCapture();
+        attachVideoPreview(stream);
+        rec.timer = setInterval(() => {
+          rec.elapsed = (Date.now() - rec.t0) / 1000;
+          const el = document.getElementById('dash-rec-elapsed'); if (el) el.textContent = fmtTime(rec.elapsed);
+          if (rec.elapsed >= VIDEO_MAX_SECONDS) stopVid();
+        }, 100);
+        recorder.addEventListener('dataavailable', e => {
+          if (e.data && e.data.size) chunks.push(e.data);
+        });
+        recorder.addEventListener('stop', () => {
+          stream.getTracks().forEach(t => t.stop());
+          if (rec.discard) return;
+          const type = recorder.mimeType || mimeType || 'video/webm';
+          const blob = new Blob(chunks, { type });
+          const d = Math.min(VIDEO_MAX_SECONDS, Math.max(1, Math.round(rec.elapsed || ((Date.now() - rec.t0) / 1000))));
+          const file = typeof File === 'function'
+            ? new File([blob], 'servi-request-video.webm', { type })
+            : blob;
+          const previewUrl = URL.createObjectURL(blob);
+          const item = { kind: 'video', url: previewUrl, previewUrl, name: 'Recorded video', dur: d, uploading: true };
+          if (dashRec === rec) dashRec = null;
+          dashMedia = [item];
+          renderCapture();
+          uploadAttachment(file).then(data => { item.url = data.url; item.uploading = false; renderCapture(); })
+            .catch(() => { item.uploading = false; renderCapture(); });
+        });
+        recorder.start(250);
+      }).catch(() => {
+        pickVideo(true);
+      });
     }
-    function stopVid() { if (!dashRec) return; clearInterval(dashRec.timer); const d = Math.max(1, Math.round(dashRec.elapsed)); dashRec = null; dashMedia = [{ kind: 'video', sample: true, dur: d }]; renderCapture(); }
+    function stopVid() {
+      if (!dashRec || dashRec.phase !== 'vidrec') return;
+      dashRec.elapsed = (Date.now() - dashRec.t0) / 1000;
+      clearVideoRec(false);
+    }
 
     // ── pickers ──
-    function pickPhotos() {
-      pickFiles('image/*', true, 'environment', files => {
+    function pickPhotos(capture) {
+      pickFiles('image/*', !capture, capture ? 'environment' : null, files => {
         files.slice(0, 5 - dashMedia.length).forEach(f => {
           const item = { kind: 'photo', url: URL.createObjectURL(f), uploading: true };
           dashMedia.push(item);
@@ -1205,7 +1436,8 @@
       pickFiles('video/*', false, capture ? 'environment' : null, files => {
         if (!files.length) return;
         const f = files[0];
-        const item = { kind: 'video', url: URL.createObjectURL(f), name: f.name, uploading: true };
+        const previewUrl = URL.createObjectURL(f);
+        const item = { kind: 'video', url: previewUrl, previewUrl, name: f.name, uploading: true };
         dashMedia = [item]; renderCapture();
         uploadAttachment(f).then(d => { item.url = d.url; item.uploading = false; renderCapture(); })
           .catch(() => { item.uploading = false; renderCapture(); });
@@ -1218,11 +1450,14 @@
       if (!dashAtts.length) { el.hidden = true; el.innerHTML = ''; return; }
       el.hidden = false;
       el.innerHTML = dashAtts.map((a, i) =>
-        '<div class="dash-att' + (a.uploading ? ' uploading' : '') + '">' + (a.url ? '<img src="' + a.url + '" alt="">' : IC.cam) +
+        '<div class="dash-att' + (a.uploading ? ' uploading' : '') + '">' + (a.kind === 'video' ? IC.video : (a.url ? '<img src="' + a.url + '" alt="">' : IC.cam)) +
         '<button type="button" class="dash-att__x" data-att-remove="' + i + '">' + IC.x + '</button></div>').join('');
     }
 
     // ── click delegation for capture + attach controls ──
+    document.addEventListener('input', e => {
+      if (e.target && e.target.id === 'dash-cap-details') dashDetails = e.target.value;
+    });
     document.addEventListener('click', e => {
       const rm = e.target.closest('[data-att-remove]');
       if (rm) { dashAtts.splice(+rm.getAttribute('data-att-remove'), 1); renderAtts(); return; }
@@ -1231,9 +1466,13 @@
       switch (cmd) {
         case 'back': closeCapture(); break;
         case 'mic-toggle': (dashRec && dashRec.phase === 'recording') ? finishVoice() : startVoice(); break;
-        case 'voice-reset': dashRec = null; renderCapture(); break;
-        case 'voice-use': goToReview({ mode: 'voice', media: [{ kind: 'voice', duration: dashRec ? dashRec.elapsed : 0 }] }); break;
-        case 'photos-add': pickPhotos(); break;
+	        case 'voice-reset': clearVideoRec(true); stopWave(); dashRec = null; dashMedia = []; renderCapture(); break;
+	        case 'voice-use':
+	          if (dashMedia.some(m => m.uploading)) return;
+	          goToReview({ mode: 'voice', media: dashMedia.map(cleanMedia) });
+	          break;
+        case 'photos-capture': pickPhotos(true); break;
+        case 'photos-add': pickPhotos(false); break;
         case 'media-remove': dashMedia.splice(+arg, 1); renderCapture(); break;
         case 'media-clear': dashMedia = []; renderCapture(); break;
         case 'media-use':
@@ -1241,17 +1480,18 @@
           goToReview({ mode: capMode, media: dashMedia.map(cleanMedia) });
           break;
         case 'vid-upload': pickVideo(false); break;
-        case 'vid-record': pickVideo(true); break;
+        case 'vid-record': startVid(); break;
         case 'vid-stop': stopVid(); break;
       }
     });
 
     // ════════════════════════════ HERO ENTRY POINTS ════════════════════════
     // Attach files to the typed description (stays on index.html).
-    window._dashShowAttachMenu = function () {
-      pickFiles('image/*', true, 'environment', files => {
+    window._dashShowAttachMenu = function (kind) {
+      const isVideo = kind === 'video';
+      pickFiles(isVideo ? 'video/*' : 'image/*', !isVideo, isVideo ? null : 'environment', files => {
         files.slice(0, 4 - dashAtts.length).forEach(f => {
-          const item = { url: URL.createObjectURL(f), uploading: true };
+          const item = { kind: isVideo ? 'video' : 'photo', url: URL.createObjectURL(f), name: f.name, uploading: true };
           dashAtts.push(item);
           uploadAttachment(f).then(d => { item.url = d.url; item.uploading = false; renderAtts(); })
             .catch(() => { const i = dashAtts.indexOf(item); if (i > -1) dashAtts.splice(i, 1); renderAtts(); });
@@ -1265,7 +1505,6 @@
     window._dashShowMicExplain   = function () { openCapture('voice'); };
     window._dashShowVideoExplain = function () {
       openCapture('video');
-      if (shouldOpenNativeVideoCapture()) pickVideo(true);
     };
 
     // Send the typed request → review screen, carrying any attached files.
@@ -1273,8 +1512,10 @@
       const ta = document.getElementById('dash-textarea');
       const text = ta ? ta.value.trim() : '';
       if (!text) { if (ta) ta.focus(); return; }
-      const payload = { mode: 'text', text };
-      const atts = dashAtts.map(a => ({ url: a.url })).filter(a => a.url);
+      if (dashAtts.some(a => a.uploading)) return;
+      const detectedLang = typeof window.applyRequestLanguage === 'function' ? window.applyRequestLanguage(text) : null;
+      const payload = { mode: 'text', text, lang: detectedLang || (window.__lang === 'en' ? 'en' : 'es') };
+      const atts = dashAtts.map(a => ({ kind: a.kind, url: a.url, name: a.name })).filter(a => a.url);
       if (atts.length) payload.atts = atts;
       goToReview(payload);
     };
@@ -1671,24 +1912,15 @@
       { num: '2', title: resolve('how.s2t'), desc: resolve('how.s2d') },
       { num: '3', title: resolve('how.s3t'), desc: resolve('how.s3d') },
     ];
+    const tourTrigger = `<button class="landing-step__tour-link" type="button" onclick="window._serviTourStart && window._serviTourStart({ force: true })">${getTourCopy().replay}</button>`;
     grid.innerHTML = `
-      <div class="landing-steps">${steps.map(s => `
+      <div class="landing-steps">${steps.map((s, index) => `
       <div class="landing-step">
         <div class="step-num-large">${s.num}</div>
         <div class="heading-sm" style="margin:16px 0 8px">${s.title}</div>
-        <div class="text-sm">${s.desc}</div>
+        <div class="text-sm">${s.desc}${index === 0 ? ' ' + tourTrigger : ''}</div>
       </div>
     `).join('')}</div>
-      <div class="how-tour-action">
-        <button class="dash-hero__tour-btn" type="button" onclick="window._serviTourStart && window._serviTourStart({ force: true })" id="dash-tour-btn">
-          <span class="dash-hero__tour-dot" aria-hidden="true">
-            <svg viewBox="0 0 18 18" fill="none" aria-hidden="true">
-              <path d="M7 5.5v7l5-3.5-5-3.5Z" fill="currentColor"/>
-            </svg>
-          </span>
-          <span id="dash-tour-label">${getTourCopy().replay}</span>
-        </button>
-      </div>
     `;
   }
 
@@ -1708,8 +1940,8 @@
     const grid = document.getElementById('testimonials-grid');
     if (!grid) return;
     const items = t().testimonials.items;
-    grid.innerHTML = items.map(item => `
-      <div class="testimonial-card">
+    const renderCard = (item, isClone) => `
+      <div class="testimonial-card${isClone ? ' testimonial-card--clone' : ''}"${isClone ? ' aria-hidden="true"' : ''}>
         <div class="quote-mark">&ldquo;</div>
         <p class="text-sm" style="color:var(--color-text-secondary);margin-bottom:20px">${item.text}</p>
         <div style="display:flex;align-items:center;gap:12px">
@@ -1717,7 +1949,8 @@
           <div style="font-weight:600;font-size:14px">${item.author}</div>
         </div>
       </div>
-    `).join('');
+    `;
+    grid.innerHTML = items.map(item => renderCard(item, false)).join('') + items.map(item => renderCard(item, true)).join('');
   }
 
   function renderAll() {

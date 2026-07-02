@@ -148,6 +148,77 @@
     var m = MEXICO_ADDRESS_OPTIONS.find(function (i) { return norm(i.state) === n; });
     return m ? m.state : value;
   }
+  function knownState(value) {
+    var n = norm(normalizeState(value));
+    var m = MEXICO_ADDRESS_OPTIONS.find(function (i) { return norm(i.state) === n; });
+    return m ? m.state : '';
+  }
+  function knownCity(value) {
+    var n = norm(value);
+    if (!n) return '';
+    if (n === 'cdmx' || n === 'ciudad de mexico' || n === 'mexico city') return 'Ciudad de México';
+    for (var i = 0; i < MEXICO_ADDRESS_OPTIONS.length; i += 1) {
+      var city = MEXICO_ADDRESS_OPTIONS[i].cities.find(function (c) { return norm(c) === n; });
+      if (city) return city;
+    }
+    return '';
+  }
+  function looksLikeStreet(value) {
+    var n = norm(value);
+    return /\d/.test(value) || /\b(calle|callejon|av|avenida|paseo|boulevard|blvd|cerrada|camino|carretera|eje|privada|circuito|calz|calzada)\b/.test(n);
+  }
+  function parseDisplayAddress(address) {
+    var raw = String(address || '').trim();
+    var out = { address_type: 'house' };
+    if (!raw) return out;
+
+    var parts = raw.split(/[,\n]+/).map(function (part) { return part.trim(); }).filter(Boolean);
+    if (parts.length > 1 && /^(mexico|méxico|mx)$/i.test(parts[parts.length - 1])) parts.pop();
+
+    parts = parts.map(function (part) {
+      var postal = part.match(/\b\d{5}\b/);
+      if (postal && !out.postal_code) out.postal_code = postal[0];
+      return part.replace(/\b\d{5}\b/g, '').trim();
+    }).filter(Boolean);
+    if (!parts.length) return out;
+
+    var consumed = parts.map(function () { return false; });
+    for (var i = parts.length - 1; i >= 0; i -= 1) {
+      var state = knownState(parts[i]);
+      if (state) {
+        if (!out.state) out.state = state;
+        if (state === 'Ciudad de México' && !out.city) out.city = 'Ciudad de México';
+        if (out.state === state) {
+          consumed[i] = true;
+          continue;
+        }
+      }
+      var city = knownCity(parts[i]);
+      if (city) {
+        if (!out.city) out.city = city;
+        if (out.city === city) consumed[i] = true;
+      }
+    }
+
+    var remaining = parts.filter(function (_, index) { return !consumed[index]; });
+    if (!remaining.length) return out;
+
+    if (looksLikeStreet(remaining[0])) {
+      out.street = remaining[0];
+      if (remaining[1]) out.neighborhood = remaining[1];
+      if (remaining[2]) out.municipality = remaining[2];
+      return out;
+    }
+
+    if (remaining.length === 1 && !out.city && !out.state && !out.postal_code) {
+      out.street = remaining[0];
+      return out;
+    }
+
+    out.neighborhood = remaining[0];
+    if (remaining[1]) out.municipality = remaining[1];
+    return out;
+  }
 
   // ─── Scoped styles (injected once) ─────────────────────────────────────────
   function ensureStyles() {
@@ -581,6 +652,7 @@
     clear: clear,
     validate: validate,
     format: format,
+    parseDisplayAddress: parseDisplayAddress,
     geolocate: geolocate,
     rememberLastUsed: rememberLastUsed,
     getLastUsed: getLastUsed,

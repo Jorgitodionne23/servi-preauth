@@ -28,3 +28,14 @@ test('account-launched payment links return success CTA to My orders', async () 
   assert.match(successSource, /qs\.get\('from'\) === 'account'/);
   assert.match(successSource, /primaryActionEl\.href = '\/account\.html\?section=orders'/);
 });
+
+test('account order statuses separate requests, booked, and authorized presentation', async () => {
+  const accountSource = await readFile(new URL('../frontend/account.html', import.meta.url), 'utf8');
+
+  assert.match(accountSource, /stScheduled: 'Booked'/);
+  assert.match(accountSource, /case 'Scheduled':\s+return \{ label: t\.stScheduled,\s+cls: 'is-booked'/);
+  assert.match(accountSource, /return \{ label: t\.stRequested,\s+cls: 'is-request'/);
+  assert.match(accountSource, /\.order-status\.is-authorized \{ background: rgba\(31, 122, 58, 0\.13\); color: #1f7a3a; \}/);
+  assert.match(accountSource, /data-bucket="requests"/);
+  assert.match(accountSource, /function orderListBucket\(item\)/);
+});

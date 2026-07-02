@@ -71,7 +71,6 @@
             '<button type="button" class="sr-att__x" data-action="remove-att:' + i + '">' + I.x(12) + '</button></div>';
         }).join('') + '</div>' : '') +
         '<div class="sr-box__bar"><div class="sr-box__bar-left">' +
-          '<button type="button" class="sr-iconbtn sr-iconbtn--outline" data-action="attach-photos" aria-label="Attach photos">' + I.plus(18) + '</button>' +
           '<span class="sr-attach-hint">Attach photos (optional)</span></div>' +
           '<button type="button" class="sr-iconbtn ' + (S.text.trim() ? 'sr-iconbtn--accent' : 'sr-iconbtn--solid') + '" data-action="send-text" aria-label="Send"' + (S.text.trim() ? '' : ' disabled') + '>' + I.send(18) + '</button>' +
         '</div>';
@@ -158,15 +157,28 @@
   }
 
   // ════════════════════════════ BUILD ══════════════════════════════════════
+  function unableHTML(req) {
+    var isVoice = S.mode === 'voice';
+    var title = isVoice ? 'I could not decipher the voice note' : 'I could not identify the service';
+    var desc = req.summary || (isVoice
+      ? 'You can type details or send the note for SERVI to review.'
+      : 'You can type details or send the photos for SERVI to review.');
+    return '<div class="sr-understand sr-understand--media sr-fade-in"><div class="sr-understand__top">' +
+      '<span class="sr-media-badge">' + (isVoice ? I.mic(22) : I.camera(22)) + '</span><div class="sr-understand__head">' +
+      '<div class="sr-understand__eyebrow">' + I.spark(13) + 'Needs review</div>' +
+      '<div class="sr-understand__svc"><strong>' + title + '</strong></div></div></div>' +
+      '<p class="sr-understand__summary sr-understand__summary--plain">' + esc(desc) + '</p>' +
+      '<button type="button" class="sr-link" data-action="reset">' + I.edit(14) + 'Add details</button></div>';
+  }
+
   function understandingHTML() {
     var req = S.req;
-    var conf = Math.round((req.confidence || 0) * 100);
+    if (req.aiStatus === 'unclear' || req.adminReview) return unableHTML(req);
     var transcript = req.transcript ? '<div class="sr-transcript"><b>Transcribed</b>“' + esc(req.transcript) + '”</div>'
       : (req.caption ? '<div class="sr-transcript"><b>From your photos</b>' + esc(req.caption) + '</div>' : '');
     return '<div class="sr-understand sr-fade-in"><div class="sr-understand__top">' +
       '<span class="sr-understand__emoji">' + (req.emoji || '✨') + '</span><div class="sr-understand__head">' +
-      '<div class="sr-understand__eyebrow">' + I.spark(13) + 'Here’s what I understood' +
-        badge(conf >= 70 ? 'accent' : 'pending', conf + '% match', 'sr-conf') + '</div>' +
+      '<div class="sr-understand__eyebrow">' + I.spark(13) + 'Here’s what I understood</div>' +
       '<div class="sr-understand__svc"><strong>' + esc(req.service || 'Custom request') + '</strong>' +
       '<span class="sr-understand__cat">' + esc(req.subLabel ? req.subLabel + ' · ' + req.categoryLabel : req.categoryLabel) + '</span></div></div></div>' +
       (req.summary ? '<p class="sr-understand__summary">“' + esc(req.summary) + '”</p>' : '') + transcript +
@@ -262,6 +274,7 @@
             (S.mode === 'photos' ? 'Looking at your photos…' : S.mode === 'voice' ? 'Listening to your note…' : S.mode === 'video' ? 'Processing your video…' : 'Reading your request…') +
             '</div><div class="sr-think__bars"><i></i><i></i><i></i></div></div></div>'
         : ((S.mode === 'video') ? mediaReceivedHTML()
+            : (S.req && S.req.aiStatus === 'unclear') ? unableHTML(S.req)
             : (S.mode === 'photos' && !S.req.service) ? mediaReceivedHTML()
             : understandingHTML()) + followupsHTML()) +
       (S.thinking ? '' : whenWhereHTML()) + '</div>';
@@ -454,6 +467,8 @@
     var desc = S.req.summary || S.text || '';
     if (details.length) desc += ' — ' + details.join(', ');
     if (S.req.transcript) desc = S.req.transcript + (details.length ? ' — ' + details.join(', ') : '');
+    var aiStatus = S.req.aiStatus || (S.req.adminReview ? 'manual_review' : 'understood');
+    var isUnderstood = aiStatus === 'understood';
     return {
       category: S.req.category || 'custom',
       description: desc,
@@ -468,11 +483,14 @@
       attachments: (S.atts.concat(S.media)).map(function (a) { return a.url; }).filter(Boolean),
       // ── additive SERVI Intelligence metadata (admin dispatch context) ──
       requestMode: S.mode,
-      matchedService: S.req.service || null,
-      matchedSubKey: S.req.subKey || null,
+      matchedService: isUnderstood ? (S.req.service || null) : null,
+      matchedSubKey: isUnderstood ? (S.req.subKey || null) : null,
       aiSummary: S.req.summary || null,
       aiConfidence: S.req.confidence || null,
       aiSource: S.req.source || null,
+      aiStatus: aiStatus,
+      aiReason: S.req.aiReason || null,
+      aiEvidence: Array.isArray(S.req.aiEvidence) ? S.req.aiEvidence : [],
       detailAnswers: S.answers,
     };
   }

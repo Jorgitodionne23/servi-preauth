@@ -106,7 +106,7 @@ const T = {
     dashHero: {
       location: "CDMX",
       changeAddress: "Cambiar dirección",
-      headline: "Solicita un servicio ahora",
+      headline: "Pide cualquier servicio para tu hogar",
       placeholder: "Describe lo que necesitas...",
       placeholderExamples: [
         "Necesito una limpieza profunda para un departamento de 2 recámaras...",
@@ -115,7 +115,9 @@ const T = {
         "Necesito mover un sofá grande este fin de semana...",
         "Busco masaje a domicilio para dos personas...",
       ],
-      mediaLabel: "O envía tu solicitud por:",
+      mediaTitle: "Cuéntanos qué necesitas por texto, foto, voz o video.",
+      mediaSubtitle: "SERVI encuentra y coordina al especialista por ti.",
+      mediaLabel: "Cuéntanos qué necesitas por texto, foto, voz o video. SERVI encuentra y coordina al especialista por ti.",
       sendLabel: "Enviar",
       browseTitle: "O explora",
       details: "Detalles",
@@ -178,6 +180,8 @@ const T = {
       back: "Volver",
       selectService: "Selecciona un servicio",
       requestThis: "Solicitar este servicio",
+      requestSubtitle: "Solicítalo y añade los detalles en el siguiente paso",
+      examplesLabel: "Por ejemplo",
     },
     servicePage: {
       priceLabel: "Precio a confirmar",
@@ -195,6 +199,7 @@ const T = {
       timeWhenever: "Cuando sea",
       addressLabel: "Dirección del servicio",
       addressPlaceholder: "Calle, número, colonia",
+      detailsQuestionsLabel: "Cuéntanos más (opcional)",
       detailsLabel: "Detalles adicionales (opcional)",
       detailsPlaceholderRepair: "Describe el problema con más detalle…",
       detailsPlaceholderCleaning: "¿Qué áreas necesitas limpiar?",
@@ -232,7 +237,11 @@ const T = {
       title: "¿Qué necesitas?",
       sub: "Descríbelo, muéstralo o dilo — SERVI entiende el resto y encuentra a tu especialista.",
       placeholder: "Describe lo que necesitas…  ej. “{ex}”",
-      attachHint: "Adjuntar fotos (opcional)",
+      attachHint: "Adjuntar foto o video (opcional)",
+      attachPhotos: "Adjuntar fotos",
+      attachVideo: "Adjuntar video",
+      additionalDetails: "Detalles adicionales",
+      additionalDetailsPlaceholder: "Agrega contexto, medidas, ubicación exacta o instrucciones especiales...",
       modesHead: "O solicita de otra forma",
       modeVideo: "Grabar un video",
       modeVideoSub: "Muestra el problema",
@@ -245,7 +254,9 @@ const T = {
       backToTyping: "Volver a escribir",
       reRecord: "Grabar de nuevo",
       useRecording: "Usar esta grabación",
-      voiceNote: "SERVI transcribirá y entenderá tu nota — solo te escribimos por WhatsApp si algo no queda claro.",
+      voiceNote: "Guardaremos tu nota de voz para revisión. Si quieres, agrega detalles escritos para ayudarnos a entenderla mejor.",
+      uploading: "Subiendo…",
+      uploadFailed: "Error al subir",
       tapToRecord: "Toca para grabar · hasta {limit}",
       photosTitle: "Toma o sube fotos del problema",
       videoTitle: "Graba o sube un video corto",
@@ -260,11 +271,18 @@ const T = {
       filmHint: "Describe lo que necesitas mientras grabas.",
       stopRecording: "Detener grabación",
       understood: "Esto entendí",
-      match: "{n}% coincidencia",
       customRequest: "Solicitud personalizada",
       transcribed: "Transcrito",
       fromPhotos: "De tus fotos",
       changeService: "¿No es eso? Cambiar servicio",
+      manualReview: "Revisión manual",
+      manualReviewSub: "No inventaremos una solicitud",
+      manualReviewTitle: "Lo revisaremos manualmente",
+      unableVoiceTitle: "No pude descifrar la nota de voz",
+      unableVoiceDesc: "Puedes escribir detalles o enviar la nota para que SERVI la revise.",
+      unablePhotosTitle: "No pude identificar el servicio",
+      unablePhotosDesc: "Puedes escribir detalles o enviar las fotos para que SERVI las revise.",
+      addDetails: "Agregar detalles",
       requestCaptured: "Solicitud recibida",
       photosReceived: "{n} foto{s} recibida{s}",
       photosReceivedDesc: "Tus fotos nos dicen lo que necesitamos. Las revisaremos y confirmaremos los detalles por WhatsApp.",
@@ -303,10 +321,13 @@ const T = {
       editRequest: "Editar solicitud",
       sendRequest: "Enviar solicitud",
       sending: "Enviando…",
+      confirmTitle: "Confirma tu solicitud",
+      confirmLead: "Revisa los detalles antes de enviarla.",
+      confirmSend: "Confirmar y enviar",
       fine: "No se te cobrará ahora. Confirmamos el precio antes de cualquier cosa.",
       thinkText: "Leyendo tu solicitud…",
       thinkPhotos: "Viendo tus fotos…",
-      thinkVoice: "Escuchando tu nota…",
+      thinkVoice: "Preparando tu nota…",
       thinkVideo: "Procesando tu video…",
       successTitle: "Solicitud enviada",
       successSub: "Te escribiremos por WhatsApp en breve para confirmar a tu especialista y el precio.",
@@ -855,7 +876,7 @@ const T = {
     dashHero: {
       location: "CDMX",
       changeAddress: "Change address",
-      headline: "Request a service now",
+      headline: "Request any service for your home",
       placeholder: "Describe what you need...",
       placeholderExamples: [
         "Deep clean for a 2-bedroom apartment this Saturday...",
@@ -864,9 +885,11 @@ const T = {
         "Move a large sofa this weekend...",
         "At-home massage for two people...",
       ],
-      mediaLabel: "Or send request through:",
+      mediaTitle: "Tell us what you need by text, photo, voice, or video.",
+      mediaSubtitle: "SERVI finds and coordinates the specialist for you.",
+      mediaLabel: "Tell us what you need by text, photo, voice, or video. SERVI finds and coordinates the specialist for you.",
       sendLabel: "Send",
-      browseTitle: "Or browse",
+      browseTitle: "Browse services",
       details: "Details",
       cantFind: "Can't find what you're looking for?",
       leaveItToUs: "Leave it to us",
@@ -927,6 +950,8 @@ const T = {
       back: "Back",
       selectService: "Select a service",
       requestThis: "Request this service",
+      requestSubtitle: "Request it and add the details in the next step",
+      examplesLabel: "For example",
     },
     servicePage: {
       priceLabel: "Price to be confirmed",
@@ -944,6 +969,7 @@ const T = {
       timeWhenever: "Whenever",
       addressLabel: "Service address",
       addressPlaceholder: "Street, number, neighborhood",
+      detailsQuestionsLabel: "Tell us more (optional)",
       detailsLabel: "Additional details (optional)",
       detailsPlaceholderRepair: "Describe the issue in more detail…",
       detailsPlaceholderCleaning: "Which areas need cleaning?",
@@ -981,7 +1007,11 @@ const T = {
       title: "What do you need done?",
       sub: "Describe it, show it, or say it — SERVI figures out the rest and finds your specialist.",
       placeholder: "Describe what you need…  e.g. “{ex}”",
-      attachHint: "Attach photos (optional)",
+      attachHint: "Attach photo or video (optional)",
+      attachPhotos: "Attach photos",
+      attachVideo: "Attach video",
+      additionalDetails: "Additional details",
+      additionalDetailsPlaceholder: "Add context, measurements, exact location, or special instructions...",
       modesHead: "Or request another way",
       modeVideo: "Record a video",
       modeVideoSub: "Show the problem",
@@ -994,7 +1024,9 @@ const T = {
       backToTyping: "Back to typing",
       reRecord: "Re-record",
       useRecording: "Use this recording",
-      voiceNote: "SERVI will transcribe and understand your note — we’ll only ping you on WhatsApp if something’s unclear.",
+      voiceNote: "We’ll save your voice note for review. Add written details if you want to help us understand it faster.",
+      uploading: "Uploading…",
+      uploadFailed: "Upload failed",
       tapToRecord: "Tap to record · up to {limit}",
       photosTitle: "Take or upload photos of the problem",
       videoTitle: "Record or upload a short video",
@@ -1009,11 +1041,18 @@ const T = {
       filmHint: "Describe what you need while you film it.",
       stopRecording: "Stop recording",
       understood: "Here’s what I understood",
-      match: "{n}% match",
       customRequest: "Custom request",
       transcribed: "Transcribed",
       fromPhotos: "From your photos",
       changeService: "Not quite? Change service",
+      manualReview: "Manual review",
+      manualReviewSub: "We will not invent a request",
+      manualReviewTitle: "We’ll review this manually",
+      unableVoiceTitle: "I could not decipher the voice note",
+      unableVoiceDesc: "You can type details or send the note for SERVI to review.",
+      unablePhotosTitle: "I could not identify the service",
+      unablePhotosDesc: "You can type details or send the photos for SERVI to review.",
+      addDetails: "Add details",
       requestCaptured: "Request captured",
       photosReceived: "{n} photo{s} received",
       photosReceivedDesc: "Your photos tell us what we need. We’ll review them and confirm any details on WhatsApp.",
@@ -1052,10 +1091,13 @@ const T = {
       editRequest: "Edit request",
       sendRequest: "Send request",
       sending: "Sending…",
+      confirmTitle: "Confirm your request",
+      confirmLead: "Review the details before you send.",
+      confirmSend: "Confirm & send",
       fine: "You won’t be charged now. We confirm the price before anything happens.",
       thinkText: "Reading your request…",
       thinkPhotos: "Looking at your photos…",
-      thinkVoice: "Listening to your note…",
+      thinkVoice: "Preparing your note…",
       thinkVideo: "Processing your video…",
       successTitle: "Request sent",
       successSub: "We’ll text you on WhatsApp shortly to confirm your specialist and the price.",
@@ -1511,6 +1553,77 @@ function setStoredLang(lang) {
   try { localStorage.setItem('servi-lang', lang); } catch {}
 }
 
+const REQUEST_LANG_SIGNALS = {
+  es: new Set([
+    'necesito', 'necesitamos', 'quiero', 'queremos', 'tengo', 'tenemos', 'busco', 'ocupo',
+    'arreglar', 'arreglen', 'reparar', 'reparen', 'instalar', 'montar', 'limpiar', 'mover',
+    'limpieza', 'profunda', 'fuga', 'gotea', 'gotera', 'plomero', 'plomeria', 'electricista',
+    'electrico', 'cerradura', 'llave', 'lavabo', 'fregadero', 'cocina', 'bano', 'baño',
+    'departamento', 'recamara', 'recamaras', 'habitación', 'habitacion', 'sala', 'pared',
+    'sofá', 'sofa', 'domicilio', 'servicio', 'hoy', 'mañana', 'manana', 'tarde', 'noche',
+    'debajo', 'encima', 'para', 'por', 'con', 'sin', 'una', 'uno', 'un', 'el', 'la', 'los', 'las',
+  ]),
+  en: new Set([
+    'need', 'needs', 'needed', 'want', 'looking', 'have', 'has', 'please', 'fix', 'repair',
+    'install', 'mount', 'clean', 'move', 'cleaning', 'deep', 'leak', 'leaking', 'dripping',
+    'plumber', 'plumbing', 'electrician', 'electrical', 'lock', 'key', 'sink', 'kitchen',
+    'bathroom', 'apartment', 'bedroom', 'bedrooms', 'room', 'living', 'wall', 'couch', 'sofa',
+    'home', 'service', 'today', 'tomorrow', 'afternoon', 'tonight', 'under', 'above', 'for',
+    'with', 'without', 'the', 'this', 'that', 'my', 'our',
+  ]),
+};
+
+const REQUEST_LANG_PHRASES = {
+  es: [
+    'necesito que', 'quiero que', 'tengo una', 'tengo un', 'me urge', 'a domicilio',
+    'por favor', 'hoy por la tarde', 'debajo del', 'en la cocina', 'en el baño',
+  ],
+  en: [
+    'i need', 'i want', 'looking for', 'please fix', 'at home', 'right now',
+    'this afternoon', 'under the', 'in the kitchen', 'in the bathroom',
+  ],
+};
+
+function detectRequestLanguage(text) {
+  const raw = String(text || '').trim();
+  if (!raw) return null;
+  const lower = raw.toLowerCase();
+  const tokens = lower.match(/[a-záéíóúüñ]+/g) || [];
+  if (tokens.join('').length < 8) return null;
+
+  const score = { es: 0, en: 0 };
+  if (/[¿¡ñáéíóúü]/i.test(raw)) score.es += 3;
+
+  tokens.forEach(token => {
+    if (REQUEST_LANG_SIGNALS.es.has(token)) score.es += token.length <= 3 ? 1 : 2;
+    if (REQUEST_LANG_SIGNALS.en.has(token)) score.en += token.length <= 3 ? 1 : 2;
+  });
+
+  REQUEST_LANG_PHRASES.es.forEach(phrase => { if (lower.includes(phrase)) score.es += 3; });
+  REQUEST_LANG_PHRASES.en.forEach(phrase => { if (lower.includes(phrase)) score.en += 3; });
+
+  const winner = score.es > score.en ? 'es' : score.en > score.es ? 'en' : null;
+  if (!winner) return null;
+  const loser = winner === 'es' ? 'en' : 'es';
+  const enoughSignal = tokens.length <= 3 ? score[winner] >= 4 : score[winner] >= 3;
+  return enoughSignal && (score[winner] - score[loser] >= 2) ? winner : null;
+}
+
+function applyRequestLanguage(text) {
+  const detected = detectRequestLanguage(text);
+  if (!detected) return null;
+  if (window.__lang !== detected) {
+    if (typeof window.setLang === 'function') setLang(detected);
+    else {
+      window.__lang = detected;
+      window.__t = T[detected];
+      setStoredLang(detected);
+      document.documentElement.lang = detected;
+    }
+  }
+  return detected;
+}
+
 // Global state — other scripts read window.__lang and window.__t
 window.__lang = getStoredLang();
 window.__t = T[window.__lang];
@@ -1548,6 +1661,8 @@ function setLang(lang) {
 
 window.setLang = setLang;
 window.T = T;
+window.detectRequestLanguage = detectRequestLanguage;
+window.applyRequestLanguage = applyRequestLanguage;
 
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => setLang(window.__lang));

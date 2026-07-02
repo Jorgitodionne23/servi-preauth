@@ -99,8 +99,8 @@
     plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>',
     hamburger: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>',
     close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>',
-    camera: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>',
-    mic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>',
+    camera: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>',
+    mic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>',
     video: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>',
     arrow: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>',
     chevron: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>',
@@ -244,6 +244,7 @@
               <textarea class="search-pill__label search-pill__input" id="spp-describe-input"
                 placeholder="${t.header.pillDescribe || 'Describe what you need'}" autocomplete="off"
                 spellcheck="false" rows="1" readonly></textarea>
+              <button type="button" class="spp-submit-btn search-pill__submit-btn" data-action="spp-submit" aria-label="${(window.__lang || 'es') === 'es' ? 'Enviar' : 'Submit'}">${ICON.arrow}</button>
             </label>
             <span class="search-pill__divider" aria-hidden="true"></span>
             <button type="button" class="search-pill__segment search-pill__segment--camera" data-segment="camera" aria-label="${t.header.pillCamera || 'Camera'}">
@@ -419,16 +420,16 @@
     return `<div class="spp-panel spp-panel--describe" data-panel="describe">${_describeInner()}</div>`;
   }
 
-  // Each booking method now owns its own pill segment + popover panel, so the
-  // describe toolbar keeps only the inline attach ("+") and the submit arrow.
+  // Each booking method now owns its own pill segment + popover panel.
   function _describeInner() {
     const lang = window.__lang || 'es';
-    const attachLabel = lang === 'es' ? 'Adjuntar foto' : 'Attach a photo';
     return `
       <div class="spp-toolbar">
-        <button type="button" class="spp-tool spp-tool--add" data-action="spp-attach" aria-label="${attachLabel}">${ICON.plus}</button>
+        <button type="button" class="spp-tool spp-tool--add" data-action="spp-attach-photos" aria-label="${lang === 'es' ? 'Adjuntar fotos' : 'Attach photos'}" title="${lang === 'es' ? 'Adjuntar fotos' : 'Attach photos'}">${ICON.camera}</button>
+        <button type="button" class="spp-tool spp-tool--add" data-action="spp-attach-video" aria-label="${lang === 'es' ? 'Adjuntar video' : 'Attach video'}" title="${lang === 'es' ? 'Adjuntar video' : 'Attach video'}">${ICON.video}</button>
         <button type="button" class="spp-submit-btn" data-action="spp-submit" aria-label="${lang === 'es' ? 'Enviar' : 'Submit'}">${ICON.arrow}</button>
       </div>
+      ${_textAttsHTML()}
     `;
   }
 
@@ -443,7 +444,7 @@
     const es = _isEs();
     return `
       <div class="spp-cam-choose">
-        <p class="spp-cam-choose__q">${es ? '¿Fotos o video?' : 'Photos or video?'}</p>
+        <p class="spp-cam-choose__q">${es ? 'Describe tu solicitud con una foto o video.' : 'Describe your request with a photo or video.'}</p>
         <div class="spp-cam-choices">
           <button type="button" class="spp-cam-choice" data-action="spp-cam-photos">
             <span class="spp-cam-choice__ic">${ICON.camera}</span>
@@ -472,6 +473,7 @@
   // record video without leaving the page. The captured media is handed to the
   // Smart Request review screen only on "Continue/Use" — never to open a tool.
   const _isEs = () => (window.__lang !== 'en');
+  const _CAP_VIDEO_MAX_SECONDS = 30;
   function _capFmt(s) { const m = Math.floor(s / 60), sec = Math.floor(s % 60); return m + ':' + String(sec).padStart(2, '0'); }
   function _capEsc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
   function _capBars() { return Array(28).fill('<span></span>').join(''); }
@@ -484,7 +486,6 @@
     inp.addEventListener('change', () => { cb(Array.from(inp.files || [])); inp.remove(); });
     inp.click();
   }
-  function _capShouldNativeVideo() { return window.matchMedia && window.matchMedia('(pointer: coarse)').matches; }
   function _capUpload(file) {
     const API = ((window.CONFIG && window.CONFIG.API_BASE) || '').replace(/\/+$/, '');
     const fd = new FormData(); fd.append('file', file);
@@ -493,22 +494,83 @@
   }
 
   // Waveform — real mic if the user grants it, else a simulated animation.
-  function _capStartWave(id) {
+  function _capStartWave(id, existingStream) {
     const wrap = document.getElementById(id); if (!wrap) return;
     const wb = wrap.querySelectorAll('span');
-    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-      navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
-        _capWaveStream = stream;
+    const bindStream = stream => {
+      try {
         const ctx = new (window.AudioContext || window.webkitAudioContext)();
         const src = ctx.createMediaStreamSource(stream);
         const an = ctx.createAnalyser(); an.fftSize = 64; src.connect(an);
         const data = new Uint8Array(an.frequencyBinCount);
         (function loop() { an.getByteFrequencyData(data); for (let i = 0; i < wb.length; i++) { const v = data[Math.floor(i / wb.length * data.length)] / 255; wb[i].style.transform = 'scaleY(' + Math.max(0.12, v) + ')'; } _capWaveRAF = requestAnimationFrame(loop); })();
+      } catch (_) { _capFakeWave(wb); }
+    };
+    if (existingStream) {
+      bindStream(existingStream);
+    } else if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+        _capWaveStream = stream;
+        bindStream(stream);
       }).catch(() => _capFakeWave(wb));
     } else { _capFakeWave(wb); }
   }
   function _capFakeWave(wb) { (function loop() { for (let i = 0; i < wb.length; i++) wb[i].style.transform = 'scaleY(' + (0.15 + Math.random() * 0.85).toFixed(2) + ')'; _capWaveRAF = requestAnimationFrame(() => setTimeout(loop, 90)); })(); }
   function _capStopWave() { if (_capWaveRAF) cancelAnimationFrame(_capWaveRAF); _capWaveRAF = null; if (_capWaveStream) { _capWaveStream.getTracks().forEach(t => t.stop()); _capWaveStream = null; } }
+  function _capClearVoice() {
+    if (!_capRec) return;
+    _capRec.discard = true;
+    if (_capRec.timer) clearInterval(_capRec.timer);
+    if (_capRec.recorder && _capRec.recorder.state !== 'inactive') {
+      try { _capRec.recorder.stop(); } catch (_) {}
+    }
+    if (_capRec.stream) _capRec.stream.getTracks().forEach(t => t.stop());
+    if (_capRec.audioUrl) URL.revokeObjectURL(_capRec.audioUrl);
+    _capRec = null;
+  }
+
+  function _capDetailsBlock() {
+    return '<label class="dash-cap__details">' +
+      '<span class="dash-cap__details-label">' + (_isEs() ? 'Detalles adicionales' : 'Additional details') + '</span>' +
+      '<textarea class="dash-cap__details-input" id="spp-cap-details" rows="2" spellcheck="false" placeholder="' + (_isEs() ? 'Agrega contexto, medidas o instrucciones especiales...' : 'Add context, measurements, or special instructions...') + '">' + _capEsc(state._capDetails || '') + '</textarea>' +
+    '</label>';
+  }
+
+  function _textAttsHTML() {
+    if (!_textAtts.length) return '';
+    return '<div class="spp-atts">' + _textAtts.map((a, i) => {
+      const media = a.kind === 'video'
+        ? '<span class="spp-att__icon">' + ICON.video + '</span>'
+        : (a.url ? '<img src="' + _capEsc(a.url) + '" alt="">' : '<span class="spp-att__icon">' + ICON.camera + '</span>');
+      return '<div class="spp-att' + (a.uploading ? ' uploading' : '') + '">' + media +
+        '<button type="button" class="spp-att__x" data-action="spp-att-remove:' + i + '" aria-label="' + (_isEs() ? 'Quitar adjunto' : 'Remove attachment') + '">' + ICON.close + '</button></div>';
+    }).join('') + '</div>';
+  }
+
+  function _renderDescribePanel() {
+    const popover = document.getElementById('search-pill-popover');
+    if (!popover) return;
+    const panel = popover.querySelector('.spp-panel--describe');
+    if (!panel) return;
+    panel.innerHTML = _describeInner();
+    _showActivePanel('describe');
+  }
+
+  function _pickTextAttachment(kind) {
+    const isVideo = kind === 'video';
+    const max = 4;
+    if (_textAtts.length >= max) return;
+    _capPickFiles(isVideo ? 'video/*' : 'image/*', !isVideo, isVideo ? null : 'environment', files => {
+      files.slice(0, max - _textAtts.length).forEach(file => {
+        const item = { kind: isVideo ? 'video' : 'photo', url: URL.createObjectURL(file), name: file.name, uploading: true };
+        _textAtts.push(item);
+        _capUpload(file).then(d => { item.url = d.url; item.uploading = false; _renderDescribePanel(); })
+          .catch(() => { const i = _textAtts.indexOf(item); if (i > -1) _textAtts.splice(i, 1); _renderDescribePanel(); });
+      });
+      _textAtts = _textAtts.slice(0, max);
+      _renderDescribePanel();
+    });
+  }
 
   // Panels reuse the .dash-cap__* design system (loaded globally in landing-theme.css).
   function _capBackBar() { return '<button type="button" class="dash-cap__back" data-action="sppcap-back">' + ICON.back + (_isEs() ? 'Volver' : 'Back') + '</button>'; }
@@ -518,17 +580,17 @@
   function _capVoicePanel() {
     const r = _capRec || { phase: 'idle', elapsed: 0 };
     if (r.phase === 'done') {
-      return _capBackBar() +
-        '<div class="dash-cap__voice-done"><span class="dash-cap__play">' + ICON.play + '</span>' +
+      return '<div class="dash-cap__voice-done"><button type="button" class="dash-cap__play" data-action="sppcap-voice-play" aria-label="' + (_isEs() ? 'Reproducir grabación' : 'Play recording') + '">' + ICON.play + '</button>' +
         '<div class="dash-wave dash-wave--static">' + _capStaticBars() + '</div>' +
         '<span class="dash-cap__dur">' + _capFmt(r.elapsed) + '</span></div>' +
+        _capDetailsBlock() +
         '<div class="dash-cap__actions">' +
           '<button type="button" class="dash-cap__btn dash-cap__btn--ghost" data-action="sppcap-voice-reset">' + ICON.mic + (_isEs() ? 'Repetir' : 'Re-record') + '</button>' +
           '<button type="button" class="dash-cap__btn dash-cap__btn--accent" data-action="sppcap-voice-use">' + (_isEs() ? 'Usar grabación' : 'Use recording') + ICON.arrow + '</button>' +
         '</div>';
     }
     const rec = r.phase === 'recording';
-    return _capBackBar() +
+    return '<p class="spp-voice-prompt">' + (_isEs() ? 'Describe tu solicitud con una nota de voz.' : 'Describe your request with a voice note.') + '</p>' +
       '<div class="dash-cap__voice">' +
         '<button type="button" class="dash-mic' + (rec ? ' rec' : '') + '" data-action="sppcap-mic-toggle" aria-label="' + (rec ? 'Stop' : 'Record') + '">' + (rec ? ICON.stop : ICON.mic) + '</button>' +
         (rec ? '<div class="dash-wave" id="spp-wave">' + _capBars() + '</div>' : '<div class="dash-wave dash-wave--idle">' + _capBars() + '</div>') +
@@ -538,12 +600,21 @@
       '</div>';
   }
   function _capVideoPanel() {
+    if (_capRec && _capRec.phase === 'vidrec') {
+      return _capBackBar() + '<div class="dash-cap__video-rec">' +
+        '<video class="dash-cap__video-preview" id="spp-video-preview" autoplay playsinline muted></video>' +
+        '<span class="dash-cap__time dash-cap__time--lg"><i class="dash-cap__dot"></i><span id="spp-rec-elapsed">' + _capFmt(_capRec.elapsed) + '</span> / ' + _capFmt(_CAP_VIDEO_MAX_SECONDS) + '</span>' +
+        '<p class="dash-cap__hint">' + (_isEs() ? 'Graba el problema' : 'Film the problem') + '</p>' +
+        '<div class="dash-cap__actions"><button type="button" class="dash-cap__btn dash-cap__btn--accent" data-action="sppcap-vid-stop">' + ICON.stop + (_isEs() ? 'Detener' : 'Stop') + '</button></div></div>';
+    }
     if (_capMedia.length) {
       const it = _capMedia[0];
       return _capBackBar() +
+        '<video class="dash-cap__video-playback" controls playsinline preload="metadata" src="' + _capEsc(it.previewUrl || it.url || '') + '"></video>' +
         '<div class="dash-cap__media-chip' + (it.uploading ? ' uploading' : '') + '">' + ICON.video +
           '<span>' + (it.name ? _capEsc(it.name) : (_isEs() ? 'Video listo' : 'Video ready')) + (it.dur ? ' · ' + _capFmt(it.dur) : '') + '</span>' +
           '<button type="button" class="dash-cap__chip-x" data-action="sppcap-media-clear">' + ICON.close + '</button></div>' +
+        _capDetailsBlock() +
         '<div class="dash-cap__actions"><button type="button" class="dash-cap__btn dash-cap__btn--accent" data-action="sppcap-media-use">' + (_isEs() ? 'Continuar' : 'Continue') + ICON.arrow + '</button></div>';
     }
     return _capBackBar() + '<div class="dash-cap__drop"><div class="dash-cap__drop-ic">' + ICON.video + '</div>' +
@@ -553,18 +624,23 @@
         '<button type="button" class="dash-cap__btn dash-cap__btn--secondary" data-action="sppcap-vid-record">' + ICON.video + (_isEs() ? 'Grabar' : 'Record') + '</button></div></div>';
   }
   function _capPhotosPanel() {
+    const maxPhotos = 3;
     if (_capMedia.length) {
       const thumbs = _capMedia.map((it, i) =>
         '<div class="dash-thumb' + (it.uploading ? ' uploading' : '') + '">' + (it.url ? '<img src="' + it.url + '" alt="">' : ICON.camera) +
         '<button type="button" class="dash-thumb__x" data-action="sppcap-media-remove:' + i + '">' + ICON.close + '</button></div>').join('');
-      const add = _capMedia.length < 5 ? '<button type="button" class="dash-thumb dash-thumb--add" data-action="sppcap-photos-add">' + ICON.plus + '</button>' : '';
+      const add = _capMedia.length < maxPhotos ? '<button type="button" class="dash-thumb dash-thumb--add" data-action="sppcap-photo-capture" aria-label="' + (_isEs() ? 'Tomar otra foto' : 'Take another photo') + '">' + ICON.plus + '</button>' : '';
       return _capBackBar() + '<div class="dash-thumbs">' + thumbs + add + '</div>' +
+        _capDetailsBlock() +
         '<div class="dash-cap__actions"><button type="button" class="dash-cap__btn dash-cap__btn--accent" data-action="sppcap-media-use">' +
         (_isEs() ? 'Continuar (' + _capMedia.length + ')' : 'Continue (' + _capMedia.length + ')') + ICON.arrow + '</button></div>';
     }
     return _capBackBar() + '<div class="dash-cap__drop"><div class="dash-cap__drop-ic">' + ICON.camera + '</div>' +
       '<p class="dash-cap__drop-title">' + (_isEs() ? 'Agrega fotos del problema' : 'Add photos of the problem') + '</p>' +
-      '<div class="dash-cap__drop-btns"><button type="button" class="dash-cap__btn dash-cap__btn--secondary" data-action="sppcap-photos-add">' + ICON.upload + (_isEs() ? 'Elegir fotos' : 'Choose photos') + '</button></div></div>';
+      '<div class="dash-cap__drop-btns">' +
+        '<button type="button" class="dash-cap__btn dash-cap__btn--secondary" data-action="sppcap-photo-capture">' + ICON.camera + (_isEs() ? 'Tomar foto' : 'Take photo') + '</button>' +
+        '<button type="button" class="dash-cap__btn dash-cap__btn--secondary" data-action="sppcap-photos-add">' + ICON.upload + (_isEs() ? 'Elegir fotos' : 'Choose photos') + '</button>' +
+      '</div></div>';
   }
 
   // Swap the active media panel's inner content in place, then resize the body.
@@ -579,51 +655,169 @@
     _showActivePanel(seg);
   }
 
-  // Voice recorder — captures duration + a live waveform (mirrors the hero).
+  // Voice recorder — captures audio, duration + a live waveform.
   function _capStartVoice() {
-    _capRec = { phase: 'recording', elapsed: 0, t0: Date.now() };
+    _capClearVoice();
+    _capRec = { phase: 'recording', elapsed: 0, t0: Date.now(), chunks: [] };
     _renderCapture();
     _capRec.timer = setInterval(() => {
       _capRec.elapsed = (Date.now() - _capRec.t0) / 1000;
       const el = document.getElementById('spp-rec-elapsed'); if (el) el.textContent = _capFmt(_capRec.elapsed);
       if (_capRec.elapsed >= 60) _capFinishVoice();
     }, 100);
-    _capStartWave('spp-wave');
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder) {
+      navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+        if (!_capRec || _capRec.phase !== 'recording') {
+          stream.getTracks().forEach(t => t.stop());
+          return;
+        }
+        _capRec.stream = stream;
+        _capStartWave('spp-wave', stream);
+        const recorder = new MediaRecorder(stream);
+        const activeRec = _capRec;
+        _capRec.recorder = recorder;
+        recorder.addEventListener('dataavailable', e => {
+          if (e.data && e.data.size) activeRec.chunks.push(e.data);
+        });
+        recorder.addEventListener('stop', () => {
+          if (activeRec.discard) {
+            stream.getTracks().forEach(t => t.stop());
+            return;
+          }
+          const type = recorder.mimeType || 'audio/webm';
+          const blob = new Blob(activeRec.chunks || [], { type });
+          if (blob.size) activeRec.audioUrl = URL.createObjectURL(blob);
+          stream.getTracks().forEach(t => t.stop());
+          if (_capRec === activeRec && _capRec.phase === 'done') _renderCapture();
+        });
+        recorder.start();
+      }).catch(() => _capStartWave('spp-wave'));
+    } else {
+      _capStartWave('spp-wave');
+    }
   }
-  function _capFinishVoice() { if (!_capRec) return; clearInterval(_capRec.timer); _capStopWave(); _capRec.phase = 'done'; _renderCapture(); }
+  function _capFinishVoice() {
+    if (!_capRec) return;
+    clearInterval(_capRec.timer);
+    _capStopWave();
+    _capRec.phase = 'done';
+    if (_capRec.recorder && _capRec.recorder.state !== 'inactive') _capRec.recorder.stop();
+    else if (_capRec.stream) _capRec.stream.getTracks().forEach(t => t.stop());
+    _renderCapture();
+  }
+  function _capPlayVoice() {
+    if (!_capRec || !_capRec.audioUrl) return;
+    const audio = new Audio(_capRec.audioUrl);
+    audio.play().catch(() => {});
+  }
 
-  function _capPickPhotos() {
-    _capPickFiles('image/*', true, 'environment', files => {
-      files.slice(0, 5 - _capMedia.length).forEach(f => {
+  function _capPickPhotos(capture) {
+    const maxPhotos = 3;
+    const slots = maxPhotos - _capMedia.length;
+    if (slots <= 0) return;
+    _capPickFiles('image/*', !capture, capture ? 'environment' : null, files => {
+      files.slice(0, slots).forEach(f => {
         const item = { kind: 'photo', url: URL.createObjectURL(f), uploading: true };
         _capMedia.push(item);
         _capUpload(f).then(d => { item.url = d.url; item.uploading = false; _renderCapture(); })
           .catch(() => { const i = _capMedia.indexOf(item); if (i > -1) _capMedia.splice(i, 1); _renderCapture(); });
       });
-      _capMedia = _capMedia.slice(0, 5); _renderCapture();
+      _capMedia = _capMedia.slice(0, maxPhotos); _renderCapture();
     });
   }
   function _capPickVideo(capture) {
     _capPickFiles('video/*', false, capture ? 'environment' : null, files => {
       if (!files.length) return;
       const f = files[0];
-      const item = { kind: 'video', url: URL.createObjectURL(f), name: f.name, uploading: true };
+      const previewUrl = URL.createObjectURL(f);
+      const item = { kind: 'video', url: previewUrl, previewUrl, name: f.name, uploading: true };
       _capMedia = [item]; _renderCapture();
       _capUpload(f).then(d => { item.url = d.url; item.uploading = false; _renderCapture(); })
         .catch(() => { item.uploading = false; _renderCapture(); });
     });
   }
+  function _capVideoMimeType() {
+    if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return '';
+    const types = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
+    return types.find(t => MediaRecorder.isTypeSupported(t)) || '';
+  }
+  function _capAttachVideoPreview(stream) {
+    const video = document.getElementById('spp-video-preview');
+    if (!video) return;
+    video.srcObject = stream;
+    video.play().catch(() => {});
+  }
+  function _capStartVid() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
+      _capPickVideo(true);
+      return;
+    }
+    navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' } },
+      audio: true
+    }).then(stream => {
+      const chunks = [];
+      const mimeType = _capVideoMimeType();
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      const rec = { phase: 'vidrec', elapsed: 0, t0: Date.now(), stream, recorder, chunks };
+      _capRec = rec;
+      _renderCapture();
+      _capAttachVideoPreview(stream);
+      rec.timer = setInterval(() => {
+        rec.elapsed = (Date.now() - rec.t0) / 1000;
+        const el = document.getElementById('spp-rec-elapsed');
+        if (el) el.textContent = _capFmt(rec.elapsed);
+        if (rec.elapsed >= _CAP_VIDEO_MAX_SECONDS) _capStopVid();
+      }, 100);
+      recorder.addEventListener('dataavailable', e => {
+        if (e.data && e.data.size) chunks.push(e.data);
+      });
+      recorder.addEventListener('stop', () => {
+        stream.getTracks().forEach(t => t.stop());
+        if (rec.discard) return;
+        const type = recorder.mimeType || mimeType || 'video/webm';
+        const blob = new Blob(chunks, { type });
+        const d = Math.min(_CAP_VIDEO_MAX_SECONDS, Math.max(1, Math.round(rec.elapsed || ((Date.now() - rec.t0) / 1000))));
+        const file = typeof File === 'function'
+          ? new File([blob], 'servi-request-video.webm', { type })
+          : blob;
+        const previewUrl = URL.createObjectURL(blob);
+        const item = { kind: 'video', url: previewUrl, previewUrl, name: 'Recorded video', dur: d, uploading: true };
+        if (_capRec === rec) _capRec = null;
+        _capMedia = [item];
+        _renderCapture();
+        _capUpload(file).then(data => { item.url = data.url; item.uploading = false; _renderCapture(); })
+          .catch(() => { item.uploading = false; _renderCapture(); });
+      });
+      recorder.start(250);
+    }).catch(() => {
+      _capPickVideo(true);
+    });
+  }
+  function _capStopVid() {
+    if (!_capRec || _capRec.phase !== 'vidrec') return;
+    _capRec.elapsed = (Date.now() - _capRec.t0) / 1000;
+    clearInterval(_capRec.timer);
+    if (_capRec.recorder && _capRec.recorder.state !== 'inactive') _capRec.recorder.stop();
+    else if (_capRec.stream) _capRec.stream.getTracks().forEach(t => t.stop());
+  }
 
   function _capCleanMedia(it) { const o = { kind: it.kind }; if (it.url) o.url = it.url; if (it.dur) o.dur = it.dur; if (it.name) o.name = it.name; if (it.sample) o.sample = true; return o; }
   function _capReset() {
     _capStopWave();
-    if (_capRec && _capRec.timer) clearInterval(_capRec.timer);
-    _capRec = null; _capMedia = []; state.capMode = null;
+    _capClearVoice();
+    _capMedia = []; state.capMode = null; state._capDetails = '';
   }
   // Hand captured media to the Smart Request review screen — same sessionStorage
   // handoff the hero uses. This is the final submit step, not "opening a tool".
   function _capHandoff(payload) {
-    if (state._describeText && state._describeText.trim()) payload.text = state._describeText.trim();
+    const details = ((state._capDetails || '').trim() || (state._describeText || '').trim());
+    if (details) {
+      payload.text = details;
+      if (typeof window.applyRequestLanguage === 'function') {
+        payload.lang = window.applyRequestLanguage(payload.text) || payload.lang;
+      }
+    }
     try { sessionStorage.setItem('sr_handoff', JSON.stringify(payload)); } catch (_) {}
     const url = new URL('/smart-request.html', window.location.origin);
     url.searchParams.set('return', window.location.pathname + window.location.search + window.location.hash);
@@ -633,6 +827,7 @@
   // The pill segments that own a popover surface (browse routes away instead).
   const PILL_SEGMENTS = ['describe', 'camera', 'voice'];
   const _isPillSegment = (s) => PILL_SEGMENTS.indexOf(s) !== -1;
+  const _isMobileHeaderLayout = () => window.matchMedia && window.matchMedia('(max-width: 900px)').matches;
 
   function _updatePillIndicator() {
     const pill = document.querySelector('.site-header__pill');
@@ -667,12 +862,25 @@
     if (!segBtn) return;
     const centerRect = center.getBoundingClientRect();
     const segRect = segBtn.getBoundingClientRect();
-    // "Describe" unfolds from its own (wide) segment. The media methods (camera,
-    // voice) are too narrow to anchor to without reading as a stray box floating
-    // mid-pill — so they unfold from the WHOLE pill, edges flush with the pill's
-    // edges, with room for the capture surface. The active card (below) widens to
-    // match, so the pill + panel still read as one continuous surface.
-    const anchorRect = state.segment === 'describe' ? segRect : pill.getBoundingClientRect();
+    const pillRect = pill.getBoundingClientRect();
+    // "Describe" unfolds from its own (wide) segment. On mobile, camera and
+    // voice use narrower panels while preserving the same width/left morph.
+    const cameraMobileWidth = Math.min(pillRect.width, 326);
+    const voiceMobileWidth = Math.min(pillRect.width, 292);
+    const voiceMobileNudge = 6;
+    const anchorRect = state.segment === 'describe'
+      ? segRect
+      : (state.segment === 'camera' && _isMobileHeaderLayout())
+        ? {
+            left: pillRect.left + ((pillRect.width - cameraMobileWidth) / 2),
+            width: cameraMobileWidth
+          }
+      : (state.segment === 'voice' && _isMobileHeaderLayout())
+        ? {
+            left: pillRect.right - voiceMobileWidth + voiceMobileNudge,
+            width: voiceMobileWidth
+          }
+        : pillRect;
     const left = anchorRect.left - centerRect.left;
     const top = segRect.bottom - centerRect.top - 1;
     // Exact (un-rounded) so the popover's left/right edges line up with the
@@ -723,7 +931,8 @@
   function _positionMethodFocus(segment, pill) {
     const focus = pill.querySelector('.search-pill__method-focus');
     if (!focus) return;
-    if (segment !== 'camera' && segment !== 'voice') {
+    const supportsSegment = segment === 'camera' || segment === 'voice' || (segment === 'describe' && _isMobileHeaderLayout());
+    if (!supportsSegment) {
       focus.removeAttribute('data-show');
       focus.setAttribute('data-segment', '');
       return;
@@ -752,7 +961,12 @@
     const popover = document.getElementById('search-pill-popover');
     const card = document.querySelector('.search-pill__active-card');
     const focus = document.querySelector('.search-pill__method-focus');
-    [popover, card, focus].forEach(el => { if (el) el.classList.toggle('spp--instant', on); });
+    if (popover) popover.classList.toggle('spp--instant', on);
+    // Mobile needs the white active pill to morph smoothly from Describe's wide
+    // segment to the Camera/Voz method segments. Keep only the popover snapped
+    // there; desktop still snaps the welded card while the header opens.
+    const snapActiveSurfaces = on && !_isMobileHeaderLayout();
+    [card, focus].forEach(el => { if (el) el.classList.toggle('spp--instant', snapActiveSurfaces); });
   }
   function _trackPopoverDuringMorph(ms) {
     const popover = document.getElementById('search-pill-popover');
@@ -782,9 +996,11 @@
     whenChoice: 'asap',   // 'asap' | 'date' — legacy hero-search handoff default (when is chosen on smart-request)
     whenDate: '',         // ISO date string when choice === 'date'
     _describeText: '',    // current describe compose text
+    _capDetails: '',      // optional written details attached to media capture
     capMode: null,        // null | 'photos' | 'voice' | 'video' — active in-pill capture surface
   };
   let _pillIndicatorTimer = null;
+  let _textAtts = [];     // media attached to a text request
   let _capMedia = [];     // captured media in the popover [{kind,url,dur,name,uploading,sample}]
   let _capRec = null;     // transient recorder {phase,elapsed,t0,timer}
   let _capWaveRAF = null, _capWaveStream = null;
@@ -887,18 +1103,32 @@
       scrim.setAttribute('data-visible', 'true');
       scrim.setAttribute('aria-hidden', 'false');
 
-      if (popover) {
+      if (popover && state.segment === 'describe' && _isMobileHeaderLayout()) {
+        popover.removeAttribute('data-open');
+        popover.setAttribute('aria-hidden', 'true');
+        popover.setAttribute('data-segment', '');
+        popover.innerHTML = '';
+        requestAnimationFrame(() => {
+          const inp = document.getElementById('spp-describe-input');
+          if (inp) inp.focus();
+          _autoGrowDescribe();
+          _trackPopoverDuringMorph(520);
+        });
+      } else if (popover) {
         const alreadyOpen = popover.getAttribute('data-open') === 'true';
+        const targetPanelMissing = alreadyOpen && !popover.querySelector(`.spp-panel--${state.segment}`);
         popover.setAttribute('data-segment', state.segment);
         popover.setAttribute('data-open', 'true');
         popover.setAttribute('aria-hidden', 'false');
 
-        if (!alreadyOpen) {
-          // First open: render all three method panels into the popover
+        if (!alreadyOpen || targetPanelMissing) {
+          // First open: desktop keeps the describe toolbar in the popover;
+          // mobile describes inline in the pill, so only media panels are mounted.
+          const panelsHtml = _isMobileHeaderLayout()
+            ? `${buildCameraPanel()}${buildVoicePanel()}`
+            : `${buildDescribePanel()}${buildCameraPanel()}${buildVoicePanel()}`;
           popover.innerHTML = `<div class="spp-body">
-            ${buildDescribePanel()}
-            ${buildCameraPanel()}
-            ${buildVoicePanel()}
+            ${panelsHtml}
           </div>`;
           // Start collapsed so the body unfolds (0 → natural height) on open.
           const _body = popover.querySelector('.spp-body');
@@ -968,7 +1198,7 @@
     applyHeaderState();
   }
   function closeSegment() {
-    if (state.capMode) _capReset();
+    if (state.capMode || _capRec || _capMedia.length) _capReset();
     state.segment = null;
     applyHeaderState();
   }
@@ -1076,9 +1306,9 @@
   function openSearchPillMedia(mode) {
     const cap = mode === 'upload' ? 'photos' : mode;
     const targetSeg = cap === 'voice' ? 'voice' : 'camera';
-    _capStopWave();
-    if (_capRec && _capRec.timer) clearInterval(_capRec.timer);
-    _capRec = null; _capMedia = [];
+    const detailSeed = (state._capDetails || state._describeText || '').trim();
+    _capReset();
+    state._capDetails = detailSeed;
     // Set the segment directly (not via openSegment, which would _capReset and
     // clear the capMode we want to land on) so the panel opens on the chosen
     // capture surface with no chooser flash.
@@ -1088,10 +1318,7 @@
     releaseSearchPillFocus();
     requestAnimationFrame(() => {
       _renderCapture();
-      // "+" jumps straight to the photo picker; video on touch devices opens the
-      // native camera immediately (same behavior as the homepage hero).
-      if (mode === 'upload') _capPickPhotos();
-      else if (cap === 'video' && _capShouldNativeVideo()) _capPickVideo(true);
+      if (mode === 'upload') _capPickPhotos(false);
     });
   }
 
@@ -1103,9 +1330,24 @@
       focusSearchPillDescribe();
       return;
     }
+    if (_textAtts.some(a => a.uploading)) return;
     closeSegment();
+    const detectedLang = typeof window.applyRequestLanguage === 'function' ? window.applyRequestLanguage(text) : null;
+    const atts = _textAtts.map(a => ({ kind: a.kind, url: a.url, name: a.name })).filter(a => a.url);
     const url = new URL('/smart-request.html', window.location.origin);
-    url.searchParams.set('text', text);
+    if (atts.length) {
+      try {
+        sessionStorage.setItem('sr_handoff', JSON.stringify({
+          mode: 'text',
+          text,
+          lang: detectedLang || (window.__lang === 'en' ? 'en' : 'es'),
+          atts,
+        }));
+      } catch (_) {}
+    } else {
+      url.searchParams.set('text', text);
+      url.searchParams.set('lang', detectedLang || (window.__lang === 'en' ? 'en' : 'es'));
+    }
     url.searchParams.set('return', window.location.pathname + window.location.search + window.location.hash);
     window.location.href = url.toString();
   }
@@ -1126,6 +1368,12 @@
 
   // ─── Delegated event handler ───────────────────────────────────────────
   function onRootClick(e) {
+    const directAction = e.target.closest('[data-action]');
+    if (directAction && directAction.getAttribute('data-action') === 'spp-submit' && !directAction.closest('#search-pill-popover')) {
+      submitSearchPillDescribe();
+      return;
+    }
+
     // Pill segments
     const seg = e.target.closest('.search-pill__segment');
     if (seg) {
@@ -1254,9 +1502,11 @@
             else { _capReset(); _renderCapture(); }
             break;
           case 'sppcap-mic-toggle': (_capRec && _capRec.phase === 'recording') ? _capFinishVoice() : _capStartVoice(); break;
-          case 'sppcap-voice-reset': _capRec = null; _renderCapture(); break;
+          case 'sppcap-voice-play': _capPlayVoice(); break;
+          case 'sppcap-voice-reset': _capClearVoice(); _renderCapture(); break;
           case 'sppcap-voice-use': _capHandoff({ mode: 'voice', media: [{ kind: 'voice', duration: _capRec ? _capRec.elapsed : 0 }] }); break;
-          case 'sppcap-photos-add': _capPickPhotos(); break;
+          case 'sppcap-photos-add': _capPickPhotos(false); break;
+          case 'sppcap-photo-capture': _capPickPhotos(true); break;
           case 'sppcap-media-remove': _capMedia.splice(+arg, 1); _renderCapture(); break;
           case 'sppcap-media-clear': _capMedia = []; _renderCapture(); break;
           case 'sppcap-media-use':
@@ -1264,13 +1514,27 @@
             _capHandoff({ mode: state.capMode, media: _capMedia.map(_capCleanMedia) });
             break;
           case 'sppcap-vid-upload': _capPickVideo(false); break;
-          case 'sppcap-vid-record': _capPickVideo(true); break;
+          case 'sppcap-vid-record': _capStartVid(); break;
+          case 'sppcap-vid-stop': _capStopVid(); break;
         }
         return;
       }
       if (action === 'spp-attach') {
         // The "+" affordance jumps the Camera method to the photo picker.
         openSearchPillMedia('upload');
+        return;
+      }
+      if (action === 'spp-attach-photos') {
+        _pickTextAttachment('photos');
+        return;
+      }
+      if (action === 'spp-attach-video') {
+        _pickTextAttachment('video');
+        return;
+      }
+      if (action && action.indexOf('spp-att-remove') === 0) {
+        _textAtts.splice(+action.split(':')[1], 1);
+        _renderDescribePanel();
         return;
       }
       if (action === 'spp-submit') {
@@ -1287,7 +1551,6 @@
       if (action === 'spp-cam-video') {
         state.capMode = 'video';
         _renderCapture();
-        if (_capShouldNativeVideo()) _capPickVideo(true);
         return;
       }
       return; // swallow unhandled clicks inside popover
@@ -1300,6 +1563,9 @@
     if (e.target && e.target.id === 'spp-describe-input') {
       state._describeText = e.target.value;
       _autoGrowDescribe();
+    }
+    if (e.target && e.target.id === 'spp-cap-details') {
+      state._capDetails = e.target.value;
     }
   }
 
@@ -1493,7 +1759,8 @@
   window.addEventListener('resize', () => {
     requestAnimationFrame(() => {
       _updatePillIndicator();
-      if (_isPillSegment(state.segment)) _positionPopover();
+      if (state.segment === 'describe') applyHeaderState();
+      else if (_isPillSegment(state.segment)) _positionPopover();
     });
   }, { passive: true });
 

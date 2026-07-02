@@ -11,6 +11,7 @@
   <link rel="stylesheet" href="/shared/landing-theme.css">
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="/shared/browse-data.js"></script>
+  <script src="/shared/service-details.js"></script>
   <style>
     .svc-page {
       max-width: 1200px;
@@ -164,6 +165,32 @@
       background: #111;
       color: #fff;
     }
+
+    /* Tailored "tell us more" follow-up questions */
+    .svc-detail-qs { display: flex; flex-direction: column; gap: 14px; }
+    .svc-detail-q__label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 8px;
+    }
+    .svc-detail-chips { display: flex; flex-wrap: wrap; gap: 7px; }
+    .svc-detail-chip {
+      padding: 7px 13px;
+      border: 1.5px solid #e0e0e0;
+      border-radius: 18px;
+      font-size: 13px;
+      font-weight: 500;
+      background: #fafafa;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s, color 0.15s;
+      font-family: var(--font-body, 'Plus Jakarta Sans', sans-serif);
+      color: inherit;
+    }
+    .svc-detail-chip:hover { border-color: #111; }
+    .svc-detail-chip.active { border-color: #111; background: #111; color: #fff; }
+    .svc-detail-text { margin-top: 2px; }
+
     .svc-schedule-panel { margin-top: 10px; }
     .svc-schedule-row {
       display: flex;
@@ -580,16 +607,17 @@
 
     .svc-mobile-form {
       display: none;
-      border-top: 1px solid #e8e8e8;
-      padding-top: 32px;
-      margin-top: 32px;
+      margin-top: 28px;
     }
+    /* On mobile the form is a self-contained white card (not sticky). Keep the
+       border + radius + shadow + padding from the base .svc-sidebar so the white
+       surface reads as an intentional card instead of bleeding into the page. */
     .svc-mobile-form .svc-sidebar {
       position: static;
-      box-shadow: none;
-      border: none;
-      border-radius: 0;
-      padding: 0;
+      border: 1.5px solid #e8e8e8;
+      border-radius: 18px;
+      padding: 22px 18px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.06);
     }
 
     @media (max-width: 900px) {
@@ -601,6 +629,11 @@
       .svc-layout > .svc-sidebar { display: none; }
       .svc-mobile-bar { display: block; }
       .svc-mobile-form { display: block; }
+      /* Make the left column a flex stack so the booking form comes first and the
+         "Otros servicios en esta categoría" block is pushed to the very bottom
+         (below the form) instead of sitting on top of it. */
+      .svc-left { display: flex; flex-direction: column; }
+      .svc-other-section { order: 1; margin-top: 36px; }
     }
     @media (max-width: 600px) {
       .svc-page { padding: 112px 16px 100px; }
@@ -687,6 +720,8 @@
   }
 
   function getLocalizedServiceName(subData) {
+    // Generic request (no specific service picked): use the subcategory label.
+    if (!serviceName) return getLocalizedText(subData.label);
     const serviceIndex = getServiceIndex(subData);
     if (serviceIndex === -1) return serviceName;
     const localizedServices = subData.services && subData.services[getLocale()];
@@ -1281,7 +1316,11 @@
     const extraDetails = detailsInput ? detailsInput.value.trim() : '';
     const catalog = getCatalogData();
     const currentServiceName = catalog ? getLocalizedServiceName(catalog.subData) : serviceName;
-    const description = currentServiceName + (extraDetails ? ' — ' + extraDetails : '');
+    const detailAnswers = collectDetailAnswers();
+    const detailParts = detailSummaryParts();
+    const description = [currentServiceName, detailParts.join(' · '), extraDetails]
+      .filter(Boolean)
+      .join(' — ');
 
     return {
       address: addressString,
@@ -1290,6 +1329,8 @@
       preferredDate,
       preferredTime,
       description,
+      detailAnswers,
+      serviceName: currentServiceName,
     };
   }
 
@@ -1309,6 +1350,13 @@
       attachments: attachments.map(a => a.url),
       lang: lang(),
     };
+    // Guided service-page intake metadata (additive — already persisted by the backend):
+    // the deterministically matched service + the tailored follow-up answers give admin
+    // dispatch context without an AI parse.
+    payload.requestMode = 'service';
+    if (subKey) payload.matchedSubKey = subKey;
+    if (data.serviceName) payload.matchedService = data.serviceName;
+    if (data.detailAnswers && Object.keys(data.detailAnswers).length) payload.detailAnswers = data.detailAnswers;
     // Carry the trusted-specialist preference (a preference, not a guarantee). The backend
     // re-validates the provider is verified and fills the real name; we send only the id.
     if (_svcPreferredProviderId) payload.preferredProviderId = _svcPreferredProviderId;
@@ -1521,6 +1569,101 @@
     if (mobileBar) mobileBar.style.display = 'none';
   }
 
+  // ─── Tailored "tell us more" follow-up questions ─────────────────────────────
+  // Optional, per-subcategory chips + short open-text, mirroring smart-request.
+  // Answers are module-level so they survive language switches (render() rebuilds
+  // both sidebars). Chip selection is stored as the language-stable English value.
+  const serviceDetailAnswers = {};
+
+  function getServiceDetailQuestions() {
+    return (window.SERVI_SERVICE_DETAILS || {})[subKey] || [];
+  }
+
+  function detailQValue(question, field) {
+    return getLocalizedText(question[field]);
+  }
+
+  function chipValue(chip) {
+    return chip.en || chip.es || '';
+  }
+
+  function chipLabel(chip) {
+    return getLocale() === 'es' ? (chip.es || chip.en || '') : (chip.en || chip.es || '');
+  }
+
+  function detailAnswerDisplay(question, stored) {
+    if (!stored) return '';
+    if (question.type === 'text') return stored;
+    const chip = (question.chips || []).find(c => chipValue(c) === stored);
+    return chip ? chipLabel(chip) : stored;
+  }
+
+  function buildDetailQuestionsHTML(prefix) {
+    const questions = getServiceDetailQuestions();
+    if (!questions.length) return '';
+    return questions.map((question, qi) => {
+      const key = question.key || ('q' + qi);
+      const stored = serviceDetailAnswers[key] || '';
+      let control;
+      if (question.type === 'text') {
+        control = `<input class="svc-sidebar__input svc-detail-text" type="text" value="${esc(stored)}"`
+          + ` oninput="window._svcDetailText('${esc(key)}', this.value)"`
+          + ` placeholder="${esc(lang() === 'es' ? 'Escribe tu respuesta' : 'Type your answer')}">`;
+      } else {
+        const chips = (question.chips || []).map((chip, ci) => {
+          const active = stored === chipValue(chip) ? ' active' : '';
+          return `<button type="button" class="svc-detail-chip${active}"`
+            + ` onclick="window._svcPickDetailChip('${esc(key)}', ${ci})">${esc(chipLabel(chip))}</button>`;
+        }).join('');
+        control = `<div class="svc-detail-chips">${chips}</div>`;
+      }
+      return `<div class="svc-detail-q"><div class="svc-detail-q__label">${esc(detailQValue(question, 'q'))}</div>${control}</div>`;
+    }).join('');
+  }
+
+  function rerenderDetailQuestions() {
+    ['desk', 'mob'].forEach(prefix => {
+      const host = document.getElementById('svc-detail-qs-' + prefix);
+      if (host) host.innerHTML = buildDetailQuestionsHTML(prefix);
+    });
+  }
+
+  function collectDetailAnswers() {
+    const out = {};
+    getServiceDetailQuestions().forEach((question, qi) => {
+      const key = question.key || ('q' + qi);
+      const stored = serviceDetailAnswers[key];
+      if (!stored) return;
+      out[key] = detailAnswerDisplay(question, stored);
+    });
+    return out;
+  }
+
+  function detailSummaryParts() {
+    const parts = [];
+    getServiceDetailQuestions().forEach((question, qi) => {
+      const key = question.key || ('q' + qi);
+      const stored = serviceDetailAnswers[key];
+      if (!stored) return;
+      const label = detailQValue(question, 'label');
+      const value = detailAnswerDisplay(question, stored);
+      if (value) parts.push((label ? label + ': ' : '') + value);
+    });
+    return parts;
+  }
+
+  window._svcPickDetailChip = function(key, chipIndex) {
+    const question = getServiceDetailQuestions().find(q => (q.key || '') === key);
+    if (!question || !question.chips || !question.chips[chipIndex]) return;
+    const value = chipValue(question.chips[chipIndex]);
+    serviceDetailAnswers[key] = serviceDetailAnswers[key] === value ? '' : value;
+    rerenderDetailQuestions();
+  };
+
+  window._svcDetailText = function(key, value) {
+    serviceDetailAnswers[key] = value;
+  };
+
   function buildSidebarContent(prefix, displayServiceName) {
     const s = sp();
     const savedAddr = localStorage.getItem('dash_hero_address') || '';
@@ -1564,6 +1707,12 @@
         <span class="svc-sidebar__label">${esc(s.addressLabel || 'Dirección del servicio')}</span>
         <div id="svc-addr-section-${prefix}" class="svc-addr-section"></div>
         <div class="svc-error-msg" id="svc-addr-err-${prefix}">${esc(s.addressError || 'Por favor ingresa tu dirección')}</div>
+
+        ${getServiceDetailQuestions().length ? `
+        <hr class="svc-sidebar__divider">
+        <span class="svc-sidebar__label">${esc(s.detailsQuestionsLabel || (lang() === 'es' ? 'Cuéntanos más (opcional)' : 'Tell us more (optional)'))}</span>
+        <div class="svc-detail-qs" id="svc-detail-qs-${prefix}">${buildDetailQuestionsHTML(prefix)}</div>
+        ` : ''}
 
         <hr class="svc-sidebar__divider">
         <span class="svc-sidebar__label">${esc(s.detailsLabel || 'Detalles adicionales (opcional)')}</span>
@@ -1668,7 +1817,9 @@
     const catalog = getCatalogData();
     const s = sp();
 
-    if (!catalog || !serviceName) {
+    // A generic request (no specific service) is valid as long as the catalog
+    // resolves the category + subcategory. Only bail when the catalog is missing.
+    if (!catalog) {
       main.innerHTML = `
         <div class="svc-not-found">
           <h1>${esc(s.notFound || 'Servicio no encontrado')}</h1>

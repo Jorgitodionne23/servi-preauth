@@ -102,6 +102,14 @@ function orderFixture(overrides = {}) {
   };
 }
 
+function futureService(hoursFromNow) {
+  const dt = new Date(Date.now() + hoursFromNow * 60 * 60 * 1000);
+  return {
+    service_date: dt.toISOString().slice(0, 10),
+    service_datetime: dt.toISOString(),
+  };
+}
+
 function opsFixture(overrides = {}) {
   return {
     code: 'preauth_due',
@@ -120,6 +128,7 @@ function opsFixture(overrides = {}) {
 async function mockAdminApis(page, {
   orders = [],
   submissions = [],
+  providers = [],
   detailOrder = null,
   opsRadar = null,
   onCreatePaymentIntent = null,
@@ -145,6 +154,17 @@ async function mockAdminApis(page, {
     return route.fulfill({ json: { order, adjustments: [] } });
   });
   await page.route('**/api/admin/orders?*', route => route.fulfill({ json: { items: orders, total: orders.length } }));
+  await page.route('**/api/admin/providers?*', route => {
+    const url = new URL(route.request().url());
+    const q = (url.searchParams.get('search') || '').toLowerCase();
+    const status = url.searchParams.get('status') || '';
+    const items = providers.filter(p => {
+      const statusOk = !status || p.status === status;
+      const haystack = [p.provider_id, p.name, p.phone, p.specialty, p.city].filter(Boolean).join(' ').toLowerCase();
+      return statusOk && (!q || haystack.includes(q));
+    });
+    return route.fulfill({ json: { items, total: items.length } });
+  });
   await page.route('**/api/service-requests?*', route => route.fulfill({ json: { items: submissions, total: submissions.length } }));
   await page.route('**/api/service-requests/*', async route => {
     if (onPatchServiceRequest) await onPatchServiceRequest(route.request().postDataJSON());
@@ -580,6 +600,185 @@ test.describe('Orders panel scheduling UI (mocked)', () => {
     const stripeSection = page.locator('.sp-sec').filter({ has: page.locator('.sp-sec-t', { hasText: /^Stripe$/ }) });
     await expect(stripeSection).not.toContainText('Creado');
     await expect(stripeSection).not.toContainText('Orden creada');
+  });
+
+  test('Scheduled detail schedule badge says Agendado, not Confirmado', async ({ page }) => {
+    const order = orderFixture({
+      id: 'order-scheduled-badge',
+      public_code: 'SV-AGD',
+      status: 'Scheduled',
+      payment_intent_id: null,
+      ops: opsFixture({ code: 'safe', severity: 'safe', label: 'Sin alerta urgente', actionLabel: '' }),
+      ...futureService(48),
+    });
+    await mockAdminApis(page, { orders: [order], submissions: [], detailOrder: order });
+    await loginAndWait(page);
+    await page.locator('.nav-item[data-panel="orders"]').click();
+    await waitForListLoad(page, 'orders-body', 10000);
+
+    await page.locator('#orders-body tr').first().click();
+    await expect(page.locator('#order-panel')).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('.schedule-card .schedule-badge')).toHaveText('Agendado');
+    await expect(page.locator('.schedule-card .schedule-badge')).not.toHaveText('Confirmado');
+  });
+
+  test('Scheduled order without payment intent does not show capture or link outside preauth window', async ({ page }) => {
+    const order = orderFixture({
+      id: 'order-scheduled-no-pi',
+      public_code: 'SV-NOPI',
+      status: 'Scheduled',
+      payment_intent_id: null,
+      ops: opsFixture({ code: 'safe', severity: 'safe', label: 'Sin alerta urgente', actionLabel: '' }),
+      ...futureService(48),
+    });
+    await mockAdminApis(page, { orders: [order], submissions: [] });
+    await loginAndWait(page);
+    await waitForListLoad(page, 'orders-body', 10000);
+
+    const rowActions = page.locator('#orders-body tr', { hasText: 'SV-NOPI' }).locator('td').nth(8);
+    await expect(rowActions).not.toContainText('Capturar');
+    await expect(rowActions).not.toContainText('Enlace');
+    await expect(rowActions.locator('button')).toHaveCount(0);
+  });
+
+  test('Confirmed table row shows only Capturar as primary action', async ({ page }) => {
+    const order = orderFixture({
+      id: 'order-confirmed-primary',
+      public_code: 'SV-CONF',
+      status: 'Confirmed',
+      payment_intent_id: 'pi_confirmed_primary',
+      ops: opsFixture({ code: 'safe', severity: 'safe', label: 'Confirmada y lista', actionLabel: '' }),
+      ...futureService(10),
+    });
+    await mockAdminApis(page, { orders: [order], submissions: [] });
+    await loginAndWait(page);
+    await waitForListLoad(page, 'orders-body', 10000);
+
+    const rowActions = page.locator('#orders-body tr', { hasText: 'SV-CONF' }).locator('td').nth(8);
+    await expect(rowActions.locator('button')).toHaveCount(1);
+    await expect(rowActions).toContainText('Capturar');
+    await expect(rowActions).not.toContainText('Enlace');
+    await expect(rowActions).not.toContainText('Efectivo');
+    await expect(rowActions).not.toContainText('Cancelar');
+  });
+
+  test('Confirmed capture-due Ops row shows only Capturar', async ({ page }) => {
+    const order = orderFixture({
+      id: 'order-confirmed-capture-due',
+      public_code: 'SV-DUE',
+      status: 'Confirmed',
+      payment_intent_id: 'pi_confirmed_due',
+      ops: opsFixture({ code: 'capture_due', severity: 'soon', label: 'Captura pendiente', actionLabel: 'Capturar' }),
+      ...futureService(-1),
+    });
+    await mockAdminApis(page, { orders: [order], submissions: [] });
+    await loginAndWait(page);
+    await waitForListLoad(page, 'orders-body', 10000);
+
+    const rowActions = page.locator('#orders-body tr', { hasText: 'SV-DUE' }).locator('td').nth(8);
+    await expect(rowActions.locator('button')).toHaveCount(1);
+    await expect(rowActions).toContainText('Capturar');
+  });
+
+  test('order within six hours with assigned provider shows provider reminder', async ({ page }) => {
+    const order = orderFixture({
+      id: 'order-provider-reminder',
+      public_code: 'SV-PROV',
+      status: 'Scheduled',
+      provider_id: 'prov-000123',
+      provider_name: 'Proveedor Verificado',
+      payment_intent_id: 'pi_scheduled_ready',
+      ops: opsFixture({ code: 'safe', severity: 'safe', label: 'Sin alerta urgente', actionLabel: '' }),
+      ...futureService(5),
+    });
+    await mockAdminApis(page, { orders: [order], submissions: [] });
+    await loginAndWait(page);
+    await waitForListLoad(page, 'orders-body', 10000);
+
+    const rowActions = page.locator('#orders-body tr', { hasText: 'SV-PROV' }).locator('td').nth(8);
+    await expect(rowActions.locator('button')).toHaveCount(1);
+    await expect(rowActions).toContainText('Recordar proveedor');
+  });
+
+  test('provider reminder resolves provider contact and opens WhatsApp', async ({ page }) => {
+    await page.addInitScript(() => {
+      window.__openedUrls = [];
+      window.open = (url) => {
+        window.__openedUrls.push(String(url));
+        return null;
+      };
+    });
+    const order = orderFixture({
+      id: 'order-provider-wa',
+      public_code: 'SV-WA',
+      client_name: 'Cliente WhatsApp',
+      status: 'Scheduled',
+      provider_id: 'prov-000777',
+      provider_name: 'Proveedor WA',
+      payment_intent_id: 'pi_scheduled_wa',
+      service_address: 'Calle Recordatorio 77',
+      ops: opsFixture({ code: 'safe', severity: 'safe', label: 'Sin alerta urgente', actionLabel: '' }),
+      ...futureService(5),
+    });
+    await mockAdminApis(page, {
+      orders: [order],
+      submissions: [],
+      providers: [{
+        provider_id: 'prov-000777',
+        status: 'verified',
+        name: 'Proveedor WA',
+        phone: '+52 55 7000 0777',
+        specialty: 'Reparaciones',
+        city: 'CDMX',
+      }],
+    });
+    await loginAndWait(page);
+    await waitForListLoad(page, 'orders-body', 10000);
+
+    await page.locator('#orders-body button', { hasText: 'Recordar proveedor' }).click();
+    await expect.poll(() => page.evaluate(() => window.__openedUrls || [])).toHaveLength(1);
+    const opened = await page.evaluate(() => window.__openedUrls[0]);
+    expect(opened).toContain('https://wa.me/525570000777');
+    expect(decodeURIComponent(opened)).toContain('SV-WA');
+    expect(decodeURIComponent(opened)).toContain('Cliente WhatsApp');
+  });
+
+  test('captured, cash, and canceled rows render only valid primary actions', async ({ page }) => {
+    const captured = orderFixture({
+      id: 'order-captured-action',
+      public_code: 'SV-CAP',
+      status: 'Captured',
+      payment_intent_id: 'pi_captured_action',
+      ops: opsFixture({ code: 'safe', severity: 'safe', label: 'Sin alerta operativa', actionLabel: '' }),
+      ...futureService(-2),
+    });
+    const cash = orderFixture({
+      id: 'order-cash-action',
+      public_code: 'SV-CASH',
+      status: 'Pending Cash',
+      cash_selected: true,
+      payment_intent_id: null,
+      ops: opsFixture({ code: 'safe', severity: 'safe', label: 'Sin alerta operativa', actionLabel: '' }),
+      ...futureService(5),
+    });
+    const canceled = orderFixture({
+      id: 'order-canceled-action',
+      public_code: 'SV-CAN',
+      status: 'Canceled',
+      payment_intent_id: null,
+      ops: opsFixture({ code: 'safe', severity: 'safe', label: 'Sin alerta operativa', actionLabel: '' }),
+      ...futureService(5),
+    });
+    await mockAdminApis(page, { orders: [captured, cash, canceled], submissions: [] });
+    await loginAndWait(page);
+    await waitForListLoad(page, 'orders-body', 10000);
+
+    const capturedActions = page.locator('#orders-body tr', { hasText: 'SV-CAP' }).locator('td').nth(8);
+    await expect(capturedActions.locator('button')).toHaveCount(1);
+    await expect(capturedActions).toContainText('Reembolso');
+
+    await expect(page.locator('#orders-body tr', { hasText: 'SV-CASH' }).locator('td').nth(8).locator('button')).toHaveCount(0);
+    await expect(page.locator('#orders-body tr', { hasText: 'SV-CAN' }).locator('td').nth(8).locator('button')).toHaveCount(0);
   });
 
   test('ASAP web submission row renders ASAP instead of created date', async ({ page }) => {

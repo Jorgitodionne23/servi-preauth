@@ -433,6 +433,5 @@ window.SERVI_FOLLOWUPS = {
 
 /* Generic fallback when nothing matches / off-catalog request. */
 window.SERVI_GENERIC_FOLLOWUPS = [
-  { q: 'Roughly when do you need it?', key: 'timing', chips: ['As soon as possible', 'This week', 'Flexible'] },
   { q: 'Anything we should know up front?', key: 'notes' },
 ];

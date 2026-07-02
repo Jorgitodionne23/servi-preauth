@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 globalThis.window = globalThis;
 await import('../frontend/smart-request/catalog.js');
 await import('../frontend/smart-request/heuristic.js');
+await import('../frontend/smart-request/parse.js');
 
 const today = new Date('2026-06-09T12:00:00');
 
@@ -73,6 +74,7 @@ test('weak request stays low confidence and custom', () => {
   const out = parse('necesito ayuda con algo en casa');
   assert.equal(out.category, 'custom');
   assert.ok(out.confidence < 0.5);
+  assert.equal(out.followups.some((f) => f.key === 'timing' || /when|cuando|fecha|semana/i.test(f.q)), false);
 });
 
 test('ambiguous close match asks for clarification without high confidence', () => {
@@ -80,4 +82,23 @@ test('ambiguous close match asks for clarification without high confidence', () 
   assert.equal(out.category, 'repair');
   assert.ok(out.confidence < 0.9);
   assert.equal(out.followups[0]?.key, 'service_clarification');
+});
+
+test('heuristic removes timing followups from matched services', () => {
+  const out = parse('necesito cuidado de niños');
+  assert.equal(out.subKey, 'child-care');
+  assert.equal(out.followups.some((f) => f.key === 'when' || /when|cuando|fecha|semana/i.test(f.q)), false);
+});
+
+test('voice analysis without a real transcript fails closed', async () => {
+  const out = await globalThis.serviAnalyzeVoice({});
+  assert.equal(out.aiStatus, 'unclear');
+  assert.equal(out.service, null);
+  assert.match(out.summary, /voz|voice/i);
+});
+
+test('photo analysis without uploaded media fails closed', async () => {
+  const out = await globalThis.serviAnalyzePhotos({ media: [] });
+  assert.equal(out.aiStatus, 'unclear');
+  assert.equal(out.service, null);
 });
