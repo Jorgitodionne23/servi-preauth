@@ -146,7 +146,7 @@ This is NOT a simple payment form. It's a complete **admin-driven order manageme
 
 - **Runtime:** Node.js with ES modules (`.mjs` extensions only)
 - **Framework:** Express 5
-- **Entry point:** `backend/index.mjs` — ALL routes and business logic in one file (~9,560 lines)
+- **Entry point:** `backend/index.mjs` — ALL routes and business logic in one file (~10,100 lines)
 - **Database:** `backend/db.pg.mjs` — Pool connection + full schema (`CREATE TABLE IF NOT EXISTS`). See this file for authoritative table definitions.
 - **Pricing:** `backend/pricing.mjs` — Dynamic fee calculation (alpha curve for booking fees, Stripe processing fees with VAT)
 - **TLS guard:** `ALLOW_INSECURE_DB_TLS=true` throws at startup if `NODE_ENV=production`
@@ -209,7 +209,7 @@ See `backend/db.pg.mjs` for the full schema. Key tables: `all_bookings`, `consen
 - `shared-auth.js` — Firebase auth flow (phone OTP, email magic link, Google OAuth, cross-identifier recovery — ~3,070 lines)
 - `shared-nav.js` — Navigation bar (language toggle, auth state, user menu dropdown, mobile hamburger)
 - `shared-footer.js` — 4-column footer component
-- `morphing-nav.js` — Animated navbar variant used on landing page (~1,640 lines)
+- `morphing-nav.js` — Animated navbar variant used on landing page (~1,770 lines)
 - `i18n.js` — Full Spanish/English translation system
 - `browse-data.js` — Service category/provider data for browse and service pages
 - `address-form.js` — Shared structured CDMX-aware address form (`window.ServiAddress`) used by `account.html` saved-address book and `service.html` booking panel
@@ -236,6 +236,10 @@ See `backend/db.pg.mjs` for the full schema. Key tables: `all_bookings`, `consen
 - `handbook.html` — Provider guide index → `handbook/` subpages (7 guide pages)
 - `helpcenter.html` — Support index → `helpcenter/` subpages (4 pages including report/suggestion forms)
 - `partners/registro.html` — Partner application form
+
+#### Specialist (Provider) Page
+
+- `provider.html` — **Panel del especialista**, a tokenized order-tracking page given to the assigned SERVI Partner for an individual order. Lets the specialist see job details, check in for each phase, propose price changes, and share live location. Backed by `/api/provider/order`, `/api/provider/checkin`, `/api/provider/price-change`, and `/api/provider/location` in `backend/index.mjs`. Authenticated via a per-order provider token (`pt`) in the link — no login.
 
 #### Payment Pages (standalone dark theme — DO NOT RESTYLE)
 
@@ -274,6 +278,13 @@ See `backend/db.pg.mjs` for the full schema. Key tables: `all_bookings`, `consen
 
 - Separate script for provider spreadsheet
 - Generates sequential IDs (`prov-000001`), marks verified/removed status
+
+### Design / Prototype References (NOT production)
+
+These live in the repo for design inspiration but are **not** wired into the live app — nothing in `frontend/` or `backend/` imports from them, and they ship no real payments or auth.
+
+- `native-app-reference/` — High-fidelity Expo + React Native + TypeScript prototype of what SERVI could feel like as a native mobile app. Mocked data only; isolated from the web app. See its own `README.md` for how to run it.
+- `dashboard.jsx` (repo root) — React source artifact from a Claude-generated admin dashboard redesign. The visual ideas have been ported into `frontend/admin.html`; this file is kept as a reference only.
 
 ### Environment Variables (`.env`)
 
