@@ -18,6 +18,7 @@ import { dirname } from 'path';
 import fetch from 'node-fetch';
 import { randomUUID, randomBytes, createHash, createHmac, scryptSync, timingSafeEqual } from 'crypto';
 import { rateLimit } from 'express-rate-limit';
+import helmet from 'helmet';
 import firebaseAdmin from 'firebase-admin';
 import multer from 'multer';
 import nodemailer from 'nodemailer';
@@ -26,6 +27,7 @@ import { NodeHttpHandler } from '@smithy/node-http-handler';
 import https from 'https';
 import Anthropic from '@anthropic-ai/sdk';
 import { classifyOrderOps, sortOpsItems, summarizeOps } from './ops-radar.mjs';
+import { providerLinkExpired } from './providerLink.mjs';
 import {
   buildMediaAnalysisSystemPrompt,
   buildMediaAnalysisUserPrompt,
@@ -1045,6 +1047,17 @@ const FRONTEND_DIR = path.join(__dirname, '..', 'frontend');
 
 const app = express();
 app.set('trust proxy', 1); // Render sits behind a load balancer; trust first proxy for real client IP
+
+// Security headers. CSP is off: the backend also serves the static frontend (locally and on
+// Render), whose pages load Stripe.js, Firebase, Google Fonts, and GSAP from CDNs — a strict
+// policy here would break pay.html/book.html. COOP is off because Google Sign-In and Firebase
+// auth popups need window.opener. CORP is relaxed so the Cloudflare Pages frontend can embed
+// backend-served assets. Everything else keeps helmet defaults (HSTS, nosniff, frameguard, …).
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginOpenerPolicy: false,
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+}));
 
 const adminRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -2615,7 +2628,8 @@ async function issueProviderLinkToken(orderId) {
 }
 
 // Resolve an order row from a provider-link token (constant-time compare against the stored token).
-// Returns the row or null. The token itself is the capability — no separate provider auth.
+// Returns the row or null. The token itself is the capability — no separate provider auth — so
+// expired/dead links are rejected here (see providerLink.mjs for the expiry policy).
 async function resolveProviderLinkOrder(orderId, providerToken) {
   const token = String(providerToken || '').trim();
   if (!orderId || !token) return null;
@@ -2623,6 +2637,7 @@ async function resolveProviderLinkOrder(orderId, providerToken) {
   const row = rows[0];
   if (!row || !row.provider_link_token) return null;
   if (!constantTimeEquals(row.provider_link_token, token)) return null;
+  if (providerLinkExpired(row)) return null;
   return row;
 }
 

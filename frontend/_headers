@@ -1,0 +1,15 @@
+# Cloudflare Pages security headers (applies to the production frontend).
+# The backend applies its own headers via helmet (backend/index.mjs); this file covers
+# the pages served directly by Pages, including pay.html/book.html.
+#
+# Deliberately NOT set:
+#   Content-Security-Policy       — pages load Stripe.js, Firebase, Google Fonts, GSAP from
+#                                   CDNs; a strict policy risks breaking the payment flow.
+#   Cross-Origin-Opener-Policy    — Google Sign-In / Firebase auth popups need window.opener.
+
+/*
+  X-Frame-Options: SAMEORIGIN
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(self), microphone=(self), geolocation=(self)
+  Strict-Transport-Security: max-age=15552000; includeSubDomains
