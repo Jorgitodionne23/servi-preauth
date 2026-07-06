@@ -17,6 +17,14 @@
 (function () {
   const BROWSE_HEADER_MORPH_Y = 180;
 
+  // User-supplied fields (name/email/phone) must be escaped before interpolation
+  // into innerHTML — a crafted display name is stored XSS on every page otherwise.
+  function esc(str) {
+    return String(str || '').replace(/[&<>"']/g, ch => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[ch]));
+  }
+
   function getBrowseHeaderMorphY() {
     return BROWSE_HEADER_MORPH_Y;
   }
@@ -118,8 +126,8 @@
   // ─── Account icon (shown beside hamburger when logged in) ──────────────
   function buildAccountBtn() {
     if (!window.__user) return '';
-    const initial = ((window.__user.name || window.__user.email || '?')[0]).toUpperCase();
-    return `<a class="site-header__account-btn" href="/account.html" aria-label="Mi cuenta" title="${window.__user.name || window.__user.email || 'Mi cuenta'}">${initial}</a>`;
+    const initial = esc(((window.__user.name || window.__user.email || '?')[0]).toUpperCase());
+    return `<a class="site-header__account-btn" href="/account.html" aria-label="Mi cuenta" title="${esc(window.__user.name || window.__user.email || 'Mi cuenta')}">${initial}</a>`;
   }
 
   // ─── Section variant detection ──────────────────────────────────────────
@@ -305,10 +313,10 @@
     const authRow = window.__user
       ? `
         <div class="site-drawer__user">
-          <div class="site-drawer__avatar">${((window.__user.name || window.__user.email || '?')[0]).toUpperCase()}</div>
+          <div class="site-drawer__avatar">${esc(((window.__user.name || window.__user.email || '?')[0]).toUpperCase())}</div>
           <div class="site-drawer__user-meta">
-            <div class="site-drawer__user-name">${window.__user.name || ''}</div>
-            <div class="site-drawer__user-contact">${window.__user.email || window.__user.phone || ''}</div>
+            <div class="site-drawer__user-name">${esc(window.__user.name || '')}</div>
+            <div class="site-drawer__user-contact">${esc(window.__user.email || window.__user.phone || '')}</div>
           </div>
         </div>
         <a class="site-drawer__row" href="/account.html">

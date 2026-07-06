@@ -4555,10 +4555,21 @@ async function executeDeleteAccount(btn) {
   btn.disabled = true; btn.textContent = '...';
   if (errEl) errEl.textContent = '';
 
+  // Deletion is destructive: backend requires a fresh Firebase re-auth token
+  // (60s window), same as phone/email changes.
+  let reauthToken = null;
+  try {
+    reauthToken = await reauthenticate();
+  } catch (err) {
+    btn.disabled = false; btn.textContent = t.confirmDeleteBtn;
+    if (err.code !== 'reauth_cancelled' && errEl) errEl.textContent = t.errDeleteFailed;
+    return;
+  }
+
   try {
     const res = await fetch(API + '/api/auth/me', {
       method: 'DELETE',
-      headers: authHeaders(),
+      headers: { ...authHeaders(), 'X-Firebase-Reauth-Token': reauthToken },
     });
     if (!res.ok) {
       let detail = '';
@@ -4633,7 +4644,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Wait for session to be restored, then verify token is valid via backend
   const waitForUser = async (attempts) => {
-    // Wait for window.__user to appear (set by shared-nav restoreSession or Firebase onAuthStateChanged)
+    // Wait for window.__user to appear (set by morphing-nav restoreSession or Firebase onAuthStateChanged)
     if (!window.__user && attempts > 0) {
       setTimeout(() => waitForUser(attempts - 1), 100);
       return;

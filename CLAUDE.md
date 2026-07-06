@@ -207,9 +207,8 @@ See `backend/db.pg.mjs` for the full schema. Key tables: `all_bookings`, `consen
 - `shared-styles.css` — Global design system (brand colors, components, animations)
 - `landing-theme.css` — Extended CSS for landing/marketing pages (~115KB)
 - `shared-auth.js` — Firebase auth flow (phone OTP, email magic link, Google OAuth, cross-identifier recovery — ~3,070 lines)
-- `shared-nav.js` — Navigation bar (language toggle, auth state, user menu dropdown, mobile hamburger)
 - `shared-footer.js` — 4-column footer component
-- `morphing-nav.js` — Animated navbar variant used on landing page (~1,770 lines)
+- `morphing-nav.js` — Navigation bar / animated header used by all customer-facing pages: session restore, language toggle, auth state, user drawer, mobile hamburger (~1,770 lines). (The old `shared-nav.js` was removed — it was dead code.)
 - `i18n.js` — Full Spanish/English translation system
 - `browse-data.js` — Service category/provider data for browse and service pages
 - `address-form.js` — Shared structured CDMX-aware address form (`window.ServiAddress`) used by `account.html` saved-address book and `service.html` booking panel

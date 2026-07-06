@@ -63,7 +63,7 @@ frontend/
   config.js          — runtime config (API_BASE, Stripe publishable key, Firebase config, WhatsApp number)
   smart-request/     — Smart Request app (catalog.js, heuristic.js, parse.js, sr-app.js, sr-icons.js, sr-styles.css)
   shared/            — shared-styles.css, landing-theme.css, shared-auth.js,
-                       shared-nav.js, shared-footer.js, morphing-nav.js,
+                       shared-footer.js, morphing-nav.js,
                        i18n.js (ES/EN), browse-data.js, address-form.js,
                        shared-active-order.js, contact-cta.js, motion.js
 

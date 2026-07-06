@@ -5,7 +5,7 @@
 //   Signup: primary OTP → name + terms → secondary ID (optional) → secondary OTP
 //   Login:  primary OTP (phone or email based on provider) → done
 //   Cross-ID recovery: email not found → check mismatch → merge with phone account
-// Include AFTER i18n.js and BEFORE shared-nav.js.
+// Include AFTER i18n.js and BEFORE morphing-nav.js.
 
 (function () {
   const FIREBASE_VERSION = '10.12.0';
