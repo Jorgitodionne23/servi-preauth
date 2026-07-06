@@ -28,6 +28,7 @@ import https from 'https';
 import Anthropic from '@anthropic-ai/sdk';
 import { classifyOrderOps, sortOpsItems, summarizeOps } from './ops-radar.mjs';
 import { providerLinkExpired } from './providerLink.mjs';
+import { createAuthTokens, constantTimeEquals, isInvalidatedByCutoff } from './authTokens.mjs';
 import {
   buildMediaAnalysisSystemPrompt,
   buildMediaAnalysisUserPrompt,
@@ -138,40 +139,48 @@ if (!process.env.JWT_SECRET) {
 const SESSION_TTL_SECS = 24 * 60 * 60;
 const SESSION_REFRESH_GRACE_SECS = 24 * 60 * 60;
 
-function signSessionToken(payload) {
-  const now = Math.floor(Date.now() / 1000);
-  const jti = randomUUID();
-  const fullPayload = { ...payload, iat: now, exp: now + SESSION_TTL_SECS, jti };
-  const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
-  const body = Buffer.from(JSON.stringify(fullPayload)).toString('base64url');
-  const signature = createHmac('sha256', JWT_SECRET).update(`${header}.${body}`).digest('base64url');
-  return `${header}.${body}.${signature}`;
-}
-
-// Synchronous: signature + expiry only. Does NOT consult the revocation list.
-// Use verifySessionTokenAsync for routes that need revocation checking.
-function verifySessionToken(token) {
-  if (!token) return null;
-  const [header, body, signature] = token.split('.');
-  if (!header || !body || !signature) return null;
-  const expectedSignature = createHmac('sha256', JWT_SECRET).update(`${header}.${body}`).digest('base64url');
-  if (signature !== expectedSignature) return null;
-  try {
-    const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
-    if (payload.exp && Math.floor(Date.now() / 1000) > payload.exp) return null;
-    return payload;
-  } catch (e) { return null; }
-}
+// Pure token logic (sign/verify/refresh-decode) lives in authTokens.mjs so it can
+// be unit-tested without booting the server. Verification is timing-safe and always
+// HMAC-SHA256 regardless of the header's alg claim.
+const { signSessionToken, verifySessionToken, decodeForRefresh } = createAuthTokens({
+  secret: JWT_SECRET,
+  ttlSecs: SESSION_TTL_SECS,
+  refreshGraceSecs: SESSION_REFRESH_GRACE_SECS,
+});
 
 async function verifySessionTokenAsync(token) {
   const payload = verifySessionToken(token);
   if (!payload) return null;
-  if (!payload.jti) return payload; // legacy 7d tokens predating jti — accept until they expire
+  if (!payload.user_id) {
+    // Non-user session tokens: jti-only revocation check (legacy jti-less accepted).
+    if (!payload.jti) return payload;
+    try {
+      const { rows } = await pool.query('SELECT 1 FROM revoked_sessions WHERE jti = $1 LIMIT 1', [payload.jti]);
+      if (rows.length) return null;
+    } catch (err) {
+      console.error('[verifySessionTokenAsync] revocation check failed:', err.message);
+      // Fail closed in production; open in dev to keep local work unblocked.
+      if (IS_PRODUCTION) return null;
+    }
+    return payload;
+  }
   try {
-    const { rows } = await pool.query('SELECT 1 FROM revoked_sessions WHERE jti = $1 LIMIT 1', [payload.jti]);
-    if (rows.length) return null;
+    // One round-trip: jti revocation + user existence + user-level invalidation cutoff.
+    // No user row → account deleted → every outstanding token dies immediately.
+    const { rows } = await pool.query(
+      `SELECT u.sessions_invalidated_before AS cutoff,
+              u.sessions_invalidated_exempt_jti AS exempt_jti,
+              (r.jti IS NOT NULL) AS revoked
+         FROM auth_users u
+         LEFT JOIN revoked_sessions r ON r.jti = $2
+        WHERE u.id = $1`,
+      [payload.user_id, payload.jti || null]
+    );
+    if (!rows.length) return null;
+    if (rows[0].revoked) return null;
+    if (isInvalidatedByCutoff(payload, rows[0].cutoff, rows[0].exempt_jti)) return null;
   } catch (err) {
-    console.error('[verifySessionTokenAsync] revocation check failed:', err.message);
+    console.error('[verifySessionTokenAsync] session check failed:', err.message);
     // Fail closed in production; open in dev to keep local work unblocked.
     if (IS_PRODUCTION) return null;
   }
@@ -1235,13 +1244,8 @@ app.use((req, res, next) => {
   return next();
 });
 
-function constantTimeEquals(a, b) {
-  if (!a || !b) return false;
-  const aBuf = Buffer.from(String(a), 'utf8');
-  const bBuf = Buffer.from(String(b), 'utf8');
-  if (aBuf.length !== bBuf.length) return false;
-  return timingSafeEqual(aBuf, bBuf);
-}
+// constantTimeEquals is imported from authTokens.mjs (hash-then-compare so
+// mismatched lengths don't leak via an early return).
 
 function getAdminTokenFromReq(req) {
   if (!req) return '';
@@ -6883,7 +6887,7 @@ app.post('/api/auth/check-phone-available', publicFormLimit, async (req, res) =>
 
 // POST /api/auth/resolve-identifier-mismatch — detect orphaned phone account for an email that isn't registered.
 // Requires a valid Firebase ID token proving ownership of the email BEFORE returning any hint.
-// Rate-limited via publicFormLimit (5/min per IP from express-rate-limit config).
+// Rate-limited via publicFormLimit (30 req / 15 min per IP).
 app.post('/api/auth/resolve-identifier-mismatch', publicFormLimit, async (req, res) => {
   try {
     const { identifier, firebase_id_token, phone } = req.body || {};
@@ -7022,6 +7026,13 @@ app.patch('/api/auth/me', publicFormLimit, async (req, res) => {
       changes.push('phone');
     }
     if (!sets.length) return res.status(400).json({ error: 'no_fields' });
+    // Identifier changes kill every other session (user-level cutoff). The session
+    // that made the change survives via the exempt jti — it just passed re-auth.
+    if (changes.includes('email') || changes.includes('phone')) {
+      sets.push('sessions_invalidated_before = NOW()');
+      params.push(payload.jti || null);
+      sets.push(`sessions_invalidated_exempt_jti = $${params.length}`);
+    }
     params.push(payload.user_id);
     await pool.query(`UPDATE auth_users SET ${sets.join(', ')} WHERE id = $${params.length}`, params);
     const { rows } = await pool.query('SELECT id, email, name, phone, firebase_uid, auth_provider, phone_verified, email_verified, terms_accepted_at, email_skipped_at FROM auth_users WHERE id = $1', [payload.user_id]);
@@ -7089,8 +7100,9 @@ app.post('/api/auth/send-email-verification', publicFormLimit, async (req, res) 
   }
 });
 
-// GET /api/auth/verify-email — verify email token and mark email as verified
-app.get('/api/auth/verify-email', async (req, res) => {
+// GET /api/auth/verify-email — verify email token and mark email as verified.
+// Rate-limited: state-changing endpoint reachable without auth (token in query).
+app.get('/api/auth/verify-email', publicFormLimit, async (req, res) => {
   try {
     const { token } = req.query;
     if (!token) return res.status(400).json({ error: 'missing_token' });
@@ -7116,11 +7128,13 @@ app.post('/api/auth/change-password', publicFormLimit, (req, res) => {
 });
 
 // DELETE /api/auth/me — delete account
-// Note (audit A2): does NOT require requireRecentAuth per product decision.
-// JWT alone is sufficient. Risk acknowledged: an XSS-stolen token could delete the account.
+// A2 (revised 2026-07): deletion now requires fresh re-auth (60s window) so a stolen
+// session JWT alone cannot destroy the account. Client sends X-Firebase-Reauth-Token.
 app.delete('/api/auth/me', publicFormLimit, async (req, res) => {
   const payload = await requireUserAuth(req, res);
   if (!payload) return;
+  const reauthed = await requireRecentAuth(req, res, RECENT_AUTH_DESTRUCTIVE_SECS, payload);
+  if (!reauthed) return;
   const userId = payload.user_id;
   // Delete the user's rows atomically so a mid-sequence failure can't orphan addresses /
   // saved_servi_users or leave a half-deleted account.
@@ -7142,6 +7156,16 @@ app.delete('/api/auth/me', publicFormLimit, async (req, res) => {
       await client.query('DELETE FROM saved_servi_users WHERE customer_id = $1', [stripeCustomerId]);
     }
     const delRes = await client.query('DELETE FROM auth_users WHERE id = $1', [userId]);
+    // A6: revoke this session's jti inside the transaction so the JWT can't be
+    // replayed if post-commit cleanup fails (revoked_sessions has no FK to auth_users).
+    if (payload.jti) {
+      await client.query(
+        `INSERT INTO revoked_sessions (jti, user_id, expires_at, reason)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (jti) DO NOTHING`,
+        [payload.jti, userId, new Date(Date.now() + SESSION_TTL_SECS * 1000), 'account_delete']
+      );
+    }
     await client.query('COMMIT');
     console.log('[DELETE /api/auth/me] deleted user row, rowCount=', delRes.rowCount, 'userId=', userId);
   } catch (err) {
@@ -7154,12 +7178,6 @@ app.delete('/api/auth/me', publicFormLimit, async (req, res) => {
   }
 
   // Post-commit cleanup — best-effort, must not resurrect or fail the now-deleted account.
-  // A6: revoke this session's JWT so it can't be replayed before natural expiry.
-  try {
-    await revokeSessionJti(payload.jti, userId, 'account_delete');
-  } catch (revErr) {
-    console.warn('[DELETE /api/auth/me] session revoke failed (non-blocking):', revErr.message);
-  }
   if (firebaseUid) {
     try {
       await firebaseAdmin.auth().deleteUser(firebaseUid);
@@ -7191,27 +7209,11 @@ app.post('/api/auth/refresh', publicFormLimit, async (req, res) => {
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
   if (!token) return res.status(401).json({ error: 'no_token' });
 
-  // Verify the token but accept it even if recently expired (≤24h grace)
-  let payload = null;
-  try {
-    const parts = token.split('.');
-    if (parts.length !== 3) return res.status(401).json({ error: 'invalid_token' });
-    const decoded = JSON.parse(Buffer.from(parts[1].replace(/-/g,'+').replace(/_/g,'/'), 'base64').toString('utf8'));
-
-    // Verify signature
-    const expectedSig = createHmac('sha256', JWT_SECRET).update(`${parts[0]}.${parts[1]}`).digest('base64url');
-    if (expectedSig !== parts[2]) return res.status(401).json({ error: 'invalid_signature' });
-
-    // Check expiry with grace period: allow tokens expired ≤24h ago
-    const now = Math.floor(Date.now() / 1000);
-    if (decoded.exp && decoded.exp + 86400 < now) {
-      return res.status(401).json({ error: 'token_too_old' });
-    }
-
-    payload = decoded;
-  } catch (err) {
-    return res.status(401).json({ error: 'invalid_token' });
-  }
+  // Verify the token but accept it even if recently expired (grace window,
+  // SESSION_REFRESH_GRACE_SECS). Signature check is timing-safe.
+  const decoded = decodeForRefresh(token);
+  if (decoded.error) return res.status(401).json({ error: decoded.error });
+  const payload = decoded.payload;
 
   if (!payload?.user_id) return res.status(401).json({ error: 'no_user_id' });
 
@@ -7229,11 +7231,17 @@ app.post('/api/auth/refresh', publicFormLimit, async (req, res) => {
   try {
     // Re-fetch user from DB (don't trust JWT claims for user data)
     const { rows } = await pool.query(
-      'SELECT id, email, name, phone, firebase_uid, auth_provider, phone_verified, email_verified, terms_accepted_at, email_skipped_at FROM auth_users WHERE id = $1',
+      'SELECT id, email, name, phone, firebase_uid, auth_provider, phone_verified, email_verified, terms_accepted_at, email_skipped_at, sessions_invalidated_before, sessions_invalidated_exempt_jti FROM auth_users WHERE id = $1',
       [payload.user_id]
     );
     if (!rows.length) return res.status(404).json({ error: 'user_not_found' });
     const u = rows[0];
+
+    // Honor the user-level invalidation cutoff — a dying session must not be able
+    // to refresh itself back to life after an identifier change on another device.
+    if (isInvalidatedByCutoff(payload, u.sessions_invalidated_before, u.sessions_invalidated_exempt_jti)) {
+      return res.status(401).json({ error: 'token_revoked' });
+    }
 
     const newToken = signSessionToken({
       user_id: u.id, email: u.email, name: u.name, phone: u.phone,

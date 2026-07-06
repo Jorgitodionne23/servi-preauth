@@ -523,6 +523,10 @@ export async function initDb() {
     ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS email_skipped_at TIMESTAMPTZ;
     ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS email_verify_token TEXT;
     ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS email_verify_token_expires_at TIMESTAMPTZ;
+    -- User-level session invalidation: tokens issued before the cutoff are dead,
+    -- except the exempt jti (the session that performed the identifier change).
+    ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS sessions_invalidated_before TIMESTAMPTZ;
+    ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS sessions_invalidated_exempt_jti TEXT;
 
     CREATE TABLE IF NOT EXISTS auth_email_link_flows (
       id TEXT PRIMARY KEY,
