@@ -168,6 +168,14 @@ test('string cutoff (pg driver may return text) is handled', () => {
   assert.equal(isInvalidatedByCutoff({ iat: iatBefore, jti: 'a' }, '2026-01-02T00:00:00Z', null), true);
 });
 
+test('token minted in the same second as the cutoff survives (second granularity)', () => {
+  const iat = Math.floor(new Date('2026-01-01T00:00:05.000Z').getTime() / 1000);
+  // Cutoff 500ms into the same second — iat truncation must not kill the token.
+  assert.equal(isInvalidatedByCutoff({ iat, jti: 'a' }, new Date('2026-01-01T00:00:05.500Z'), null), false);
+  // One full second earlier → invalidated.
+  assert.equal(isInvalidatedByCutoff({ iat: iat - 1, jti: 'a' }, new Date('2026-01-01T00:00:05.500Z'), null), true);
+});
+
 // ── source-level regression guards (pattern from accountOrders.test.mjs) ─────
 
 test('index.mjs uses hardened auth primitives', async () => {

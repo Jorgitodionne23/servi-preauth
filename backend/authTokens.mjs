@@ -16,13 +16,16 @@ export function constantTimeEquals(a, b) {
 // User-level session invalidation: a token is dead if it was issued before the
 // account's sessions_invalidated_before cutoff — unless it is the exempt jti
 // (the session that performed the identifier change and just passed re-auth).
+// Compared at second granularity (iat is second-precision per JWT convention):
+// a token minted in the same second as the cutoff survives, so fresh logins and
+// rotated tokens aren't spuriously killed by the cutoff's millisecond remainder.
 export function isInvalidatedByCutoff(payload, cutoff, exemptJti) {
   if (!cutoff) return false;
   const cutoffMs = cutoff instanceof Date ? cutoff.getTime() : new Date(cutoff).getTime();
   if (!Number.isFinite(cutoffMs)) return false;
   if (exemptJti && payload?.jti === exemptJti) return false;
-  const iatMs = (Number(payload?.iat) || 0) * 1000;
-  return iatMs < cutoffMs;
+  const iatSecs = Number(payload?.iat) || 0;
+  return iatSecs < Math.floor(cutoffMs / 1000);
 }
 
 export function createAuthTokens({ secret, ttlSecs, refreshGraceSecs }) {

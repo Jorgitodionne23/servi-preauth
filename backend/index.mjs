@@ -7248,6 +7248,14 @@ app.post('/api/auth/refresh', publicFormLimit, async (req, res) => {
       auth_provider: u.auth_provider,
     });
 
+    // If the exempt session (the one that made an identifier change) rotates,
+    // carry the exemption to the new jti — iat is second-truncated, so the fresh
+    // token could otherwise land before a cutoff written in the same second.
+    if (payload.jti && u.sessions_invalidated_exempt_jti && payload.jti === u.sessions_invalidated_exempt_jti) {
+      const newJti = JSON.parse(Buffer.from(newToken.split('.')[1], 'base64url').toString('utf8')).jti;
+      await pool.query('UPDATE auth_users SET sessions_invalidated_exempt_jti = $1 WHERE id = $2', [newJti, u.id]);
+    }
+
     // A6: rotate the jti — revoke the old one so a stolen pre-refresh JWT can't be reused
     if (payload.jti) await revokeSessionJti(payload.jti, u.id, 'refresh_rotation');
 
