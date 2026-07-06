@@ -169,7 +169,7 @@ flowchart LR
 
   subgraph BE["Backend (Render)"]
     AUTH["/api/auth/firebase<br/>verifyIdToken"]
-    JWT["signSessionToken<br/>HS256 · 7d TTL"]
+    JWT["signSessionToken<br/>HS256 · 24h TTL + refresh"]
     GUARD["Booking gate<br/>email_verified ∧ phone_verified"]
     AUTH --> JWT
     AUTH --> GUARD
@@ -318,7 +318,7 @@ sequenceDiagram
   end
   BE->>BE: signSessionToken({user_id, email, phone, ...})
   BE-->>FE: 200 {token, user}
-  Note right of BE: JWT TTL = 7 days<br/>HMAC-SHA256<br/>Secret: JWT_SECRET<br/>(falls back to STRIPE_WEBHOOK_SECRET) <a href="./AUTH_AUDIT.md#a1">A1</a>
+  Note right of BE: JWT TTL = 24h<br/>HMAC-SHA256 (timing-safe verify)<br/>Secret: JWT_SECRET (required in prod,<br/>backend throws at startup if missing)<br/>Refresh: /api/auth/refresh rotates jti,<br/>≤24h grace, old jti revoked
   </pre>
   </div>
   <div class="callout callout-warn">
@@ -479,9 +479,9 @@ stateDiagram-v2
         <td><strong>SERVI custom JWT</strong></td>
         <td>Backend (HS256)</td>
         <td><code>localStorage.servi_user_session</code></td>
-        <td class="mono">7 days</td>
-        <td>None (re-auth required)</td>
-        <td>None (no server-side revocation list)</td>
+        <td class="mono">24 hours</td>
+        <td><code>POST /api/auth/refresh</code> — jti rotation, ≤24h grace; frontend refreshes proactively &lt;6h before expiry</td>
+        <td><code>revoked_sessions</code> jti tombstones (logout, delete, rotation) + per-user <code>sessions_invalidated_before</code> cutoff (identifier changes)</td>
         <td>
           <a class="audit-flag" href="./AUTH_AUDIT.md#a1-jwt-secret-falls-back-to-stripe-webhook-secret-then-to-a-hardcoded-string">A1</a>
           <a class="audit-flag" href="./AUTH_AUDIT.md#a2-custom-jwts-stored-in-localstorage-readable-by-any-xss">A2</a>

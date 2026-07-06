@@ -65,6 +65,13 @@ Phone-first and email-first paths are **mirrors of each other**.
 
 Frontend renders appropriate inline collection form.
 
+**First-order exception (as implemented):** `phone_verified` is enforced
+unconditionally, but `email_verified` is only enforced when the user has prior
+service activity (`hasPriorServiceActivity` — any `service_requests` row by
+`customer_id` or matching phone, or a non-adjustment `all_bookings` row by
+phone). A brand-new user who skipped email at signup may place their **first**
+order phone-only; email verification is required from the second order onward.
+
 ---
 
 ## 2. Cross-Identifier Login Recovery
@@ -453,19 +460,29 @@ CREATE TABLE auth_users (
 ### POST /api/service-requests — Gate Logic (Pseudocode)
 
 ```javascript
-// Inside POST /api/service-requests, after auth check:
+// Inside POST /api/service-requests, after auth check (matches backend/index.mjs):
 
 if (req.user) {
-  // Authenticated user — enforce email verification
-  const { email_verified } = await pool.query(
-    'SELECT email_verified FROM auth_users WHERE id = $1',
-    [req.user.id]
-  );
+  // Load DB flags; a live Firebase getUser() lookup may upgrade them when the
+  // Firebase account proves the matching identifier (split-account safety).
+  let { phone_verified, email_verified } = await loadVerificationFlags(req.user.id);
 
-  if (!email_verified) {
+  // Phone is always required for authenticated bookings.
+  if (!phone_verified) {
+    return res.status(409).json({
+      error: 'phone_required',
+      message: 'Verifica tu número de teléfono para confirmar tu solicitud.'
+    });
+  }
+
+  // Email is required only from the SECOND order onward (first-order exception):
+  // a brand-new user who skipped email at signup may place their first order
+  // phone-only. hasPriorServiceActivity checks service_requests + all_bookings.
+  if (!email_verified && await hasPriorServiceActivity(req.user)) {
     return res.status(409).json({
       error: 'email_required',
-      message: 'Verifica tu correo para confirmar tu solicitud'
+      message: 'Verifica tu correo electrónico para confirmar tu solicitud.',
+      requiresEmailVerification: true
     });
   }
 }

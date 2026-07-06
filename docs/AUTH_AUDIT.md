@@ -171,7 +171,14 @@ No DB row written for: password change, phone change, email change, login from n
 
 ### Explicitly out of scope
 
-**No re-authentication / OTP step on `DELETE /api/auth/me`** (per product decision). Frictionless deletion stays — same JWT-only check as today. Risk acknowledged: an XSS that steals the JWT can delete the account.
+**No re-authentication / OTP step on `DELETE /api/auth/me`** ~~(per product decision). Frictionless deletion stays — same JWT-only check as today. Risk acknowledged: an XSS that steals the JWT can delete the account.~~
+
+> **Decision reversed (2026-07):** account deletion now requires fresh re-auth
+> (`requireRecentAuth`, 60s window, `X-Firebase-Reauth-Token` header) — the same
+> step-up already used for phone/email changes. A stolen session JWT alone can
+> no longer delete an account. The deletion transaction also revokes the
+> session's jti before commit, and deleted users' remaining tokens die
+> immediately because token verification now checks user-row existence.
 
 ---
 
