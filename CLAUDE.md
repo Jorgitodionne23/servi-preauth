@@ -212,6 +212,7 @@ See `backend/db.pg.mjs` for the full schema. Key tables: `all_bookings`, `consen
 - `morphing-nav.js` — Animated navbar variant used on landing page (~1,770 lines)
 - `i18n.js` — Full Spanish/English translation system
 - `browse-data.js` — Service category/provider data for browse and service pages
+- `service-details.js` — Per-subcategory "tell us more" follow-up questions (bilingual chips + short text) shown in the `service.html` booking sidebar so admin gets dispatch context without interrogating the customer
 - `address-form.js` — Shared structured CDMX-aware address form (`window.ServiAddress`) used by `account.html` saved-address book and `service.html` booking panel
 - `shared-active-order.js` — Floating "active order" dock that surfaces a logged-in customer's ongoing/pending order on every customer-facing page (status + pay shortcut)
 - `contact-cta.js` — Runtime rewrite of contact CTAs based on `window.CONFIG.CONTACT_MODE` (`'email'` vs `'whatsapp'`); single edit in `config.js` toggles every `wa.me` link site-wide
@@ -285,6 +286,7 @@ These live in the repo for design inspiration but are **not** wired into the liv
 
 - `native-app-reference/` — High-fidelity Expo + React Native + TypeScript prototype of what SERVI could feel like as a native mobile app. Mocked data only; isolated from the web app. See its own `README.md` for how to run it.
 - `dashboard.jsx` (repo root) — React source artifact from a Claude-generated admin dashboard redesign. The visual ideas have been ported into `frontend/admin.html`; this file is kept as a reference only.
+- `frontend/design_handoff_smart_request/` — Original design handoff package (standalone HTML/CSS/JS prototype + integration guide) for the Smart Request booking flow. The flow has since been ported into `frontend/smart-request/` and `frontend/index.html`; the handoff folder is kept as reference only and is not loaded by the live app.
 
 ### Environment Variables (`.env`)
 
