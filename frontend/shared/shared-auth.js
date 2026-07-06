@@ -989,14 +989,14 @@
       continueAfterEmailLinkFlow();
     }, 1000);
 
-    // Cleanup on modal close
-    var originalCloseAuthModal = window.closeAuthModal;
-    window.closeAuthModal = function (force) {
+    // Cleanup on modal close — stored in a module-scoped slot consumed by the
+    // canonical window.closeAuthModal below. (Previously this monkey-patched
+    // closeAuthModal, stacking a new wrapper every time the monitor restarted.)
+    emailMonitorCleanup = function () {
       if (pollInterval) clearInterval(pollInterval);
       if (onVerificationDetected) window.removeEventListener('storage', onVerificationDetected);
       document.removeEventListener('visibilitychange', onVisibilityChange);
       window.__uslManualEmailContinue = null;
-      if (originalCloseAuthModal) originalCloseAuthModal(force);
     };
 
     // Manual escape hatch: user taps "Ya verifiqué" — bypasses storage event
@@ -2866,6 +2866,9 @@
     renderIdentifierScreen();
   };
 
+  // Slot for the email-verification monitor's teardown (set in __monitorEmailVerification).
+  var emailMonitorCleanup = null;
+
   window.closeAuthModal = function (force) {
     if (!force && isSignupFlowLocked()) {
       setError(isEs()
@@ -2873,6 +2876,7 @@
         : 'Complete these steps to finish sign up.');
       return;
     }
+    if (emailMonitorCleanup) { try { emailMonitorCleanup(); } catch (e) {} emailMonitorCleanup = null; }
     document.getElementById('auth-modal-global').innerHTML = '';
     document.body.style.overflow = '';
     if (recaptchaVerifier) { try { recaptchaVerifier.clear(); } catch (e) {} recaptchaVerifier = null; }
@@ -2898,6 +2902,23 @@
     document.body.appendChild(toast);
     setTimeout(function () { if (toast.parentElement) toast.remove(); }, 6000);
   }
+
+  // ── Cross-tab auth sync ───────────────────────────────────────────────────────
+  // Login, logout, and token rotation in one tab propagate to the others via the
+  // storage event (fires only in OTHER tabs). API calls already read the token from
+  // localStorage per request, so in-flight tabs pick up rotated tokens automatically;
+  // this listener keeps window.__user and the navbar in sync too.
+  window.addEventListener('storage', function (e) {
+    if (e.key !== 'servi_user_session') return;
+    try {
+      var session = e.newValue ? JSON.parse(e.newValue) : null;
+      window.__user = (session && session.user) ? session.user : null;
+    } catch (_) {
+      window.__user = null;
+    }
+    if (window.buildNavbar) window.buildNavbar();
+    else if (window.updateNavForAuth) window.updateNavForAuth();
+  });
 
   // ── Service-request submit helpers (shared across pages) ─────────────────────
   // Used by service.html and the Smart Request flow (frontend/smart-request/sr-app.js).

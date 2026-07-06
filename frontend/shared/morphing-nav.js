@@ -29,7 +29,71 @@
     return BROWSE_HEADER_MORPH_Y;
   }
 
-  // ─── Session restore (unchanged from previous implementation) ──────────
+  // ─── Session restore + token refresh ────────────────────────────────────
+  // Refresh runs in two modes:
+  //   proactive — token still valid but expiring within PROACTIVE_REFRESH_SECS;
+  //               rotate in the background so users never work with a dead token
+  //   grace     — token already expired ≤24h ago (matches backend refresh grace);
+  //               render optimistically, then refresh or log out
+  const PROACTIVE_REFRESH_SECS = 6 * 60 * 60; // 25% of the 24h TTL
+  let refreshInFlight = false;
+
+  function refreshSessionToken(session) {
+    if (refreshInFlight || !session?.token) return;
+    // Multi-tab stampede guard: refresh rotates the jti (old token is revoked),
+    // so concurrent refreshes from several tabs would race each other out.
+    try {
+      const last = Number(localStorage.getItem('servi_last_refresh_at') || 0);
+      if (Date.now() - last < 60 * 1000) { adoptRotatedSession(session); return; }
+      localStorage.setItem('servi_last_refresh_at', String(Date.now()));
+    } catch (_) {}
+    refreshInFlight = true;
+    (async function () {
+      try {
+        const apiBase = ((window.CONFIG && window.CONFIG.API_BASE) || '').replace(/\/+$/, '');
+        const refreshRes = await fetch(apiBase + '/api/auth/refresh', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + session.token }
+        });
+        if (refreshRes.ok) {
+          const data = await refreshRes.json();
+          if (data.token && data.user) {
+            const newSession = { token: data.token, user: data.user, firebaseUid: session.firebaseUid };
+            localStorage.setItem('servi_user_session', JSON.stringify(newSession));
+            window.__user = data.user;
+            if (window.buildNavbar) window.buildNavbar();
+          }
+        } else {
+          // Rotation race: another tab may have already refreshed (revoking the
+          // token we sent). Adopt the newer stored session before logging out.
+          if (adoptRotatedSession(session)) return;
+          localStorage.removeItem('servi_user_session');
+          window.__user = null;
+          window.__sessionExpired = true;
+          if (window.buildNavbar) window.buildNavbar();
+        }
+      } catch (_) {
+        // Network failure: keep the current session; next page load retries.
+      } finally {
+        refreshInFlight = false;
+      }
+    })();
+  }
+
+  // If localStorage now holds a different (newer) token than the one this tab
+  // started with, another tab rotated the session — use it. Returns true if adopted.
+  function adoptRotatedSession(session) {
+    try {
+      const current = JSON.parse(localStorage.getItem('servi_user_session') || 'null');
+      if (current && current.token && current.token !== session.token) {
+        if (current.user) window.__user = current.user;
+        if (window.buildNavbar) window.buildNavbar();
+        return true;
+      }
+    } catch (_) {}
+    return false;
+  }
+
   function restoreSession() {
     try {
       const raw = localStorage.getItem('servi_user_session');
@@ -57,29 +121,7 @@
                 auth_provider: base.auth_provider || null,
               };
               if (!window.__user.id) { window.__user = null; return; }
-              (async function tryRefresh() {
-                try {
-                  const apiBase = ((window.CONFIG && window.CONFIG.API_BASE) || '').replace(/\/+$/, '');
-                  const refreshRes = await fetch(apiBase + '/api/auth/refresh', {
-                    method: 'POST',
-                    headers: { 'Authorization': 'Bearer ' + session.token }
-                  });
-                  if (refreshRes.ok) {
-                    const data = await refreshRes.json();
-                    if (data.token && data.user) {
-                      const newSession = { token: data.token, user: data.user, firebaseUid: session.firebaseUid };
-                      localStorage.setItem('servi_user_session', JSON.stringify(newSession));
-                      window.__user = data.user;
-                      if (window.buildNavbar) window.buildNavbar();
-                    }
-                  } else {
-                    localStorage.removeItem('servi_user_session');
-                    window.__user = null;
-                    window.__sessionExpired = true;
-                    if (window.buildNavbar) window.buildNavbar();
-                  }
-                } catch (_) {}
-              })();
+              refreshSessionToken(session);
               return;
             }
             localStorage.removeItem('servi_user_session');
@@ -97,7 +139,11 @@
         phone: base.phone || tokenPayload?.phone || null,
         auth_provider: base.auth_provider || null,
       };
-      if (!window.__user.id) { window.__user = null; }
+      if (!window.__user.id) { window.__user = null; return; }
+      // Proactive refresh: token valid but inside the renewal window.
+      if (tokenPayload?.exp && (tokenPayload.exp - Date.now() / 1000) < PROACTIVE_REFRESH_SECS) {
+        refreshSessionToken(session);
+      }
     } catch (e) { window.__user = null; }
   }
 

@@ -4642,6 +4642,12 @@ document.addEventListener('DOMContentLoaded', () => {
   guardAuth();
   applyTranslations();
 
+  // Cross-tab logout: this page is auth-guarded, so if another tab clears the
+  // session (logout / account deletion), leave immediately.
+  window.addEventListener('storage', (e) => {
+    if (e.key === 'servi_user_session' && !e.newValue) window.location.replace('/');
+  });
+
   // Wait for session to be restored, then verify token is valid via backend
   const waitForUser = async (attempts) => {
     // Wait for window.__user to appear (set by morphing-nav restoreSession or Firebase onAuthStateChanged)
