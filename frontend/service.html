@@ -690,6 +690,46 @@
   const catKey = params.get('category') || '';
   const subKey = params.get('sub') || '';
   const serviceName = params.get('service') || '';
+  const representativeServiceImageIndex = {
+    cleaning: {
+      'home-cleaning': 0,
+      'deep-cleaning': 4,
+      'dry-cleaning': 0,
+    },
+    repair: {
+      gardening: 1,
+      plumbing: 0,
+      electrical: 0,
+      carpentry: 0,
+      locksmith: 0,
+      handyman: 4,
+      'assembly-installation': 4,
+      tailoring: 3,
+    },
+    moving: {
+      moving: 0,
+      'large-items': 0,
+      errands: 0,
+      deliveries: 0,
+    },
+    wellness: {
+      massage: 0,
+      therapist: 0,
+      'personal-trainer': 0,
+      'pet-care': 1,
+      'child-care': 0,
+      'elder-assistance': 0,
+    },
+    suppliers: {
+      'artisan-bread': 0,
+      'fresh-dairy': 0,
+      pharmacy: 1,
+      catering: 3,
+      'organic-butcher': 3,
+      fish: 3,
+      'organic-vegetables': 0,
+    },
+  };
 
   function getCatalogData() {
     const catData = window.browseCategoryData && window.browseCategoryData[catKey];
@@ -776,24 +816,14 @@
   function getServiceHeroImage(subData) {
     const subImage = getSubcategoryImage();
     const categoryFallback = (window.discoveryFallbackByCategory || {})[catKey] || '/assets/partnerimage.png';
-    const serviceIndex = getServiceIndex(subData);
-    if (serviceIndex === -1) {
-      return { src: subImage, onerror: buildImageFallbackHandler([categoryFallback, '/assets/partnerimage.png']) };
-    }
-
-    const photoId = Array.isArray(subData.serviceImages) ? subData.serviceImages[serviceIndex] : '';
-    const keywords = Array.isArray(subData.serviceKeywords) ? subData.serviceKeywords[serviceIndex] : '';
-    const flickrUrl = keywords ? buildLoremFlickrUrl(keywords, `${catKey}-${subKey}-${serviceIndex}`) : subImage;
-    const legacyPrimarySrc = photoId ? buildUnsplashUrl(photoId) : flickrUrl;
+    const hasMappedIndex = Object.prototype.hasOwnProperty.call(representativeServiceImageIndex[catKey] || {}, subKey);
+    const serviceIndex = hasMappedIndex ? representativeServiceImageIndex[catKey][subKey] : 0;
     const officialSrc = getOfficialServiceImage(subData, serviceIndex);
-    const src = officialSrc || legacyPrimarySrc || subImage;
-    const fallbackUrls = officialSrc
-      ? [legacyPrimarySrc, flickrUrl, subImage, categoryFallback, '/assets/partnerimage.png']
-      : (photoId
-          ? [flickrUrl, subImage, categoryFallback, '/assets/partnerimage.png']
-          : (keywords ? [subImage, categoryFallback, '/assets/partnerimage.png'] : [categoryFallback, '/assets/partnerimage.png']));
 
-    return { src, onerror: buildImageFallbackHandler(fallbackUrls) };
+    return {
+      src: officialSrc || subImage,
+      onerror: buildImageFallbackHandler(officialSrc ? [subImage, categoryFallback, '/assets/partnerimage.png'] : [categoryFallback, '/assets/partnerimage.png']),
+    };
   }
 
   function getCategoryLabel() {
@@ -1677,6 +1707,17 @@
         <div id="svc-trusted-${prefix}" class="svc-trusted" style="display:none"></div>
         <hr class="svc-sidebar__divider">
 
+        ${getServiceDetailQuestions().length ? `
+        <span class="svc-sidebar__label">${esc(s.detailsQuestionsLabel || (lang() === 'es' ? 'Cuéntanos más (opcional)' : 'Tell us more (optional)'))}</span>
+        <div class="svc-detail-qs" id="svc-detail-qs-${prefix}">${buildDetailQuestionsHTML(prefix)}</div>
+        <hr class="svc-sidebar__divider">
+        ` : ''}
+
+        <span class="svc-sidebar__label">${esc(s.detailsLabel || 'Detalles adicionales (opcional)')}</span>
+        <textarea class="svc-sidebar__input" id="svc-details-${prefix}" rows="3" spellcheck="false"
+                  placeholder="${esc(getDetailsPlaceholder())}"></textarea>
+
+        <hr class="svc-sidebar__divider">
         <span class="svc-sidebar__label">${esc(s.whenLabel || '¿Cuándo lo necesitas?')}</span>
         <div class="svc-when-chips">
           <button class="svc-when-chip active" type="button" data-when="asap"
@@ -1707,17 +1748,6 @@
         <span class="svc-sidebar__label">${esc(s.addressLabel || 'Dirección del servicio')}</span>
         <div id="svc-addr-section-${prefix}" class="svc-addr-section"></div>
         <div class="svc-error-msg" id="svc-addr-err-${prefix}">${esc(s.addressError || 'Por favor ingresa tu dirección')}</div>
-
-        ${getServiceDetailQuestions().length ? `
-        <hr class="svc-sidebar__divider">
-        <span class="svc-sidebar__label">${esc(s.detailsQuestionsLabel || (lang() === 'es' ? 'Cuéntanos más (opcional)' : 'Tell us more (optional)'))}</span>
-        <div class="svc-detail-qs" id="svc-detail-qs-${prefix}">${buildDetailQuestionsHTML(prefix)}</div>
-        ` : ''}
-
-        <hr class="svc-sidebar__divider">
-        <span class="svc-sidebar__label">${esc(s.detailsLabel || 'Detalles adicionales (opcional)')}</span>
-        <textarea class="svc-sidebar__input" id="svc-details-${prefix}" rows="3" spellcheck="false"
-                  placeholder="${esc(getDetailsPlaceholder())}"></textarea>
 
         <hr class="svc-sidebar__divider">
         <span class="svc-sidebar__label">${esc(s.attachLabel || 'Adjuntar fotos (opcional)')}</span>

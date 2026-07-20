@@ -54,7 +54,7 @@
     window.buildNavbar && window.buildNavbar();
   };
 
-  const catKeys = ['cleaning', 'repair', 'moving', 'wellness', 'suppliers'];
+  const catKeys = ['repair', 'cleaning', 'moving', 'wellness', 'suppliers'];
   const catI18n = {
     cleaning:  { name: 'categories.cleaning' },
     repair:    { name: 'categories.repair' },
@@ -311,14 +311,31 @@
     } catch {}
   }
 
-  window._browseScrollToCategory = function(catKey) {
-    const row = document.querySelector(`section[data-category="${catKey}"]`);
-    if (row) row.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  function setActiveDiscoveryChip(catKey) {
     document.querySelectorAll('.dash-discovery__chip').forEach(chip => {
       const isActive = chip.getAttribute('data-category') === catKey;
       chip.classList.toggle('is-active', isActive);
       chip.setAttribute('aria-pressed', isActive ? 'true' : 'false');
     });
+  }
+
+  function getDiscoveryScrollOffset() {
+    const header = document.querySelector('.site-header');
+    const headerRect = header ? header.getBoundingClientRect() : null;
+    return Math.max(88, headerRect ? Math.ceil(headerRect.height) + 18 : 0);
+  }
+
+  window._browseScrollToCategory = function(catKey) {
+    const row = document.querySelector(`section[data-category="${catKey}"]`);
+    if (!row) return;
+    const carousel = row.querySelector('.dash-discovery__carousel');
+    const targetTop = row.getBoundingClientRect().top + window.scrollY - getDiscoveryScrollOffset();
+    window.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' });
+    setActiveDiscoveryChip(catKey);
+    window.setTimeout(() => {
+      if (carousel) carousel.focus({ preventScroll: true });
+      if (typeof scheduleDiscoveryRowsEffect === 'function') scheduleDiscoveryRowsEffect();
+    }, 420);
   };
 
   window._browseScrollCarousel = function(catKey, dir) {
@@ -347,6 +364,73 @@
       updateDiscoveryArrowState(track);
       track.addEventListener('scroll', () => updateDiscoveryArrowState(track), { passive: true });
     });
+  }
+
+  let discoveryRowsEffectCleanup = null;
+  let scheduleDiscoveryRowsEffect = null;
+
+  function bindDiscoveryRowsEffect() {
+    if (discoveryRowsEffectCleanup) discoveryRowsEffectCleanup();
+    scheduleDiscoveryRowsEffect = null;
+
+    const rows = Array.from(document.querySelectorAll('.dash-discovery__row'));
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!rows.length || reduceMotion) {
+      discoveryRowsEffectCleanup = null;
+      return;
+    }
+
+    let raf = 0;
+    const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+    const render = () => {
+      raf = 0;
+      const viewportFocus = window.innerHeight * 0.5;
+      const spacing = Math.max(260, window.innerHeight * 0.48);
+
+      rows.forEach(row => {
+        const carousel = row.querySelector('.dash-discovery__carousel');
+        const cards = Array.from(row.querySelectorAll('.dash-discovery__card'));
+        if (!carousel || !cards.length) return;
+        const rect = row.getBoundingClientRect();
+        const rowCenter = rect.top + rect.height * 0.5;
+        const offset = clamp((rowCenter - viewportFocus) / spacing, -1.8, 1.8);
+        const distance = Math.abs(offset);
+        const scale = Math.max(0.86, 1 - distance * 0.08);
+        const lift = offset * -10;
+        const rotateX = offset * -4;
+        const opacity = Math.max(0.48, 1 - distance * 0.26);
+
+        carousel.style.opacity = opacity.toFixed(3);
+        cards.forEach(card => {
+          card.style.transform = `translate3d(0, ${lift.toFixed(2)}px, 0) rotateX(${rotateX.toFixed(2)}deg) scale(${scale.toFixed(3)})`;
+        });
+      });
+    };
+
+    const schedule = () => {
+      if (!raf) raf = window.requestAnimationFrame(render);
+    };
+    const cleanup = () => {
+      if (raf) window.cancelAnimationFrame(raf);
+      window.removeEventListener('scroll', schedule);
+      window.removeEventListener('resize', schedule);
+      rows.forEach(row => {
+        const carousel = row.querySelector('.dash-discovery__carousel');
+        if (carousel) {
+          carousel.style.transform = '';
+          carousel.style.opacity = '';
+        }
+        row.querySelectorAll('.dash-discovery__card').forEach(card => {
+          card.style.transform = '';
+        });
+      });
+    };
+
+    window.addEventListener('scroll', schedule, { passive: true });
+    window.addEventListener('resize', schedule);
+    render();
+    scheduleDiscoveryRowsEffect = schedule;
+    discoveryRowsEffectCleanup = cleanup;
   }
 
   window._browseHandleCarouselKey = function(evt, catKey) {
@@ -388,9 +472,17 @@
     const examplesLabel = browseStr.examplesLabel || 'Por ejemplo';
     const examplesHtml = services.length ? `
       <li class="browse-drawer__examples-label">${escapeAttr(examplesLabel)}</li>
-      ${services.map(serviceName => `
-        <li class="browse-drawer__example">${escapeAttr(serviceName)}</li>
-      `).join('')}
+      ${services.map(serviceName => {
+        const encodedService = encodeURIComponent(serviceName).replace(/'/g, '%27');
+        return `
+        <li>
+          <button class="browse-drawer__example" type="button"
+                  onclick="window._browseSelectService('${catKey}', '${subKey}', '${encodedService}')">
+            ${escapeAttr(serviceName)}
+          </button>
+        </li>
+      `;
+      }).join('')}
     ` : '';
 
     listEl.innerHTML = `
@@ -595,6 +687,7 @@
       </div>
     `;
     bindDiscoveryArrowStates();
+    bindDiscoveryRowsEffect();
     updateFavoriteButtons();
   }
 
