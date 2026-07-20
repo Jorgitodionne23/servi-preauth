@@ -74,6 +74,9 @@
       icoL + '<span>' + esc(label) + '</span>' + icoR + '</button>';
   }
   function badge(variant, inner, cls) { return '<span class="sr-badge sr-badge--' + variant + (cls ? ' ' + cls : '') + '">' + inner + '</span>'; }
+  function aiBadge(cls) {
+    return '<span class="sr-ai-badge' + (cls ? ' ' + cls : '') + '">' + I.spark(14) + '<span>' + esc(tr('poweredByAi')) + '</span></span>';
+  }
   function modeLabel(key, kind) {
     if (key === 'video') return tr(kind === 'sub' ? 'modeVideoSub' : 'modeVideo');
     if (key === 'photos') return tr(kind === 'sub' ? 'modePhotosSub' : 'modePhotos');
@@ -199,7 +202,7 @@
     }
 
     return '<div class="sr-stage sr-stage--narrow sr-fade-in"><div class="sr-compose">' +
-      '<div class="sr-eyebrow"><span class="sr-eyebrow__spark">' + I.spark(15) + '</span>' + esc(tr('eyebrow')) + '</div>' +
+      '<div class="sr-intel-row"><div class="sr-eyebrow"><span class="sr-eyebrow__spark">' + I.spark(15) + '</span>' + esc(tr('eyebrow')) + '</div>' + aiBadge() + '</div>' +
       '<h1 class="sr-title">' + esc(tr('title')) + '</h1>' +
       '<p class="sr-sub">' + esc(tr('sub')) + '</p>' +
       '<div class="sr-box' + (S.mode !== 'text' ? ' sr-box--media' : '') + '" id="sr-box">' + boxInner + '</div>' +

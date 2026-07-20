@@ -118,6 +118,7 @@ const T = {
       mediaTitle: "Cuéntanos qué necesitas por texto, foto, voz o video.",
       mediaSubtitle: "SERVI encuentra y coordina al especialista por ti.",
       mediaLabel: "Cuéntanos qué necesitas por texto, foto, voz o video. SERVI encuentra y coordina al especialista por ti.",
+      poweredByAi: "Powered by AI",
       sendLabel: "Enviar",
       browseTitle: "O explora",
       details: "Detalles",
@@ -234,6 +235,7 @@ const T = {
     },
     smartRequest: {
       eyebrow: "Inteligencia SERVI",
+      poweredByAi: "Powered by AI",
       title: "¿Qué necesitas?",
       sub: "Descríbelo, muéstralo o dilo — SERVI entiende el resto y encuentra a tu especialista.",
       placeholder: "Describe lo que necesitas…  ej. “{ex}”",
@@ -888,6 +890,7 @@ const T = {
       mediaTitle: "Tell us what you need by text, photo, voice, or video.",
       mediaSubtitle: "SERVI finds and coordinates the specialist for you.",
       mediaLabel: "Tell us what you need by text, photo, voice, or video. SERVI finds and coordinates the specialist for you.",
+      poweredByAi: "Powered by AI",
       sendLabel: "Send",
       browseTitle: "Browse services",
       details: "Details",
@@ -1004,6 +1007,7 @@ const T = {
     },
     smartRequest: {
       eyebrow: "SERVI Intelligence",
+      poweredByAi: "Powered by AI",
       title: "What do you need done?",
       sub: "Describe it, show it, or say it — SERVI figures out the rest and finds your specialist.",
       placeholder: "Describe what you need…  e.g. “{ex}”",

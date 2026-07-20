@@ -2433,6 +2433,31 @@
   margin: -14px 0 0;
   max-width: 620px;
 }
+.dash-ai-badge {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 6px;
+  min-height: 30px;
+  margin: -8px 0 -6px;
+  padding: 6px 11px;
+  border: 1px solid rgba(127,196,207,0.44);
+  border-radius: 999px;
+  background: rgba(255,255,255,0.82);
+  color: var(--color-accent-deep, #3f8e9d);
+  font-family: var(--font-body);
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  text-transform: uppercase;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.9);
+}
+.dash-ai-badge svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
 
 .dash-hero__media-row {
   display: flex;
@@ -4065,6 +4090,13 @@
     font-size: 12px;
   }
   .dash-hero__headline { font-size: clamp(32px, 7vw, 48px); }
+  .dash-ai-badge {
+    min-height: 28px;
+    margin: -10px 0 -4px;
+    padding: 6px 10px;
+    font-size: 10.5px;
+    letter-spacing: 0.035em;
+  }
   .browse-page-main {
     padding-top: 176px;
     padding-bottom: 64px;
