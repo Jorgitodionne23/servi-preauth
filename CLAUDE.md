@@ -146,9 +146,14 @@ This is NOT a simple payment form. It's a complete **admin-driven order manageme
 
 - **Runtime:** Node.js with ES modules (`.mjs` extensions only)
 - **Framework:** Express 5
-- **Entry point:** `backend/index.mjs` — ALL routes and business logic in one file (~10,100 lines)
+- **Entry point:** `backend/index.mjs` — all Express routes and most business logic in one file (~10,100 lines). A handful of pure helpers have been extracted into sibling modules (below).
 - **Database:** `backend/db.pg.mjs` — Pool connection + full schema (`CREATE TABLE IF NOT EXISTS`). See this file for authoritative table definitions.
 - **Pricing:** `backend/pricing.mjs` — Dynamic fee calculation (alpha curve for booking fees, Stripe processing fees with VAT)
+- **Ops radar:** `backend/ops-radar.mjs` — Order-severity classification/sorting used by the admin ops feed (`classifyOrderOps`, `sortOpsItems`, `summarizeOps`).
+- **Provider link expiry:** `backend/providerLink.mjs` — Policy for when a per-order `provider.html?pt=…` token stops being honored (grace window after service, fallback lifetime for ASAP orders).
+- **Smart Request helpers:** `backend/smartRequestCatalog.mjs` (server-side mirror of the frontend catalog) and `backend/smartRequestParse.mjs` (prompt builders + response validation for the Anthropic parse call).
+- **Timezone:** `backend/timezone.mjs` — Sets `process.env.TZ` from `APP_TIME_ZONE` (defaults to `America/Mexico_City`) so all server-side date math is in CDMX time.
+- **Unit tests:** `backend/*.test.mjs` run via `npm run test:unit` (node:test); Playwright e2e suites live in `tests/`.
 - **TLS guard:** `ALLOW_INSECURE_DB_TLS=true` throws at startup if `NODE_ENV=production`
 - **Admin auth:** Bearer token via `ADMIN_API_TOKEN` env var, constant-time comparison
 - **Webhook:** Stripe webhook at `/webhook` with raw body parsing + signature verification
@@ -205,7 +210,7 @@ See `backend/db.pg.mjs` for the full schema. Key tables: `all_bookings`, `consen
 #### Shared Components (`frontend/shared/`)
 
 - `shared-styles.css` — Global design system (brand colors, components, animations)
-- `landing-theme.css` — Extended CSS for landing/marketing pages (~115KB)
+- `landing-theme.css` — Extended CSS for landing/marketing pages (~123KB)
 - `shared-auth.js` — Firebase auth flow (phone OTP, email magic link, Google OAuth, cross-identifier recovery — ~3,070 lines)
 - `shared-nav.js` — Navigation bar (language toggle, auth state, user menu dropdown, mobile hamburger)
 - `shared-footer.js` — 4-column footer component
@@ -321,6 +326,7 @@ These live in the repo for design inspiration but are **not** wired into the liv
 - **Design system:** `frontend/shared/shared-styles.css` — All brand colors, components, animations
 - **Cloudflare middleware:** `functions/_middleware.js` — Injects Firebase API key into config.js at deploy time
 - **Auth flow visualization:** `docs/auth-flows.html`
+- **Test suites:** `tests/` — Playwright end-to-end specs (`auth-e2e.spec.js`, `admin-e2e.spec.js`) plus `preflight.mjs`; run with `npm run test:e2e`. Backend `*.test.mjs` unit files run with `npm run test:unit`.
 
 ---
 
