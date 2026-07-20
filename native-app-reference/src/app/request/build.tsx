@@ -191,7 +191,7 @@ export default function BuildScreen() {
                   </Txt>
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
                     {DATE_OPTS.map((d) => {
-                      const label = lang === 'es' ? d.es : d.en;
+                      const label = loc(d, lang);
                       return <Chip key={d.days} label={label} active={draft.date === label} onPress={() => patchDraft({ date: label, leadDays: d.days })} />;
                     })}
                   </View>

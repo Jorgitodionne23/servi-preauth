@@ -1,7 +1,13 @@
 /**
- * SpecialistCard — the matched SERVI Partner. Shows avatar initials, rating,
- * jobs, trade, and a "trusted/saved" marker (anti-disintermediation feature in
- * the real product). Contact is intentionally routed through SERVI.
+ * SpecialistCard — the matched SERVI Partner as the customer sees them: a MASKED
+ * name ("Pablo M."), the trade they're doing (derived from the order category,
+ * passed in), a SERVI-verified line, and a "trusted/saved" marker. Contact is
+ * intentionally routed through SERVI (anti-disintermediation) — there is no call
+ * or message affordance on this card.
+ *
+ * The customer never sees a full name, phone, or email — the backend enforces
+ * this in ~8 routes via maskProviderName(). The masked-name note explaining WHY
+ * is rendered once on the order screen, not here.
  */
 import { View } from 'react-native';
 import { Txt } from './ui/Text';
@@ -10,10 +16,10 @@ import { Badge } from './ui/Badge';
 import { useI18n } from '@/i18n/I18nContext';
 import { loc } from '@/data/types';
 import { colors, spacing } from '@/theme/tokens';
-import type { Specialist } from '@/data/types';
+import type { Bilingual, Specialist } from '@/data/types';
 
-export function SpecialistCard({ specialist }: { specialist: Specialist }) {
-  const { lang } = useI18n();
+export function SpecialistCard({ specialist, trade }: { specialist: Specialist; trade?: Bilingual }) {
+  const { t, lang } = useI18n();
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
       <View
@@ -32,18 +38,33 @@ export function SpecialistCard({ specialist }: { specialist: Specialist }) {
       </View>
       <View style={{ flex: 1 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Txt variant="bodyStrong">{specialist.name}</Txt>
-          {specialist.trusted ? <Badge label={lang === 'es' ? 'De confianza' : 'Trusted'} tone="accent" icon="shield" /> : null}
+          <Txt variant="bodyStrong">{specialist.maskedName}</Txt>
+          {specialist.trusted ? <Badge label={t('spec.trusted')} tone="accent" icon="shield" /> : null}
         </View>
-        <Txt variant="caption" style={{ marginTop: 2 }}>
-          {loc(specialist.trade, lang)}
-        </Txt>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 4 }}>
+        {trade ? (
+          <Txt variant="caption" style={{ marginTop: 2 }}>
+            {loc(trade, lang)}
+          </Txt>
+        ) : null}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-            <Icon name="star" size={13} color={colors.warning} />
-            <Txt variant="bodySmStrong">{specialist.rating.toFixed(1)}</Txt>
+            <Icon name="check-circle" size={13} color={colors.accentDeep} />
+            <Txt variant="caption" color={colors.accentInk}>
+              {t('spec.verified')}
+            </Txt>
           </View>
-          <Txt variant="caption">{specialist.jobs} {lang === 'es' ? 'servicios' : 'jobs'}</Txt>
+          {/* Aggregate satisfaction from thumbs — % positive, not stars. */}
+          {specialist.providerRating.display === 'score' ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Icon name="thumbs-up" size={12} color={colors.textSecondary} />
+              <Txt variant="bodySmStrong">{specialist.providerRating.positivePct}%</Txt>
+              <Txt variant="caption">· {specialist.providerRating.count}</Txt>
+            </View>
+          ) : (
+            <Txt variant="caption" color={colors.textMuted}>
+              {t('spec.new')}
+            </Txt>
+          )}
         </View>
       </View>
     </View>

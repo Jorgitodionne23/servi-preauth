@@ -13,6 +13,38 @@ mobile app, before committing to a production React Native build.
 
 ---
 
+## The other half
+
+This app has a counterpart: [`../partner-app-reference`](../partner-app-reference/README.md),
+the **specialist (SERVI Partner)** app. The two are designed to be one product seen from two
+sides — they share a design system, a frozen demo clock, the real pricing engine, and three
+order IDs (`SV-204815`, `SV-204766`, `SV-204701`). The full mapping and the production spec
+live in **[../INTEROP.md](../INTEROP.md)**.
+
+**Run both side by side** (customer left, specialist right):
+
+```bash
+# terminal 1
+cd native-app-reference  && npx expo start --web --port 8081
+# terminal 2
+cd partner-app-reference && npx expo start --web --port 8082
+```
+
+Open **SV-204701** in both. The customer sees it *assigned to Pablo M.*; the specialist *is*
+Pablo — tap **Voy en camino → Llegué → Empecé** on the partner side (or use the customer
+app's Account → Demo states → **Avanzar fase**) and the customer's on-site timeline ticks in
+lockstep. Set your machine to a non-CDMX timezone for one run — the clock is CDMX-fixed, so
+both apps still agree.
+
+> **Deliberate asymmetry:** the partner app has a "Why SERVI" value screen; this app does
+> not. The customer-facing version of that argument lives on the marketing site
+> (`../frontend/index.html`), not inside the transactional app.
+
+Shared files are kept byte-identical by `../scripts/check-app-sync.mjs` — run
+`npm run check:sync`.
+
+---
+
 ## Run it
 
 Prereqs: Node 18+ and npm (developed against Node 22.17, npm 10.9).

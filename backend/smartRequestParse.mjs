@@ -18,9 +18,10 @@ Respond with ONLY a JSON object (no prose, no markdown) of this exact shape:
   "confidence": <0..1 how sure the mapping is>,
   "urgency": "<'asap' if they imply now/urgent/emergency, 'scheduled' if they name a day/time, else 'flexible'>",
   "inferredDate": <"YYYY-MM-DD" if a specific day is implied, else null>,
-  "followups": [ { "q": "<short question to clarify a missing detail>", "key": "<slug>", "chips": ["<2-4 short option labels>"] } ]
+  "followups": [ { "q": "<short question to clarify a missing detail>", "key": "<slug>", "chips": ["<2-4 short option labels>"] } ],
+  "candidateServices": ["<up to 4 exact catalog service labels when more than one match is plausible>"]
 }
-Rules: 1-3 followups, only ones that genuinely help; prefer questions with quick chip options; never ask for name, phone, address, date, or price (handled elsewhere). Keep questions under 8 words.`;
+Rules: Ask 1-3 followups whenever the object/space/problem or minimum job scope is missing. These are required before scheduling. Prefer quick chip options; never ask for name, phone, address, date, or price (handled elsewhere). Keep questions under 8 words. Use exact catalog labels for candidateServices. A vague or off-catalog request must not be presented as understood.`;
 }
 
 export function buildMediaAnalysisSystemPrompt() {
@@ -126,6 +127,20 @@ function normalizeEvidence(value) {
   return raw.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 3);
 }
 
+function normalizeCandidates(value, selection) {
+  if (!Array.isArray(value) || !selection?.category || selection.category === 'custom') return [];
+  const category = SERVI_CATALOG[selection.category];
+  const allowed = new Map((category?.subs || []).flatMap((sub) =>
+    (sub.services || []).map((service) => [normalizeServiceLabel(service), { service, subKey: sub.key, subLabel: sub.label }])
+  ));
+  const seen = new Set();
+  return value.map((item) => allowed.get(normalizeServiceLabel(item))).filter((item) => {
+    if (!item || seen.has(item.service)) return false;
+    seen.add(item.service);
+    return true;
+  }).slice(0, 4);
+}
+
 export function parseModelResponse(raw) {
   const str = String(raw == null ? '' : raw);
   const start = str.indexOf('{');
@@ -142,10 +157,15 @@ export function parseModelResponse(raw) {
     ? data.followups.filter((f) => f && typeof f.q === 'string' && f.q.trim() && !isWhenFollowup(f)).slice(0, 3)
         .map((f) => ({ q: String(f.q), key: String(f.key || ''), ...(Array.isArray(f.chips) ? { chips: f.chips.map(String).slice(0, 4) } : {}) }))
     : [];
+  const candidateServices = normalizeCandidates(data.candidateServices, selection);
+  const catalogUnderstood = selection.valid && selection.category !== 'custom';
+  const understandingStatus = !catalogUnderstood
+    ? 'unresolved'
+    : ((confidence < 0.62 || candidateServices.length > 1 || followups.length > 0) ? 'clarifying' : 'understood');
 
   return {
-    aiStatus: selection.valid ? 'understood' : 'unclear',
-    aiReason: selection.reason || '',
+    aiStatus: catalogUnderstood ? 'understood' : 'unclear',
+    aiReason: selection.reason || (selection.category === 'custom' ? 'off_catalog' : ''),
     category: selection.category,
     subKey: selection.subKey,
     service: selection.service,
@@ -154,6 +174,11 @@ export function parseModelResponse(raw) {
     urgency,
     inferredDate,
     followups,
+    understandingStatus,
+    missingFields: followups.map((item) => item.key).filter(Boolean),
+    requiredFollowups: followups.map((item) => ({ ...item, required: true })),
+    candidateServices,
+    understandingSummary: data.summary != null ? String(data.summary) : '',
   };
 }
 

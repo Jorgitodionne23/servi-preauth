@@ -17,17 +17,26 @@ import { Card, Surface } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { InfoCard } from '@/components/ui/InfoCard';
 import { StatusTimeline } from '@/components/StatusTimeline';
+import { PhaseTimeline } from '@/components/PhaseTimeline';
 import { SpecialistCard } from '@/components/SpecialistCard';
 import { PriceBreakdown } from '@/components/PriceBreakdown';
+import { TipCard } from '@/components/TipCard';
 import { MessageState } from '@/components/ui/States';
 import { STATUS_META, MODE_ICON } from '@/components/status';
 import { categoryByKey } from '@/data/catalog';
 import { loc } from '@/data/types';
+import { clockTime } from '@/data/time';
 import { useApp } from '@/state/AppStateContext';
 import { useI18n } from '@/i18n/I18nContext';
 import { colors, radius, spacing } from '@/theme/tokens';
 import type { Order } from '@/data/types';
 import type { StringKey } from '@/i18n/strings';
+
+const ATTACH_ICON: Record<'photo' | 'voice' | 'video', FeatherName> = {
+  photo: 'camera',
+  voice: 'mic',
+  video: 'video',
+};
 
 const TERMINAL: Order['status'][] = ['captured', 'refunded', 'cancelled'];
 
@@ -81,6 +90,13 @@ export default function OrderDetailScreen() {
   const cat = categoryByKey[order.categoryKey];
   const refs = paymentRef(order.status);
   const isTerminal = TERMINAL.includes(order.status);
+  // Show the on-site milestone track once a specialist exists and could be
+  // checking in — or whenever any milestone has already been reached.
+  const showPhases =
+    order.specialist != null &&
+    (Object.keys(order.phaseTimes).length > 0 ||
+      order.status === 'assigned' ||
+      order.status === 'in_progress');
 
   return (
     <Screen bottomInset={insets.bottom + 110}>
@@ -109,18 +125,45 @@ export default function OrderDetailScreen() {
           {order.specialist ? t('order.specialist') : t('order.specialistPending')}
         </Txt>
         {order.specialist ? (
-          <SpecialistCard specialist={order.specialist} />
+          <View style={{ gap: spacing.md }}>
+            <SpecialistCard specialist={order.specialist} trade={order.subLabel} />
+            <Txt variant="caption" color={colors.textMuted}>
+              {t('spec.maskedNote')}
+            </Txt>
+          </View>
         ) : (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
             <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' }}>
               <Icon name="users" size={22} color={colors.textMuted} />
             </View>
             <Txt variant="bodySm" style={{ flex: 1 }}>
-              {lang === 'es' ? 'SERVI está asignando a un especialista verificado para tu servicio.' : 'SERVI is assigning a verified specialist for your service.'}
+              {t('order.assigningBody')}
             </Txt>
           </View>
         )}
       </Card>
+
+      {/* On-site milestones (the specialist's live check-ins) */}
+      {showPhases ? (
+        <Card style={{ marginTop: spacing.lg }}>
+          <Txt variant="eyebrow" style={{ marginBottom: spacing.lg }}>
+            {t('phase.title')}
+          </Txt>
+          <PhaseTimeline phaseTimes={order.phaseTimes} />
+        </Card>
+      ) : null}
+
+      {/* One-shot shared location (never continuous tracking) */}
+      {order.locationSharedAt ? (
+        <View style={{ marginTop: spacing.lg }}>
+          <InfoCard
+            icon="map-pin"
+            title={t('order.location')}
+            body={t('order.locationBody', { time: clockTime(order.locationSharedAt) })}
+            tone="accent"
+          />
+        </View>
+      ) : null}
 
       {/* Timeline */}
       <Card style={{ marginTop: spacing.lg }}>
@@ -128,6 +171,41 @@ export default function OrderDetailScreen() {
           {t('order.timeline')}
         </Txt>
         <StatusTimeline steps={order.timeline} />
+      </Card>
+
+      {/* The request — the client's own words, attachments, follow-up answers */}
+      <Card style={{ marginTop: spacing.lg, gap: spacing.md }}>
+        <Txt variant="eyebrow">{t('order.request')}</Txt>
+        <Txt variant="bodySm">{loc(order.description, lang)}</Txt>
+        {order.attachments.length ? (
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
+            {order.attachments.map((a) => (
+              <View
+                key={a.kind}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 6,
+                  paddingVertical: 6,
+                  paddingHorizontal: 10,
+                  borderRadius: radius.sm,
+                  backgroundColor: colors.surface,
+                }}
+              >
+                <Icon name={ATTACH_ICON[a.kind]} size={13} color={colors.textSecondary} />
+                <Txt variant="caption">{a.count}</Txt>
+              </View>
+            ))}
+          </View>
+        ) : null}
+        {order.detailAnswers.map((qa, i) => (
+          <View key={i} style={{ gap: 2 }}>
+            <Txt variant="caption" color={colors.textMuted}>
+              {loc(qa.q, lang)}
+            </Txt>
+            <Txt variant="bodySmStrong">{loc(qa.a, lang)}</Txt>
+          </View>
+        ))}
       </Card>
 
       {/* Summary */}
@@ -143,6 +221,13 @@ export default function OrderDetailScreen() {
         </Txt>
         <PriceBreakdown price={order.price} />
       </Card>
+
+      {/* Tip — post-service, optional, 100% to the specialist */}
+      {order.status === 'captured' && order.specialist ? (
+        <View style={{ marginTop: spacing.lg }}>
+          <TipCard order={order} />
+        </View>
+      ) : null}
 
       {/* Payment reference */}
       {refs.length ? (

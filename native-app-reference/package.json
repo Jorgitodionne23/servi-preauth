@@ -5,21 +5,16 @@
   "dependencies": {
     "@expo-google-fonts/outfit": "^0.4.3",
     "@expo-google-fonts/plus-jakarta-sans": "^0.4.2",
-    "@expo/ui": "~56.0.18",
     "@expo/vector-icons": "^15.0.2",
     "expo": "~56.0.12",
     "expo-blur": "~56.0.3",
     "expo-constants": "~56.0.18",
-    "expo-device": "~56.0.4",
     "expo-font": "~56.0.7",
-    "expo-glass-effect": "~56.0.4",
     "expo-haptics": "~56.0.3",
-    "expo-image": "~56.0.11",
     "expo-linking": "~56.0.14",
     "expo-router": "~56.2.11",
     "expo-splash-screen": "~56.0.10",
     "expo-status-bar": "~56.0.4",
-    "expo-symbols": "~56.0.6",
     "expo-system-ui": "~56.0.5",
     "expo-web-browser": "~56.0.5",
     "react": "19.2.3",
@@ -40,11 +35,13 @@
   },
   "scripts": {
     "start": "expo start",
-    "reset-project": "node ./scripts/reset-project.js",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "export:web": "expo export --platform web",
+    "typecheck": "tsc --noEmit",
+    "lint": "expo lint",
+    "check:sync": "node ../scripts/check-app-sync.mjs"
   },
   "private": true
 }

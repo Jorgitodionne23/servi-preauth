@@ -82,6 +82,8 @@ test('ambiguous close match asks for clarification without high confidence', () 
   assert.equal(out.category, 'repair');
   assert.ok(out.confidence < 0.9);
   assert.equal(out.followups[0]?.key, 'service_clarification');
+  assert.ok(out.candidateServices.length >= 2);
+  assert.ok(out.candidateServices.every((candidate) => candidate.service && candidate.subKey));
 });
 
 test('heuristic removes timing followups from matched services', () => {

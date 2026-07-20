@@ -1,17 +1,22 @@
 /**
- * PriceBreakdown — provider price → booking fee → processing → total, matching
- * the web `computePricing()` model. When the price isn't confirmed yet, shows
- * the "we confirm the price first" state instead of numbers.
+ * PriceBreakdown — the customer-facing price rows, mirroring what the live web
+ * app shows on `frontend/success.html`: a single "Precio del servicio" line
+ * (provider + booking fee + VAT), a "Comisión por procesamiento" line, an
+ * "*IVA incluido" note, and the Total. The booking fee is intentionally NOT
+ * itemized to the customer — that itemization is the partner app's view.
+ *
+ * Numbers come from data/pricing.ts (the port of backend/pricing.mjs); every
+ * amount is centavos. When the price isn't confirmed yet, we show the
+ * "we confirm the price first" state instead of numbers.
  */
 import { View } from 'react-native';
 import { Txt } from './ui/Text';
 import { Divider } from './ui/Card';
 import { Badge } from './ui/Badge';
 import { useI18n } from '@/i18n/I18nContext';
+import { money } from '@/theme/format';
 import { colors, spacing } from '@/theme/tokens';
 import type { Order } from '@/data/types';
-
-const mxn = (n: number) => `$${n.toLocaleString('es-MX')} MXN`;
 
 function Row({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
   return (
@@ -25,28 +30,30 @@ function Row({ label, value, strong }: { label: string; value: string; strong?: 
 }
 
 export function PriceBreakdown({ price }: { price: Order['price'] }) {
-  const { lang } = useI18n();
+  const { t } = useI18n();
 
   if (!price.confirmed) {
     return (
       <View style={{ gap: spacing.sm }}>
-        <Badge label={lang === 'es' ? 'Precio por confirmar' : 'Price to be confirmed'} tone="warning" icon="clock" />
-        <Txt variant="bodySm">
-          {lang === 'es'
-            ? 'SERVI confirma el precio con tu especialista antes de cualquier cargo o retención.'
-            : 'SERVI confirms the price with your specialist before any hold or charge.'}
-        </Txt>
+        <Badge label={t('price.pending')} tone="warning" icon="clock" />
+        <Txt variant="bodySm">{t('price.pendingBody')}</Txt>
       </View>
     );
   }
 
+  // "Precio del servicio" bundles provider + booking fee + VAT, exactly like success.html.
+  const serviceCents =
+    price.providerAmountCents + price.bookingFeeAmountCents + price.vatAmountCents;
+
   return (
     <View style={{ gap: spacing.md }}>
-      <Row label={lang === 'es' ? 'Servicio del especialista' : 'Specialist service'} value={mxn(price.provider)} />
-      <Row label={lang === 'es' ? 'Tarifa de reserva' : 'Booking fee'} value={mxn(price.bookingFee)} />
-      <Row label={lang === 'es' ? 'Procesamiento + IVA' : 'Processing + VAT'} value={mxn(price.processing)} />
+      <Row label={t('price.service')} value={money(serviceCents)} />
+      <Row label={t('price.processing')} value={money(price.processingFeeAmountCents)} />
+      <Txt variant="caption" color={colors.textMuted}>
+        {t('price.vatIncluded')}
+      </Txt>
       <Divider />
-      <Row label={lang === 'es' ? 'Total' : 'Total'} value={mxn(price.total)} strong />
+      <Row label={t('price.total')} value={money(price.totalAmountCents)} strong />
     </View>
   );
 }

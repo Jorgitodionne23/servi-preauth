@@ -249,6 +249,11 @@
       inferredDate: dateInfo ? dateInfo.date : null,
       inferredDateLabel: dateInfo ? dateInfo.label : null,
       followups: followupsFor(best.sub.key, followups, genericFollowups, choices, opts.lang),
+      candidateServices: match.ambiguous ? match.candidates.slice(0, 4).map((candidate) => ({
+        service: candidate.service || (candidate.sub.services && candidate.sub.services[0]) || null,
+        subKey: candidate.sub.key,
+        subLabel: candidate.sub.label,
+      })).filter((candidate) => candidate.service) : [],
       source: 'heuristic',
       _debug: {
         ambiguous: !!match.ambiguous,

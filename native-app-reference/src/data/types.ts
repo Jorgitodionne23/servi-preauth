@@ -67,13 +67,45 @@ export type TimelineStep = {
   note?: Bilingual;
 };
 
+/**
+ * On-site milestones — the backend's `MILESTONE_EVENTS`, written by the
+ * specialist via `POST /api/provider/checkin` and surfaced to the customer.
+ * This is a SEPARATE track from `OrderStatus`/`TimelineStep` (the payment /
+ * coordination track): the backend stores `service_phase` distinctly from
+ * `status`, and so do we. The partner app renders the same four events.
+ */
+export type ServicePhase = 'en_route' | 'arrived' | 'started' | 'completed';
+export const PHASE_ORDER: ServicePhase[] = ['en_route', 'arrived', 'started', 'completed'];
+
+/**
+ * The specialist as the CUSTOMER sees them. Mirrors what `GET /api/auth/orders`
+ * returns: a MASKED name (`maskProviderName()` → "Pablo M."), never a full name
+ * or contact — anti-disintermediation, enforced backend-side in ~8 routes. The
+ * customer sees the relationship (did I use them, do I trust them), never
+ * platform-wide reputation. `providerId` is the shared key with the partner
+ * app's fixtures (e.g. prov-000117 = Pablo). The trade shown on the card is
+ * derived from the order's category, not stored here — the orders route doesn't
+ * return specialty.
+ */
 export type Specialist = {
-  name: string;
+  providerId: string;
+  maskedName: string; // "Pablo M." — first name + last initial, never full
   initials: string;
-  rating: number;
-  jobs: number;
-  trade: Bilingual;
-  trusted?: boolean;
+  trusted: boolean; // this customer saved them (user_trusted_specialists)
+  /**
+   * Aggregate satisfaction, rolled up from thumbs ratings (service_ratings).
+   * NOT stars — the backend only stores 👍/👎, so this is % positive over a
+   * count, not a 5-point score. `display:'new'` hides the % below a cold-start
+   * floor so a specialist with a couple of ratings can't show a misleading
+   * "100%". Backend: GET /api/providers/:providerId/rating.
+   */
+  providerRating: RatingAggregate;
+};
+
+export type RatingAggregate = {
+  positivePct: number; // 0–100, share of 👍 among all ratings
+  count: number; // total ratings
+  display: 'score' | 'new'; // 'new' → too few ratings to show a %
 };
 
 export type Order = {
@@ -89,17 +121,35 @@ export type Order = {
   scheduledAt: string | null; // ISO or null (asap)
   addressLabel: string;
   createdAt: string; // ISO
+  // Centavos throughout, matching data/pricing.ts (the port of backend/pricing.mjs)
+  // and the backend's `*_amount` columns. The provider keeps 100% of their quoted
+  // price — booking fee + processing + VAT are added on top and paid by the client.
   price: {
-    provider: number;
-    bookingFee: number;
-    processing: number;
-    total: number;
-    currency: 'MXN';
-    confirmed: boolean; // false until SERVI confirms the price
+    providerAmountCents: number; // = round(providerPesos * 100)
+    bookingFeeAmountCents: number; // SERVI's fee, on top, paid by the client
+    processingFeeAmountCents: number;
+    vatAmountCents: number;
+    totalAmountCents: number; // what the client's card is held for
+    confirmed: boolean; // false until SERVI confirms the price (numbers stay 0)
   };
   specialist: Specialist | null;
   timeline: TimelineStep[];
-  detailAnswers?: Record<string, string>;
+  // What the client wrote/said, and any attachments — the specialist sees these
+  // on their side; the customer sees the same thing on theirs.
+  description: Bilingual;
+  attachments: { kind: 'photo' | 'voice' | 'video'; count: number }[];
+  // Follow-up Q&A from the request flow (bilingual, so it renders in the client's
+  // language on either app). Backend: `detail_answers` on the service request.
+  detailAnswers: { q: Bilingual; a: Bilingual }[];
+  // On-site check-in track — SEPARATE from `status`/`timeline`. ISO per reached
+  // milestone; mirrors `phaseTimes` from `GET /api/provider/order`.
+  phaseTimes: Partial<Record<ServicePhase, string>>;
+  // One-shot location share timestamp. NEVER continuous tracking.
+  locationSharedAt: string | null;
+  // Optional post-service tip, in centavos. 100% goes to the specialist (a tip
+  // is added on top, never skimmed). Prototype-only — the backend has no tip
+  // support yet (see INTEROP.md "Needs building").
+  tipCents?: number;
   leadTimeDays: number; // days between booking and service (drives pre-auth model)
 };
 

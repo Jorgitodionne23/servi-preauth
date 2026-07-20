@@ -10,6 +10,7 @@ import { Icon, type FeatherName } from '@/components/ui/Icon';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { useI18n } from '@/i18n/I18nContext';
+import { loc } from '@/data/types';
 import { colors, radius, spacing } from '@/theme/tokens';
 
 const BENEFITS: { icon: FeatherName; es: string; en: string }[] = [
@@ -41,7 +42,7 @@ export default function PartnerScreen() {
               <Icon name={b.icon} size={18} color={colors.accentInk} />
             </View>
             <Txt variant="bodyStrong" style={{ flex: 1 }}>
-              {lang === 'es' ? b.es : b.en}
+              {loc(b, lang)}
             </Txt>
           </View>
         ))}

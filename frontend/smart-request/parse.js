@@ -205,6 +205,11 @@
       inferredDate,
       inferredDateLabel,
       followups,
+      understandingStatus: data.understandingStatus || null,
+      missingFields: Array.isArray(data.missingFields) ? data.missingFields : [],
+      requiredFollowups: Array.isArray(data.requiredFollowups) ? stripWhenFollowups(data.requiredFollowups).slice(0, 3) : [],
+      candidateServices: Array.isArray(data.candidateServices) ? data.candidateServices.slice(0, 4) : [],
+      understandingSummary: data.understandingSummary || data.summary || String(text || '').trim(),
       source: 'ai',
     };
   }

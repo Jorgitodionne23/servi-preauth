@@ -3,6 +3,8 @@
  * No network, no Firebase, no Stripe, no Neon. Everything below is invented
  * sample data that mirrors the real product's shapes (see ./types.ts).
  */
+import { computePricing } from './pricing';
+import { fromNow } from './time';
 import type { Order, SavedAddress, Specialist, TimelineStep, User } from './types';
 
 // ── Mock user (returning customer w/ saved card + consent) ─────────
@@ -39,28 +41,29 @@ export const mockAddresses: SavedAddress[] = [
   },
 ];
 
-// ── Specialists ───────────────────────────────────────────────────
+// ── Specialists (masked, as the backend gives the customer: "Pablo M.") ──────
+// prov-000117 (Pablo) is the SAME id the partner app fixtures use — the two apps
+// show the same specialist on order SV-204701 from opposite sides.
 const plumberPablo: Specialist = {
-  name: 'Pablo Méndez',
+  providerId: 'prov-000117',
+  maskedName: 'Pablo M.',
   initials: 'PM',
-  rating: 4.9,
-  jobs: 214,
-  trade: { es: 'Plomero verificado', en: 'Verified plumber' },
-  trusted: true,
+  trusted: true, // Mariana saved him (matches partner: jobsTogether 2, trustsYou true)
+  providerRating: { positivePct: 96, count: 187, display: 'score' }, // matches partner mockSpecialist
 };
 const cleanerLucia: Specialist = {
-  name: 'Lucía Ortega',
+  providerId: 'prov-000208',
+  maskedName: 'Lucía O.',
   initials: 'LO',
-  rating: 4.8,
-  jobs: 388,
-  trade: { es: 'Especialista en limpieza', en: 'Cleaning specialist' },
+  trusted: false,
+  providerRating: { positivePct: 94, count: 402, display: 'score' },
 };
 const electricianRaul: Specialist = {
-  name: 'Raúl Cano',
+  providerId: 'prov-000091',
+  maskedName: 'Raúl C.',
   initials: 'RC',
-  rating: 5.0,
-  jobs: 96,
-  trade: { es: 'Electricista verificado', en: 'Verified electrician' },
+  trusted: false,
+  providerRating: { positivePct: 98, count: 89, display: 'score' },
 };
 
 // ── Timeline helper ───────────────────────────────────────────────
@@ -75,20 +78,32 @@ function steps(reached: Order['status'][], times: Record<string, string | null>)
   ];
   return order.map((status) => ({
     status,
-    at: reached.includes(status) ? (times[status] ?? '2026-06-22T10:00:00Z') : null,
+    at: reached.includes(status) ? (times[status] ?? fromNow(-1, 4, 0)) : null,
   }));
 }
 
-const price = (provider: number, confirmed = true) => {
-  const bookingFee = Math.round(provider * 0.18);
-  const processing = Math.round((provider + bookingFee) * 0.046);
+// Real pricing: centavos from computePricing (the port of backend/pricing.mjs).
+// Unconfirmed orders (SERVI hasn't set the price yet) keep zeros and never call
+// computePricing — that also avoids its throw on a zero/absent provider price.
+const price = (providerPesos: number, confirmed = true): Order['price'] => {
+  if (!confirmed || providerPesos <= 0) {
+    return {
+      providerAmountCents: 0,
+      bookingFeeAmountCents: 0,
+      processingFeeAmountCents: 0,
+      vatAmountCents: 0,
+      totalAmountCents: 0,
+      confirmed: false,
+    };
+  }
+  const p = computePricing(providerPesos);
   return {
-    provider,
-    bookingFee,
-    processing,
-    total: provider + bookingFee + processing,
-    currency: 'MXN' as const,
-    confirmed,
+    providerAmountCents: p.providerAmountCents,
+    bookingFeeAmountCents: p.bookingFeeAmountCents,
+    processingFeeAmountCents: p.processingFeeAmountCents,
+    vatAmountCents: p.vatAmountCents,
+    totalAmountCents: p.totalAmountCents,
+    confirmed: true,
   };
 };
 
@@ -100,18 +115,28 @@ export const mockOrders: Order[] = [
     categoryKey: 'repair',
     service: { es: 'Destape de lavabo o fregadero', en: 'Sink or drain unclogging' },
     subLabel: { es: 'Plomería', en: 'Plumbing' },
-    mode: 'text',
+    mode: 'photos',
     status: 'pending',
     kind: 'primary',
     urgency: 'asap',
     whenLabel: { es: 'Lo antes posible', en: 'As soon as possible' },
     scheduledAt: null,
     addressLabel: 'Casa · Santa Fe',
-    createdAt: '2026-06-23T16:20:00Z',
+    createdAt: fromNow(0, 10, 20),
     price: price(450, false),
     specialist: null,
-    timeline: steps(['pending'], { pending: '2026-06-23T16:20:00Z' }),
-    detailAnswers: { fixture: 'Sink', severity: 'Yes, actively' },
+    timeline: steps(['pending'], { pending: fromNow(0, 10, 20) }),
+    description: {
+      es: 'El fregadero de la cocina no baja y ya se está desbordando. Adjunto fotos.',
+      en: 'Kitchen sink won’t drain and it’s already overflowing. Photos attached.',
+    },
+    attachments: [{ kind: 'photo', count: 2 }],
+    detailAnswers: [
+      { q: { es: '¿Qué mueble?', en: 'Which fixture?' }, a: { es: 'Fregadero de cocina', en: 'Kitchen sink' } },
+      { q: { es: '¿Se desborda?', en: 'Is it overflowing?' }, a: { es: 'Sí, activamente', en: 'Yes, actively' } },
+    ],
+    phaseTimes: {},
+    locationSharedAt: null,
     leadTimeDays: 0,
   },
 
@@ -126,12 +151,22 @@ export const mockOrders: Order[] = [
     kind: 'book',
     urgency: 'schedule',
     whenLabel: { es: 'Sáb 27 jun · 10:00', en: 'Sat Jun 27 · 10:00' },
-    scheduledAt: '2026-06-27T16:00:00Z',
+    scheduledAt: fromNow(4, 10, 0),
     addressLabel: 'Casa · Santa Fe',
-    createdAt: '2026-06-22T09:00:00Z',
+    createdAt: fromNow(-1, 3, 0),
     price: price(600),
     specialist: null,
     timeline: steps([], {}),
+    description: {
+      es: 'Limpieza semanal de un departamento de 2 recámaras, incluye cocina y baños.',
+      en: 'Weekly cleaning of a 2-bedroom apartment, including kitchen and bathrooms.',
+    },
+    attachments: [],
+    detailAnswers: [
+      { q: { es: '¿Cuántas recámaras?', en: 'How many bedrooms?' }, a: { es: '2', en: '2' } },
+    ],
+    phaseTimes: {},
+    locationSharedAt: null,
     leadTimeDays: 5,
   },
 
@@ -146,12 +181,24 @@ export const mockOrders: Order[] = [
     kind: 'book',
     urgency: 'schedule',
     whenLabel: { es: 'Mañana · 12:00', en: 'Tomorrow · 12:00' },
-    scheduledAt: '2026-06-24T18:00:00Z',
+    scheduledAt: fromNow(1, 12, 0),
     addressLabel: 'Oficina · Lomas de Santa Fe',
-    createdAt: '2026-06-21T11:30:00Z',
+    createdAt: fromNow(-2, 5, 30),
     price: price(520),
     specialist: null,
-    timeline: steps(['confirmed'], { confirmed: '2026-06-23T18:00:00Z' }),
+    timeline: steps(['confirmed'], { confirmed: fromNow(0, 12, 0) }),
+    description: {
+      es: 'Instalar 3 luminarias de techo en la oficina. Ya tengo las lámparas.',
+      en: 'Install 3 ceiling light fixtures at the office. I already have the lamps.',
+    },
+    attachments: [{ kind: 'photo', count: 3 }],
+    detailAnswers: [
+      { q: { es: '¿Cuántas piezas?', en: 'How many pieces?' }, a: { es: '3', en: '3' } },
+      { q: { es: '¿Tienes el material?', en: 'Do you have the materials?' }, a: { es: 'Sí, las lámparas', en: 'Yes, the lamps' } },
+      { q: { es: 'Altura del techo', en: 'Ceiling height' }, a: { es: '3 metros', en: '3 meters' } },
+    ],
+    phaseTimes: {},
+    locationSharedAt: null,
     leadTimeDays: 3,
   },
 
@@ -166,15 +213,28 @@ export const mockOrders: Order[] = [
     kind: 'book',
     urgency: 'schedule',
     whenLabel: { es: 'Hoy · 17:30', en: 'Today · 17:30' },
-    scheduledAt: '2026-06-23T23:30:00Z',
+    scheduledAt: fromNow(0, 17, 30),
     addressLabel: 'Casa · Santa Fe',
-    createdAt: '2026-06-22T14:00:00Z',
+    createdAt: fromNow(-1, 8, 0),
     price: price(480),
     specialist: plumberPablo,
     timeline: steps(['confirmed', 'assigned'], {
-      confirmed: '2026-06-22T20:00:00Z',
-      assigned: '2026-06-23T08:00:00Z',
+      confirmed: fromNow(-1, 14, 0),
+      assigned: fromNow(0, 2, 0),
     }),
+    description: {
+      es: 'El WC tiene una fuga por la base cada vez que le jalo. Ya moja el piso.',
+      en: 'The toilet leaks around the base every time I flush. It’s wetting the floor.',
+    },
+    attachments: [{ kind: 'voice', count: 1 }],
+    detailAnswers: [
+      { q: { es: '¿Dónde escurre?', en: 'Where is it leaking?' }, a: { es: 'En la base', en: 'At the base' } },
+      { q: { es: '¿Desde cuándo?', en: 'Since when?' }, a: { es: '2 días', en: '2 days' } },
+    ],
+    // Not checked in yet — this is the demo starting point. Advance it from the
+    // partner app's check-in, or the Account → Demo states "Avanzar fase" control.
+    phaseTimes: {},
+    locationSharedAt: null,
     leadTimeDays: 1,
   },
 
@@ -189,16 +249,29 @@ export const mockOrders: Order[] = [
     kind: 'book',
     urgency: 'asap',
     whenLabel: { es: 'En curso', en: 'In progress' },
-    scheduledAt: '2026-06-23T17:00:00Z',
+    scheduledAt: fromNow(0, 11, 0),
     addressLabel: 'Casa · Santa Fe',
-    createdAt: '2026-06-23T09:00:00Z',
+    createdAt: fromNow(0, 3, 0),
     price: price(900),
     specialist: cleanerLucia,
     timeline: steps(['confirmed', 'assigned', 'in_progress'], {
-      confirmed: '2026-06-23T12:00:00Z',
-      assigned: '2026-06-23T14:00:00Z',
-      in_progress: '2026-06-23T17:05:00Z',
+      confirmed: fromNow(0, 6, 0),
+      assigned: fromNow(0, 8, 0),
+      in_progress: fromNow(0, 11, 5),
     }),
+    description: {
+      es: 'Limpieza profunda después de una fiesta. Sala, cocina y 2 baños.',
+      en: 'Deep cleaning after a party. Living room, kitchen and 2 bathrooms.',
+    },
+    attachments: [],
+    detailAnswers: [],
+    // Underway — the specialist has checked in through "started".
+    phaseTimes: {
+      en_route: fromNow(0, 10, 40),
+      arrived: fromNow(0, 10, 58),
+      started: fromNow(0, 11, 5),
+    },
+    locationSharedAt: fromNow(0, 10, 45),
     leadTimeDays: 0,
   },
 
@@ -213,17 +286,30 @@ export const mockOrders: Order[] = [
     kind: 'book',
     urgency: 'schedule',
     whenLabel: { es: 'Ayer · 11:00', en: 'Yesterday · 11:00' },
-    scheduledAt: '2026-06-22T17:00:00Z',
+    scheduledAt: fromNow(-1, 11, 0),
     addressLabel: 'Oficina · Lomas de Santa Fe',
-    createdAt: '2026-06-20T10:00:00Z',
+    createdAt: fromNow(-3, 4, 0),
     price: price(540),
     specialist: electricianRaul,
     timeline: steps(['confirmed', 'assigned', 'in_progress', 'completed'], {
-      confirmed: '2026-06-21T17:00:00Z',
-      assigned: '2026-06-22T08:00:00Z',
-      in_progress: '2026-06-22T17:00:00Z',
-      completed: '2026-06-22T18:30:00Z',
+      confirmed: fromNow(-2, 11, 0),
+      assigned: fromNow(-1, 2, 0),
+      in_progress: fromNow(-1, 11, 0),
+      completed: fromNow(-1, 12, 30),
     }),
+    description: {
+      es: 'Cambiar 4 apagadores y 2 contactos que ya no funcionan.',
+      en: 'Replace 4 switches and 2 outlets that no longer work.',
+    },
+    attachments: [],
+    detailAnswers: [],
+    phaseTimes: {
+      en_route: fromNow(-1, 10, 30),
+      arrived: fromNow(-1, 10, 55),
+      started: fromNow(-1, 11, 0),
+      completed: fromNow(-1, 12, 30),
+    },
+    locationSharedAt: null,
     leadTimeDays: 2,
   },
 
@@ -238,18 +324,31 @@ export const mockOrders: Order[] = [
     kind: 'book',
     urgency: 'schedule',
     whenLabel: { es: '18 jun · 19:00', en: 'Jun 18 · 19:00' },
-    scheduledAt: '2026-06-19T01:00:00Z',
+    scheduledAt: fromNow(-5, 19, 0),
     addressLabel: 'Casa · Santa Fe',
-    createdAt: '2026-06-15T10:00:00Z',
+    createdAt: fromNow(-8, 4, 0),
     price: price(750),
-    specialist: { name: 'Ana Belén', initials: 'AB', rating: 4.9, jobs: 142, trade: { es: 'Masajista certificada', en: 'Certified masseuse' } },
+    specialist: { providerId: 'prov-000164', maskedName: 'Ana B.', initials: 'AB', trusted: false, providerRating: { positivePct: 97, count: 132, display: 'score' } },
     timeline: steps(['confirmed', 'assigned', 'in_progress', 'completed', 'captured'], {
-      confirmed: '2026-06-18T01:00:00Z',
-      assigned: '2026-06-18T15:00:00Z',
-      in_progress: '2026-06-19T01:00:00Z',
-      completed: '2026-06-19T02:00:00Z',
-      captured: '2026-06-19T02:30:00Z',
+      confirmed: fromNow(-6, 19, 0),
+      assigned: fromNow(-5, 9, 0),
+      in_progress: fromNow(-5, 19, 0),
+      completed: fromNow(-5, 20, 0),
+      captured: fromNow(-5, 20, 30),
     }),
+    description: {
+      es: 'Masaje relajante de cuerpo completo a domicilio, 60 minutos.',
+      en: 'Full-body relaxation massage at home, 60 minutes.',
+    },
+    attachments: [],
+    detailAnswers: [],
+    phaseTimes: {
+      en_route: fromNow(-5, 18, 30),
+      arrived: fromNow(-5, 18, 55),
+      started: fromNow(-5, 19, 0),
+      completed: fromNow(-5, 20, 0),
+    },
+    locationSharedAt: null,
     leadTimeDays: 4,
   },
 
@@ -266,16 +365,29 @@ export const mockOrders: Order[] = [
     whenLabel: { es: '14 jun · 13:00', en: 'Jun 14 · 13:00' },
     scheduledAt: null,
     addressLabel: 'Oficina · Lomas de Santa Fe',
-    createdAt: '2026-06-14T12:00:00Z',
+    createdAt: fromNow(-9, 6, 0),
     price: price(320),
     specialist: null,
     timeline: steps(['confirmed', 'assigned', 'in_progress', 'completed', 'captured'], {
-      confirmed: '2026-06-14T12:30:00Z',
-      assigned: '2026-06-14T12:45:00Z',
-      in_progress: '2026-06-14T13:00:00Z',
-      completed: '2026-06-14T13:40:00Z',
-      captured: '2026-06-14T14:00:00Z',
+      confirmed: fromNow(-9, 6, 30),
+      assigned: fromNow(-9, 6, 45),
+      in_progress: fromNow(-9, 7, 0),
+      completed: fromNow(-9, 7, 40),
+      captured: fromNow(-9, 8, 0),
     }),
+    description: {
+      es: 'Entrega exprés de un paquete el mismo día dentro de Santa Fe.',
+      en: 'Same-day express delivery of a package within Santa Fe.',
+    },
+    attachments: [],
+    detailAnswers: [],
+    phaseTimes: {
+      en_route: fromNow(-9, 7, 0),
+      arrived: fromNow(-9, 7, 35),
+      started: fromNow(-9, 7, 0),
+      completed: fromNow(-9, 7, 40),
+    },
+    locationSharedAt: null,
     leadTimeDays: 0,
   },
 
@@ -291,12 +403,20 @@ export const mockOrders: Order[] = [
     kind: 'setup_required',
     urgency: 'schedule',
     whenLabel: { es: '30 jun · 10:00', en: 'Jun 30 · 10:00' },
-    scheduledAt: '2026-06-30T16:00:00Z',
+    scheduledAt: fromNow(7, 10, 0),
     addressLabel: 'Casa · Santa Fe',
-    createdAt: '2026-06-24T08:00:00Z',
+    createdAt: fromNow(1, 2, 0),
     price: price(0, false),
     specialist: null,
     timeline: steps([], {}),
+    description: {
+      es: 'Necesito una visita para cotizar la remodelación de un baño.',
+      en: 'I need an on-site visit to quote a bathroom remodel.',
+    },
+    attachments: [],
+    detailAnswers: [],
+    phaseTimes: {},
+    locationSharedAt: null,
     leadTimeDays: 6,
   },
 
@@ -311,12 +431,20 @@ export const mockOrders: Order[] = [
     kind: 'book',
     urgency: 'schedule',
     whenLabel: { es: '12 jun · 16:00', en: 'Jun 12 · 16:00' },
-    scheduledAt: '2026-06-12T22:00:00Z',
+    scheduledAt: fromNow(-11, 16, 0),
     addressLabel: 'Casa · Santa Fe',
-    createdAt: '2026-06-10T10:00:00Z',
+    createdAt: fromNow(-13, 4, 0),
     price: price(380),
     specialist: null,
     timeline: steps([], {}),
+    description: {
+      es: 'Montar una TV de 55" en muro de tablaroca, con soporte incluido.',
+      en: 'Mount a 55" TV on a drywall wall, bracket included.',
+    },
+    attachments: [],
+    detailAnswers: [],
+    phaseTimes: {},
+    locationSharedAt: null,
     leadTimeDays: 2,
   },
 ];

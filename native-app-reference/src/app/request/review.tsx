@@ -137,9 +137,9 @@ export default function ReviewScreen() {
         />
 
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, alignItems: 'center' }}>
-          <Txt variant="caption">{lang === 'es' ? 'Previsualizar:' : 'Preview:'}</Txt>
+          <Txt variant="caption">{t('review.preview')}</Txt>
           <Chip
-            label={lang === 'es' ? 'Visita de cotización' : 'Quote visit'}
+            label={t('review.visitLabel')}
             icon="eye"
             active={isVisit}
             onPress={() => setIsVisit((v) => !v)}

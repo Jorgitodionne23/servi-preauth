@@ -5857,9 +5857,37 @@ app.post('/api/service-requests', publicFormLimit, async (req, res) => {
     const { category, description, preferredDate, preferredTime, isAsap, serviceAddress, serviceAddressDetails, clientName, clientPhone, clientEmail, customerId, lang, attachments, clientRequestId,
       requestMode, matchedService, matchedSubKey, aiSummary, aiConfidence, aiSource, detailAnswers,
       aiStatus, aiReason, aiEvidence,
+      understandingStatus, missingFields, requiredFollowups, understandingSummary, resolutionMethod,
       preferredProviderId, preferred_provider_id, preferredProviderName, preferred_provider_name } = req.body || {};
     if (!category || !clientName || !clientPhone) {
       return res.status(400).json({ error: 'missing_required_fields', message: 'category, clientName, and clientPhone are required' });
+    }
+    // Smart Request submissions fail closed: schedule/address data never turns an
+    // unresolved request into a bookable job. Legacy forms do not send requestMode
+    // and retain their existing contract.
+    if (requestMode) {
+      const answers = detailAnswers && typeof detailAnswers === 'object' && !Array.isArray(detailAnswers) ? detailAnswers : {};
+      const required = Array.isArray(requiredFollowups) ? requiredFollowups : [];
+      const unanswered = required
+        .filter((item) => item && item.required !== false)
+        .map((item, index) => String(item.key || `required_${index}`))
+        .filter((key) => !String(answers[key] || '').trim());
+      const catalogResolved = category !== 'custom' && !!String(matchedService || '').trim() && !!String(matchedSubKey || '').trim();
+      const customResolved = category === 'custom' && resolutionMethod === 'custom_confirmed' &&
+        ['custom_goal', 'custom_context', 'custom_confirm'].every((key) => String(answers[key] || '').trim());
+      if (understandingStatus !== 'understood' || unanswered.length || (!catalogResolved && !customResolved)) {
+        return res.status(422).json({
+          error: 'request_not_understood',
+          message: lang === 'en' ? 'Finish clarifying the request before scheduling it.' : 'Termina de aclarar la solicitud antes de programarla.',
+          missingFields: Array.from(new Set([].concat(Array.isArray(missingFields) ? missingFields.map(String) : [], unanswered))),
+        });
+      }
+      if (!['ai', 'guided_choice', 'catalog_picker', 'custom_confirmed'].includes(String(resolutionMethod || ''))) {
+        return res.status(422).json({ error: 'invalid_resolution_method', message: 'resolutionMethod is invalid' });
+      }
+      if (!String(understandingSummary || '').trim()) {
+        return res.status(422).json({ error: 'missing_understanding_summary', message: 'understandingSummary is required' });
+      }
     }
     const clientRequestIdNorm = typeof clientRequestId === 'string' ? clientRequestId.trim() : '';
     if (clientRequestIdNorm && !/^[a-zA-Z0-9._:-]{8,120}$/.test(clientRequestIdNorm)) {
@@ -7487,6 +7515,48 @@ app.get('/api/auth/orders/:id/rating', async (req, res) => {
     return res.json({ rating: rows[0]?.rating || null, comment: rows[0]?.comment || null });
   } catch (err) {
     console.error('[GET /api/auth/orders/:id/rating]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// Below this many ratings a provider is shown as "new" instead of a percentage,
+// so a specialist with one or two thumbs can't display a misleading "100%".
+const PROVIDER_RATING_MIN_COUNT = 5;
+
+// Aggregate satisfaction for a provider, rolled up from the thumbs stored in
+// service_ratings (there is no star rating in this system). Returns % positive
+// over a count, plus a `display` flag that hides the % below the cold-start
+// floor. Used by GET /api/auth/providers/:id/rating and safe to reuse when
+// enriching order / trusted-specialist responses.
+async function providerRatingAggregate(providerId) {
+  const id = String(providerId || '').trim();
+  if (!id) return { providerId: '', count: 0, positivePct: 0, display: 'new' };
+  const { rows } = await pool.query(
+    `SELECT COUNT(*)::int AS n,
+            COUNT(*) FILTER (WHERE rating = 'up')::int AS up
+       FROM service_ratings
+      WHERE provider_id = $1`,
+    [id]
+  );
+  const count = rows[0]?.n || 0;
+  const up = rows[0]?.up || 0;
+  const positivePct = count > 0 ? Math.round((up / count) * 100) : 0;
+  const display = count >= PROVIDER_RATING_MIN_COUNT ? 'score' : 'new';
+  return { providerId: id, count, positivePct, display };
+}
+
+// GET /api/auth/providers/:providerId/rating — a provider's aggregate satisfaction
+// (% positive thumbs + count). Read-only, no PII; requires a session so provider
+// aggregates aren't publicly scrapable. NOTE: the underlying data is binary
+// thumbs, so this is % positive, NOT a 5-star score.
+app.get('/api/auth/providers/:providerId/rating', async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const agg = await providerRatingAggregate(req.params.providerId);
+    return res.json(agg);
+  } catch (err) {
+    console.error('[GET /api/auth/providers/:providerId/rating]', err);
     return res.status(500).json({ error: 'internal_error' });
   }
 });

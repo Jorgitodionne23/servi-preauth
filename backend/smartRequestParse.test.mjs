@@ -31,6 +31,38 @@ test('parseModelResponse parses clean JSON', () => {
   assert.equal(out.subKey, 'plumbing');
   assert.equal(out.confidence, 0.9);
   assert.equal(out.followups.length, 1);
+  assert.equal(out.understandingStatus, 'clarifying');
+  assert.deepEqual(out.missingFields, ['fixture']);
+  assert.equal(out.requiredFollowups[0].required, true);
+});
+
+test('parseModelResponse only marks a complete catalog match understood', () => {
+  const out = parseModelResponse(JSON.stringify({
+    category: 'repair', subKey: 'plumbing', service: 'Pipe leak repair',
+    summary: 'Pipe is leaking', confidence: 0.91, urgency: 'flexible', followups: [],
+  }));
+  assert.equal(out.understandingStatus, 'understood');
+  assert.deepEqual(out.missingFields, []);
+});
+
+test('parseModelResponse validates and exposes catalog candidates', () => {
+  const out = parseModelResponse(JSON.stringify({
+    category: 'repair', subKey: 'handyman', service: 'TV wall mounting',
+    summary: 'Mount an item', confidence: 0.7, urgency: 'flexible', followups: [],
+    candidateServices: ['TV wall mounting', 'Light fixture installation', 'Invented service'],
+  }));
+  assert.equal(out.understandingStatus, 'clarifying');
+  assert.deepEqual(out.candidateServices.map((item) => item.service), ['TV wall mounting', 'Light fixture installation']);
+});
+
+test('custom model output remains unresolved until explicit guided confirmation', () => {
+  const out = parseModelResponse(JSON.stringify({
+    category: 'custom', service: 'Unusual home task', summary: 'Unusual task', confidence: 0.9,
+    urgency: 'flexible', followups: [{ q: 'What result do you want?', key: 'goal' }],
+  }));
+  assert.equal(out.aiStatus, 'unclear');
+  assert.equal(out.aiReason, 'off_catalog');
+  assert.equal(out.understandingStatus, 'unresolved');
 });
 
 test('parseModelResponse extracts JSON embedded in prose/markdown', () => {

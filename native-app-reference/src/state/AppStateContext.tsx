@@ -17,6 +17,7 @@ import {
 import { activeStatuses, mockAddresses, mockOrders, mockUser } from '@/data/mockData';
 import { matchText, detectUrgency } from '@/data/matcher';
 import { findSub } from '@/data/catalog';
+import { PHASE_ORDER } from '@/data/types';
 import type {
   Order,
   RequestDraft,
@@ -78,6 +79,16 @@ type AppState = {
 
   // submit → creates a pending order, returns its id
   submitRequest: () => string;
+
+  // demo: advance an order's on-site milestone (en_route → arrived → started →
+  // completed), mirroring a specialist check-in on the partner app. Lets a
+  // reviewer watch the live timeline move without running both apps.
+  advancePhase: (orderId: string) => void;
+
+  // Add a post-service tip (centavos) to a captured order. Prototype-only — the
+  // backend has no tip support yet (INTEROP.md "Needs building"). 100% goes to
+  // the specialist.
+  tipOrder: (orderId: string, cents: number) => void;
 
   // addresses
   addAddress: (a: Omit<SavedAddress, 'id'>) => SavedAddress;
@@ -214,7 +225,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       scheduledAt: null,
       addressLabel,
       createdAt: new Date().toISOString(),
-      price: { provider: 0, bookingFee: 0, processing: 0, total: 0, currency: 'MXN', confirmed: false },
+      price: {
+        providerAmountCents: 0,
+        bookingFeeAmountCents: 0,
+        processingFeeAmountCents: 0,
+        vatAmountCents: 0,
+        totalAmountCents: 0,
+        confirmed: false,
+      },
       specialist: null,
       timeline: [
         { status: 'pending', at: new Date().toISOString() },
@@ -224,12 +242,50 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         { status: 'completed', at: null },
         { status: 'captured', at: null },
       ],
-      detailAnswers: draft.answers,
+      description: draft.text
+        ? { es: draft.text, en: draft.text } // the client's own words don't translate
+        : { es: 'Solicitud sin descripción', en: 'Request without description' },
+      attachments:
+        draft.mode === 'voice'
+          ? [{ kind: 'voice', count: 1 }]
+          : draft.mode === 'video'
+            ? [{ kind: 'video', count: 1 }]
+            : draft.mode === 'photos'
+              ? [{ kind: 'photo', count: 1 }]
+              : [],
+      detailAnswers: draft.followups
+        .filter((f) => draft.answers[f.key])
+        .map((f) => ({ q: f.q, a: { es: draft.answers[f.key], en: draft.answers[f.key] } })),
+      phaseTimes: {},
+      locationSharedAt: null,
       leadTimeDays: draft.urgency === 'asap' ? 0 : draft.leadDays,
     };
     setOrders((list) => [newOrder, ...list]);
     return id;
   }, [addresses, draft]);
+
+  const advancePhase = useCallback((orderId: string) => {
+    setOrders((list) =>
+      list.map((o) => {
+        if (o.id !== orderId) return o;
+        const next = PHASE_ORDER.find((p) => !o.phaseTimes[p]);
+        if (!next) return o; // already completed all milestones
+        const at = new Date().toISOString();
+        const phaseTimes = { ...o.phaseTimes, [next]: at };
+        // The payment/coordination status is separate from the on-site phase
+        // (as in the backend), but nudge it forward so the demo reads coherently.
+        let status = o.status;
+        if (next === 'started') status = 'in_progress';
+        if (next === 'completed') status = 'completed';
+        const timeline = o.timeline.map((s) => (s.status === status && !s.at ? { ...s, at } : s));
+        return { ...o, phaseTimes, status, timeline };
+      }),
+    );
+  }, []);
+
+  const tipOrder = useCallback((orderId: string, cents: number) => {
+    setOrders((list) => list.map((o) => (o.id === orderId ? { ...o, tipCents: cents } : o)));
+  }, []);
 
   const getOrder = useCallback((id: string) => orders.find((o) => o.id === id), [orders]);
   const activeOrder = useMemo(
@@ -256,6 +312,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       patchDraft,
       setAnswer,
       submitRequest,
+      advancePhase,
+      tipOrder,
       addAddress,
       setDefaultAddress,
       getOrder,
@@ -279,6 +337,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       patchDraft,
       setAnswer,
       submitRequest,
+      advancePhase,
+      tipOrder,
       addAddress,
       setDefaultAddress,
       getOrder,

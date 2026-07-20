@@ -202,7 +202,7 @@
     }
 
     return '<div class="sr-stage sr-stage--narrow sr-fade-in"><div class="sr-compose">' +
-      '<div class="sr-intel-row"><div class="sr-eyebrow"><span class="sr-eyebrow__spark">' + I.spark(15) + '</span>' + esc(tr('eyebrow')) + '</div>' + aiBadge() + '</div>' +
+      '<div class="sr-intel-row">' + aiBadge() + '</div>' +
       '<h1 class="sr-title">' + esc(tr('title')) + '</h1>' +
       '<p class="sr-sub">' + esc(tr('sub')) + '</p>' +
       '<div class="sr-box' + (S.mode !== 'text' ? ' sr-box--media' : '') + '" id="sr-box">' + boxInner + '</div>' +
@@ -290,17 +290,92 @@
   }
 
   // ════════════════════════════ BUILD ══════════════════════════════════════
+	  var SR_SMART_FOLLOWUPS_ES = {
+	    plumbing: [
+	      { key: 'fixture', q: '¿Qué elemento está afectado?', chips: ['Lavabo o tarja', 'WC', 'Regadera', 'Tubería'] },
+	      { key: 'symptom', q: '¿Qué está pasando?', chips: ['Fuga activa', 'Está tapado', 'No hay presión', 'No funciona'] },
+	      { key: 'water_control', q: '¿Puedes cerrar el agua?', chips: ['Sí', 'No', 'No sé'] },
+	    ],
+	    'home-cleaning': [
+	      { key: 'space', q: '¿Qué espacio limpiaremos?', chips: ['Departamento', 'Casa', 'Oficina pequeña'] },
+	      { key: 'size', q: '¿Qué tamaño tiene?', chips: ['Estudio', '1–2 recámaras', '3+ recámaras'] },
+	      { key: 'condition', q: '¿Cómo está actualmente?', chips: ['Mantenimiento', 'Muy sucio', 'Después de evento'] },
+	    ],
+	    'deep-cleaning': [
+	      { key: 'space', q: '¿Qué espacio limpiaremos?', chips: ['Departamento', 'Casa', 'Área específica'] },
+	      { key: 'size', q: '¿Qué tamaño tiene?', chips: ['1 recámara', '2 recámaras', '3+ recámaras'] },
+	      { key: 'condition', q: '¿Qué requiere más atención?', chips: ['Grasa o cochambre', 'Sarro o moho', 'Todo el espacio'] },
+	    ],
+	    handyman: [
+	      { key: 'object', q: '¿Qué quieres montar?', chips: ['TV', 'Espejo o cuadro', 'Cortinero', 'Otro'] },
+	      { key: 'size_weight', q: '¿Qué tamaño o peso tiene?', chips: ['Pequeño', 'Mediano', 'Grande o pesado'] },
+	      { key: 'wall', q: '¿De qué material es la pared?', chips: ['Concreto', 'Tablaroca', 'Ladrillo', 'No sé'] },
+	    ],
+	    moving: [
+	      { key: 'items', q: '¿Qué vas a mover?', chips: ['Pocas cosas', 'Estudio / 1 recámara', '2+ recámaras'] },
+	      { key: 'access', q: '¿Cómo es el acceso?', chips: ['Elevador', 'Escaleras', 'Planta baja'] },
+	      { key: 'packing', q: '¿Necesitas ayuda para empacar?', chips: ['Sí', 'No'] },
+	    ],
+	    'large-items': [
+	      { key: 'items', q: '¿Qué objeto moveremos?', chips: ['Sofá', 'Colchón', 'Electrodoméstico', 'Otro'] },
+	      { key: 'access', q: '¿Cómo es el acceso?', chips: ['Elevador', 'Escaleras', 'Planta baja'] },
+	      { key: 'help', q: '¿Requiere desmontarse?', chips: ['Sí', 'No', 'No sé'] },
+	    ],
+	  };
+
+	  function localizedRequired(req, items) {
+	    if (curLang() === 'es' && SR_SMART_FOLLOWUPS_ES[req.subKey]) return SR_SMART_FOLLOWUPS_ES[req.subKey];
+	    return items;
+	  }
+
+	  function requiredFollowups(req) {
+	    var items = (req.requiredFollowups && req.requiredFollowups.length) ? req.requiredFollowups : (req.followups || []);
+	    items = localizedRequired(req, items);
+	    if (!items.length && req.category && req.category !== 'custom' && Number(req.confidence || 0) < 0.62) {
+	      items = [{ key: 'confirm_match', q: tr('confirmMatchQ'), chips: [tr('confirmMatchYes')], required: true }];
+	    }
+	    if (req.category === 'custom' && req.resolutionMethod === 'custom_confirmed') {
+	      items = [
+	        { key: 'custom_goal', q: tr('customGoalQ') },
+	        { key: 'custom_context', q: tr('customContextQ') },
+	        { key: 'custom_confirm', q: tr('customConfirmQ'), chips: [tr('customConfirmYes')] },
+	      ];
+	    }
+	    return items.map(function (item, index) {
+	      return Object.assign({}, item, { key: item.key || ('required_' + index), required: item.required !== false });
+	    });
+	  }
+
+	  function understandingState() {
+	    var req = S.req || {};
+	    var required = requiredFollowups(req);
+	    var missing = required.filter(function (item) { return item.required && !String(S.answers[item.key] || '').trim(); });
+	    var catalogMatch = !!(req.category && req.category !== 'custom' && req.subKey && req.service);
+	    var customReady = req.category === 'custom' && req.resolutionMethod === 'custom_confirmed' && missing.length === 0;
+	    var unresolved = req.aiStatus === 'unclear' || req.adminReview || (req.candidateServices && req.candidateServices.length > 1) || (!catalogMatch && !customReady);
+	    var status = !S.rechecking && (catalogMatch || customReady) && missing.length === 0 ? 'understood' : (unresolved ? 'unresolved' : 'clarifying');
+	    return { status: status, required: required, missing: missing, ready: status === 'understood' };
+	  }
+
+	  function understandingPreview(state) {
+	    var values = state.required.map(function (item) { return S.answers[item.key]; }).filter(Boolean);
+	    var service = S.req.service || tr('customRequest');
+	    return tr('requestPreview', { service: service, details: values.length ? values.join(' · ') : tr('detailsPending') });
+	  }
+
 	  function understandingHTML() {
 	    var req = S.req;
-	    if (req.aiStatus === 'unclear' || req.adminReview) return unableHTML(req);
+	    var state = understandingState();
+	    if (state.status === 'unresolved') return unableHTML(req);
 	    var transcript = req.transcript ? '<div class="sr-transcript"><b>' + esc(tr('transcribed')) + '</b>“' + esc(req.transcript) + '”</div>'
 	      : (req.caption ? '<div class="sr-transcript"><b>' + esc(tr('fromPhotos')) + '</b>' + esc(req.caption) + '</div>' : '');
 	    return '<div class="sr-understand sr-fade-in"><div class="sr-understand__top">' +
 	      '<span class="sr-understand__emoji">' + (req.emoji || '✨') + '</span><div class="sr-understand__head">' +
-	      '<div class="sr-understand__eyebrow">' + I.spark(13) + esc(tr('understood')) + '</div>' +
+	      '<div class="sr-understand__eyebrow">' + I.spark(13) + esc(state.ready ? tr('understood') : tr('understoodSoFar')) + '</div>' +
 	      '<div class="sr-understand__svc"><strong>' + esc(req.service || tr('customRequest')) + '</strong>' +
 	      '<span class="sr-understand__cat">' + esc(req.subLabel ? req.subLabel + ' · ' + req.categoryLabel : req.categoryLabel) + '</span></div></div></div>' +
 	      (req.summary ? '<p class="sr-understand__summary">“' + esc(req.summary) + '”</p>' : '') + transcript +
+	      '<div class="sr-understand__preview' + (state.ready ? ' is-ready' : '') + '">' + I.check(14) + '<span>' + esc(understandingPreview(state)) + '</span></div>' +
 	      '<button type="button" class="sr-link" data-action="open-picker">' + I.edit(14) + esc(tr('changeService')) + '</button></div>';
 	  }
 
@@ -308,16 +383,23 @@
 	    var isVoice = S.mode === 'voice';
 	    var title = isVoice ? tr('unableVoiceTitle') : (S.mode === 'photos' ? tr('unablePhotosTitle') : tr('manualReviewTitle'));
 	    var desc = req.summary || (isVoice ? tr('unableVoiceDesc') : tr('unablePhotosDesc'));
-	    var icon = isVoice ? I.mic(22) : (S.mode === 'photos' ? I.camera(22) : I.video(22));
-	    return '<div class="sr-understand sr-understand--unclear sr-fade-in"><div class="sr-understand__top">' +
+	    var icon = isVoice ? I.mic(22) : (S.mode === 'photos' ? I.camera(22) : (S.mode === 'video' ? I.video(22) : I.spark(22)));
+	    var candidates = (req.candidateServices || []).map(function (candidate) {
+	      var label = typeof candidate === 'string' ? candidate : candidate.service;
+	      var subKey = typeof candidate === 'object' ? candidate.subKey : '';
+	      return label ? '<button type="button" class="sr-candidate" data-action="candidate" data-val="' + esc(label) + '" data-sub="' + esc(subKey || '') + '">' + esc(label) + I.arrow(14) + '</button>' : '';
+	    }).join('');
+	    return '<div class="sr-understand sr-understand--unclear sr-fade-in" role="status"><div class="sr-understand__top">' +
 	      '<span class="sr-understand__emoji">' + icon + '</span><div class="sr-understand__head">' +
-	      '<div class="sr-understand__eyebrow">' + I.shield(13) + esc(tr('manualReview')) + '</div>' +
+	      '<div class="sr-understand__eyebrow">' + I.spark(13) + esc(tr('unclearRequest')) + '</div>' +
 	      '<div class="sr-understand__svc"><strong>' + esc(title) + '</strong>' +
 	      '<span class="sr-understand__cat">' + esc(tr('manualReviewSub')) + '</span></div></div></div>' +
 	      '<p class="sr-understand__summary sr-understand__summary--plain">' + esc(desc) + '</p>' +
+	      (candidates ? '<div class="sr-candidates"><span>' + esc(tr('alsoCouldBe')) + '</span>' + candidates + '</div>' : '') +
 	      '<div class="sr-capture__actions sr-understand__actions">' +
 	        btn('secondary', 'sm', tr('addDetails'), { action: 'clarify-text', iconLeft: I.edit(14) }) +
-	        btn('ghost', 'sm', tr('changeService'), { action: 'open-picker', iconLeft: I.edit(14) }) +
+	        btn('ghost', 'sm', tr('chooseExactService'), { action: 'open-picker', iconLeft: I.grid(14) }) +
+	        btn('ghost', 'sm', tr('specialRequest'), { action: 'custom-start', iconLeft: I.plus(14) }) +
 	      '</div></div>';
 	  }
 
@@ -336,10 +418,12 @@
   }
 
   function followupsHTML() {
-    var f = S.req.followups;
-    if (!f || !f.length || S.mode !== 'text') return '';
-    return '<div class="sr-card sr-fade-in"><div class="sr-card__head"><h3 class="sr-card__title">' + esc(tr('quickDetails')) + '</h3>' +
-      '<span class="sr-card__opt">' + esc(tr('quickDetailsOpt')) + '</span></div><div class="sr-fups">' +
+	    var state = understandingState(), f = state.required;
+	    if (!f.length || state.ready) return '';
+	    var firstMissing = state.missing[0];
+	    f = firstMissing ? [firstMissing] : [];
+	    return '<div class="sr-card sr-fade-in"><div class="sr-card__head"><h3 class="sr-card__title">' + esc(tr('quickDetails')) + '</h3>' +
+	      '<span class="sr-card__opt">' + esc(tr('quickDetailsRequired')) + '</span></div><div class="sr-fups" aria-live="polite">' +
       f.map(function (q, i) {
         var key = q.key || ('q' + i);
         var control = (q.chips && q.chips.length)
@@ -347,7 +431,7 @@
               return '<button type="button" class="sr-chip' + (S.answers[key] === ch ? ' on' : '') + '" data-action="chip:' + key + '" data-val="' + esc(ch) + '">' + esc(ch) + '</button>';
             }).join('') + '</div>'
           : '<input class="sr-fup__input" data-fup="' + key + '" placeholder="' + esc(tr('typeAnswer')) + '" value="' + esc(S.answers[key] || '') + '">';
-        return '<div class="sr-fup"><div class="sr-fup__q">' + esc(q.q) + '</div>' + control + '</div>';
+	        return '<div class="sr-fup"><div class="sr-fup__q"><span class="sr-required-dot"></span>' + esc(q.q) + '</div>' + control + '</div>';
       }).join('') + '</div></div>';
   }
 
@@ -466,6 +550,7 @@
   }
 
   function buildHTML() {
+	    var understanding = understandingState();
 	    var left = '<div class="sr-pane-left">' +
 	      (S.thinking
 	        ? '<div class="sr-think"><span class="sr-think__spark">' + I.spark(18) + '</span><div><div class="sr-think__line">' +
@@ -473,11 +558,12 @@
 	            '</div><div class="sr-think__bars"><i></i><i></i><i></i></div></div></div>'
 	        : ((S.mode === 'video') ? mediaReceivedHTML()
 	            : understandingHTML()) + followupsHTML()) +
-      (S.thinking ? '' : whenWhereHTML()) + (S.thinking ? '' : trustedSelectorHTML()) + '</div>';
+	      (S.thinking || !understanding.ready ? '' : '<div class="sr-unlocked sr-fade-in" role="status">' + I.checkCircle(18) + '<span>' + esc(tr('readyToSchedule')) + '</span></div>' + whenWhereHTML()) +
+	      (S.thinking || !understanding.ready ? '' : trustedSelectorHTML()) + '</div>';
 
-    var canSend = S.address.trim() && (S.when === 'asap' || (S.when === 'schedule' && S.date));
+	    var canSend = understanding.ready && S.address.trim() && (S.when === 'asap' || (S.when === 'schedule' && S.date));
     var right = '<div class="sr-pane-right"><div class="sr-rail">' + summaryHTML() + nextStepsHTML() +
-      btn('accent', 'lg', tr('sendRequest'), { action: 'submit', block: true, id: 'sr-submit', disabled: S.thinking || !canSend, iconRight: I.send(18) }) +
+	      btn('accent', 'lg', understanding.ready ? tr('sendRequest') : tr('finishUnderstanding'), { action: 'submit', block: true, id: 'sr-submit', disabled: S.thinking || !canSend, iconRight: understanding.ready ? I.send(18) : I.spark(18) }) +
       '<p class="sr-rail__fine">' + esc(tr('fine')) + '</p></div></div>';
 
     return '<div class="sr-stage"><div class="sr-dash' + (SETTINGS.twoPane === false ? ' sr-dash--single' : '') + '" style="' +
@@ -538,6 +624,55 @@
   function openPicker() {
     pickerCat = (S.req.category && CAT()[S.req.category]) ? S.req.category : 'cleaning';
     renderPicker();
+  }
+
+  function catalogSelection(service, requestedSubKey) {
+    var cats = CAT(), found = null;
+    Object.keys(cats).some(function (catKey) {
+      return (cats[catKey].subs || []).some(function (sub) {
+        if ((requestedSubKey && sub.key !== requestedSubKey) || (sub.services || []).indexOf(service) === -1) return false;
+        found = { category: catKey, categoryLabel: cats[catKey].label, emoji: cats[catKey].emoji, subKey: sub.key, subLabel: sub.label, service: service };
+        return true;
+      });
+    });
+    return found;
+  }
+
+  function applyCatalogSelection(selection, method) {
+    if (!selection) return;
+    var fups = ((window.SERVI_FOLLOWUPS || {})[selection.subKey] || []).filter(function (item) {
+      var timingText = [item.key, item.q].concat(item.chips || []).join(' ').toLowerCase();
+      return !/(^|\s)(when|timing|date|schedule|asap|today|tomorrow|week|weekend|urgent|cuándo|cuando|fecha|hoy|mañana|manana|semana|urgente)(\s|$)/i.test(timingText);
+    });
+    fups = localizedRequired(selection, fups);
+    S.req = Object.assign({}, S.req, selection, {
+      confidence: 1,
+      aiStatus: 'understood',
+      aiReason: null,
+      adminReview: false,
+      understandingStatus: fups.length ? 'clarifying' : 'understood',
+      requiredFollowups: fups.map(function (item) { return Object.assign({}, item, { required: true }); }),
+      followups: fups,
+      candidateServices: [],
+      resolutionMethod: method || 'catalog_picker',
+    });
+    S.answers = {};
+    S.when = ''; S.date = ''; S.time = '';
+  }
+
+  function reanalyzeWithAnswers() {
+    if (S.mode !== 'text' || S.req.resolutionMethod === 'catalog_picker' || S.req.resolutionMethod === 'custom_confirmed') return;
+    var lines = requiredFollowups(S.req).map(function (item) {
+      return S.answers[item.key] ? (item.q + ': ' + S.answers[item.key]) : '';
+    }).filter(Boolean);
+    if (!lines.length) return;
+    S.rechecking = true;
+    var original = String(S.text || S.req.summary || '').trim();
+    window.serviParse((original + '\n' + lines.join('\n')).slice(0, 600), { engine: SETTINGS.engine }).then(function (parsed) {
+      S.req = Object.assign({}, parsed, { resolutionMethod: 'guided_choice' });
+      S.rechecking = false;
+      render();
+    }).catch(function () { S.rechecking = false; render(); });
   }
   function renderPicker() {
     var cats = CAT(), c = cats[pickerCat];
@@ -826,6 +961,7 @@
 
   // ── production-shaped payload for POST /api/service-requests ──
 	  function buildPayload() {
+	    var understanding = understandingState();
 	    var details = Object.keys(S.answers).filter(function (k) { return S.answers[k]; }).map(function (k) { return S.answers[k]; });
       var extraDetails = S.text ? S.text.trim() : '';
 	    var desc = S.req.summary || '';
@@ -863,6 +999,11 @@
 	      aiReason: S.req.aiReason || null,
 	      aiEvidence: Array.isArray(S.req.aiEvidence) ? S.req.aiEvidence : [],
 	      detailAnswers: S.answers,
+      understandingStatus: understanding.status,
+      missingFields: understanding.missing.map(function (item) { return item.key; }),
+      requiredFollowups: understanding.required,
+      understandingSummary: understandingPreview(understanding),
+      resolutionMethod: S.req.resolutionMethod || (S.req.source === 'ai' ? 'ai' : 'guided_choice'),
       clientRequestId: (S._reqId || (S._reqId = clientReqId())),
       // Trusted-specialist preference (server re-validates the provider is verified).
       preferredProviderId: S._prefer || undefined,
@@ -881,6 +1022,11 @@
   }
 
   function submit() {
+	  if (!understandingState().ready) {
+	    var gate = document.querySelector('.sr-card, .sr-understand');
+	    if (gate) { gate.scrollIntoView({ behavior: 'smooth', block: 'center' }); gate.classList.add('sr-attention'); setTimeout(function () { gate.classList.remove('sr-attention'); }, 700); }
+	    return;
+	  }
     if (!srEnsureAddress()) return;
     if (!window.__user) {
       if (typeof window.openAuthModal === 'function') {
@@ -946,7 +1092,8 @@
 	  function reset() {
 	    discardActiveVoice(); stopWave(); if (S.rec && S.rec.timer) clearInterval(S.rec.timer);
     S.phase = 'compose'; S.mode = 'text'; S.text = ''; S.atts = []; S.media = []; S.rec = null; S._reqId = null; S.submittedId = null;
-    S.thinking = false; S.req = { emoji: '✨', categoryLabel: 'Custom request' }; S.answers = {};
+	    S.thinking = false; S.req = { emoji: '✨', categoryLabel: 'Custom request' }; S.answers = {};
+	    S.rechecking = false;
     S.when = ''; S.date = ''; S.time = ''; S.dateLabel = ''; S.address = defaultAddress(); S.addressDetails = null;
     S._trusted = []; S._trustedCat = null; S._trustedFetching = false; S._prefer = null;
     render();
@@ -958,11 +1105,11 @@
     if (!t) return;
 
     if (t.hasAttribute('data-pickcat')) { pickerCat = t.getAttribute('data-pickcat'); renderPicker(); return; }
-    if (t.hasAttribute('data-pick')) {
+	    if (t.hasAttribute('data-pick')) {
       var svc = t.getAttribute('data-pick'), subKey = t.getAttribute('data-sub');
       var cats = CAT(), c = cats[pickerCat], sub = c.subs.find(function (s) { return s.key === subKey; });
-	      S.req = Object.assign({}, S.req, { category: pickerCat, categoryLabel: c.label, emoji: c.emoji, subKey: subKey, subLabel: sub.label, service: svc, confidence: 1, aiStatus: 'understood', aiReason: null });
-      S.answers = {}; closeModal(); render(); return;
+	      applyCatalogSelection({ category: pickerCat, categoryLabel: c.label, emoji: c.emoji, subKey: subKey, subLabel: sub.label, service: svc }, 'catalog_picker');
+	      closeModal(); render(); return;
     }
 
     var a = t.getAttribute('data-action'); if (!a) return;
@@ -1003,6 +1150,17 @@
       case 'media-use': if (S.media.some(function (m) { return m.uploading; })) return; runAnalyze(S.mode); break;
       case 'vid-stop': stopVid(); break;
 	      case 'open-picker': openPicker(); break;
+	      case 'candidate':
+	        applyCatalogSelection(catalogSelection(t.getAttribute('data-val'), t.getAttribute('data-sub')), 'guided_choice');
+	        render(); break;
+	      case 'custom-start':
+	        S.req = Object.assign({}, S.req, {
+	          category: 'custom', categoryLabel: tr('customRequest'), subKey: null, subLabel: null,
+	          service: tr('specialRequest'), aiStatus: 'understood', adminReview: false,
+	          understandingStatus: 'clarifying', resolutionMethod: 'custom_confirmed', candidateServices: [],
+	          requiredFollowups: [], followups: [],
+	        });
+	        S.answers = {}; S.when = ''; S.date = ''; S.time = ''; render(); break;
 	      case 'clarify-text': S.phase = 'compose'; S.mode = 'text'; S.text = ''; S.rec = null; render(); break;
       case 'when': S.when = arg; if (arg === 'asap') { S.date = ''; S.time = ''; } render(); break;
       case 'use-loc': {
@@ -1022,7 +1180,7 @@
         }, function () { var b = document.querySelector('.sr-loc'); if (b) b.classList.remove('busy'); });
         break;
       }
-      case 'chip': var key = arg, val = t.getAttribute('data-val'); S.answers[key] = (S.answers[key] === val ? '' : val); render(); break;
+	      case 'chip': var key = arg, val = t.getAttribute('data-val'); S.answers[key] = (S.answers[key] === val ? '' : val); S.req.resolutionMethod = S.req.resolutionMethod || 'guided_choice'; render(); reanalyzeWithAnswers(); break;
       case 'prefer': S._prefer = (arg === 'none' ? null : arg); render(); break;
       case 'submit':
         // Mobile (stacked) layout: confirm details in a sheet first. Desktop sends directly.
@@ -1059,7 +1217,14 @@
     else if (e.target.closest && e.target.closest('#' + SR_ADDR_PREFIX + '_root')) { syncAddressFromFields(); }
     else if (e.target.id === 'sr-date') { S.date = e.target.value; var s = document.getElementById('sr-submit'); if (s) s.disabled = !(S.address.trim() && (S.when === 'asap' || S.date)); }
     else if (e.target.id === 'sr-time') { S.time = e.target.value; }
-    else if (e.target.hasAttribute && e.target.hasAttribute('data-fup')) { S.answers[e.target.getAttribute('data-fup')] = e.target.value; }
+	    else if (e.target.hasAttribute && e.target.hasAttribute('data-fup')) { S.answers[e.target.getAttribute('data-fup')] = e.target.value; }
+  });
+  document.addEventListener('change', function (e) {
+    if (e.target.hasAttribute && e.target.hasAttribute('data-fup')) {
+      S.answers[e.target.getAttribute('data-fup')] = e.target.value.trim();
+      S.req.resolutionMethod = S.req.resolutionMethod || 'guided_choice';
+      render(); reanalyzeWithAnswers();
+    }
   });
   document.addEventListener('focusin', function (e) { if (e.target.id === 'sr-ta') { stopSrPlaceholderRotation(); e.target.placeholder = ''; var b = document.getElementById('sr-box'); if (b) b.classList.add('focus'); } });
   document.addEventListener('focusout', function (e) { if (e.target.id === 'sr-ta') { var b = document.getElementById('sr-box'); if (b) b.classList.remove('focus'); if (!e.target.value.trim()) startSrPlaceholderRotation(); } });

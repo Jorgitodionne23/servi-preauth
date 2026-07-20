@@ -11,8 +11,9 @@ import { Icon } from './ui/Icon';
 import { Badge } from './ui/Badge';
 import { STATUS_META } from './status';
 import { useI18n } from '@/i18n/I18nContext';
-import { loc } from '@/data/types';
+import { loc, PHASE_ORDER } from '@/data/types';
 import { colors, radius, shadow, spacing } from '@/theme/tokens';
+import type { StringKey } from '@/i18n/strings';
 import type { Order } from '@/data/types';
 
 export function ActiveOrderDock({ order }: { order: Order }) {
@@ -20,6 +21,8 @@ export function ActiveOrderDock({ order }: { order: Order }) {
   const router = useRouter();
   const meta = STATUS_META[order.status];
   const needsPay = order.status === 'pending';
+  // The most recent on-site milestone the specialist has reached, if any.
+  const currentPhase = [...PHASE_ORDER].reverse().find((p) => order.phaseTimes[p]);
 
   return (
     <PressableScale
@@ -38,7 +41,7 @@ export function ActiveOrderDock({ order }: { order: Order }) {
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.accent }} />
           <Txt variant="eyebrow" color={colors.accent}>
-            {lang === 'es' ? 'Pedido activo' : 'Active order'}
+            {t('dock.active')}
           </Txt>
         </View>
         <Txt variant="mono" color="rgba(255,255,255,0.6)">
@@ -56,7 +59,11 @@ export function ActiveOrderDock({ order }: { order: Order }) {
       </View>
 
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-        <Badge label={t(meta.labelKey)} tone={meta.tone} icon={meta.icon} />
+        {currentPhase ? (
+          <Badge label={t(`phase.${currentPhase}` as StringKey)} tone="accent" icon="navigation" />
+        ) : (
+          <Badge label={t(meta.labelKey)} tone={meta.tone} icon={meta.icon} />
+        )}
         <View
           style={{
             flexDirection: 'row',

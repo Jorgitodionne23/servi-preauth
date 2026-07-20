@@ -22,11 +22,11 @@ import { colors, spacing } from '@/theme/tokens';
 export default function AccountScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { t, lang } = useI18n();
-  const { session, addresses, orders, signOut, offline, forceError, toggleOffline, toggleForceError } = useApp();
+  const { t, tn } = useI18n();
+  const { session, addresses, orders, signOut, offline, forceError, toggleOffline, toggleForceError, advancePhase } = useApp();
   const user = session.user;
-  const onLabel = lang === 'es' ? 'Activo' : 'On';
-  const offLabel = lang === 'es' ? 'Inactivo' : 'Off';
+  const onLabel = t('account.on');
+  const offLabel = t('account.off');
 
   return (
     <Screen bottomInset={insets.bottom + 96}>
@@ -61,8 +61,8 @@ export default function AccountScreen() {
               </View>
             </View>
             <View style={{ flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap' }}>
-              {user.phoneVerified ? <Badge label={lang === 'es' ? 'Teléfono verificado' : 'Phone verified'} tone="success" icon="check-circle" /> : null}
-              {user.emailVerified ? <Badge label={lang === 'es' ? 'Correo verificado' : 'Email verified'} tone="success" icon="check-circle" /> : <Badge label={t('auth.gate.title')} tone="warning" icon="alert-circle" />}
+              {user.phoneVerified ? <Badge label={t('account.phoneVerified')} tone="success" icon="check-circle" /> : null}
+              {user.emailVerified ? <Badge label={t('account.emailVerified')} tone="success" icon="check-circle" /> : <Badge label={t('auth.gate.title')} tone="warning" icon="alert-circle" />}
             </View>
           </Card>
 
@@ -81,9 +81,9 @@ export default function AccountScreen() {
                   <Txt variant="bodyStrong" style={{ textTransform: 'capitalize' }}>
                     {user.card.brand} ···· {user.card.last4}
                   </Txt>
-                  <Txt variant="caption">{lang === 'es' ? 'Vence' : 'Exp'} {user.card.exp}</Txt>
+                  <Txt variant="caption">{t('account.cardExp')} {user.card.exp}</Txt>
                 </View>
-                {user.card.consentOnFile ? <Badge label={lang === 'es' ? 'Con consentimiento' : 'Consent on file'} tone="accent" icon="shield" /> : null}
+                {user.card.consentOnFile ? <Badge label={t('account.consentOnFile')} tone="accent" icon="shield" /> : null}
               </View>
             ) : (
               <Txt variant="bodySm">{t('pay.noCard')}</Txt>
@@ -96,9 +96,9 @@ export default function AccountScreen() {
           {/* Settings list */}
           <Card style={{ marginTop: spacing.lg }} padded={false}>
             <View style={{ paddingHorizontal: spacing.lg }}>
-              <ListRow icon="map-pin" title={t('account.addresses')} subtitle={`${addresses.length} ${lang === 'es' ? 'guardadas' : 'saved'}`} onPress={() => router.push('/account/addresses')} />
+              <ListRow icon="map-pin" title={t('account.addresses')} subtitle={tn('account.savedCount', addresses.length)} onPress={() => router.push('/account/addresses')} />
               <Divider />
-              <ListRow icon="clipboard" title={t('account.history')} subtitle={`${orders.length} ${lang === 'es' ? 'pedidos' : 'orders'}`} onPress={() => router.push('/(tabs)/orders')} />
+              <ListRow icon="clipboard" title={t('account.history')} subtitle={tn('account.ordersCount', orders.length)} onPress={() => router.push('/(tabs)/orders')} />
               <Divider />
               <ListRow
                 icon="globe"
@@ -112,24 +112,31 @@ export default function AccountScreen() {
 
           {/* Demo states — prototype-only toggles to exercise offline + error UI */}
           <Txt variant="eyebrow" style={{ marginTop: spacing.xl, marginLeft: spacing.xs, marginBottom: spacing.sm }}>
-            {lang === 'es' ? 'Estados de demostración' : 'Demo states'}
+            {t('account.demo.title')}
           </Txt>
           <Card padded={false}>
             <View style={{ paddingHorizontal: spacing.lg }}>
               <ListRow
                 icon="wifi-off"
-                title={lang === 'es' ? 'Banner sin conexión' : 'Offline banner'}
-                subtitle={lang === 'es' ? 'Se muestra en todas las pantallas' : 'Shows across all screens'}
+                title={t('account.demo.offline')}
+                subtitle={t('account.demo.offlineSub')}
                 right={<Badge label={offline ? onLabel : offLabel} tone={offline ? 'success' : 'neutral'} dot />}
                 onPress={toggleOffline}
               />
               <Divider />
               <ListRow
                 icon="alert-circle"
-                title={lang === 'es' ? 'Forzar error de solicitud' : 'Force request error'}
-                subtitle={lang === 'es' ? 'Aparece al analizar una solicitud' : 'Appears when parsing a request'}
+                title={t('account.demo.error')}
+                subtitle={t('account.demo.errorSub')}
                 right={<Badge label={forceError ? onLabel : offLabel} tone={forceError ? 'danger' : 'neutral'} dot />}
                 onPress={toggleForceError}
+              />
+              <Divider />
+              <ListRow
+                icon="navigation"
+                title={t('account.demo.advance')}
+                subtitle={t('account.demo.advanceSub')}
+                onPress={() => advancePhase('SV-204701')}
               />
             </View>
           </Card>
@@ -149,7 +156,7 @@ export default function AccountScreen() {
       )}
 
       <Txt variant="caption" center style={{ marginTop: spacing.xl }}>
-        SERVI · {lang === 'es' ? 'Prototipo de referencia nativa' : 'Native design reference'}
+        SERVI · {t('account.footer')}
       </Txt>
     </Screen>
   );

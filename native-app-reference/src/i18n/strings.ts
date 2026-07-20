@@ -215,6 +215,10 @@ export const strings = {
   'order.timeline': { es: 'Estado del pedido', en: 'Order status' },
   'order.specialist': { es: 'Tu especialista', en: 'Your specialist' },
   'order.specialistPending': { es: 'Asignando especialista…', en: 'Matching specialist…' },
+  'order.assigningBody': {
+    es: 'SERVI está asignando a un especialista verificado para tu servicio.',
+    en: 'SERVI is assigning a verified specialist for your service.',
+  },
   'order.payNow': { es: 'Autorizar tarjeta', en: 'Authorize card' },
   'order.viewPayment': { es: 'Ver detalle de pago', en: 'View payment detail' },
   'order.contactSupport': { es: 'Contactar a SERVI', en: 'Contact SERVI' },
@@ -277,6 +281,56 @@ export const strings = {
     en: 'I authorize SERVI to hold my card to confirm the service',
   },
 
+  // ── Price breakdown (mirrors frontend/success.html) ──────
+  'price.service': { es: 'Precio del servicio', en: 'Service price' },
+  'price.processing': { es: 'Comisión por procesamiento', en: 'Processing fee' },
+  'price.vatIncluded': { es: '*IVA incluido', en: '*VAT included' },
+  'price.total': { es: 'Total', en: 'Total' },
+  'price.pending': { es: 'Precio por confirmar', en: 'Price to be confirmed' },
+  'price.pendingBody': {
+    es: 'SERVI confirma el precio con tu especialista antes de cualquier cargo o retención.',
+    en: 'SERVI confirms the price with your specialist before any hold or charge.',
+  },
+
+  // ── Specialist card ──────────────────────────────────────
+  'spec.trusted': { es: 'De confianza', en: 'Trusted' },
+  'spec.verified': { es: 'Verificado por SERVI', en: 'SERVI-verified' },
+  'spec.new': { es: 'Nuevo en SERVI', en: 'New on SERVI' },
+  'spec.maskedNote': {
+    es: 'Por privacidad mostramos solo el nombre y la inicial. Todo el contacto pasa por SERVI.',
+    en: 'For privacy we show first name and initial only. All contact goes through SERVI.',
+  },
+
+  // ── On-site milestones (customer view of the specialist's check-ins) ──
+  'phase.title': { es: 'En sitio', en: 'On site' },
+  'phase.en_route': { es: 'En camino', en: 'On the way' },
+  'phase.arrived': { es: 'Llegó', en: 'Arrived' },
+  'phase.started': { es: 'Trabajo iniciado', en: 'Work started' },
+  'phase.completed': { es: 'Trabajo terminado', en: 'Work completed' },
+  'order.location': { es: 'Ubicación compartida', en: 'Location shared' },
+  'order.locationBody': {
+    es: 'Tu especialista compartió su ubicación a las {time}. SERVI no rastrea de forma continua.',
+    en: 'Your specialist shared their location at {time}. SERVI does not track continuously.',
+  },
+  'order.request': { es: 'Tu solicitud', en: 'Your request' },
+  'dock.active': { es: 'Pedido activo', en: 'Active order' },
+
+  // ── Tip (optional, post-service; 100% to the specialist) ──
+  'tip.title': { es: 'Propina', en: 'Tip' },
+  'tip.subtitle': { es: '¿Quieres dar una propina a {name}?', en: 'Want to tip {name}?' },
+  'tip.custom': { es: 'Otra cantidad', en: 'Other amount' },
+  'tip.give': { es: 'Dar', en: 'Give' },
+  'tip.hundredPct': {
+    es: 'El 100% es para tu especialista. La propina se suma, no se descuenta.',
+    en: '100% goes to your specialist. A tip is added on top, never deducted.',
+  },
+  'tip.disclaimer': { es: 'Prototipo — sin cargo real.', en: 'Prototype — no real charge.' },
+  'tip.thanksTitle': { es: '¡Gracias!', en: 'Thank you!' },
+  'tip.thanksBody': {
+    es: 'Diste una propina de {amount}. El 100% es para {name}.',
+    en: 'You tipped {amount}. 100% goes to {name}.',
+  },
+
   // ── Account ──────────────────────────────────────────────
   'account.title': { es: 'Cuenta', en: 'Account' },
   'account.guest': { es: 'Invitado', en: 'Guest' },
@@ -299,6 +353,33 @@ export const strings = {
   'account.logout': { es: 'Cerrar sesión', en: 'Log out' },
   'account.default': { es: 'Predeterminada', en: 'Default' },
   'account.setDefault': { es: 'Hacer predeterminada', en: 'Set as default' },
+  'account.on': { es: 'Activo', en: 'On' },
+  'account.off': { es: 'Inactivo', en: 'Off' },
+  'account.phoneVerified': { es: 'Teléfono verificado', en: 'Phone verified' },
+  'account.emailVerified': { es: 'Correo verificado', en: 'Email verified' },
+  'account.cardExp': { es: 'Vence', en: 'Exp' },
+  'account.consentOnFile': { es: 'Con consentimiento', en: 'Consent on file' },
+  'account.savedCount': { es: '{n} guardadas', en: '{n} saved' },
+  'account.savedCount.one': { es: '1 guardada', en: '1 saved' },
+  'account.ordersCount': { es: '{n} pedidos', en: '{n} orders' },
+  'account.ordersCount.one': { es: '1 pedido', en: '1 order' },
+  'account.footer': { es: 'Prototipo de referencia nativa', en: 'Native design reference' },
+  'account.demo.title': { es: 'Estados de demostración', en: 'Demo states' },
+  'account.demo.offline': { es: 'Banner sin conexión', en: 'Offline banner' },
+  'account.demo.offlineSub': { es: 'Se muestra en todas las pantallas', en: 'Shows across all screens' },
+  'account.demo.error': { es: 'Forzar error de solicitud', en: 'Force request error' },
+  'account.demo.errorSub': { es: 'Aparece al analizar una solicitud', en: 'Appears when parsing a request' },
+  'account.demo.advance': { es: 'Avanzar fase (SV-204701)', en: 'Advance phase (SV-204701)' },
+  'account.demo.advanceSub': { es: 'Simula el check-in del especialista', en: 'Simulates the specialist check-in' },
+  'address.field.label': { es: 'Etiqueta', en: 'Label' },
+  'address.field.street': { es: 'Calle y número', en: 'Street & number' },
+  'address.field.colonia': { es: 'Colonia', en: 'Neighborhood' },
+  'review.preview': { es: 'Previsualizar:', en: 'Preview:' },
+  'review.visitLabel': { es: 'Visita de cotización', en: 'Quote visit' },
+  'req.submitted.coordinator': {
+    es: 'Un coordinador de SERVI revisa tu solicitud y asigna a un especialista verificado.',
+    en: 'A SERVI coordinator reviews your request and assigns a verified specialist.',
+  },
 
   // ── Help ─────────────────────────────────────────────────
   'help.title': { es: 'Ayuda y contacto', en: 'Help & contact' },

@@ -19,7 +19,7 @@ import { useI18n } from '@/i18n/I18nContext';
 import { colors, radius, spacing } from '@/theme/tokens';
 
 export default function AddressesScreen() {
-  const { t, lang } = useI18n();
+  const { t } = useI18n();
   const { addresses, addAddress, setDefaultAddress } = useApp();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [form, setForm] = useState({ label: '', line1: '', neighborhood: '' });
@@ -72,13 +72,13 @@ export default function AddressesScreen() {
 
       <BottomSheet visible={sheetOpen} onClose={() => setSheetOpen(false)} title={t('req.address.add')}>
         <View style={{ gap: spacing.lg }}>
-          <Field label={lang === 'es' ? 'Etiqueta' : 'Label'}>
+          <Field label={t('address.field.label')}>
             <Input placeholder="Casa, Oficina…" value={form.label} onChangeText={(v) => setForm((f) => ({ ...f, label: v }))} />
           </Field>
-          <Field label={lang === 'es' ? 'Calle y número' : 'Street & number'}>
+          <Field label={t('address.field.street')}>
             <Input placeholder="Av. Santa Fe 482, Piso 7" value={form.line1} onChangeText={(v) => setForm((f) => ({ ...f, line1: v }))} />
           </Field>
-          <Field label={lang === 'es' ? 'Colonia' : 'Neighborhood'}>
+          <Field label={t('address.field.colonia')}>
             <Input placeholder="Santa Fe" value={form.neighborhood} onChangeText={(v) => setForm((f) => ({ ...f, neighborhood: v }))} />
           </Field>
           <Button label={t('common.save')} onPress={save} disabled={!form.line1.trim()} />

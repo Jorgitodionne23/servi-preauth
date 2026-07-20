@@ -84,7 +84,7 @@ export default function SubmittedScreen() {
         <InfoCard
           icon="users"
           title={t('req.review.next.step1')}
-          body={lang === 'es' ? 'Un coordinador de SERVI revisa tu solicitud y asigna a un especialista verificado.' : 'A SERVI coordinator reviews your request and assigns a verified specialist.'}
+          body={t('req.submitted.coordinator')}
         />
       </View>
 
