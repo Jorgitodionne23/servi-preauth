@@ -1,0 +1,33 @@
+{
+  "cli": {
+    "version": ">= 13.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "http://localhost:4242",
+        "EXPO_PUBLIC_WEB_URL": "http://localhost:4242"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://servi-preauth-staging.onrender.com",
+        "EXPO_PUBLIC_WEB_URL": "https://servi-preauth.pages.dev"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://servi-preauth.onrender.com",
+        "EXPO_PUBLIC_WEB_URL": "https://servi-preauth.pages.dev"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

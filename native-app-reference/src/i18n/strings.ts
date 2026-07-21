@@ -175,6 +175,31 @@ export const strings = {
   },
   'auth.otp.verify': { es: 'Verificar', en: 'Verify' },
   'auth.otp.resend': { es: 'Reenviar código', en: 'Resend code' },
+  'auth.emailSoon': {
+    es: 'Por ahora inicia sesión con tu teléfono.',
+    en: 'For now, sign in with your phone.',
+  },
+  'auth.error.sms': {
+    es: 'No pudimos enviar el código. Revisa el número e intenta de nuevo.',
+    en: "We couldn't send the code. Check the number and try again.",
+  },
+  'auth.error.code': { es: 'Código incorrecto. Intenta de nuevo.', en: 'Wrong code. Try again.' },
+  'auth.error.unavailable': {
+    es: 'Inicia sesión desde la app instalada — no disponible en esta vista previa.',
+    en: 'Sign-in requires the installed app — not available in this preview.',
+  },
+  'auth.email.later': {
+    es: 'Podrás agregar y verificar tu correo después desde tu cuenta.',
+    en: 'You can add and verify your email later from your account.',
+  },
+  'req.review.signInToSend': { es: 'Inicia sesión para enviar', en: 'Sign in to send' },
+  'req.review.sendError': {
+    es: 'No se pudo enviar. Revisa tu conexión e intenta de nuevo.',
+    en: "Couldn't send. Check your connection and try again.",
+  },
+  'req.uploading': { es: 'Subiendo…', en: 'Uploading…' },
+  'order.rate.title': { es: '¿Cómo estuvo el servicio?', en: 'How was the service?' },
+  'order.rate.thanks': { es: '¡Gracias por tu calificación!', en: 'Thanks for your rating!' },
   'auth.otp.noPhone': { es: '¿No tienes acceso a tu teléfono?', en: "Can't access your phone?" },
   'auth.name.verified': { es: 'Número verificado', en: 'Number verified' },
   'auth.name.title': { es: '¿Cuál es tu nombre?', en: "What's your name?" },

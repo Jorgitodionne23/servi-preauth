@@ -1,41 +1,49 @@
 /**
- * PartnerState — the prototype's single in-memory store.
+ * PartnerState — the specialist app's single store, backed by the SERVI
+ * provider API.
  *
- * No persistence, no network. Every mutation below corresponds to a real
- * backend call in production; the mapping is written on each action so this
- * file doubles as the integration spec:
- *
- *   acceptOffer      → POST /api/provider/accept        (to build)
- *   declineOffer     → POST /api/provider/decline       (to build)
- *   checkIn          → POST /api/provider/checkin       ✅ exists today
- *   shareLocation    → POST /api/provider/location      ✅ exists today
- *   requestPriceChange → POST /api/provider/price-change ✅ exists today
- *   completeJob      → POST /api/provider/checkin { event: 'completed' } ✅
- *   cashOut          → Stripe Connect instant payout    (to build)
- *
- * The three ✅ routes already exist in `backend/index.mjs`, token-gated per
- * order. The production partner app swaps that per-order token for a real
- * provider session — see ../../INTEROP.md.
+ * Auth: Firebase phone OTP → POST /api/provider/auth/firebase → provider-scoped
+ * 24h session JWT (SecureStore). Jobs/offers poll GET /api/provider/jobs while
+ * the app is foregrounded; mutations call the session-auth variants of the
+ * existing provider routes (checkin / location / price-change) plus the new
+ * accept/decline. Payout balances are deliberately absent — SERVI pays weekly
+ * (Stripe Connect deferred), so earnings are read-only reporting.
  */
 import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
-import { computePricing } from '@/data/pricing';
+import { AppState as RNAppState } from 'react-native';
+
 import {
-  mockAvailability,
-  mockCoverage,
-  mockJobs,
-  mockPayoutAccount,
-  mockPayouts,
-  mockPendingSpecialist,
-  mockSpecialist,
-} from '@/data/mockData';
-import { DEMO_NOW, isToday, weekStart, weekdayMon } from '@/data/time';
+  NotAProviderError,
+  acceptOfferRemote,
+  availabilityToWire,
+  checkinRemote,
+  declineOfferRemote,
+  fetchEarnings,
+  fetchJobs,
+  fetchProviderMe,
+  locationRemote,
+  loginProvider,
+  logoutProvider,
+  mapAvailability,
+  mapCoverage,
+  mapSpecialist,
+  patchProviderMe,
+  priceChangeRemote,
+  submitOnboarding,
+} from '@/api/partner';
+import { api, onSessionExpired } from '@/lib/client';
+import { firebaseSignOut, sendPhoneCode, type PhoneConfirmation } from '@/lib/firebasePhone';
+import { computePricing } from '@/data/pricing';
+import { isToday, weekStart, weekdayMon, now } from '@/data/time';
 import type {
   Coverage,
   DayAvailability,
@@ -49,7 +57,6 @@ import type {
   PayoutAccount,
   PriceChangeType,
   Session,
-  Specialist,
   TradeKey,
 } from '@/data/types';
 
@@ -79,8 +86,33 @@ function emptyOnboarding(): OnboardingDraft {
   };
 }
 
+const EMPTY_EARNINGS: EarningsSummary = {
+  availableCents: 0,
+  pendingCents: 0,
+  scheduledCents: 0,
+  weekCents: 0,
+  weekJobs: 0,
+  monthCents: 0,
+  monthJobs: 0,
+  weekByDay: [0, 0, 0, 0, 0, 0, 0],
+};
+
+/** Payouts run weekly, handled by SERVI (Stripe Connect deferred). */
+const DEFAULT_PAYOUT_ACCOUNT: PayoutAccount = {
+  connectAccountId: null,
+  status: 'not_started',
+  bankName: null,
+  last4: null,
+  holderName: null,
+  schedule: 'weekly',
+  rfc: null,
+};
+
+const JOBS_POLL_MS = 45_000;
+
 type PartnerState = {
   session: Session;
+  sessionLoading: boolean;
   jobs: Job[];
   payouts: Payout[];
   payoutAccount: PayoutAccount;
@@ -88,15 +120,16 @@ type PartnerState = {
   coverage: Coverage;
   onboarding: OnboardingDraft;
 
-  /** On/off shift. Off duty means no new offers — the single most consequential
-   *  control in the app, which is why it lives in the Today header. */
   onDuty: boolean;
   toggleDuty: () => void;
 
-  // ── session ──
-  signIn: () => void;
+  // ── session (Firebase phone OTP → provider session) ──
+  beginPhoneAuth: (phoneE164: string) => Promise<void>;
+  /** 'ok' signs in; 'not_a_provider' → route to onboarding. */
+  confirmPhoneCode: (code: string) => Promise<'ok' | 'not_a_provider'>;
   signOut: () => void;
   submitApplication: () => void;
+  applicationSubmitted: boolean;
 
   // ── onboarding draft ──
   patchOnboarding: (patch: Partial<OnboardingDraft>) => void;
@@ -106,6 +139,7 @@ type PartnerState = {
   setDocument: (key: DocumentKey, status: DocumentStatus) => void;
 
   // ── jobs ──
+  refreshJobs: () => Promise<void>;
   getJob: (id: string) => Job | undefined;
   offers: Job[];
   todayJobs: Job[];
@@ -115,7 +149,6 @@ type PartnerState = {
 
   acceptOffer: (id: string) => void;
   declineOffer: (id: string) => void;
-  /** Advance the on-site milestone. Mirrors POST /api/provider/checkin. */
   checkIn: (id: string, phase: JobPhase) => void;
   shareLocation: (id: string) => void;
   locationSharedFor: string | null;
@@ -135,50 +168,162 @@ type PartnerState = {
   setAvailability: (next: DayAvailability[]) => void;
   setCoverage: (next: Coverage) => void;
   toggleTradeSkill: (skillEs: string) => void;
-
-  // ── demo controls ──
-  simulateOffer: () => void;
-  setVerificationState: (status: Specialist['status']) => void;
-  resetDemo: () => void;
 };
 
 const Ctx = createContext<PartnerState | null>(null);
 
-/** Instant cash-out fee: 1.5%, min $10. Gold+ tiers get it free (see catalog). */
-const INSTANT_FEE_RATE = 0.015;
-const INSTANT_FEE_MIN_CENTS = 1000;
-
-let simSeq = 900;
-
 export function PartnerStateProvider({ children }: { children: ReactNode }) {
-  const [session, setSession] = useState<Session>({
-    status: 'authed',
-    specialist: mockSpecialist,
-  });
-  const [jobs, setJobs] = useState<Job[]>(mockJobs);
-  const [payouts, setPayouts] = useState<Payout[]>(mockPayouts);
-  const [payoutAccount, setPayoutAccount] = useState<PayoutAccount>(mockPayoutAccount);
-  const [availability, setAvailability] = useState<DayAvailability[]>(mockAvailability);
-  const [coverage, setCoverage] = useState<Coverage>(mockCoverage);
+  const [session, setSession] = useState<Session>({ status: 'signed_out', specialist: null });
+  const [sessionLoading, setSessionLoading] = useState(true);
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [payouts] = useState<Payout[]>([]);
+  const [payoutAccount, setPayoutAccount] = useState<PayoutAccount>(DEFAULT_PAYOUT_ACCOUNT);
+  const [availability, setAvailabilityState] = useState<DayAvailability[]>([]);
+  const [coverage, setCoverageState] = useState<Coverage>({ zones: [], radiusKm: 10, acceptsAsap: true });
   const [onboarding, setOnboarding] = useState<OnboardingDraft>(emptyOnboarding);
-  const [onDuty, setOnDuty] = useState(true);
+  const [onDuty, setOnDuty] = useState(false);
   const [locationSharedFor, setLocationSharedFor] = useState<string | null>(null);
+  const [earnings, setEarnings] = useState<EarningsSummary>(EMPTY_EARNINGS);
+  const [applicationSubmitted, setApplicationSubmitted] = useState(false);
 
-  const toggleDuty = useCallback(() => setOnDuty((v) => !v), []);
+  const confirmationRef = useRef<PhoneConfirmation | null>(null);
+  const jobsRef = useRef<Job[]>(jobs);
+  useEffect(() => {
+    jobsRef.current = jobs;
+  }, [jobs]);
 
-  // ── session ────────────────────────────────────────────────
-  const signIn = useCallback(
-    () => setSession({ status: 'authed', specialist: mockSpecialist }),
+  const applyMe = useCallback((me: Awaited<ReturnType<typeof fetchProviderMe>>) => {
+    setSession({ status: 'authed', specialist: mapSpecialist(me) });
+    setCoverageState(mapCoverage(me));
+    setAvailabilityState(mapAvailability(me));
+    setOnDuty(!!me.provider.onDuty);
+    setPayoutAccount((a) => ({ ...a, rfc: me.provider.rfc, holderName: me.provider.name }));
+  }, []);
+
+  const refreshJobs = useCallback(async () => {
+    try {
+      setJobs(await fetchJobs());
+    } catch {
+      /* transient — next poll retries */
+    }
+  }, []);
+
+  const refreshEarnings = useCallback(async () => {
+    try {
+      const { summary, completedJobs } = await fetchEarnings();
+      setEarnings(summary);
+      setSession((s) =>
+        s.specialist ? { ...s, specialist: { ...s.specialist, completedJobs } } : s,
+      );
+    } catch {
+      /* keep last known */
+    }
+  }, []);
+
+  // Boot: restore persisted provider session.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const token = await api.getToken();
+        if (!token) return;
+        const me = await fetchProviderMe();
+        if (alive) applyMe(me);
+      } catch {
+        /* expired beyond grace — stay signed out */
+      } finally {
+        if (alive) setSessionLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [applyMe]);
+
+  // Foreground polling for jobs/offers + earnings while authed.
+  useEffect(() => {
+    if (session.status !== 'authed') return;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const start = () => {
+      if (timer) return;
+      const tick = () => {
+        refreshJobs();
+        refreshEarnings();
+      };
+      const tid = setTimeout(tick, 0);
+      timer = setInterval(tick, JOBS_POLL_MS);
+      cleanupFns.push(() => clearTimeout(tid));
+    };
+    const stop = () => {
+      if (timer) clearInterval(timer);
+      timer = null;
+    };
+    const cleanupFns: (() => void)[] = [];
+    start();
+    const sub = RNAppState.addEventListener('change', (state) => {
+      if (state === 'active') start();
+      else stop();
+    });
+    return () => {
+      stop();
+      sub.remove();
+      cleanupFns.forEach((fn) => fn());
+    };
+  }, [session.status, refreshJobs, refreshEarnings]);
+
+  useEffect(
+    () =>
+      onSessionExpired(() => {
+        setSession({ status: 'signed_out', specialist: null });
+        setJobs([]);
+        setEarnings(EMPTY_EARNINGS);
+      }),
     [],
   );
-  const signOut = useCallback(() => setSession({ status: 'signed_out', specialist: null }), []);
 
-  /** Submitting the application creates a `review`-status provider. They can
-   *  explore the app but receive no offers until SERVI verifies them. */
-  const submitApplication = useCallback(() => {
-    setSession({ status: 'authed', specialist: mockPendingSpecialist });
+  // ── session ────────────────────────────────────────────────
+  const beginPhoneAuth = useCallback(async (phoneE164: string) => {
+    confirmationRef.current = await sendPhoneCode(phoneE164);
+  }, []);
+
+  const confirmPhoneCode = useCallback(
+    async (code: string): Promise<'ok' | 'not_a_provider'> => {
+      const confirmation = confirmationRef.current;
+      if (!confirmation) throw new Error('no_pending_confirmation');
+      const { idToken } = await confirmation.confirm(code);
+      try {
+        const me = await loginProvider(idToken);
+        applyMe(me);
+        setSessionLoading(false);
+        confirmationRef.current = null;
+        return 'ok';
+      } catch (err) {
+        if (err instanceof NotAProviderError) return 'not_a_provider';
+        throw err;
+      }
+    },
+    [applyMe],
+  );
+
+  const signOut = useCallback(() => {
+    logoutProvider().catch(() => {});
+    firebaseSignOut().catch(() => {});
+    setSession({ status: 'signed_out', specialist: null });
     setJobs([]);
-    setPayouts([]);
+    setEarnings(EMPTY_EARNINGS);
+  }, []);
+
+  /** Submits the application to partner_applications (admin Inbox). */
+  const submitApplication = useCallback(() => {
+    setApplicationSubmitted(true);
+    submitOnboarding(onboarding).catch(() => {});
+  }, [onboarding]);
+
+  const toggleDuty = useCallback(() => {
+    setOnDuty((v) => {
+      patchProviderMe({ onDuty: !v }).catch(() => setOnDuty(v));
+      return !v;
+    });
   }, []);
 
   // ── onboarding ─────────────────────────────────────────────
@@ -215,37 +360,44 @@ export function PartnerStateProvider({ children }: { children: ReactNode }) {
     setOnboarding((d) => ({ ...d, documents: { ...d.documents, [key]: status } }));
   }, []);
 
-  // ── job mutations ──────────────────────────────────────────
+  // ── job mutations (optimistic local + server call) ─────────
   const patchJob = useCallback((id: string, patch: Partial<Job> | ((j: Job) => Partial<Job>)) => {
     setJobs((list) =>
       list.map((j) => (j.id === id ? { ...j, ...(typeof patch === 'function' ? patch(j) : patch) } : j)),
     );
   }, []);
 
-  /** POST /api/provider/accept — the offer becomes a committed job and the
-   *  full address is revealed. Today's jobs go straight to `today`. */
+  const serverIdOf = useCallback((id: string) => jobsRef.current.find((j) => j.id === id)?.serverId, []);
+
+  /** POST /api/provider/jobs/:id/accept — race-safe; a lost race re-syncs the list. */
   const acceptOffer = useCallback(
     (id: string) => {
       patchJob(id, (j) => ({
         state: isToday(j.scheduledAt) || j.isAsap ? 'today' : 'scheduled',
         offerExpiresAt: null,
       }));
+      const serverId = serverIdOf(id);
+      if (!serverId) return;
+      acceptOfferRemote(serverId)
+        .then((outcome) => {
+          if (outcome === 'gone') refreshJobs();
+        })
+        .catch(() => refreshJobs());
     },
-    [patchJob],
+    [patchJob, serverIdOf, refreshJobs],
   );
 
-  /** POST /api/provider/decline — SERVI re-routes it to another specialist.
-   *  We drop it from the list entirely; the specialist shouldn't keep staring
-   *  at work they turned down. */
-  const declineOffer = useCallback((id: string) => {
-    setJobs((list) => list.filter((j) => j.id !== id));
-  }, []);
+  /** POST /api/provider/jobs/:id/decline — SERVI re-routes it. */
+  const declineOffer = useCallback(
+    (id: string) => {
+      const serverId = serverIdOf(id);
+      setJobs((list) => list.filter((j) => j.id !== id));
+      if (serverId) declineOfferRemote(serverId);
+    },
+    [serverIdOf],
+  );
 
-  /**
-   * POST /api/provider/checkin { order, pt, event }
-   * Records the milestone and flips the job to `active` on first check-in.
-   * The customer app's timeline is driven by exactly these events.
-   */
+  /** POST /api/provider/checkin — drives the customer's live timeline. */
   const checkIn = useCallback(
     (id: string, phase: JobPhase) => {
       patchJob(id, (j) => ({
@@ -253,19 +405,35 @@ export function PartnerStateProvider({ children }: { children: ReactNode }) {
         phaseTimes: { ...j.phaseTimes, [phase]: new Date().toISOString() },
         completedAt: phase === 'completed' ? new Date().toISOString() : j.completedAt,
       }));
+      const serverId = serverIdOf(id);
+      if (serverId) checkinRemote(serverId, phase).catch(() => refreshJobs());
     },
-    [patchJob],
+    [patchJob, serverIdOf, refreshJobs],
   );
 
-  /** POST /api/provider/location — one-shot share, never continuous tracking. */
-  const shareLocation = useCallback((id: string) => setLocationSharedFor(id), []);
+  /** POST /api/provider/location — one-shot GPS share, never continuous tracking. */
+  const shareLocation = useCallback(
+    (id: string) => {
+      const serverId = serverIdOf(id);
+      if (!serverId) return;
+      (async () => {
+        try {
+          // Lazy import: expo-location is a native module, absent on web preview.
+          const Location = await import('expo-location');
+          const perm = await Location.requestForegroundPermissionsAsync();
+          if (!perm.granted) return;
+          const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          await locationRemote(serverId, pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy ?? undefined);
+          setLocationSharedFor(id);
+        } catch {
+          /* denied / unavailable — the button simply stays */
+        }
+      })();
+    },
+    [serverIdOf],
+  );
 
-  /**
-   * POST /api/provider/price-change — records the request and returns the
-   * client-facing preview from `computePricing`. It does NOT move money: an
-   * admin turns it into a chargeable adjustment. That separation is why a
-   * specialist can never quietly inflate a job.
-   */
+  /** POST /api/provider/price-change — records a request; admin mints any charge. */
   const requestPriceChange = useCallback(
     (id: string, input: { type: PriceChangeType; pesos: number; note: string }) => {
       const preview = input.pesos > 0 ? computePricing(input.pesos) : null;
@@ -283,18 +451,19 @@ export function PartnerStateProvider({ children }: { children: ReactNode }) {
           },
         ],
       }));
+      const serverId = serverIdOf(id);
+      if (serverId) priceChangeRemote(serverId, input).catch(() => {});
     },
-    [patchJob],
+    [patchJob, serverIdOf],
   );
 
-  const completeJob = useCallback((id: string) => {
-    patchJob(id, (j) => ({
-      state: 'completed',
-      completedAt: new Date().toISOString(),
-      phaseTimes: { ...j.phaseTimes, completed: j.phaseTimes.completed ?? new Date().toISOString() },
-    }));
-  }, [patchJob]);
+  const completeJob = useCallback(
+    (id: string) => checkIn(id, 'completed'),
+    [checkIn],
+  );
 
+  /** v1: cancellation goes through SERVI support — local flag only (no provider
+   *  self-cancel route; the admin reassigns and the next sync reflects it). */
   const cancelJob = useCallback((id: string) => patchJob(id, { state: 'cancelled' }), [patchJob]);
 
   // ── derived job lists ──────────────────────────────────────
@@ -328,91 +497,28 @@ export function PartnerStateProvider({ children }: { children: ReactNode }) {
     [jobs],
   );
 
-  // ── earnings ───────────────────────────────────────────────
-  /**
-   * Three money buckets, deliberately distinct because they answer three
-   * different questions a specialist actually asks:
-   *   available  — "can I take this money out right now?"
-   *   pending    — "did the job I finished yesterday count?"
-   *   scheduled  — "what am I going to make this week?"
-   * Approved surcharges count toward earnings; requested ones never do —
-   * showing money that might not arrive is how you lose someone's trust.
-   */
-  const earnings = useMemo<EarningsSummary>(() => {
-    const earned = (j: Job) =>
-      j.payoutCents +
-      j.priceChanges
-        .filter((pc) => pc.status === 'approved' || pc.status === 'paid')
-        .reduce((sum, pc) => sum + pc.providerAmountCents, 0);
-
-    const pendingCents = jobs
-      .filter((j) => j.state === 'completed')
-      .reduce((s, j) => s + earned(j), 0);
-
-    const scheduledCents = jobs
-      .filter((j) => j.state === 'scheduled' || j.state === 'today' || j.state === 'active')
-      .reduce((s, j) => s + earned(j), 0);
-
-    const availableCents = payouts
-      .filter((p) => p.status === 'pending')
-      .reduce((s, p) => s + p.amountCents, 0);
-
-    const ws = weekStart().getTime();
-    const weekJobsList = jobs.filter(
-      (j) => j.completedAt && new Date(j.completedAt).getTime() >= ws,
-    );
-    const monthStart = new Date(DEMO_NOW.getFullYear(), DEMO_NOW.getMonth(), 1).getTime();
-    const monthJobsList = jobs.filter(
-      (j) => j.completedAt && new Date(j.completedAt).getTime() >= monthStart,
-    );
-
-    const weekByDay = Array.from({ length: 7 }, () => 0);
-    for (const j of weekJobsList) {
-      const idx = weekdayMon(j.completedAt!); // Mon = 0, CDMX-fixed
-      weekByDay[idx] += earned(j);
-    }
-
-    return {
-      availableCents,
-      pendingCents,
-      scheduledCents,
-      weekCents: weekJobsList.reduce((s, j) => s + earned(j), 0),
-      weekJobs: weekJobsList.length,
-      monthCents: monthJobsList.reduce((s, j) => s + earned(j), 0),
-      monthJobs: monthJobsList.length,
-      weekByDay,
-    };
-  }, [jobs, payouts]);
-
-  /** Instant payout — collapses every pending payout into one immediate
-   *  transfer, minus the instant fee (waived for oro/elite). */
-  const cashOut = useCallback(() => {
-    setPayouts((list) => {
-      const pending = list.filter((p) => p.status === 'pending');
-      if (!pending.length) return list;
-      const gross = pending.reduce((s, p) => s + p.amountCents, 0);
-      const tier = session.specialist?.tier;
-      const waived = tier === 'oro' || tier === 'elite';
-      const fee = waived
-        ? 0
-        : Math.max(INSTANT_FEE_MIN_CENTS, Math.round(gross * INSTANT_FEE_RATE));
-      const instant: Payout = {
-        id: `po_instant_${simSeq++}`,
-        amountCents: gross - fee,
-        jobIds: pending.flatMap((p) => p.jobIds),
-        status: 'in_transit',
-        arrivesAt: new Date(Date.now() + 30 * 60_000).toISOString(),
-        createdAt: new Date().toISOString(),
-        last4: payoutAccount.last4 ?? '0000',
-        feeCents: fee,
-        instant: true,
-      };
-      return [instant, ...list.filter((p) => p.status !== 'pending')];
-    });
-  }, [payoutAccount.last4, session.specialist?.tier]);
+  // ── money ──────────────────────────────────────────────────
+  /** Instant cash-out ships with Stripe Connect; availableCents stays 0 until
+   *  then, which keeps the button disabled without lying about balances. */
+  const cashOut = useCallback(() => {}, []);
 
   const setPayoutSchedule = useCallback((schedule: PayoutAccount['schedule']) => {
     setPayoutAccount((a) => ({ ...a, schedule }));
+  }, []);
+
+  // ── settings ───────────────────────────────────────────────
+  const setAvailability = useCallback((next: DayAvailability[]) => {
+    setAvailabilityState(next);
+    patchProviderMe({ availability: availabilityToWire(next) }).catch(() => {});
+  }, []);
+
+  const setCoverage = useCallback((next: Coverage) => {
+    setCoverageState(next);
+    patchProviderMe({
+      coverageZones: next.zones,
+      coverageRadiusKm: next.radiusKm,
+      acceptsAsap: next.acceptsAsap,
+    }).catch(() => {});
   }, []);
 
   const toggleTradeSkill = useCallback((skillEs: string) => {
@@ -428,89 +534,28 @@ export function PartnerStateProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  // ── demo controls ──────────────────────────────────────────
-  /** Injects a fresh offer so a reviewer can exercise accept/decline without
-   *  reloading. Uses the real pricing engine like every other job. */
-  const simulateOffer = useCallback(() => {
-    const pesos = 300 + Math.round((simSeq % 7) * 85);
-    const p = computePricing(pesos);
-    const id = `SV-2049${simSeq++}`;
-    setJobs((list) => [
-      {
-        id,
-        state: 'offered',
-        tradeKey: 'repair',
-        service: { es: 'Fuga en llave de lavabo', en: 'Leaking sink faucet' },
-        subLabel: { es: 'Plomería', en: 'Plumbing' },
-        description: {
-          es: 'La llave del lavabo gotea constantemente y ya no cierra bien.',
-          en: 'The sink faucet drips constantly and no longer shuts off properly.',
-        },
-        detailAnswers: [
-          { q: { es: '¿Gotea o escurre?', en: 'Drip or flow?' }, a: { es: 'Gotea', en: 'Drip' } },
-        ],
-        attachments: [{ kind: 'photo', count: 1 }],
-        client: { firstName: 'Nuevo', initials: 'N', jobsTogether: 0, trustsYou: false },
-        address: 'Av. Santa Fe 94, Santa Fe',
-        zone: 'Santa Fe',
-        distanceKm: 1.4,
-        isAsap: true,
-        scheduledAt: null,
-        estimatedMinutes: 45,
-        payoutCents: p.providerAmountCents,
-        clientTotalCents: p.totalAmountCents,
-        // Simulated ASAP offers are same-day, so the hold is already in place.
-        paymentHeld: true,
-        phaseTimes: {},
-        priceChanges: [],
-        offerExpiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
-        payoutId: null,
-        completedAt: null,
-      },
-      ...list,
-    ]);
-  }, []);
-
-  const setVerificationState = useCallback((status: Specialist['status']) => {
-    setSession((s) => (s.specialist ? { ...s, specialist: { ...s.specialist, status } } : s));
-  }, []);
-
-  const resetDemo = useCallback(() => {
-    setSession({ status: 'authed', specialist: mockSpecialist });
-    setJobs(mockJobs);
-    setPayouts(mockPayouts);
-    setPayoutAccount(mockPayoutAccount);
-    setAvailability(mockAvailability);
-    setCoverage(mockCoverage);
-    setOnboarding(emptyOnboarding());
-    setOnDuty(true);
-    setLocationSharedFor(null);
-  }, []);
-
   const value = useMemo<PartnerState>(
     () => ({
-      session, jobs, payouts, payoutAccount, availability, coverage, onboarding,
+      session, sessionLoading, jobs, payouts, payoutAccount, availability, coverage, onboarding,
       onDuty, toggleDuty,
-      signIn, signOut, submitApplication,
+      beginPhoneAuth, confirmPhoneCode, signOut, submitApplication, applicationSubmitted,
       patchOnboarding, toggleOnboardingTrade, toggleOnboardingSkill, toggleOnboardingZone, setDocument,
-      getJob, offers, todayJobs, upcoming, history, activeJob,
+      refreshJobs, getJob, offers, todayJobs, upcoming, history, activeJob,
       acceptOffer, declineOffer, checkIn, shareLocation, locationSharedFor,
       requestPriceChange, completeJob, cancelJob,
       earnings, cashOut, setPayoutSchedule,
       setAvailability, setCoverage, toggleTradeSkill,
-      simulateOffer, setVerificationState, resetDemo,
     }),
     [
-      session, jobs, payouts, payoutAccount, availability, coverage, onboarding,
+      session, sessionLoading, jobs, payouts, payoutAccount, availability, coverage, onboarding,
       onDuty, toggleDuty,
-      signIn, signOut, submitApplication,
+      beginPhoneAuth, confirmPhoneCode, signOut, submitApplication, applicationSubmitted,
       patchOnboarding, toggleOnboardingTrade, toggleOnboardingSkill, toggleOnboardingZone, setDocument,
-      getJob, offers, todayJobs, upcoming, history, activeJob,
+      refreshJobs, getJob, offers, todayJobs, upcoming, history, activeJob,
       acceptOffer, declineOffer, checkIn, shareLocation, locationSharedFor,
       requestPriceChange, completeJob, cancelJob,
       earnings, cashOut, setPayoutSchedule,
-      toggleTradeSkill,
-      simulateOffer, setVerificationState, resetDemo,
+      setAvailability, setCoverage, toggleTradeSkill,
     ],
   );
 
@@ -522,3 +567,6 @@ export function usePartner(): PartnerState {
   if (!ctx) throw new Error('usePartner must be used within PartnerStateProvider');
   return ctx;
 }
+
+// Re-exported for screens that anchor "today" bucketing (kept from the prototype API).
+export { isToday, weekStart, weekdayMon, now };

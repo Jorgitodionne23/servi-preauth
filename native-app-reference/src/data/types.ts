@@ -109,7 +109,15 @@ export type RatingAggregate = {
 };
 
 export type Order = {
-  id: string; // SV-NNNNNN public code
+  id: string; // SV-NNNNNN public code (or REQ-… while still an intake request)
+  /** Backend row id (all_bookings.id / service_requests.id) — used for API calls. */
+  serverId: string;
+  /** 'order' = real booking; 'request' = intake not yet converted by admin. */
+  source: 'order' | 'request';
+  /** This user's 👍/👎 on the order (service_ratings), if any. */
+  rating?: 'up' | 'down' | null;
+  /** Whether the customer can open a payment link right now (backend policy). */
+  payable?: boolean;
   categoryKey: CategoryKey;
   service: Bilingual;
   subLabel: Bilingual;
@@ -208,6 +216,8 @@ export type RequestDraft = {
   addressText: string;
   source: 'ai' | 'heuristic' | 'voice-ai' | 'photo-ai' | 'video-review' | 'manual';
   adminReview: boolean; // video mode
+  /** Uploaded attachment URLs (R2, via POST /api/uploads). */
+  attachments: string[];
 };
 
 export function loc(b: Bilingual | null | undefined, lang: Lang): string {

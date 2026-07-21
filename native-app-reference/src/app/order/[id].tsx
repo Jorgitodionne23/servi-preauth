@@ -4,10 +4,11 @@
  * to the order's state (pending → authorize; confirmed → card held; captured →
  * paid; refunded; cancelled). NO Stripe — reference UI + an inert action.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as WebBrowser from 'expo-web-browser';
 
 import { Screen, ScreenHeader } from '@/components/ui/Screen';
 import { Txt } from '@/components/ui/Text';
@@ -20,7 +21,6 @@ import { StatusTimeline } from '@/components/StatusTimeline';
 import { PhaseTimeline } from '@/components/PhaseTimeline';
 import { SpecialistCard } from '@/components/SpecialistCard';
 import { PriceBreakdown } from '@/components/PriceBreakdown';
-import { TipCard } from '@/components/TipCard';
 import { MessageState } from '@/components/ui/States';
 import { STATUS_META, MODE_ICON } from '@/components/status';
 import { categoryByKey } from '@/data/catalog';
@@ -73,9 +73,32 @@ export default function OrderDetailScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { t, lang } = useI18n();
-  const { getOrder } = useApp();
+  const { getOrder, hydrateOrder, rateOrder, paymentLinkFor, refreshOrders } = useApp();
   const order = id ? getOrder(id) : undefined;
-  const [authorized, setAuthorized] = useState(false);
+  const [opening, setOpening] = useState(false);
+  const [payFailed, setPayFailed] = useState(false);
+
+  // Hydrate the live check-in timeline + specialist rating for this order.
+  useEffect(() => {
+    if (id) hydrateOrder(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
+  const openPayment = async () => {
+    if (!order || opening) return;
+    setOpening(true);
+    setPayFailed(false);
+    try {
+      const url = await paymentLinkFor(order.id);
+      await WebBrowser.openBrowserAsync(url);
+      // Coming back from the browser: pick up any status change.
+      refreshOrders();
+    } catch {
+      setPayFailed(true);
+    } finally {
+      setOpening(false);
+    }
+  };
 
   if (!order) {
     return (
@@ -222,11 +245,22 @@ export default function OrderDetailScreen() {
         <PriceBreakdown price={order.price} />
       </Card>
 
-      {/* Tip — post-service, optional, 100% to the specialist */}
-      {order.status === 'captured' && order.specialist ? (
-        <View style={{ marginTop: spacing.lg }}>
-          <TipCard order={order} />
-        </View>
+      {/* Rating — 👍/👎 after the service is captured */}
+      {order.status === 'captured' && order.source === 'order' ? (
+        <Card style={{ marginTop: spacing.lg, gap: spacing.md }}>
+          <Txt variant="eyebrow">{t('order.rate.title')}</Txt>
+          {order.rating ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+              <Icon name={order.rating === 'up' ? 'thumbs-up' : 'thumbs-down'} size={18} color={colors.accentInk} />
+              <Txt variant="bodySm">{t('order.rate.thanks')}</Txt>
+            </View>
+          ) : (
+            <View style={{ flexDirection: 'row', gap: spacing.md }}>
+              <Button label="👍" variant="secondary" size="md" style={{ flex: 1 }} onPress={() => rateOrder(order.id, 'up').catch(() => {})} />
+              <Button label="👎" variant="secondary" size="md" style={{ flex: 1 }} onPress={() => rateOrder(order.id, 'down').catch(() => {})} />
+            </View>
+          )}
+        </Card>
       ) : null}
 
       {/* Payment reference */}
@@ -244,15 +278,20 @@ export default function OrderDetailScreen() {
 
       {/* Actions */}
       <View style={{ marginTop: spacing.xl, gap: spacing.md }}>
-        {order.status === 'pending' ? (
+        {payFailed ? (
+          <Txt variant="bodySm" center color={colors.danger}>
+            {t('req.review.sendError')}
+          </Txt>
+        ) : null}
+        {order.payable && order.source === 'order' ? (
           <Button
-            label={authorized ? t('auth.success') : t('order.payNow')}
-            icon={authorized ? 'check' : 'credit-card'}
-            variant={authorized ? 'secondary' : 'primary'}
-            onPress={() => setAuthorized(true)}
+            label={opening ? t('req.uploading') : t('order.payNow')}
+            icon="credit-card"
+            disabled={opening}
+            onPress={openPayment}
           />
         ) : null}
-        {order.status === 'blocked' ? <Button label={t('pay.addCard')} icon="credit-card" onPress={() => router.push('/payment-info')} /> : null}
+        {order.status === 'blocked' && !order.payable ? <Button label={t('pay.addCard')} icon="credit-card" onPress={() => router.push('/payment-info')} /> : null}
         {isTerminal ? <Button label={t('order.rebook')} icon="refresh-cw" onPress={() => router.push('/(tabs)')} /> : null}
         <Button label={t('order.contactSupport')} variant="secondary" icon="message-circle" onPress={() => router.push('/help')} />
       </View>

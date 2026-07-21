@@ -29,7 +29,7 @@ import { usePartner } from '@/state/PartnerStateContext';
 import { useI18n } from '@/i18n/I18nContext';
 import { colors, layout, radius, spacing } from '@/theme/tokens';
 import { ledger, money } from '@/theme/partner';
-import { DEMO_NOW, dateLabel, monthLabel, weekdayMon } from '@/data/time';
+import { dateLabel, monthLabel, now, weekdayMon } from '@/data/time';
 import { loc } from '@/data/types';
 
 export default function EarningsScreen() {
@@ -47,7 +47,7 @@ export default function EarningsScreen() {
     .filter((j) => j.state === 'completed' || j.state === 'paid')
     .sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? ''));
 
-  const todayIdx = weekdayMon(DEMO_NOW);
+  const todayIdx = weekdayMon(now());
 
   return (
     <Screen bottomInset={layout.tabBarHeight + 48}>
@@ -138,7 +138,7 @@ export default function EarningsScreen() {
         <View style={{ flexDirection: 'row', gap: spacing.md }}>
           <StatTile
             value={money(earnings.monthCents)}
-            label={monthLabel(DEMO_NOW, lang)}
+            label={monthLabel(now(), lang)}
             icon="bar-chart-2"
           />
           <StatTile

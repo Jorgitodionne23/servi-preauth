@@ -70,8 +70,24 @@ export default function ReviewScreen() {
     isVisit,
   });
 
-  const submit = () => {
-    const id = submitRequest();
+  const [sending, setSending] = useState(false);
+  const [sendFailed, setSendFailed] = useState(false);
+  const isGuest = session.status !== 'authed';
+
+  const submit = async () => {
+    if (isGuest) {
+      router.push('/auth/identifier');
+      return;
+    }
+    if (sending) return;
+    setSending(true);
+    setSendFailed(false);
+    const id = await submitRequest();
+    setSending(false);
+    if (!id) {
+      setSendFailed(true);
+      return;
+    }
     resetDraft();
     router.replace(`/request/submitted?id=${id}`);
   };
@@ -176,7 +192,17 @@ export default function ReviewScreen() {
 
       {/* Send */}
       <View style={{ marginTop: spacing.xl, gap: spacing.sm }}>
-        <Button label={t('req.review.send')} icon="send" onPress={submit} />
+        {sendFailed ? (
+          <Txt variant="bodySm" center color={colors.danger}>
+            {t('req.review.sendError')}
+          </Txt>
+        ) : null}
+        <Button
+          label={isGuest ? t('req.review.signInToSend') : sending ? t('req.uploading') : t('req.review.send')}
+          icon={isGuest ? 'log-in' : 'send'}
+          disabled={sending}
+          onPress={submit}
+        />
         <Txt variant="caption" center style={{ paddingHorizontal: spacing.lg }}>
           {t('req.review.fineprint')}
         </Txt>

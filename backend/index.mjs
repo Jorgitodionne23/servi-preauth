@@ -28,6 +28,8 @@ import https from 'https';
 import Anthropic from '@anthropic-ai/sdk';
 import { classifyOrderOps, sortOpsItems, summarizeOps } from './ops-radar.mjs';
 import { providerLinkExpired } from './providerLink.mjs';
+import { acceptOfferTx } from './providerOffers.mjs';
+import { summarizeProviderEarnings } from './providerEarnings.mjs';
 import {
   buildMediaAnalysisSystemPrompt,
   buildMediaAnalysisUserPrompt,
@@ -6963,7 +6965,9 @@ async function requireUserAuth(req, res) {
   const authHeader = req.headers.authorization || '';
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
   const payload = await verifySessionTokenAsync(token);
-  if (!payload?.user_id) { res.status(401).json({ error: 'unauthorized' }); return null; }
+  // Provider-scoped tokens (partner app) are structurally different (no user_id), but reject
+  // the scope explicitly so a future payload change can't silently cross the boundary.
+  if (!payload?.user_id || payload.scope === 'provider') { res.status(401).json({ error: 'unauthorized' }); return null; }
   return payload;
 }
 
@@ -9715,17 +9719,41 @@ app.get('/api/provider/order', publicFormLimit, async (req, res) => {
   }
 });
 
-// Provider (public, token-gated): milestone check-in (en_route|arrived|started|completed).
+// Resolve an order for a provider-session request (partner app). The Bearer token must carry
+// scope='provider' and the order must be assigned to that provider. Mirrors the guarantees of
+// resolveProviderLinkOrder without the per-order capability token — the session IS the identity.
+async function resolveProviderSessionOrder(req, orderId) {
+  if (!orderId) return null;
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+  const payload = await verifySessionTokenAsync(token);
+  if (!payload || payload.scope !== 'provider' || !payload.provider_id) return null;
+  const { rows } = await pool.query('SELECT * FROM all_bookings WHERE id = $1 LIMIT 1', [orderId]);
+  const row = rows[0];
+  if (!row) return null;
+  if (String(row.provider_id || '') !== String(payload.provider_id)) return null;
+  return row;
+}
+
+// Dual-auth resolution for the provider action routes: legacy per-order `pt` capability token
+// (provider.html link — unchanged) OR the partner app's provider session. Keep both (INTEROP §3).
+async function resolveProviderActionOrder(req, orderId, pt) {
+  if (pt) return resolveProviderLinkOrder(orderId, pt);
+  return resolveProviderSessionOrder(req, orderId);
+}
+
+// Provider (token- or session-gated): milestone check-in (en_route|arrived|started|completed).
 app.post('/api/provider/checkin', publicFormLimit, async (req, res) => {
   try {
     const { order, pt, event } = req.body || {};
     if (!MILESTONE_EVENTS.has(String(event || ''))) {
       return res.status(400).json({ error: 'invalid_event' });
     }
-    const row = await resolveProviderLinkOrder(order, pt);
+    const row = await resolveProviderActionOrder(req, order, pt);
     if (!row) return res.status(404).json({ error: 'not_found' });
     await recordLifecycleEvent(row.id, {
-      eventType: event, source: 'provider', actorRef: row.provider_id || null, channel: 'provider_link',
+      eventType: event, source: 'provider', actorRef: row.provider_id || null,
+      channel: pt ? 'provider_link' : 'app',
     });
     return res.json({ ok: true, phase: event });
   } catch (err) {
@@ -9749,7 +9777,7 @@ app.post('/api/provider/price-change', publicFormLimit, async (req, res) => {
     const pesos = Number(amount);
     if (!Number.isFinite(pesos) || pesos <= 0) return res.status(400).json({ error: 'invalid_amount' });
     const changeType = PRICE_CHANGE_TYPES.has(String(type || '')) ? type : 'otro';
-    const row = await resolveProviderLinkOrder(order, pt);
+    const row = await resolveProviderActionOrder(req, order, pt);
     if (!row) return res.status(404).json({ error: 'not_found' });
 
     let preview = null;
@@ -9760,7 +9788,7 @@ app.post('/api/provider/price-change', publicFormLimit, async (req, res) => {
 
     await recordLifecycleEvent(row.id, {
       eventType: 'price_change_requested', source: 'provider', actorRef: row.provider_id || null,
-      channel: 'provider_link',
+      channel: pt ? 'provider_link' : 'app',
       metadata: {
         type: changeType,
         amount: Math.round(pesos * 100),            // cents, for the admin timeline
@@ -9823,16 +9851,672 @@ app.post('/api/provider/location', publicFormLimit, async (req, res) => {
       return res.status(400).json({ error: 'invalid_coords' });
     }
     const accN = Number(accuracy);
-    const row = await resolveProviderLinkOrder(order, pt);
+    const row = await resolveProviderActionOrder(req, order, pt);
     if (!row) return res.status(404).json({ error: 'not_found' });
     await recordLifecycleEvent(row.id, {
       eventType: 'location_shared', source: 'provider', actorRef: row.provider_id || null,
-      channel: 'provider_link', lat: latN, lng: lngN,
+      channel: pt ? 'provider_link' : 'app', lat: latN, lng: lngN,
       accuracyM: Number.isFinite(accN) ? Math.round(accN) : null,
     });
     return res.json({ ok: true });
   } catch (err) {
     console.error('[POST /api/provider/location]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// ─── Provider sessions + partner app surface (additive — INTEROP §7 steps 1–4) ─
+// The native partner app authenticates with a provider-scoped session JWT: same HS256
+// signer/secret/revocation chain as customer sessions, distinguished by scope='provider'
+// + provider_id (customer tokens carry user_id and are rejected here; see requireUserAuth
+// for the symmetric guard). The per-order `pt` capability link above keeps working.
+
+async function requireProviderSession(req, res) {
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+  const payload = await verifySessionTokenAsync(token);
+  if (!payload || payload.scope !== 'provider' || !payload.provider_id) {
+    res.status(401).json({ error: 'unauthorized' });
+    return null;
+  }
+  return payload;
+}
+
+const PROVIDER_BLOCKED_STATUSES = new Set(['removed', 'rejected', 'disabled']);
+
+function providerPublicPayload(row) {
+  return {
+    providerId: row.provider_id,
+    status: row.status || 'verified',
+    name: row.name || null,
+    phone: row.phone || null,
+    email: row.email || null,
+    specialty: row.specialty || null,
+    city: row.city || null,
+    tier: row.tier || 'nuevo',
+    onDuty: !!row.on_duty,
+    coverageZones: Array.isArray(row.coverage_zones) ? row.coverage_zones : [],
+    coverageRadiusKm: row.coverage_radius_km ?? 10,
+    acceptsAsap: row.accepts_asap !== false,
+    rfc: row.rfc || null,
+    createdAt: row.created_at || null,
+  };
+}
+
+// POST /api/provider/auth/firebase — provider sign-in. Verifies the Firebase ID token
+// (same phone-OTP flow as customers), matches an EXISTING provider by firebase_uid or by
+// normalized phone (backfilling firebase_uid on first login). The app is not a provider
+// signup path: providers are created by admin / promoted from partner_applications, so an
+// unknown identity gets 403 not_a_provider and the app routes them to onboarding.
+app.post('/api/provider/auth/firebase', publicFormLimit, async (req, res) => {
+  try {
+    const idToken = String(req.body?.idToken || '').trim();
+    if (!idToken) return res.status(400).json({ error: 'missing_id_token' });
+
+    let decoded;
+    try {
+      decoded = await verifyFirebaseIdToken(idToken, true);
+    } catch (err) {
+      return res.status(401).json({ error: 'invalid_firebase_token' });
+    }
+
+    let { rows } = await pool.query('SELECT * FROM providers WHERE firebase_uid = $1 LIMIT 1', [decoded.uid]);
+    let provider = rows[0] || null;
+
+    if (!provider) {
+      const phoneDigits = String(decoded.phone_number || '').replace(/[^0-9]/g, '').slice(-10);
+      if (phoneDigits.length === 10) {
+        const { rows: byPhone } = await pool.query(
+          `SELECT * FROM providers
+            WHERE firebase_uid IS NULL
+              AND RIGHT(regexp_replace(COALESCE(phone,''), '[^0-9]', '', 'g'), 10) = $1
+            LIMIT 2`,
+          [phoneDigits]
+        );
+        // Exactly one match required — an ambiguous phone never auto-binds an identity.
+        if (byPhone.length === 1) {
+          provider = byPhone[0];
+          await pool.query(
+            'UPDATE providers SET firebase_uid = $1, updated_at = NOW() WHERE provider_id = $2',
+            [decoded.uid, provider.provider_id]
+          );
+          provider.firebase_uid = decoded.uid;
+        }
+      }
+    }
+
+    if (!provider) {
+      return res.status(403).json({
+        error: 'not_a_provider',
+        message: 'Este número no está registrado como especialista SERVI.',
+      });
+    }
+    if (PROVIDER_BLOCKED_STATUSES.has(String(provider.status || '').toLowerCase())) {
+      return res.status(403).json({ error: 'provider_blocked' });
+    }
+
+    const token = signSessionToken({
+      scope: 'provider',
+      provider_id: provider.provider_id,
+      name: provider.name || null,
+    });
+    return res.json({ token, provider: providerPublicPayload(provider) });
+  } catch (err) {
+    console.error('[POST /api/provider/auth/firebase]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// POST /api/provider/auth/refresh — provider mirror of /api/auth/refresh (≤24h grace,
+// revocation check, jti rotation, provider re-fetched from DB).
+app.post('/api/provider/auth/refresh', publicFormLimit, async (req, res) => {
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+  if (!token) return res.status(401).json({ error: 'no_token' });
+
+  let payload = null;
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return res.status(401).json({ error: 'invalid_token' });
+    const expectedSig = createHmac('sha256', JWT_SECRET).update(`${parts[0]}.${parts[1]}`).digest('base64url');
+    if (expectedSig !== parts[2]) return res.status(401).json({ error: 'invalid_signature' });
+    const decoded = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+    const nowSecs = Math.floor(Date.now() / 1000);
+    if (decoded.exp && decoded.exp + SESSION_REFRESH_GRACE_SECS < nowSecs) {
+      return res.status(401).json({ error: 'token_too_old' });
+    }
+    payload = decoded;
+  } catch (err) {
+    return res.status(401).json({ error: 'invalid_token' });
+  }
+
+  if (payload?.scope !== 'provider' || !payload.provider_id) {
+    return res.status(401).json({ error: 'not_provider_token' });
+  }
+
+  if (payload.jti) {
+    try {
+      const { rows: revoked } = await pool.query('SELECT 1 FROM revoked_sessions WHERE jti = $1 LIMIT 1', [payload.jti]);
+      if (revoked.length) return res.status(401).json({ error: 'token_revoked' });
+    } catch (err) {
+      console.error('[POST /api/provider/auth/refresh] revocation check failed:', err.message);
+      if (IS_PRODUCTION) return res.status(500).json({ error: 'internal_error' });
+    }
+  }
+
+  try {
+    const { rows } = await pool.query('SELECT * FROM providers WHERE provider_id = $1 LIMIT 1', [payload.provider_id]);
+    if (!rows.length) return res.status(404).json({ error: 'provider_not_found' });
+    const provider = rows[0];
+    if (PROVIDER_BLOCKED_STATUSES.has(String(provider.status || '').toLowerCase())) {
+      return res.status(403).json({ error: 'provider_blocked' });
+    }
+
+    const newToken = signSessionToken({
+      scope: 'provider',
+      provider_id: provider.provider_id,
+      name: provider.name || null,
+    });
+    if (payload.jti) await revokeSessionJti(payload.jti, null, 'refresh_rotation');
+    return res.json({ token: newToken, provider: providerPublicPayload(provider) });
+  } catch (err) {
+    console.error('[POST /api/provider/auth/refresh]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+app.post('/api/provider/auth/logout', publicFormLimit, async (req, res) => {
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+  const payload = verifySessionToken(token);
+  if (payload?.jti && payload.scope === 'provider') {
+    await revokeSessionJti(payload.jti, null, 'provider_logout');
+  }
+  return res.json({ ok: true });
+});
+
+// GET /api/provider/me — the signed-in specialist's profile, trades, availability,
+// satisfaction rollup and trusted-by count.
+app.get('/api/provider/me', async (req, res) => {
+  const payload = await requireProviderSession(req, res);
+  if (!payload) return;
+  try {
+    const { rows } = await pool.query('SELECT * FROM providers WHERE provider_id = $1 LIMIT 1', [payload.provider_id]);
+    if (!rows.length) return res.status(404).json({ error: 'provider_not_found' });
+    const provider = rows[0];
+
+    const [{ rows: trades }, { rows: availability }, rating, { rows: trust }] = await Promise.all([
+      pool.query('SELECT trade_key, skill_key FROM provider_trades WHERE provider_id = $1', [payload.provider_id]),
+      pool.query(
+        `SELECT weekday, enabled, from_time, to_time FROM provider_availability
+          WHERE provider_id = $1 ORDER BY weekday`,
+        [payload.provider_id]
+      ),
+      providerRatingAggregate(payload.provider_id),
+      pool.query('SELECT COUNT(*)::int AS c FROM user_trusted_specialists WHERE provider_id = $1', [payload.provider_id]),
+    ]);
+
+    res.set('Cache-Control', 'no-store');
+    return res.json({
+      provider: providerPublicPayload(provider),
+      trades: trades.map((t) => ({ tradeKey: t.trade_key, skillKey: t.skill_key || null })),
+      availability: availability.map((a) => ({
+        weekday: a.weekday, enabled: a.enabled,
+        from: String(a.from_time).slice(0, 5), to: String(a.to_time).slice(0, 5),
+      })),
+      rating,
+      trustedBy: trust[0]?.c ?? 0,
+    });
+  } catch (err) {
+    console.error('[GET /api/provider/me]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// PATCH /api/provider/me — whitelist: duty toggle, coverage, availability, trades.
+// Identity fields (name/phone/email/status/tier) stay admin-managed.
+app.patch('/api/provider/me', publicFormLimit, async (req, res) => {
+  const payload = await requireProviderSession(req, res);
+  if (!payload) return;
+  const body = req.body || {};
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const sets = [];
+    const params = [];
+    if (typeof body.onDuty === 'boolean') { params.push(body.onDuty); sets.push(`on_duty = $${params.length}`); }
+    if (typeof body.acceptsAsap === 'boolean') { params.push(body.acceptsAsap); sets.push(`accepts_asap = $${params.length}`); }
+    if (Array.isArray(body.coverageZones)) {
+      const zones = body.coverageZones.map((z) => String(z).slice(0, 80)).slice(0, 25);
+      params.push(zones); sets.push(`coverage_zones = $${params.length}`);
+    }
+    if (body.coverageRadiusKm != null) {
+      const km = Math.round(Number(body.coverageRadiusKm));
+      if (Number.isFinite(km) && km >= 1 && km <= 100) { params.push(km); sets.push(`coverage_radius_km = $${params.length}`); }
+    }
+    if (sets.length) {
+      params.push(payload.provider_id);
+      await client.query(`UPDATE providers SET ${sets.join(', ')}, updated_at = NOW() WHERE provider_id = $${params.length}`, params);
+    }
+
+    if (Array.isArray(body.availability)) {
+      for (const slot of body.availability.slice(0, 7)) {
+        const weekday = Math.round(Number(slot?.weekday));
+        if (!Number.isFinite(weekday) || weekday < 0 || weekday > 6) continue;
+        const from = /^\d{2}:\d{2}$/.test(String(slot?.from || '')) ? slot.from : '09:00';
+        const to = /^\d{2}:\d{2}$/.test(String(slot?.to || '')) ? slot.to : '18:00';
+        await client.query(
+          `INSERT INTO provider_availability (provider_id, weekday, enabled, from_time, to_time)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (provider_id, weekday)
+           DO UPDATE SET enabled = EXCLUDED.enabled, from_time = EXCLUDED.from_time, to_time = EXCLUDED.to_time`,
+          [payload.provider_id, weekday, slot?.enabled !== false, from, to]
+        );
+      }
+    }
+
+    if (Array.isArray(body.trades)) {
+      await client.query('DELETE FROM provider_trades WHERE provider_id = $1', [payload.provider_id]);
+      for (const t of body.trades.slice(0, 40)) {
+        const tradeKey = String(t?.tradeKey || '').slice(0, 60);
+        if (!tradeKey) continue;
+        await client.query(
+          `INSERT INTO provider_trades (provider_id, trade_key, skill_key)
+           VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+          [payload.provider_id, tradeKey, String(t?.skillKey || '').slice(0, 80)]
+        );
+      }
+    }
+
+    await client.query('COMMIT');
+    return res.json({ ok: true });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('[PATCH /api/provider/me]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  } finally {
+    client.release();
+  }
+});
+
+// Provider-safe projection of an all_bookings row. The privacy rule (INTEROP §2): the
+// specialist never sees the client's phone/email/full name. Offers additionally withhold
+// the exact address until accepted.
+function providerJobPayload(row, { offer = null, phaseTimes = {}, priceChanges = [], detailAnswers = null } = {}) {
+  const isOffer = !!offer;
+  return {
+    id: row.id,
+    publicCode: row.public_code || null,
+    offer: offer ? { id: offer.id, expiresAt: offer.expires_at } : null,
+    clientFirstName: maskProviderName(row.client_name),
+    category: row.category || null,
+    serviceDescription: row.service_description || null,
+    serviceAddress: isOffer ? null : (row.service_address || null),
+    serviceDateTime: row.service_datetime || null,
+    serviceDate: row.service_date || null,
+    isAsap: !!row.is_asap,
+    status: row.status || null,
+    servicePhase: row.service_phase || null,
+    servicePhaseAt: row.service_phase_at || null,
+    phaseTimes,
+    priceChanges,
+    detailAnswers,
+    // INTEROP §2: derived — hold placed once the parent PI is authorized.
+    paymentHeld: String(row.status || '').trim().toLowerCase() === 'confirmed',
+    providerAmountCents: row.provider_amount ?? null,
+    clientTotalCents: row.pricing_total_amount ?? row.amount ?? null,
+    createdAt: row.created_at,
+  };
+}
+
+// Hydrate first-reached milestone timestamps + the provider's own price-change requests
+// for a set of orders, in one query.
+async function providerJobsLifecycle(orderIds) {
+  const phaseTimesByOrder = {};
+  const priceChangesByOrder = {};
+  if (!orderIds.length) return { phaseTimesByOrder, priceChangesByOrder };
+  const { rows } = await pool.query(
+    `SELECT order_id, event_type, metadata, created_at
+       FROM order_lifecycle_events
+      WHERE order_id = ANY($1)
+        AND event_type IN ('en_route','arrived','started','completed','price_change_requested')
+      ORDER BY created_at ASC`,
+    [orderIds]
+  );
+  for (const ev of rows) {
+    if (MILESTONE_EVENTS.has(ev.event_type)) {
+      const pt = (phaseTimesByOrder[ev.order_id] ||= {});
+      if (!pt[ev.event_type]) pt[ev.event_type] = ev.created_at;
+    } else {
+      const m = ev.metadata || {};
+      (priceChangesByOrder[ev.order_id] ||= []).push({
+        type: m.type || 'otro',
+        providerPesos: m.providerPesos ?? null,
+        note: m.note || null,
+        previewTotal: m.previewTotal ?? null,
+        at: ev.created_at,
+      });
+    }
+  }
+  return { phaseTimesByOrder, priceChangesByOrder };
+}
+
+// GET /api/provider/jobs — open offers + assigned jobs (upcoming and history).
+app.get('/api/provider/jobs', async (req, res) => {
+  const payload = await requireProviderSession(req, res);
+  if (!payload) return;
+  try {
+    // Housekeeping: lapse this provider's stale open offers.
+    await pool.query(
+      `UPDATE provider_offers SET status = 'expired'
+        WHERE provider_id = $1 AND status = 'offered' AND expires_at <= NOW()`,
+      [payload.provider_id]
+    );
+
+    const { rows: offerRows } = await pool.query(
+      `SELECT po.id AS offer_id, po.expires_at AS offer_expires_at, b.*
+         FROM provider_offers po
+         JOIN all_bookings b ON b.id = po.order_id
+        WHERE po.provider_id = $1
+          AND po.status = 'offered'
+          AND po.expires_at > NOW()
+          AND COALESCE(b.provider_id, '') = ''
+        ORDER BY po.created_at DESC
+        LIMIT 25`,
+      [payload.provider_id]
+    );
+
+    const { rows: jobRows } = await pool.query(
+      `SELECT * FROM all_bookings
+        WHERE provider_id = $1
+          AND COALESCE(parent_id_of_adjustment, '') = ''
+          AND COALESCE(kind, '') <> 'adjustment'
+        ORDER BY created_at DESC
+        LIMIT 200`,
+      [payload.provider_id]
+    );
+
+    const allIds = [...new Set([...jobRows.map((r) => r.id), ...offerRows.map((r) => r.id)])];
+    const { phaseTimesByOrder, priceChangesByOrder } = await providerJobsLifecycle(allIds);
+
+    // Detail answers captured at intake (service_requests → converted order).
+    const detailByOrder = {};
+    if (allIds.length) {
+      const { rows: reqRows } = await pool.query(
+        `SELECT converted_order_id, detail_answers FROM service_requests
+          WHERE converted_order_id = ANY($1) AND detail_answers IS NOT NULL`,
+        [allIds]
+      );
+      reqRows.forEach((r) => { detailByOrder[r.converted_order_id] = r.detail_answers; });
+    }
+
+    const offers = offerRows.map((r) =>
+      providerJobPayload(r, {
+        offer: { id: r.offer_id, expires_at: r.offer_expires_at },
+        phaseTimes: {},
+        priceChanges: [],
+        detailAnswers: detailByOrder[r.id] || null,
+      })
+    );
+    const jobs = jobRows.map((r) =>
+      providerJobPayload(r, {
+        phaseTimes: phaseTimesByOrder[r.id] || {},
+        priceChanges: priceChangesByOrder[r.id] || [],
+        detailAnswers: detailByOrder[r.id] || null,
+      })
+    );
+
+    res.set('Cache-Control', 'no-store');
+    return res.json({ offers, jobs });
+  } catch (err) {
+    console.error('[GET /api/provider/jobs]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// POST /api/provider/jobs/:id/accept — race-safe claim. Exactly one specialist wins an
+// order: the offer flip requires status='offered' AND unexpired, and the booking claim
+// requires provider_id still empty (which also respects a concurrent manual admin assign).
+app.post('/api/provider/jobs/:id/accept', publicFormLimit, async (req, res) => {
+  const payload = await requireProviderSession(req, res);
+  if (!payload) return;
+  const orderId = req.params.id;
+  try {
+    const { rows: provRows } = await pool.query(
+      'SELECT name, status FROM providers WHERE provider_id = $1 LIMIT 1',
+      [payload.provider_id]
+    );
+    if (!provRows.length || PROVIDER_BLOCKED_STATUSES.has(String(provRows[0].status || '').toLowerCase())) {
+      return res.status(403).json({ error: 'provider_blocked' });
+    }
+
+    const client = await pool.connect();
+    let outcome;
+    try {
+      outcome = await acceptOfferTx(client, {
+        orderId,
+        providerId: payload.provider_id,
+        providerName: provRows[0].name || null,
+      });
+    } finally {
+      client.release();
+    }
+    if (outcome.error) return res.status(409).json({ error: outcome.error });
+    return res.json({ ok: true, orderId });
+  } catch (err) {
+    console.error('[POST /api/provider/jobs/:id/accept]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// POST /api/provider/jobs/:id/decline — SERVI re-routes to another specialist.
+app.post('/api/provider/jobs/:id/decline', publicFormLimit, async (req, res) => {
+  const payload = await requireProviderSession(req, res);
+  if (!payload) return;
+  try {
+    const { rows } = await pool.query(
+      `UPDATE provider_offers
+          SET status = 'declined', responded_at = NOW()
+        WHERE order_id = $1 AND provider_id = $2 AND status = 'offered'
+        RETURNING id`,
+      [req.params.id, payload.provider_id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'offer_not_found' });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('[POST /api/provider/jobs/:id/decline]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// GET /api/provider/earnings — read-only aggregation over the provider's own orders.
+// Payouts themselves are handled by SERVI (weekly, manual for now — Stripe Connect is
+// deliberately deferred), so this reports earned/pending/upcoming, never balances.
+app.get('/api/provider/earnings', async (req, res) => {
+  const payload = await requireProviderSession(req, res);
+  if (!payload) return;
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, public_code, status, provider_amount, service_datetime, service_date,
+              service_phase, created_at, category, service_description
+         FROM all_bookings
+        WHERE provider_id = $1
+          AND COALESCE(parent_id_of_adjustment, '') = ''
+          AND COALESCE(kind, '') <> 'adjustment'
+        ORDER BY created_at DESC
+        LIMIT 200`,
+      [payload.provider_id]
+    );
+
+    res.set('Cache-Control', 'no-store');
+    return res.json({
+      summary: summarizeProviderEarnings(rows),
+      jobs: rows.map((r) => ({
+        id: r.id,
+        publicCode: r.public_code || null,
+        status: r.status || null,
+        servicePhase: r.service_phase || null,
+        category: r.category || null,
+        serviceDescription: r.service_description || null,
+        serviceDateTime: r.service_datetime || null,
+        serviceDate: r.service_date || null,
+        providerAmountCents: r.provider_amount ?? 0,
+        earned: String(r.status || '').trim().toLowerCase() === 'captured',
+        createdAt: r.created_at,
+      })),
+    });
+  } catch (err) {
+    console.error('[GET /api/provider/earnings]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// POST /api/provider/onboarding — self-serve application from the partner app. Feeds the
+// existing partner_applications inbox (admin.html); document files are uploaded first via
+// POST /api/uploads and referenced here by URL.
+app.post('/api/provider/onboarding', publicFormLimit, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const name = String(b.name || '').trim().slice(0, 120);
+    const phone = String(b.phone || '').trim().slice(0, 30);
+    if (!name || !phone) return res.status(400).json({ error: 'missing_fields', message: 'name and phone are required' });
+
+    let documents = null;
+    if (Array.isArray(b.documents)) {
+      documents = b.documents.slice(0, 10).map((d) => ({
+        docKey: String(d?.docKey || '').slice(0, 40),
+        fileUrl: String(d?.fileUrl || '').slice(0, 500),
+      })).filter((d) => d.docKey && d.fileUrl);
+    }
+
+    const id = randomUUID();
+    await pool.query(
+      `INSERT INTO partner_applications (id, name, phone, email, specialty, city, experience, services, coverage_areas, documents)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [
+        id, name, phone,
+        String(b.email || '').trim().slice(0, 200) || null,
+        String(b.specialty || '').trim().slice(0, 200) || null,
+        String(b.city || '').trim().slice(0, 120) || null,
+        String(b.experience || '').trim().slice(0, 2000) || null,
+        String(b.services || '').trim().slice(0, 1000) || null,
+        String(b.coverageAreas || '').trim().slice(0, 1000) || null,
+        documents ? JSON.stringify(documents) : null,
+      ]
+    );
+    return res.status(201).json({ ok: true, applicationId: id });
+  } catch (err) {
+    console.error('[POST /api/provider/onboarding]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// Admin: offer an unassigned order to a specialist (partner app pulls it via /jobs).
+app.post('/api/admin/orders/:id/offer', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const orderId = req.params.id;
+    const providerId = String(req.body?.providerId || '').trim();
+    if (!providerId) return res.status(400).json({ error: 'missing_provider_id' });
+    const ttlMinutes = Math.min(Math.max(Math.round(Number(req.body?.ttlMinutes) || 60), 5), 24 * 60);
+
+    const { rows: orderRows } = await pool.query(
+      'SELECT id, provider_id FROM all_bookings WHERE id = $1 LIMIT 1', [orderId]
+    );
+    if (!orderRows.length) return res.status(404).json({ error: 'order_not_found' });
+    if (String(orderRows[0].provider_id || '') !== '') {
+      return res.status(409).json({ error: 'already_assigned' });
+    }
+
+    const { rows: provRows } = await pool.query(
+      'SELECT provider_id, status FROM providers WHERE provider_id = $1 LIMIT 1', [providerId]
+    );
+    if (!provRows.length) return res.status(404).json({ error: 'provider_not_found' });
+    if (PROVIDER_BLOCKED_STATUSES.has(String(provRows[0].status || '').toLowerCase())) {
+      return res.status(409).json({ error: 'provider_blocked' });
+    }
+
+    const { rows: openRows } = await pool.query(
+      `SELECT id FROM provider_offers
+        WHERE order_id = $1 AND provider_id = $2 AND status = 'offered' AND expires_at > NOW()
+        LIMIT 1`,
+      [orderId, providerId]
+    );
+    if (openRows.length) return res.status(409).json({ error: 'offer_exists', offerId: openRows[0].id });
+
+    const id = randomUUID();
+    const expiresAt = new Date(Date.now() + ttlMinutes * 60_000);
+    await pool.query(
+      `INSERT INTO provider_offers (id, order_id, provider_id, status, expires_at)
+       VALUES ($1, $2, $3, 'offered', $4)`,
+      [id, orderId, providerId, expiresAt]
+    );
+    return res.status(201).json({ ok: true, offer: { id, orderId, providerId, status: 'offered', expiresAt } });
+  } catch (err) {
+    console.error('[POST /api/admin/orders/:id/offer]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// Admin: offer history for an order (drives the offer status line in the order modal).
+app.get('/api/admin/orders/:id/offers', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT po.id, po.provider_id, p.name AS provider_name, po.status, po.expires_at,
+              po.responded_at, po.created_at
+         FROM provider_offers po
+         LEFT JOIN providers p ON p.provider_id = po.provider_id
+        WHERE po.order_id = $1
+        ORDER BY po.created_at DESC
+        LIMIT 50`,
+      [req.params.id]
+    );
+    return res.json({ offers: rows });
+  } catch (err) {
+    console.error('[GET /api/admin/orders/:id/offers]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// ─── Customer live timeline (native app) ──────────────────────────────────────
+// Owner-scoped read over order_lifecycle_events: the same milestone rows the specialist
+// writes via /api/provider/checkin, filtered to what the customer may see. Additive twin
+// of GET /api/admin/orders/:id/lifecycle.
+app.get('/api/auth/orders/:id/lifecycle', async (req, res) => {
+  const payload = await requireUserAuth(req, res);
+  if (!payload) return;
+  try {
+    const { conds, ids } = await resolveUserOrderMatch(payload.user_id);
+    if (!conds.length) return res.status(404).json({ error: 'not_found' });
+    const matchClause = `(${conds.join(' OR ')})`;
+    const { rows } = await pool.query(
+      `SELECT id, service_phase, service_phase_at FROM all_bookings
+        WHERE ${matchClause} AND id = $${ids.length + 1} LIMIT 1`,
+      [...ids, req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'not_found' });
+
+    const { rows: events } = await pool.query(
+      `SELECT event_type, created_at FROM order_lifecycle_events
+        WHERE order_id = $1
+          AND event_type IN ('en_route','arrived','started','completed')
+        ORDER BY created_at ASC
+        LIMIT 100`,
+      [rows[0].id]
+    );
+    const phaseTimes = {};
+    for (const ev of events) {
+      if (!phaseTimes[ev.event_type]) phaseTimes[ev.event_type] = ev.created_at;
+    }
+
+    res.set('Cache-Control', 'no-store');
+    return res.json({
+      phase: rows[0].service_phase || null,
+      phaseAt: rows[0].service_phase_at || null,
+      phaseTimes,
+    });
+  } catch (err) {
+    console.error('[GET /api/auth/orders/:id/lifecycle]', err);
     return res.status(500).json({ error: 'internal_error' });
   }
 });

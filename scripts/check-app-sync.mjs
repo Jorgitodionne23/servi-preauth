@@ -37,6 +37,11 @@ const SHARED = [
   'src/i18n/I18nContext.tsx',
   'src/data/pricing.ts', // ported during the uplift
   'src/data/time.ts', // ported during the uplift
+  // Production networking layer (src/lib/client.ts is deliberately per-app).
+  'src/lib/config.ts',
+  'src/lib/session.ts',
+  'src/lib/api.ts',
+  'src/lib/firebasePhone.ts',
   ...UI,
 ];
 

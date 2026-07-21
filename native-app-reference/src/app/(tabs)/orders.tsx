@@ -2,7 +2,7 @@
  * ORDERS — request history. Active vs Past segmented list of the customer's
  * orders, each opening the full order detail. Mirrors the web "My Orders".
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -13,7 +13,7 @@ import { SegmentedControl } from '@/components/ui/SegmentedControl';
 import { LangToggle } from '@/components/ui/LangToggle';
 import { OrderCard } from '@/components/OrderCard';
 import { MessageState } from '@/components/ui/States';
-import { activeStatuses } from '@/data/mockData';
+import { activeStatuses } from '@/api/backend';
 import { useApp } from '@/state/AppStateContext';
 import { useI18n } from '@/i18n/I18nContext';
 import { spacing } from '@/theme/tokens';
@@ -22,8 +22,13 @@ export default function OrdersScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { t } = useI18n();
-  const { orders } = useApp();
+  const { orders, refreshOrders, session } = useApp();
   const [tab, setTab] = useState<'active' | 'past'>('active');
+
+  useEffect(() => {
+    if (session.status === 'authed') refreshOrders();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const filtered = useMemo(
     () => orders.filter((o) => (tab === 'active' ? activeStatuses.includes(o.status) : !activeStatuses.includes(o.status))),

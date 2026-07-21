@@ -31,7 +31,7 @@ import { usePartner } from '@/state/PartnerStateContext';
 import { useI18n } from '@/i18n/I18nContext';
 import { colors, layout, radius, spacing } from '@/theme/tokens';
 import { money } from '@/theme/partner';
-import { DEMO_NOW, clockTime, hourCDMX, weekdayMon, whenLabel } from '@/data/time';
+import { clockTime, hourCDMX, now, weekdayMon, whenLabel } from '@/data/time';
 import { loc } from '@/data/types';
 
 export default function TodayScreen() {
@@ -45,12 +45,30 @@ export default function TodayScreen() {
   const specialist = session.specialist;
   const verified = specialist?.status === 'verified';
 
-  const hour = hourCDMX(DEMO_NOW);
+  const hour = hourCDMX(now());
   const greeting =
     hour < 12 ? 'today.greetingMorning' : hour < 19 ? 'today.greetingAfternoon' : 'today.greetingEvening';
 
-  const todayIdx = weekdayMon(DEMO_NOW);
+  const todayIdx = weekdayMon(now());
   const todayCents = earnings.weekByDay[todayIdx] ?? 0;
+
+  // Signed out: the only two doors are sign-in and the free application.
+  if (session.status === 'signed_out') {
+    return (
+      <Screen bottomInset={layout.tabBarHeight + 48}>
+        <ScreenHeader right={<LangToggle />} />
+        <View style={{ marginTop: spacing.sm }}>
+          <ServiLogo size={22} partner />
+        </View>
+        <Card style={{ marginTop: spacing['2xl'], gap: spacing.md }}>
+          <Txt variant="headingSm">{t('auth.title')}</Txt>
+          <Txt variant="bodySm">{t('auth.signedOutBody')}</Txt>
+          <Button label={t('auth.sendCode')} onPress={() => router.push('/auth/phone')} />
+          <Button label={t('auth.apply')} variant="secondary" onPress={() => router.push('/onboarding/welcome')} />
+        </Card>
+      </Screen>
+    );
+  }
 
   return (
     <Screen bottomInset={layout.tabBarHeight + 48}>

@@ -52,6 +52,24 @@ export const strings = {
   'auth.verify': { es: 'Verificar', en: 'Verify' },
   'auth.noAccount': { es: '¿Aún no eres SERVI Partner?', en: 'Not a SERVI Partner yet?' },
   'auth.apply': { es: 'Postúlate gratis', en: 'Apply for free' },
+  'auth.sending': { es: 'Enviando…', en: 'Sending…' },
+  'auth.error.sms': {
+    es: 'No pudimos enviar el código. Revisa el número e intenta de nuevo.',
+    en: "We couldn't send the code. Check the number and try again.",
+  },
+  'auth.error.code': { es: 'Código incorrecto. Intenta de nuevo.', en: 'Wrong code. Try again.' },
+  'auth.error.notProvider': {
+    es: 'Este número no está registrado como especialista SERVI. Postúlate gratis para empezar.',
+    en: 'This number is not registered as a SERVI specialist. Apply for free to get started.',
+  },
+  'auth.error.unavailable': {
+    es: 'Inicia sesión desde la app instalada — no disponible en esta vista previa.',
+    en: 'Sign-in requires the installed app — not available in this preview.',
+  },
+  'auth.signedOutBody': {
+    es: 'Inicia sesión con tu número registrado para ver tus trabajos y ofertas.',
+    en: 'Sign in with your registered number to see your jobs and offers.',
+  },
   'auth.demoHint': {
     es: 'Prototipo — cualquier código de 6 dígitos entra.',
     en: 'Prototype — any 6-digit code works.',

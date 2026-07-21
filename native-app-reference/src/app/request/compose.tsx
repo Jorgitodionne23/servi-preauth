@@ -1,13 +1,15 @@
 /**
- * Request · Compose — capture references for the non-text modes (voice / photos
- * / video). These simulate capture with timers + animated waveforms; no real
- * mic/camera/upload (a production build would wire getUserMedia + R2 uploads).
- * Text mode falls back to the prompt box.
+ * Request · Compose — capture for the non-text modes (voice / photos / video).
+ * Photos/video use expo-image-picker (library or camera), voice records with
+ * expo-audio; every capture uploads to R2 via POST /api/uploads and the URLs
+ * ride the service request. Text mode falls back to the prompt box.
  */
 import { useEffect, useRef, useState } from 'react';
 import { View } from 'react-native';
 import { useRouter } from 'expo-router';
 import Animated, { FadeIn } from 'react-native-reanimated';
+import * as ImagePicker from 'expo-image-picker';
+import { useAudioRecorder, AudioModule, RecordingPresets } from 'expo-audio';
 
 import { Screen, ScreenHeader } from '@/components/ui/Screen';
 import { Txt } from '@/components/ui/Text';
@@ -22,18 +24,31 @@ import { colors, radius, spacing } from '@/theme/tokens';
 
 type VoicePhase = 'idle' | 'recording' | 'done';
 
+function fileName(uri: string, fallback: string): string {
+  const last = uri.split('/').pop() || '';
+  return last.includes('.') ? last : fallback;
+}
+
+function mimeFor(asset: ImagePicker.ImagePickerAsset, kind: 'image' | 'video'): string {
+  if (asset.mimeType) return asset.mimeType;
+  return kind === 'image' ? 'image/jpeg' : 'video/mp4';
+}
+
 export default function ComposeScreen() {
   const router = useRouter();
   const { t } = useI18n();
-  const { draft, startFromText, patchDraft } = useApp();
+  const { draft, startFromText, patchDraft, attachMedia } = useApp();
   const [text, setText] = useState('');
   const [voicePhase, setVoicePhase] = useState<VoicePhase>('idle');
   const [elapsed, setElapsed] = useState(0);
-  const [photoCount, setPhotoCount] = useState(0);
-  const [videoCaptured, setVideoCaptured] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadFailed, setUploadFailed] = useState(false);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
 
   const mode = draft.mode;
+  const photoCount = draft.attachments.length;
+  const videoCaptured = mode === 'video' && draft.attachments.length > 0;
 
   useEffect(() => {
     return () => {
@@ -41,14 +56,81 @@ export default function ComposeScreen() {
     };
   }, []);
 
-  const startVoice = () => {
-    setVoicePhase('recording');
-    setElapsed(0);
-    timer.current = setInterval(() => setElapsed((e) => e + 1), 1000);
+  const upload = async (uri: string, name: string, mime: string) => {
+    setUploading(true);
+    setUploadFailed(false);
+    const ok = await attachMedia(uri, name, mime);
+    setUploading(false);
+    if (!ok) setUploadFailed(true);
+    return ok;
   };
-  const stopVoice = () => {
+
+  const pickImages = async (fromCamera: boolean) => {
+    try {
+      const result = fromCamera
+        ? await (async () => {
+            const perm = await ImagePicker.requestCameraPermissionsAsync();
+            if (!perm.granted) return null;
+            return ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.7 });
+          })()
+        : await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ['images'],
+            allowsMultipleSelection: true,
+            selectionLimit: 5 - photoCount,
+            quality: 0.7,
+          });
+      if (!result || result.canceled) return;
+      for (const asset of result.assets ?? []) {
+        await upload(asset.uri, fileName(asset.uri, 'photo.jpg'), mimeFor(asset, 'image'));
+      }
+    } catch {
+      setUploadFailed(true);
+    }
+  };
+
+  const pickVideo = async (fromCamera: boolean) => {
+    try {
+      const result = fromCamera
+        ? await (async () => {
+            const perm = await ImagePicker.requestCameraPermissionsAsync();
+            if (!perm.granted) return null;
+            return ImagePicker.launchCameraAsync({ mediaTypes: ['videos'], videoMaxDuration: 60 });
+          })()
+        : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['videos'] });
+      if (!result || result.canceled) return;
+      const asset = result.assets?.[0];
+      if (asset) await upload(asset.uri, fileName(asset.uri, 'video.mp4'), mimeFor(asset, 'video'));
+    } catch {
+      setUploadFailed(true);
+    }
+  };
+
+  const startVoice = async () => {
+    try {
+      const perm = await AudioModule.requestRecordingPermissionsAsync();
+      if (!perm.granted) return;
+      await recorder.prepareToRecordAsync();
+      recorder.record();
+      setVoicePhase('recording');
+      setElapsed(0);
+      timer.current = setInterval(() => setElapsed((e) => e + 1), 1000);
+    } catch {
+      setUploadFailed(true);
+    }
+  };
+
+  const stopVoice = async () => {
     if (timer.current) clearInterval(timer.current);
-    setVoicePhase('done');
+    try {
+      await recorder.stop();
+      setVoicePhase('done');
+      if (recorder.uri) {
+        await upload(recorder.uri, fileName(recorder.uri, 'voicenote.m4a'), 'audio/m4a');
+      }
+    } catch {
+      setVoicePhase('done');
+      setUploadFailed(true);
+    }
   };
 
   const goBuild = () => router.replace('/request/build');
@@ -75,6 +157,12 @@ export default function ComposeScreen() {
             {t('req.mode.text')}
           </Txt>
         </PressableScale>
+      ) : null}
+
+      {uploadFailed ? (
+        <Txt variant="bodySm" color={colors.danger} style={{ marginTop: spacing.md }}>
+          {t('req.review.sendError')}
+        </Txt>
       ) : null}
 
       {/* TEXT */}
@@ -119,7 +207,7 @@ export default function ComposeScreen() {
             </View>
           ) : voicePhase === 'done' ? (
             <Txt variant="caption" center>
-              {t('req.voice.note')}
+              {uploading ? t('req.uploading') : t('req.voice.note')}
             </Txt>
           ) : (
             <Txt variant="caption" center>
@@ -129,7 +217,7 @@ export default function ComposeScreen() {
           {voicePhase === 'done' ? (
             <View style={{ flexDirection: 'row', gap: spacing.md, width: '100%' }}>
               <Button label={t('req.voice.rerecord')} variant="secondary" size="md" onPress={() => setVoicePhase('idle')} style={{ flex: 1 }} />
-              <Button label={t('req.voice.use')} size="md" onPress={goBuild} style={{ flex: 1 }} />
+              <Button label={t('req.voice.use')} size="md" disabled={uploading} onPress={goBuild} style={{ flex: 1 }} />
             </View>
           ) : null}
         </Animated.View>
@@ -147,11 +235,11 @@ export default function ComposeScreen() {
                 {t('req.photo.empty')}
               </Txt>
               <Txt variant="caption" center>
-                {t('req.photo.note')}
+                {uploading ? t('req.uploading') : t('req.photo.note')}
               </Txt>
               <View style={{ flexDirection: 'row', gap: spacing.md, width: '100%' }}>
-                <Button label={t('req.photo.choose')} variant="secondary" size="md" icon="image" onPress={() => setPhotoCount(2)} style={{ flex: 1 }} />
-                <Button label={t('req.photo.sample')} size="md" onPress={() => setPhotoCount(1)} style={{ flex: 1 }} />
+                <Button label={t('req.photo.choose')} variant="secondary" size="md" icon="image" disabled={uploading} onPress={() => pickImages(false)} style={{ flex: 1 }} />
+                <Button label={t('req.photo.sample')} size="md" icon="camera" disabled={uploading} onPress={() => pickImages(true)} style={{ flex: 1 }} />
               </View>
             </>
           ) : (
@@ -163,12 +251,12 @@ export default function ComposeScreen() {
                   </View>
                 ))}
                 {photoCount < 5 ? (
-                  <PressableScale onPress={() => setPhotoCount((c) => c + 1)} style={{ width: 76, height: 76, borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.borderInput, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center' }}>
+                  <PressableScale onPress={() => pickImages(false)} style={{ width: 76, height: 76, borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.borderInput, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center' }}>
                     <Icon name="plus" size={20} color={colors.textMuted} />
                   </PressableScale>
                 ) : null}
               </View>
-              <Button label={`${t('common.continue')} · ${photoCount}`} icon="arrow-right" onPress={goBuild} />
+              <Button label={uploading ? t('req.uploading') : `${t('common.continue')} · ${photoCount}`} icon="arrow-right" disabled={uploading} onPress={goBuild} />
             </>
           )}
         </Animated.View>
@@ -186,11 +274,11 @@ export default function ComposeScreen() {
                 {t('req.video.empty')}
               </Txt>
               <Txt variant="caption" center>
-                {t('req.video.note')}
+                {uploading ? t('req.uploading') : t('req.video.note')}
               </Txt>
               <View style={{ flexDirection: 'row', gap: spacing.md, width: '100%' }}>
-                <Button label={t('req.video.upload')} variant="secondary" size="md" icon="upload" onPress={() => setVideoCaptured(true)} style={{ flex: 1 }} />
-                <Button label={t('req.video.record')} size="md" icon="video" onPress={() => setVideoCaptured(true)} style={{ flex: 1 }} />
+                <Button label={t('req.video.upload')} variant="secondary" size="md" icon="upload" disabled={uploading} onPress={() => pickVideo(false)} style={{ flex: 1 }} />
+                <Button label={t('req.video.record')} size="md" icon="video" disabled={uploading} onPress={() => pickVideo(true)} style={{ flex: 1 }} />
               </View>
             </>
           ) : (
@@ -198,7 +286,7 @@ export default function ComposeScreen() {
               <View style={{ width: 76, height: 76, borderRadius: radius.md, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' }}>
                 <Icon name="film" size={24} color={colors.textMuted} />
               </View>
-              <Button label={t('common.continue')} icon="arrow-right" onPress={goBuild} />
+              <Button label={t('common.continue')} icon="arrow-right" disabled={uploading} onPress={goBuild} />
             </>
           )}
         </Animated.View>

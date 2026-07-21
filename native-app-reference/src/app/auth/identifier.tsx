@@ -1,6 +1,8 @@
 /**
- * Auth · Identifier — unified phone/email field (auto-detects @), Google
- * shortcut, and a country flag that hides for email. Reference UI only.
+ * Auth · Identifier — phone sign-in (Firebase OTP). The unified field still
+ * auto-detects an email, but v1 auth is phone-first: emails point the user back
+ * to phone (email magic-link + Google arrive with a later release, matching the
+ * web's dual-auth model).
  */
 import { useState } from 'react';
 import { View } from 'react-native';
@@ -13,20 +15,47 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { ServiLogo } from '@/components/ui/ServiLogo';
 import { PressableScale } from '@/components/ui/Pressable';
-import { Divider } from '@/components/ui/Card';
+import { useApp } from '@/state/AppStateContext';
 import { useI18n } from '@/i18n/I18nContext';
 import { colors, radius, spacing } from '@/theme/tokens';
+
+function toE164(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (trimmed.startsWith('+')) {
+    const digits = trimmed.slice(1).replace(/\D/g, '');
+    return digits.length >= 10 ? `+${digits}` : null;
+  }
+  const digits = trimmed.replace(/\D/g, '');
+  if (digits.length === 10) return `+52${digits}`;
+  if (digits.length === 12 && digits.startsWith('52')) return `+${digits}`;
+  return null;
+}
 
 export default function IdentifierScreen() {
   const router = useRouter();
   const { t } = useI18n();
+  const { beginPhoneAuth } = useApp();
   const [value, setValue] = useState('');
-  const isEmail = value.includes('@');
-  const canContinue = value.trim().length > 3;
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const cont = () => {
-    const type = isEmail ? 'email' : 'phone';
-    router.push(`/auth/otp?type=${type}&value=${encodeURIComponent(value.trim())}&flow=signup`);
+  const isEmail = value.includes('@');
+  const phone = toE164(value);
+  const canContinue = !isEmail && !!phone && !sending;
+
+  const cont = async () => {
+    if (!phone) return;
+    setSending(true);
+    setError(null);
+    try {
+      await beginPhoneAuth(phone);
+      router.push(`/auth/otp?type=phone&value=${encodeURIComponent(phone)}&flow=signup`);
+    } catch (err) {
+      const unavailable = err instanceof Error && err.message === 'firebase_unavailable';
+      setError(t(unavailable ? 'auth.error.unavailable' : 'auth.error.sms'));
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
@@ -49,14 +78,6 @@ export default function IdentifierScreen() {
       </View>
 
       <View style={{ marginTop: spacing.xl, gap: spacing.lg }}>
-        <Button label={t('auth.google')} variant="secondary" icon="chrome" onPress={cont} />
-
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
-          <Divider style={{ flex: 1 }} />
-          <Txt variant="caption">{t('auth.or')}</Txt>
-          <Divider style={{ flex: 1 }} />
-        </View>
-
         <View style={{ flexDirection: 'row', gap: spacing.sm, alignItems: 'center' }}>
           {!isEmail ? (
             <View style={{ height: 52, paddingHorizontal: 14, borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.borderInput, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6 }}>
@@ -70,15 +91,29 @@ export default function IdentifierScreen() {
             containerStyle={{ flex: 1 }}
             placeholder={t('auth.phoneOrEmail')}
             value={value}
-            onChangeText={setValue}
+            onChangeText={(v) => {
+              setValue(v);
+              setError(null);
+            }}
             autoCapitalize="none"
             autoCorrect={false}
-            keyboardType={isEmail ? 'email-address' : 'default'}
+            keyboardType={isEmail ? 'email-address' : 'phone-pad'}
           />
         </View>
-        <Txt variant="caption">{t('auth.phoneHint')}</Txt>
+        <Txt variant="caption">{isEmail ? t('auth.emailSoon') : t('auth.phoneHint')}</Txt>
 
-        <Button label={t('common.continue')} icon="arrow-right" disabled={!canContinue} onPress={cont} />
+        {error ? (
+          <Txt variant="bodySm" color={colors.danger}>
+            {error}
+          </Txt>
+        ) : null}
+
+        <Button
+          label={sending ? t('req.uploading') : t('common.continue')}
+          icon="arrow-right"
+          disabled={!canContinue}
+          onPress={cont}
+        />
       </View>
     </Screen>
   );

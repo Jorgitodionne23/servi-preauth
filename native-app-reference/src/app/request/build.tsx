@@ -3,7 +3,7 @@
  * confidence, optional follow-up chips, and the when/where step. Video requests
  * show a "video received" card instead (admin review, no follow-ups).
  */
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { View } from 'react-native';
 import { useRouter } from 'expo-router';
 import Animated, { FadeInDown } from 'react-native-reanimated';
@@ -37,23 +37,14 @@ const TIME_OPTS = ['09:00', '12:00', '15:00', '18:00'];
 export default function BuildScreen() {
   const router = useRouter();
   const { t, lang } = useI18n();
-  const { draft, patchDraft, setAnswer, forceError, toggleForceError } = useApp();
-  const [thinking, setThinking] = useState(!draft.adminReview);
+  const { draft, patchDraft, setAnswer, parsing, parseError, retryParse } = useApp();
   const [pickerOpen, setPickerOpen] = useState(false);
 
-  useEffect(() => {
-    if (!thinking) return;
-    const id = setTimeout(() => setThinking(false), 900);
-    return () => clearTimeout(id);
-  }, [thinking]);
-
-  // Reachable error state (brief requirement): the demo "force error" toggle
-  // makes the mocked parse "fail" so the retry path is exercisable.
-  const showError = !thinking && forceError && !draft.adminReview;
-  const retry = () => {
-    if (forceError) toggleForceError();
-    setThinking(true);
-  };
+  // The heuristic match is instant; only show the thinking state while the AI
+  // parse is in flight AND we have nothing to show yet.
+  const thinking = parsing && !draft.service && !draft.adminReview;
+  const showError = !thinking && parseError && !draft.service && !draft.adminReview;
+  const retry = retryParse;
 
   const cat = draft.categoryKey ? categoryByKey[draft.categoryKey] : null;
   const matchPct = Math.round(draft.confidence * 100);

@@ -16,15 +16,43 @@ import { Field, Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { LangToggle } from '@/components/ui/LangToggle';
 import { ServiLogo } from '@/components/ui/ServiLogo';
+import { usePartner } from '@/state/PartnerStateContext';
 import { useI18n } from '@/i18n/I18nContext';
-import { spacing } from '@/theme/tokens';
+import { colors, spacing } from '@/theme/tokens';
+
+function toE164(raw: string): string | null {
+  const digits = raw.replace(/\D/g, '');
+  if (raw.trim().startsWith('+')) return digits.length >= 10 ? `+${digits}` : null;
+  if (digits.length === 10) return `+52${digits}`;
+  if (digits.length === 12 && digits.startsWith('52')) return `+${digits}`;
+  return null;
+}
 
 export default function PhoneScreen() {
   const { t } = useI18n();
   const router = useRouter();
+  const { beginPhoneAuth } = usePartner();
   const [phone, setPhone] = useState('');
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const valid = phone.replace(/\D/g, '').length >= 10;
+  const e164 = toE164(phone);
+  const valid = !!e164 && !sending;
+
+  const send = async () => {
+    if (!e164) return;
+    setSending(true);
+    setError(null);
+    try {
+      await beginPhoneAuth(e164);
+      router.push({ pathname: '/auth/otp', params: { phone: e164 } });
+    } catch (err) {
+      const unavailable = err instanceof Error && err.message === 'firebase_unavailable';
+      setError(t(unavailable ? 'auth.error.unavailable' : 'auth.error.sms'));
+    } finally {
+      setSending(false);
+    }
+  };
 
   return (
     <Screen bottomInset={spacing['3xl']}>
@@ -54,10 +82,15 @@ export default function PhoneScreen() {
       </View>
 
       <View style={{ marginTop: spacing.xl, gap: spacing.md }}>
+        {error ? (
+          <Txt variant="bodySm" color={colors.danger}>
+            {error}
+          </Txt>
+        ) : null}
         <Button
-          label={t('auth.sendCode')}
+          label={sending ? t('auth.sending') : t('auth.sendCode')}
           disabled={!valid}
-          onPress={() => router.push({ pathname: '/auth/otp', params: { phone } })}
+          onPress={send}
         />
         <Txt variant="caption" center>
           {t('auth.noAccount')}

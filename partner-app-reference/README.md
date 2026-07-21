@@ -1,15 +1,35 @@
-# SERVI Partner — Specialist App Design Reference
+# SERVI Partner — Specialist App (native)
 
-A **high-fidelity, runnable specialist-app prototype** for [SERVI](../CLAUDE.md) — the
-on-demand home-services platform for Santa Fe, Cuajimalpa de Morelos (CDMX). Built with
-**Expo + React Native + TypeScript**, deliberately as the mirror of the customer prototype
-in [`../native-app-reference`](../native-app-reference/README.md).
+The **SERVI specialist (Partner) app** for iOS/Android — the mirror of the customer app in
+[`../native-app-reference`](../native-app-reference/README.md). Built with
+**Expo + React Native + TypeScript** (expo-router).
 
-> ⚠️ **This is a design reference, not a product.** It uses **mocked data and local
-> fixtures only**. It does **not** connect to Firebase, Stripe, Neon, Cloudflare R2, or any
-> production SERVI service. It moves **no real money** and uploads **no real documents**.
-> It is fully isolated from the web app in `../frontend` and `../backend` — it imports
-> nothing from them and is imported by nothing.
+> ✅ **Wired to the live backend.** Sign-in is Firebase phone OTP →
+> `POST /api/provider/auth/firebase` (provider-scoped session JWT; only phones already
+> registered in the `providers` table can sign in — everyone else is routed to the free
+> application, which lands in the admin Inbox via `POST /api/provider/onboarding`). Jobs
+> and offers poll `GET /api/provider/jobs`; accept/decline, check-ins, one-shot location
+> share (expo-location) and price-change requests all hit the production routes. The
+> legacy per-order `provider.html?pt=…` link keeps working unchanged.
+>
+> **Deferred to a later release:** Stripe Connect payouts — earnings are read-only
+> (derived from captured orders) and instant cash-out stays disabled; SERVI pays weekly by
+> hand as today. Push notifications (foreground polling for now), real document upload
+> during onboarding, in-app job cancellation (goes through SERVI support).
+
+## Production setup & release
+
+1. **Firebase config files**: register iOS `mx.servi.partner` and Android
+   `mx.servi.partner` apps on Firebase project `servi-bec91`; download
+   `GoogleService-Info.plist` / `google-services.json` into this folder (gitignored).
+2. **API target**: `EXPO_PUBLIC_API_URL` per profile in [eas.json](eas.json).
+3. **Build**: `eas build --profile development|preview|production` (Expo Go can no longer
+   run this app — @react-native-firebase and expo-location are native modules).
+4. **Store prerequisites** (external): Apple Developer Program + ASC record and Play
+   Console record for `mx.servi.partner`; a Firebase test phone number registered as a
+   test provider on staging for App Review.
+5. **Provider phone hygiene**: first login matches by E.164 phone against
+   `providers.phone` — audit that column before launch (see `../INTEROP.md`).
 
 ---
 

@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "SERVI Partner",
-    "slug": "partner-app-reference",
+    "slug": "servi-partner",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -9,11 +9,24 @@
     "userInterfaceStyle": "light",
     "backgroundColor": "#fafbfb",
     "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "mx.servi.partner.reference"
+      "supportsTablet": false,
+      "bundleIdentifier": "mx.servi.partner",
+      "googleServicesFile": "./GoogleService-Info.plist",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "SERVI Partner comparte tu ubicación una sola vez, cuando tú lo decides, para que el cliente sepa que vas en camino. Nunca hay rastreo continuo.",
+        "NSCameraUsageDescription": "SERVI Partner usa la cámara para subir tus documentos de verificación y evidencia del trabajo.",
+        "NSPhotoLibraryUsageDescription": "SERVI Partner accede a tus fotos para subir documentos de verificación y evidencia del trabajo.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
-      "package": "mx.servi.partner.reference",
+      "package": "mx.servi.partner",
+      "googleServicesFile": "./google-services.json",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#eaf5f7",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -28,6 +41,31 @@
     },
     "plugins": [
       "expo-router",
+      "expo-secure-store",
+      "@react-native-firebase/app",
+      "@react-native-firebase/auth",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "useFrameworks": "static"
+          }
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "SERVI Partner comparte tu ubicación una sola vez, cuando tú lo decides, para que el cliente sepa que vas en camino. Nunca hay rastreo continuo.",
+          "isAndroidBackgroundLocationEnabled": false
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "SERVI Partner accede a tus fotos para subir documentos de verificación y evidencia del trabajo.",
+          "cameraPermission": "SERVI Partner usa la cámara para subir tus documentos de verificación y evidencia del trabajo."
+        }
+      ],
       [
         "expo-splash-screen",
         {

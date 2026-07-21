@@ -1,7 +1,7 @@
 /**
- * Auth · OTP — dynamic phone/email verification (title + subtitle adapt to the
- * identifier type, per the auth state machine). Any 6 digits "verify" in the
- * prototype. Routes to name collection (signup) or finishes (login).
+ * Auth · OTP — verify the SMS code (Firebase), then exchange the Firebase ID
+ * token for a SERVI session via POST /api/auth/firebase. Routes to name
+ * collection when the account has no name yet.
  */
 import { useState } from 'react';
 import { View } from 'react-native';
@@ -17,21 +17,42 @@ import { useI18n } from '@/i18n/I18nContext';
 import { colors, spacing } from '@/theme/tokens';
 
 export default function OtpScreen() {
-  const { type, value, flow } = useLocalSearchParams<{ type: string; value: string; flow: string }>();
+  const { type, value } = useLocalSearchParams<{ type: string; value: string; flow: string }>();
   const router = useRouter();
   const { t } = useI18n();
-  const { signIn } = useApp();
+  const { confirmPhoneCode, beginPhoneAuth } = useApp();
   const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const isPhone = type !== 'email';
 
-  const verify = () => {
-    if (code.length < 6) return;
-    if (flow === 'signup') {
-      router.push('/auth/name');
-    } else {
-      signIn();
-      router.replace('/(tabs)/account');
+  const verify = async () => {
+    if (code.length < 6 || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const outcome = await confirmPhoneCode(code);
+      if (outcome === 'needs_name') router.replace('/auth/name');
+      else router.replace('/(tabs)/account');
+    } catch {
+      setError(t('auth.error.code'));
+      setCode('');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const resend = async () => {
+    if (!value || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await beginPhoneAuth(String(value));
+    } catch {
+      setError(t('auth.error.sms'));
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -49,10 +70,16 @@ export default function OtpScreen() {
         <OTPInput value={code} onChange={setCode} autoFocus />
       </View>
 
+      {error ? (
+        <Txt variant="bodySm" color={colors.danger} style={{ marginTop: spacing.md }}>
+          {error}
+        </Txt>
+      ) : null}
+
       <View style={{ marginTop: spacing.xl, gap: spacing.lg }}>
-        <Button label={t('auth.otp.verify')} icon="check" disabled={code.length < 6} onPress={verify} />
+        <Button label={t('auth.otp.verify')} icon="check" disabled={code.length < 6 || busy} onPress={verify} />
         <View style={{ alignItems: 'center', gap: spacing.md }}>
-          <PressableScale onPress={() => setCode('')} haptic={false}>
+          <PressableScale onPress={resend} haptic={false}>
             <Txt variant="bodySmStrong" color={colors.accentInk}>
               {t('auth.otp.resend')}
             </Txt>

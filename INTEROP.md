@@ -44,15 +44,14 @@ procesamiento" line, and an "*IVA incluido" note — the booking fee is not item
 customer. The partner app shows the itemized "you earn / SERVI fee / client pays" view.
 Both agree on the two anchor numbers (provider amount, client total).
 
-### Both apps share one frozen, timezone-fixed clock
+### Both apps share one timezone-fixed clock
 
-`src/data/time.ts` is **byte-identical** in both apps and pins `DEMO_NOW` to 2026-06-23. All
-wall-clock math is computed against a **fixed CDMX offset (UTC−6)** — matching
-`backend/timezone.mjs`, which pins the server to `America/Mexico_City`. This is deliberate:
-an earlier version used local-time `setHours`/`getHours`, so the two apps only agreed when
-the reviewer's machine happened to be UTC-6. Now they produce identical instants and labels
-on any machine (verified under `TZ=UTC`, `TZ=America/Mexico_City`, `TZ=Asia/Kolkata`). Offer
-countdowns are the one exception — real clock, so the accept-or-lose-it pressure is genuine.
+`src/data/time.ts` is **byte-identical** in both apps. Since the production wiring it runs
+on the **real clock** (`now()` = `new Date()`; the old frozen `DEMO_NOW` is gone along with
+the mock fixtures), but every wall-clock calculation is still done against a **fixed CDMX
+offset (UTC−6)** — matching `backend/timezone.mjs`, which pins the server to
+`America/Mexico_City` — so both apps and the server produce identical labels on any device
+timezone.
 
 ---
 
@@ -104,25 +103,25 @@ isn't in the type.
 | `GET/POST/PATCH/DELETE /api/auth/trusted-specialists` | customer | Trusted-specialist CRUD with in-SERVI trust stats |
 | **`GET /api/auth/providers/:providerId/rating`** | customer/partner | **NEW.** Aggregate satisfaction rolled up from `service_ratings` — `{ providerId, count, positivePct, display }`. % positive over a count (NOT stars); `display:'new'` below a cold-start floor of 5 ratings. Read-only, session-gated. |
 
-### 🔨 Needs building
+### ✅ Built for the app launch (July 2026)
 
 | Route | Purpose | Notes |
 |---|---|---|
-| `GET /api/auth/orders/:id/lifecycle` | **Customer live timeline.** Return the `order_lifecycle_events` for an owned order so the customer app's on-site `PhaseTimeline` reads real check-ins, not just the single `servicePhase` string. | The table already anticipates `channel='account'`; this is a customer-scoped read over columns that are already written. The customer prototype models `phaseTimes` locally in the meantime. |
-| `POST /api/auth/orders/:id/tip` | **Tips.** Charge an optional post-service tip off-session (or a fresh PaymentIntent) and transfer **100% to the provider**. | Greenfield — no tip column/route today. Needs a `tips` table (or a fee-free adjustment child) and a partner-earnings surface so a tip shows up on the specialist side. The customer prototype models tips locally (`Order.tipCents`). |
-| `POST /api/provider/auth/otp` + `/verify` | Provider phone OTP sign-in | Reuse the Firebase phone flow; issue a provider-scoped session JWT. |
-| `GET /api/provider/me`, `PATCH /api/provider/me` | Specialist profile / trades / availability / coverage / duty | Aggregates `providers` + `service_ratings` + `user_trusted_specialists`; needs the columns/tables in §4. |
-| `GET /api/provider/jobs`, `POST /api/provider/jobs/:id/accept\|/decline` | Offers, replacing the per-order token | Accept must be race-safe; sets `all_bookings.provider_id`. |
-| `GET /api/provider/earnings`, `GET /api/provider/payouts`, `POST /api/provider/payouts/instant` | Money surfaces | Earnings derivable from `all_bookings` today; payouts need §4 + Stripe Connect. |
-| `POST /api/provider/onboarding` | Self-serve recruitment | Feed the existing `partner_applications` table + admin Inbox. |
+| `GET /api/auth/orders/:id/lifecycle` | **Customer live timeline** — owner-scoped read over `order_lifecycle_events`, milestone events only. | The customer app's `PhaseTimeline` reads this. |
+| `POST /api/provider/auth/firebase` + `/refresh` + `/logout` | Provider phone OTP sign-in → provider-scoped session JWT (`scope='provider'`, same signer/secret/revocation chain as customer sessions). | Matches by `firebase_uid`, else uniquely by E.164 phone (backfills the uid). Unknown phone → 403 `not_a_provider`. |
+| `GET /api/provider/me`, `PATCH /api/provider/me` | Specialist profile / trades / availability / coverage / duty. | PATCH whitelist only; identity fields stay admin-managed. |
+| `GET /api/provider/jobs`, `POST /api/provider/jobs/:id/accept\|/decline` | Offers + assigned jobs (provider-safe masked projection; offers withhold the exact address). | Accept is transactional and race-safe (`backend/providerOffers.mjs`, unit-tested); exactly one specialist wins; respects manual admin assignment. |
+| `GET /api/provider/earnings` | Read-only earnings over `all_bookings` (`backend/providerEarnings.mjs`, unit-tested). | No balances — payouts stay manual until Stripe Connect. |
+| `POST /api/provider/onboarding` | Self-serve recruitment → `partner_applications` + admin Inbox. | Optional `documents` JSONB ({docKey, fileUrl} from `POST /api/uploads`). |
+| `POST /api/admin/orders/:id/offer`, `GET .../offers` | Admin offers an unassigned order to a specialist; offer status renders in the admin order panel. | 60-min default TTL. |
+| `checkin` / `price-change` / `location` | Now accept **either** the per-order `pt` token **or** a provider session Bearer whose `provider_id` owns the order. | `provider.html` unchanged — both auth paths stay. |
 
-### The auth change that unblocks the partner app
+### 🔨 Still to build
 
-Today the provider surface is authenticated by a **per-order token** (`pt` in the URL,
-expiry in `backend/providerLink.mjs`). A real app needs a **provider session** — the same
-HS256 JWT pattern the customer side uses (`POST /api/auth/firebase` → 24h token,
-`revoked_sessions` for logout), scoped to `provider_id`. This **does not break** the
-existing `provider.html` link flow — keep both.
+| Route | Purpose | Notes |
+|---|---|---|
+| `POST /api/auth/orders/:id/tip` | **Tips.** Charge an optional post-service tip off-session and transfer **100% to the provider**. | Greenfield — needs a `tips` table (or a fee-free adjustment child) and a partner-earnings surface. The customer app hides its tip UI until then. |
+| `GET /api/provider/payouts`, `POST /api/provider/payouts/instant` | Payout surfaces | Need §4 payout tables + Stripe Connect (§5). |
 
 ---
 
@@ -230,6 +229,8 @@ shared package (see the customer README for why a Metro/workspace extraction was
 ```
 src/theme/tokens.ts        src/theme/typography.ts        src/i18n/I18nContext.tsx
 src/data/pricing.ts        src/data/time.ts
+src/lib/config.ts          src/lib/session.ts             src/lib/api.ts
+src/lib/firebasePhone.ts    (src/lib/client.ts is deliberately per-app)
 src/components/ui/*.tsx     (all 16: Badge, BottomSheet, Button, Card, Chip, Icon,
                              InfoCard, Input, LangToggle, Pressable, Rows, Screen,
                              SegmentedControl, ServiLogo, States, Text)

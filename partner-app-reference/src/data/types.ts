@@ -204,6 +204,8 @@ export type MaskedClient = {
 export type Job = {
   /** `all_bookings.public_code` — the SV-NNNNNN the client also sees. */
   id: string;
+  /** Backend row id (`all_bookings.id`) — what the provider API routes take. */
+  serverId: string;
   state: JobState;
   tradeKey: TradeKey;
   service: Bilingual;

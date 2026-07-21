@@ -3416,6 +3416,10 @@ function renderOrderDetail(o, adjustments) {
         <div id="op-lifecycle-list" style="font-size:12px;color:#666">Cargando…</div>
       </div>
       <div class="sp-sec">
+        <div class="sp-sec-t" style="display:flex;align-items:center;gap:8px">Ofertas a especialistas${!o.provider_id ? `<div style="margin-left:auto;display:flex;gap:6px;align-items:center"><select id="op-offer-provider" class="filter-select" style="max-width:200px"><option value="">Especialista…</option></select><button class="action-btn" onclick="sendOffer('${o.id}')" title="Ofrecer esta orden al especialista (app de partners)">📣 Ofrecer</button></div>` : ''}</div>
+        <div id="op-offers-list" style="font-size:12px;color:#666">Cargando…</div>
+      </div>
+      <div class="sp-sec">
         <div class="sp-sec-t">Desglose de precio</div>
         <div style="display:flex;flex-direction:column;gap:8px">
           <div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:#888">Proveedor</span><span>${fmtMoney(o.provider_amount)}</span></div>
@@ -3467,6 +3471,7 @@ function renderOrderDetail(o, adjustments) {
     `;
   loadOrderChanges(o.id);
   loadOrderLifecycle(o.id);
+  loadOrderOffers(o.id);
 }
 
 // ─── In-service lifecycle timeline (Phase 1) ─────────────────────────────────
@@ -3586,6 +3591,59 @@ async function genProviderLink(orderId) {
   }
 }
 const _providerLinkCache = {};
+
+// ─── Ofertas a especialistas (partner app) ───────────────────────────────────
+const OFFER_STATUS_BADGE = { offered: 'badge-pending', accepted: 'badge-confirmed', declined: 'badge-canceled', expired: 'badge-rejected' };
+const OFFER_STATUS_LABEL = { offered: 'ofrecida', accepted: 'aceptada', declined: 'rechazada', expired: 'expirada' };
+
+async function loadOrderOffers(orderId) {
+  const target = document.getElementById('op-offers-list');
+  if (!target) return;
+  try {
+    const res = await fetch(API + '/api/admin/orders/' + encodeURIComponent(orderId) + '/offers', { headers: headers() });
+    const d = await res.json();
+    const items = d.offers || [];
+    target.innerHTML = items.length ? items.map(of => `
+      <div class="sp-adj" style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <span style="font-weight:600">${escapeHtml(of.provider_name || of.provider_id)}</span>
+        <span style="font-size:11px;color:#666">${fmtDate(of.created_at)} ${fmtTime(of.created_at)}${of.status === 'offered' ? ' · expira ' + fmtTime(of.expires_at) : ''}</span>
+        <span class="badge ${OFFER_STATUS_BADGE[of.status] || 'badge-pending'}">${escapeHtml(OFFER_STATUS_LABEL[of.status] || of.status)}</span>
+      </div>`).join('') : '<div style="color:#555;font-size:12px">Sin ofertas enviadas</div>';
+  } catch (err) {
+    target.innerHTML = `<div style="color:#ef4444;font-size:12px">Error: ${escapeHtml(err.message)}</div>`;
+  }
+  // Populate the specialist picker once per panel open (only rendered when unassigned).
+  const sel = document.getElementById('op-offer-provider');
+  if (sel && sel.options.length <= 1) {
+    try {
+      const res = await fetch(API + '/api/admin/providers?limit=100', { headers: headers() });
+      const d = await res.json();
+      (d.items || []).filter(p => !['removed','rejected','disabled'].includes(String(p.status || '').toLowerCase())).forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.provider_id;
+        opt.textContent = (p.name || p.provider_id) + (p.specialty ? ' · ' + p.specialty : '');
+        sel.appendChild(opt);
+      });
+    } catch (_) {}
+  }
+}
+
+async function sendOffer(orderId) {
+  const sel = document.getElementById('op-offer-provider');
+  const providerId = sel && sel.value;
+  if (!providerId) { toast('Elige un especialista primero', 'err'); return; }
+  try {
+    const res = await fetch(API + '/api/admin/orders/' + encodeURIComponent(orderId) + '/offer', {
+      method: 'POST', headers: headers(), body: JSON.stringify({ providerId }),
+    });
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.error || 'error');
+    toast('Oferta enviada al especialista · expira en 60 min', 'ok');
+    loadOrderOffers(orderId);
+  } catch (e) {
+    toast('Error al enviar la oferta: ' + e.message, 'err');
+  }
+}
 
 function closeOrderDetail() {
   _openDetailOrderId = null;

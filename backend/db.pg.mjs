@@ -294,6 +294,61 @@ export async function initDb() {
     -- Sequence for minting prov-XXXXXX provider ids
     CREATE SEQUENCE IF NOT EXISTS provider_id_seq START 1;
 
+    -- ─── Partner app (provider sessions / offers) — additive only ─────────────
+    -- Columns + tables for the native specialist app (INTEROP.md §4, steps 1–4).
+    -- Payout tables (step 5, Stripe Connect) deliberately not created yet.
+    ALTER TABLE providers ADD COLUMN IF NOT EXISTS firebase_uid TEXT;
+    ALTER TABLE providers ADD COLUMN IF NOT EXISTS on_duty BOOLEAN NOT NULL DEFAULT false;
+    ALTER TABLE providers ADD COLUMN IF NOT EXISTS tier TEXT NOT NULL DEFAULT 'nuevo';
+    ALTER TABLE providers ADD COLUMN IF NOT EXISTS coverage_zones TEXT[];
+    ALTER TABLE providers ADD COLUMN IF NOT EXISTS coverage_radius_km INTEGER DEFAULT 10;
+    ALTER TABLE providers ADD COLUMN IF NOT EXISTS accepts_asap BOOLEAN NOT NULL DEFAULT true;
+    ALTER TABLE providers ADD COLUMN IF NOT EXISTS rfc TEXT;
+    CREATE INDEX IF NOT EXISTS idx_providers_firebase_uid ON providers(firebase_uid);
+
+    CREATE TABLE IF NOT EXISTS provider_trades (
+      provider_id TEXT NOT NULL REFERENCES providers(provider_id) ON DELETE CASCADE,
+      trade_key   TEXT NOT NULL,
+      skill_key   TEXT NOT NULL DEFAULT '',
+      PRIMARY KEY (provider_id, trade_key, skill_key)
+    );
+
+    CREATE TABLE IF NOT EXISTS provider_availability (
+      provider_id TEXT NOT NULL REFERENCES providers(provider_id) ON DELETE CASCADE,
+      weekday     SMALLINT NOT NULL,   -- 0=Mon
+      enabled     BOOLEAN NOT NULL DEFAULT true,
+      from_time   TIME NOT NULL,
+      to_time     TIME NOT NULL,
+      PRIMARY KEY (provider_id, weekday)
+    );
+
+    CREATE TABLE IF NOT EXISTS provider_documents (
+      id          TEXT PRIMARY KEY,
+      provider_id TEXT NOT NULL REFERENCES providers(provider_id) ON DELETE CASCADE,
+      doc_key     TEXT NOT NULL,       -- id_front|id_back|selfie|address_proof|certification
+      status      TEXT NOT NULL DEFAULT 'uploaded',
+      file_url    TEXT,
+      reviewed_at TIMESTAMPTZ,
+      review_note TEXT,
+      created_at  TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_provider_documents_provider
+      ON provider_documents(provider_id);
+
+    CREATE TABLE IF NOT EXISTS provider_offers (
+      id          TEXT PRIMARY KEY,
+      order_id    TEXT NOT NULL REFERENCES all_bookings(id) ON DELETE CASCADE,
+      provider_id TEXT NOT NULL REFERENCES providers(provider_id) ON DELETE CASCADE,
+      status      TEXT NOT NULL DEFAULT 'offered',  -- offered|accepted|declined|expired
+      expires_at  TIMESTAMPTZ NOT NULL,
+      responded_at TIMESTAMPTZ,
+      created_at  TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_provider_offers_open
+      ON provider_offers(provider_id, status, expires_at);
+    CREATE INDEX IF NOT EXISTS idx_provider_offers_order
+      ON provider_offers(order_id, status);
+
     -- Order-level change requests (reschedule / cancel / address update / inline edit)
     CREATE TABLE IF NOT EXISTS order_changes (
       id TEXT PRIMARY KEY,
@@ -477,6 +532,8 @@ export async function initDb() {
       ON partner_applications(created_at DESC);
 
     ALTER TABLE partner_applications ADD COLUMN IF NOT EXISTS services TEXT;
+    -- Partner-app onboarding: uploaded document references ({docKey, fileUrl} list).
+    ALTER TABLE partner_applications ADD COLUMN IF NOT EXISTS documents JSONB;
     ALTER TABLE partner_applications ADD COLUMN IF NOT EXISTS coverage_areas TEXT;
     ALTER TABLE partner_applications ADD COLUMN IF NOT EXISTS linked_provider_id TEXT;
 

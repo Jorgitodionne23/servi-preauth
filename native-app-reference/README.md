@@ -1,15 +1,42 @@
-# SERVI — Native App Design Reference
+# SERVI — Customer App (native)
 
-A **high-fidelity, runnable customer-app prototype** for [SERVI](../CLAUDE.md) — the
-on-demand home-services platform for Santa Fe, Cuajimalpa de Morelos (CDMX). Built with
-**Expo + React Native + TypeScript** to explore what SERVI feels like as a polished native
-mobile app, before committing to a production React Native build.
+The **SERVI customer app** for iOS/Android — [SERVI](../CLAUDE.md) is the on-demand
+home-services platform for Santa Fe, Cuajimalpa de Morelos (CDMX). Built with
+**Expo + React Native + TypeScript** (expo-router).
 
-> ⚠️ **This is a design reference, not a product.** It uses **mocked data and local
-> fixtures only**. It does **not** connect to Firebase, Stripe, Neon, Cloudflare R2, or any
-> production SERVI service. It creates **no real payments**. It is fully isolated from the
-> web app in `../frontend` and `../backend` — it imports nothing from them and is imported
-> by nothing.
+> ✅ **Wired to the live backend.** Sign-in is Firebase phone OTP →
+> `POST /api/auth/firebase` (same session JWT as the web app). Requests submit to
+> `POST /api/service-requests` and appear in the admin dashboard inbox exactly like web
+> and WhatsApp requests. Orders, the live check-in timeline, addresses, ratings and
+> payment links all read/write the production API. Payments themselves stay on the web
+> payment pages (`pay.html` / `book.html`), opened in an in-app browser — no card data
+> ever touches the app.
+>
+> **Deferred to a later release (UI hidden or "coming soon"):** tips, in-app email
+> magic-link + Google sign-in (phone is the v1 path), push notifications (the app polls
+> while foregrounded).
+
+## Production setup & release
+
+1. **Firebase config files** (required for any native build): in the Firebase console for
+   project `servi-bec91`, register an iOS app with bundle id `mx.servi.app` and an Android
+   app with package `mx.servi.app`, then download `GoogleService-Info.plist` and
+   `google-services.json` into this folder (both are gitignored — use EAS file env vars for
+   CI). Android also needs your EAS keystore's SHA-1/SHA-256 fingerprints registered;
+   iOS needs the APNs auth key uploaded (silent-push phone verification).
+2. **API target**: `EXPO_PUBLIC_API_URL` / `EXPO_PUBLIC_WEB_URL` — set per profile in
+   [eas.json](eas.json) (development = localhost, preview = staging Render, production =
+   live Render). Fallback default is the production backend.
+3. **Build**: `eas build --profile development` for a dev client (Expo Go can NOT run this
+   app anymore — @react-native-firebase is a native module), `--profile preview` for
+   internal TestFlight/APK testing, `--profile production` for store submission
+   (`eas submit`).
+4. **Store prerequisites** (external): Apple Developer Program + App Store Connect record
+   for `mx.servi.app`, Google Play Console record for `mx.servi.app`, and a Firebase test
+   phone number (fixed OTP) noted in App Review notes so reviewers can sign in.
+5. Verify before release: `npm run typecheck && npm run lint && npm run check:sync`, then
+   the E2E pass in `../INTEROP.md` §7 (request → admin inbox → offer → check-in →
+   customer timeline).
 
 ---
 
@@ -30,11 +57,11 @@ cd native-app-reference  && npx expo start --web --port 8081
 cd partner-app-reference && npx expo start --web --port 8082
 ```
 
-Open **SV-204701** in both. The customer sees it *assigned to Pablo M.*; the specialist *is*
-Pablo — tap **Voy en camino → Llegué → Empecé** on the partner side (or use the customer
-app's Account → Demo states → **Avanzar fase**) and the customer's on-site timeline ticks in
-lockstep. Set your machine to a non-CDMX timezone for one run — the clock is CDMX-fixed, so
-both apps still agree.
+Both apps talk to the same backend, so the pairing is now live data: an order the admin
+offers to a specialist shows up in the partner app, and the specialist's
+**Voy en camino → Llegué → Empecé** check-ins tick the customer's on-site timeline in
+lockstep (customer side reads `GET /api/auth/orders/:id/lifecycle`). All wall-clock labels
+are CDMX-fixed, matching the CDMX-pinned server.
 
 > **Deliberate asymmetry:** the partner app has a "Why SERVI" value screen; this app does
 > not. The customer-facing version of that argument lives on the marketing site

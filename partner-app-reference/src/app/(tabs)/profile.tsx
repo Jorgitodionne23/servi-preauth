@@ -31,8 +31,7 @@ export default function ProfileScreen() {
   const { t, tn, lang } = useI18n();
   const router = useRouter();
   const {
-    session, availability, coverage, payoutAccount,
-    simulateOffer, resetDemo, setVerificationState, signOut,
+    session, availability, coverage, payoutAccount, signOut,
   } = usePartner();
 
   const s = session.specialist;
@@ -234,37 +233,6 @@ export default function ProfileScreen() {
         />
       </Card>
 
-      {/* ── Demo controls ───────────────────────────────────── */}
-      <Card style={{ marginTop: spacing.lg, gap: spacing.md, borderStyle: 'dashed' }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-          <Icon name="sliders" size={16} color={colors.textMuted} />
-          <Txt variant="bodySmStrong" style={{ flex: 1 }}>
-            {t('demo.title')}
-          </Txt>
-        </View>
-        <Txt variant="caption">{t('demo.body')}</Txt>
-        <Button label={t('demo.newOffer')} variant="secondary" size="sm" onPress={simulateOffer} />
-        <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-          <Button
-            label={t('prof.verified')}
-            variant="secondary"
-            size="sm"
-            block={false}
-            style={{ flex: 1 }}
-            onPress={() => setVerificationState('verified')}
-          />
-          <Button
-            label={t('prof.pending')}
-            variant="secondary"
-            size="sm"
-            block={false}
-            style={{ flex: 1 }}
-            onPress={() => setVerificationState('review')}
-          />
-        </View>
-        <Button label={t('demo.reset')} variant="ghost" size="sm" onPress={resetDemo} />
-      </Card>
-
       <View style={{ marginTop: spacing.lg }}>
         <Button
           label={t('prof.signOut')}
@@ -272,14 +240,10 @@ export default function ProfileScreen() {
           size="md"
           onPress={() => {
             signOut();
-            router.replace('/onboarding/welcome');
+            router.replace('/auth/phone');
           }}
         />
       </View>
-
-      <Txt variant="caption" center style={{ marginTop: spacing.lg }}>
-        {t('proto.banner')}
-      </Txt>
     </Screen>
   );
 }
