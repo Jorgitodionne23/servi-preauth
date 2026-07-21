@@ -63,26 +63,27 @@ npm install
 npx expo start
 ```
 
-### Testing without an Apple Developer account
+### Testing without an Apple Developer / Google Play account
 
-You explicitly **do not need** the $99/yr Apple Developer Program for any of the following.
-That membership is only required much later, to ship to TestFlight or the App Store.
+⚠️ **Expo Go no longer works here.** This app now depends on `@react-native-firebase/{app,auth}`
+and `expo-location` — native modules Expo Go doesn't ship with. Phone sign-in will fail with
+`firebase_unavailable` inside Expo Go. You need a **development build** instead, and neither
+platform requires a paid account for that:
 
-| Method | Needs Apple account? | What it's good for |
+```bash
+npx expo prebuild --clean
+npx expo run:ios        # or: npx expo run:android
+```
+
+| Method | Needs a paid dev account? | Notes |
 |---|---|---|
-| **Expo Go on your own iPhone/Android** | ❌ No | **The real "it's an app" test.** Install Expo Go from the App Store / Play Store, run `npx expo start`, scan the QR code. Runs on your actual phone with real touch, haptics and gestures. |
-| **Web browser** | ❌ No | `npm run web`. Phone-width, still feels native (tab bar, sheets, safe areas). Best for fast iteration and for showing someone on a laptop. |
-| **iOS Simulator** | ❌ No | `npx expo start` then press `i`. Needs Xcode (free from the Mac App Store) — a free Apple ID is enough, no paid membership. |
-| **Android emulator** | ❌ No | Press `a`. Needs Android Studio. |
-| **Hosted web build** | ❌ No | `npm run export:web` → deploy `dist/` to Cloudflare Pages (SERVI already uses it). Anyone opens the URL on their phone and can "Add to Home Screen" for a full-screen, app-like icon. Ideal for getting a real specialist to try it. |
-| TestFlight / App Store | ✅ Yes | Only when you go to production. Not needed for this prototype. |
+| **Android emulator or a sideloaded APK** | ❌ No | `eas build --profile development --platform android` → install the `.apk` on any emulator or real Android phone. No Play Console needed. |
+| **iOS Simulator** | ❌ No | `npx expo run:ios` — free Apple ID is enough. Phone auth works via a **Firebase Console test phone number** (fixed OTP, no real SMS — see `../docs/AUTH_STAGING_SMOKE_TEST.md`). |
+| **A real iPhone, via free Apple ID** | ❌ No (~7-day signing) | `npx expo run:ios --device`, sideloaded from Xcode with a free "Personal Team". Fine for solo testing. |
+| **TestFlight / handing an `.ipa` to another tester's iPhone** | ✅ Yes | First real point requiring the $99/yr Apple Developer Program. |
+| **Web browser** (`npm run web`) | ❌ No | Fast for UI iteration, but phone sign-in and location share don't work in a browser — use it for layout/flow review only, not a full login test. |
 
-**Expo Go works here on purpose.** Every dependency is a standard Expo SDK module — there
-are no custom native modules — so the app runs unmodified inside Expo Go. Keep it that way
-while this stays a prototype; adding a library that requires a native build is what forces
-you into the paid-account path early.
-
-Serving the static export locally needs a clean-URL server (`npx serve dist`), not a plain
+Serving a static web export locally needs a clean-URL server (`npx serve dist`), not a plain
 directory server, or client-side routing will 404 on refresh.
 
 ---
@@ -99,13 +100,11 @@ cd native-app-reference && npx expo start --web --port 8081
 cd partner-app-reference && npx expo start --web --port 8082
 ```
 
-Three job IDs are shared between the two fixtures on purpose, so the same order can be seen
-from both directions. Full mapping in **[INTEROP.md](../INTEROP.md)**.
-
-The demo to run: open order **SV-204701** in both. Customer side shows it *assigned to
-Pablo Méndez*. Specialist side is Pablo — tap **Voy en camino → Llegué → Empecé el
-trabajo**, and you're driving exactly the events (`en_route`/`arrived`/`started`) that
-populate the customer's live timeline.
+Both apps talk to the same live backend, so this is now a real end-to-end demo, not a shared
+fixture: submit a request from the customer app → find it in `admin.html`'s Inbox → offer it
+to a test specialist → accept it in the partner app → tap **Voy en camino → Llegué → Empecé
+el trabajo**, and watch those check-ins tick the customer's live timeline
+(`GET /api/auth/orders/:id/lifecycle`) in the other window in real time.
 
 ---
 
@@ -122,16 +121,11 @@ Spanish is the default; toggle ES/EN from the pill in any header.
 | **Completion** | `app/job/[id]/complete.tsx` | Evidence photos (framed as protection *for* the specialist), notes, a private client rating, and the payout summary. |
 | **Earnings** | `app/(tabs)/earnings.tsx` | Dark "ledger" hero, instant cash-out, next deposit, three money buckets, week chart, per-job breakdown showing what the client paid next to what you earned. |
 | **Deposits** | `app/earnings/payouts.tsx` | Payout history, each expandable to the jobs it covered. |
-| **Profile** | `app/(tabs)/profile.tsx` | Reliability-first stats, tier ladder with real perks, trades, availability, coverage, documents, payout account. Plus prototype demo controls. |
+| **Profile** | `app/(tabs)/profile.tsx` | Reliability-first stats, tier ladder with real perks, trades, availability, coverage, documents, payout account. |
 | **Why SERVI** | `app/why-servi.tsx` | The retention argument: a worked pricing example and an honest side-by-side against working independently. |
-| **Onboarding** | `app/onboarding/*` | 6 steps — identity → trades & skills → coverage → verification documents → CLABE/RFC payout setup → review & submit → awaiting verification. |
-| **Sign in** | `app/auth/{phone,otp}` | Phone + OTP only. Any 6 digits work. |
+| **Onboarding** | `app/onboarding/*` | 6 steps — identity → trades & skills → coverage → verification documents → CLABE/RFC payout setup → review & submit → awaiting verification. Submits to `POST /api/provider/onboarding` → lands in the admin Inbox as a `partner_applications` row. |
+| **Sign in** | `app/auth/{phone,otp}` | Firebase phone OTP → `POST /api/provider/auth/firebase`. A phone not yet in the `providers` table is routed to onboarding above. |
 | **Help** | `app/help.tsx` | Safety callout, email support (matching the web app's `CONTACT_MODE='email'` stopgap), and the five questions specialists actually ask. |
-
-### Demo controls
-
-Bottom of **Profile**: simulate a new job offer, flip between verified / under-review, and
-reset all data. They're fenced off in a dashed card and labelled as prototype-only.
 
 ---
 
@@ -187,17 +181,18 @@ changes is register: this is a work tool, not a storefront.
 ```
 src/
   app/            expo-router routes (see table above)
+  api/            partner.ts — backend wire types + mapping (fetchJobs, acceptOfferRemote, ...)
   components/     partner-specific components + the shared UI kit in ui/
-  data/           types, catalog, fixtures, the pricing port, the demo clock
+  data/           types, catalog, pricing port, time.ts (real clock, CDMX-fixed formatting)
+  lib/            config.ts, session.ts, api.ts, firebasePhone.ts, client.ts — networking layer
   i18n/           bilingual strings (ES default) + context, with plural handling
-  state/          PartnerStateContext — the single in-memory store
+  state/          PartnerStateContext — server-backed store (polls GET /api/provider/jobs)
   theme/          shared tokens + typography, plus partner.ts extensions
 ```
 
-`src/data/time.ts` pins the app to a **frozen demo clock** (`DEMO_NOW`, 2026-06-23) so it
-tells the same story as the customer fixtures. Offer countdowns are the one exception —
-they run on the real clock so the accept-or-lose-it pressure is genuine. A production build
-deletes that file.
+`src/data/time.ts` runs on the real device clock; all formatting (week/month boundaries,
+"today", CDMX hour labels) is fixed to `America/Mexico_City` to match the CDMX-pinned
+backend, regardless of the device's actual timezone.
 
 ---
 
@@ -215,7 +210,9 @@ All three pass clean as of the last commit. 28 routes export.
 
 ## What is deliberately NOT here
 
-- Real auth, real Stripe Connect, real document upload, real push notifications, real maps.
+- Stripe Connect payouts (earnings are read-only; instant cash-out and the payout-account
+  screen stay disabled), real document upload validation during onboarding, push
+  notifications (foreground polling instead), real maps.
 - In-app messaging beyond the entry point (the masked-contact concept is shown, the thread isn't built).
 - Multi-specialist / crew jobs.
 - Admin tooling — that stays in `frontend/admin.html`.

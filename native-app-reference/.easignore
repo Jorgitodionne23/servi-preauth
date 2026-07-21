@@ -1,0 +1,46 @@
+# EAS Build upload archive — when this file exists, EAS uses ONLY these rules
+# (it stops reading .gitignore for the upload step), which is why this file
+# repeats .gitignore's exclusions EXCEPT the two Firebase config files below.
+# Those must reach the cloud builder even though they're intentionally kept out of git.
+
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# local env files
+.env*.local
+
+# typescript
+*.tsbuildinfo
+
+example
+
+# generated native folders
+/ios
+/android

@@ -44,9 +44,8 @@ home-services platform for Santa Fe, Cuajimalpa de Morelos (CDMX). Built with
 
 This app has a counterpart: [`../partner-app-reference`](../partner-app-reference/README.md),
 the **specialist (SERVI Partner)** app. The two are designed to be one product seen from two
-sides — they share a design system, a frozen demo clock, the real pricing engine, and three
-order IDs (`SV-204815`, `SV-204766`, `SV-204701`). The full mapping and the production spec
-live in **[../INTEROP.md](../INTEROP.md)**.
+sides — they share a design system, the real pricing engine, and the same live backend. The
+full mapping and the production spec live in **[../INTEROP.md](../INTEROP.md)**.
 
 **Run both side by side** (customer left, specialist right):
 
@@ -84,11 +83,42 @@ npx expo start
 
 Then:
 
-- **Web (recommended for review):** press `w`, or run `npm run web`. Opens in the browser;
-  the design is phone-width and still feels native (tab bar, sheets, safe areas).
-- **iOS simulator:** press `i` (requires Xcode on macOS).
-- **Android emulator:** press `a` (requires Android Studio).
-- **Real device:** install **Expo Go** and scan the QR code.
+- **Web:** press `w`, or run `npm run web`. Good for fast UI iteration, but phone auth is
+  unavailable in a browser (Firebase phone OTP needs the native module) — login shows the
+  `auth.error.unavailable` message and everything past sign-in stays untestable this way.
+- **⚠️ Expo Go no longer works for a full test.** Since Phase 1, this app depends on
+  `@react-native-firebase/{app,auth}` — a native module Expo Go doesn't ship with. Scanning
+  the QR code into Expo Go will load the JS bundle but phone sign-in will fail with
+  `firebase_unavailable`. You need a **development build** instead (one-time per
+  platform/device, no paid account required):
+  ```bash
+  npx expo prebuild --clean          # generates ios/ and android/ native projects
+  npx expo run:ios                   # or: npx expo run:android
+  ```
+  This builds a custom "dev client" (still runs `npx expo start` under the hood for JS reload)
+  and installs it on the connected simulator/emulator/device. See **Testing without paying
+  for Apple/Google accounts** below for what does and doesn't need a paid membership.
+- **iOS simulator:** `npx expo run:ios` (requires Xcode; a free Apple ID is enough).
+- **Android emulator:** `npx expo run:android` (requires Android Studio; no account needed).
+
+### Testing without an Apple Developer / Google Play account
+
+You do **not** need either paid account ($99/yr Apple, $25 one-time Google) to run a full
+phone-OTP-to-payment-link test.
+
+| Method | Needs a paid dev account? | Notes |
+|---|---|---|
+| **Android emulator or a real Android phone (sideloaded APK)** | ❌ No | `eas build --profile development --platform android` produces an installable `.apk` — download the link and open it on any Android device, or drag it onto an emulator. No Play Console needed for this. |
+| **iOS Simulator** | ❌ No | `npx expo run:ios` or `eas build --profile development --platform ios --simulator` — a free Apple ID is enough. Firebase phone auth works fine here via the **Firebase Console test phone numbers** feature (fixed OTP, no real SMS sent — see `../docs/AUTH_STAGING_SMOKE_TEST.md`). |
+| **A real iPhone, via free Apple ID** | ❌ No (with a catch) | `npx expo run:ios --device` can sideload straight from Xcode using a free "Personal Team" signing identity. Works for ~7 days before needing a re-install/re-sign. Fine for hands-on testing, not for handing the build to someone else. |
+| **TestFlight / distributing an `.ipa` to other testers' iPhones** | ✅ Yes | This is genuinely the first point that requires the $99/yr Apple Developer Program — device-specific ad-hoc signing across a team requires it. |
+| **Play Store internal testing track** | ✅ Yes (Play Console) | Sideloading the `.apk` directly (above) avoids this for solo testing. |
+
+**Bottom line:** you can drive the entire request flow — phone OTP sign-in, Smart Request
+submission, seeing it land in the admin inbox, an admin offer, a specialist accepting and
+checking in, the customer's live timeline updating, and opening the payment link — on an
+Android emulator/sideloaded APK or the iOS Simulator, with zero spend. Paying only becomes
+necessary when you want to hand a build to someone else's iPhone or publish to the stores.
 
 To produce a static web build (what CI/verification uses):
 

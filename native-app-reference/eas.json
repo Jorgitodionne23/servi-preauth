@@ -15,7 +15,7 @@
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://servi-preauth-staging.onrender.com",
+        "EXPO_PUBLIC_API_URL": "https://servi-staging.onrender.com",
         "EXPO_PUBLIC_WEB_URL": "https://servi-preauth.pages.dev"
       }
     },

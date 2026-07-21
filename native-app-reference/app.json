@@ -22,7 +22,13 @@
     "android": {
       "package": "mx.servi.app",
       "googleServicesFile": "./google-services.json",
-      "permissions": ["android.permission.CAMERA", "android.permission.RECORD_AUDIO"],
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#eaf5f7",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -73,6 +79,12 @@
     "experiments": {
       "typedRoutes": false,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "a3316b39-2287-4d66-bde8-f2cae7fc479f"
+      }
     }
   }
 }
