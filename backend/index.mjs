@@ -1187,19 +1187,28 @@ const GOOGLE_SCRIPT_WEBHOOK_URL = process.env.SHEETS_WEBHOOK_URL || '';
 const ADMIN_API_TOKEN = process.env.ADMIN_API_TOKEN || '';
 const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET || '';
 const FRONTEND_BASE_URL = (process.env.FRONTEND_BASE_URL || process.env.PUBLIC_BASE_URL || 'https://servi-preauth.pages.dev').replace(/\/+$/, '');
+// A verified transactional-mail domain is essential for deliverability. SMTP_* supports
+// providers such as Postmark, Resend SMTP, or Amazon SES; the GMAIL_* variables remain a
+// backwards-compatible development fallback.
 const GMAIL_USER = process.env.GMAIL_USER || '';
 const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD || '';
+const SMTP_HOST = process.env.SMTP_HOST || (GMAIL_USER ? 'smtp.gmail.com' : '');
+const SMTP_PORT = Number(process.env.SMTP_PORT || (GMAIL_USER ? 587 : 0));
+const SMTP_USER = process.env.SMTP_USER || GMAIL_USER;
+const SMTP_PASSWORD = process.env.SMTP_PASSWORD || GMAIL_APP_PASSWORD;
+const SMTP_SECURE = String(process.env.SMTP_SECURE || '').toLowerCase() === 'true';
+const EMAIL_FROM = process.env.EMAIL_FROM || (GMAIL_USER ? `"SERVI" <${GMAIL_USER}>` : '');
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
 const anthropic = ANTHROPIC_API_KEY ? new Anthropic({ apiKey: ANTHROPIC_API_KEY }) : null;
 const PARSE_SYSTEM_PROMPT = buildParseSystemPrompt();
 const MEDIA_ANALYSIS_SYSTEM_PROMPT = buildMediaAnalysisSystemPrompt();
-const emailTransporter = (GMAIL_USER && GMAIL_APP_PASSWORD)
+const emailTransporter = (SMTP_HOST && SMTP_PORT && SMTP_USER && SMTP_PASSWORD && EMAIL_FROM)
   ? nodemailer.createTransport({
-      host: 'smtp.gmail.com',
-      port: 587,
-      secure: false,
-      requireTLS: true,
-      auth: { user: GMAIL_USER, pass: GMAIL_APP_PASSWORD },
+      host: SMTP_HOST,
+      port: SMTP_PORT,
+      secure: SMTP_SECURE,
+      requireTLS: !SMTP_SECURE,
+      auth: { user: SMTP_USER, pass: SMTP_PASSWORD },
       connectionTimeout: 10000,
       greetingTimeout: 10000,
       socketTimeout: 15000,
@@ -1228,6 +1237,9 @@ if (!endpointSecret) {
 
 if (!GOOGLE_SCRIPT_WEBHOOK_URL) {
   console.warn('[startup] GOOGLE_SCRIPT_WEBHOOK_URL is not set — Google Sheets sync will be skipped');
+}
+if (IS_PRODUCTION && !emailTransporter) {
+  console.warn('[startup] Transactional email is not configured. Set SMTP_* and EMAIL_FROM to send verification emails.');
 }
 
 const normalizeOrigin = (value) => String(value || '').replace(/\/+$/, '');
@@ -6815,12 +6827,12 @@ app.post('/api/auth/firebase', publicFormLimit, async (req, res) => {
           console.warn('[POST /api/auth/firebase] ignored stale phone verification for user:', user.id);
         }
       }
-      if (emailVerified !== null) {
+      if (emailVerified === true) {
         const currentEmailNorm = user.email ? normalizeEmail(user.email) : null;
-        if (!emailVerified || (emailNormFromToken && currentEmailNorm && emailNormFromToken === currentEmailNorm)) {
-          vParams.push(emailVerified);
+        if (emailNormFromToken && currentEmailNorm && emailNormFromToken === currentEmailNorm) {
+          vParams.push(true);
           vSets.push(`email_verified = $${vParams.length}`);
-        } else if (emailVerified) {
+        } else {
           console.warn('[POST /api/auth/firebase] ignored stale email verification for user:', user.id);
         }
       }
@@ -7197,7 +7209,10 @@ app.patch('/api/auth/me', publicFormLimit, async (req, res) => {
   }
 });
 
-// POST /api/auth/send-email-verification — send verification email via Gmail + token
+// POST /api/auth/send-email-verification — send a first-party verification email.
+// The URL is deliberately included in both HTML and text parts. Some clients suppress
+// button-only links or make them hard to use in their junk view; a plain URL gives users
+// a reliable copy/paste fallback and avoids Firebase's generic mail template.
 app.post('/api/auth/send-email-verification', publicFormLimit, async (req, res) => {
   const payload = await requireUserAuth(req, res);
   if (!payload) return;
@@ -7217,26 +7232,28 @@ app.post('/api/auth/send-email-verification', publicFormLimit, async (req, res) 
       [verifyToken, expiresAt, payload.user_id]
     );
     const verifyUrl = `${FRONTEND_BASE_URL}/email-verified.html?token=${verifyToken}`;
-    const htmlContent = `
-      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 480px; margin: 0 auto; padding: 32px 24px; color: #333;">
-        <h2 style="font-size: 20px; font-weight: 600; margin: 0 0 8px 0;">Verifica tu correo en SERVI</h2>
-        <p style="color: #666; font-size: 15px; margin: 0 0 24px 0; line-height: 1.5;">
-          Haz clic en el botón para confirmar tu dirección de correo y activar tu cuenta.
-        </p>
-        <div style="margin-bottom: 24px;">
-          <a href="${verifyUrl}" style="display: inline-block; background: #000; color: #fff; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-size: 15px; font-weight: 500;">
-            Verificar correo
-          </a>
-        </div>
-        <p style="color: #999; font-size: 13px; margin: 0; line-height: 1.5;">
-          Este enlace expira en 24 horas. Si no solicitaste esto, ignora este correo.
-        </p>
-      </div>
-    `;
+    const htmlContent = `<!doctype html>
+<html lang="es"><body style="margin:0;padding:0;background:#f7f7f5;color:#181818;font-family:Arial,sans-serif;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td align="center" style="padding:32px 16px;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:520px;background:#ffffff;border:1px solid #e8e8e5;border-radius:12px;"><tr><td style="padding:32px 28px;">
+      <p style="margin:0 0 20px;font-size:14px;font-weight:700;letter-spacing:1.5px;">SERVI</p>
+      <h1 style="margin:0 0 12px;font-size:24px;line-height:1.25;">Verifica tu correo</h1>
+      <p style="margin:0 0 24px;color:#4b4b4b;font-size:16px;line-height:1.55;">Confirma esta dirección de correo para continuar con tu cuenta SERVI.</p>
+      <table role="presentation" cellspacing="0" cellpadding="0" style="margin:0 0 24px;"><tr><td bgcolor="#111111" style="border-radius:8px;">
+        <a href="${verifyUrl}" style="display:inline-block;padding:13px 22px;color:#ffffff;font-size:16px;font-weight:700;text-decoration:none;">Verificar mi correo</a>
+      </td></tr></table>
+      <p style="margin:0 0 8px;color:#666666;font-size:13px;line-height:1.5;">Si el botón no funciona, copia y pega este enlace en tu navegador:</p>
+      <p style="margin:0 0 24px;word-break:break-all;font-size:13px;line-height:1.5;"><a href="${verifyUrl}" style="color:#1455a3;text-decoration:underline;">${verifyUrl}</a></p>
+      <p style="margin:0;color:#777777;font-size:13px;line-height:1.5;">Este enlace expira en 24 horas. Si no solicitaste esta verificación, puedes ignorar este correo.</p>
+    </td></tr></table>
+  </td></tr></table>
+</body></html>`;
+    const textContent = `SERVI\n\nVerifica tu correo para continuar con tu cuenta.\n\nAbre este enlace:\n${verifyUrl}\n\nEste enlace expira en 24 horas. Si no solicitaste esta verificación, puedes ignorar este correo.`;
     await emailTransporter.sendMail({
-      from: `"SERVI" <${GMAIL_USER}>`,
+      from: EMAIL_FROM,
       to: email,
       subject: 'Verifica tu correo en SERVI',
+      text: textContent,
       html: htmlContent
     });
     return res.json({ sent: true });

@@ -303,6 +303,7 @@ The two Expo apps are no longer mocked prototypes — they are the production cu
 - `DATABASE_URL` — Neon PostgreSQL connection string
 - `ADMIN_API_TOKEN` — Shared secret for admin API routes
 - `FRONTEND_BASE_URL` — Cloudflare Pages URL (used to build payment links)
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_SECURE`, `EMAIL_FROM` — transactional email provider and verified SERVI sender. Configure SPF, DKIM, and DMARC for the `EMAIL_FROM` domain; Gmail app-password sending is development-only fallback.
 - `SHEETS_WEBHOOK_URL` — Google Apps Script exec URL
 - `FIREBASE_SERVICE_ACCOUNT_JSON` — Firebase Admin SDK credentials (backend auth verification)
 - `JWT_SECRET` — Custom session token secret. Required in production: backend throws at startup if missing when `NODE_ENV=production`. Locally it falls back to a dev-only string so a missing `.env` doesn't crash development.

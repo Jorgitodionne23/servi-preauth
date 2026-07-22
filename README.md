@@ -102,6 +102,8 @@ There is no committed `.env.example` — copy the table below into your local `.
 | `DATABASE_URL` | Yes | Neon PostgreSQL connection string |
 | `ADMIN_API_TOKEN` | Yes | Shared secret for `/api/admin/*` Bearer auth |
 | `FRONTEND_BASE_URL` | Yes | Cloudflare Pages URL — used to build payment links |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_SECURE` | Yes for production email | SMTP credentials for a transactional provider. Use a provider with a verified SERVI sending domain; `SMTP_SECURE=true` for implicit TLS (normally port 465). |
+| `EMAIL_FROM` | Yes for production email | Verified sender, e.g. `SERVI <hola@your-domain.mx>`. The domain must have SPF, DKIM, and DMARC configured with the email provider. |
 | `FIREBASE_SERVICE_ACCOUNT_JSON` | Yes (prod) | Firebase Admin SDK service account JSON — required to verify Firebase ID tokens and check revocation |
 | `JWT_SECRET` | Yes (prod) | Secret used to sign the custom session JWT. Must be set on Render; backend throws at startup in production if missing |
 | `ANTHROPIC_API_KEY` | Yes (prod) | Backend-only Claude API key for Smart Request text parsing (`POST /api/parse-request`). When missing, the request falls back to a client-side heuristic |
@@ -114,6 +116,8 @@ There is no committed `.env.example` — copy the table below into your local `.
 | `CORS_ALLOWLIST` | Optional | Extra comma-separated allowed origins |
 | `NODE_ENV` | Yes | `production` on Render; anything else locally |
 | `ALLOW_INSECURE_DB_TLS` | Dev only | Setting `true` while `NODE_ENV=production` throws at startup |
+
+`GMAIL_USER` and `GMAIL_APP_PASSWORD` remain supported only as a development fallback. They are not a reliable production sender: use a transactional provider and a verified custom domain so verification messages are authenticated and do not inherit a consumer Gmail sender's reputation.
 
 ---
 

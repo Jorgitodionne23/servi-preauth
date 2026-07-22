@@ -88,6 +88,16 @@
       border-radius: 50%;
       animation: spin 0.82s linear infinite;
     }
+    .verification-card.is-pending .success-icon,
+    .verification-card.is-error .success-icon {
+      color: #c85a4d;
+      background: rgba(200, 90, 77, 0.09);
+      border-color: rgba(200, 90, 77, 0.28);
+    }
+    .verification-card.is-pending #verification-message,
+    .verification-card.is-error #verification-message {
+      color: #b84f43;
+    }
     .verification-card h1 {
       font-family: var(--font-heading, 'Outfit', sans-serif);
       font-size: clamp(30px, 8vw, 42px);
@@ -198,20 +208,23 @@
   <script>
     window.__renderEmailVerifiedScreen = function(options) {
       var opts = options || {};
+      var outcome = opts.loading ? 'loading' : (opts.outcome || 'success');
+      var unsuccessful = outcome === 'pending' || outcome === 'error';
       var es = opts.es !== undefined
         ? opts.es
         : (localStorage.getItem('servi_lang') === 'es' || !localStorage.getItem('servi_lang'));
       var canClose = opts.canClose !== undefined ? opts.canClose : !!window.opener;
-      var title = opts.loading
+      var title = opts.title || (outcome === 'loading'
         ? (es ? 'Verificando correo' : 'Verifying email')
-        : (es ? 'Correo verificado' : 'Email verified');
-      var message = opts.loading
+        : (unsuccessful ? (es ? 'Verificación pendiente' : 'Verification pending') : (es ? 'Correo verificado' : 'Email verified')));
+      var message = opts.message || (outcome === 'loading'
         ? (es ? 'Estamos confirmando el enlace. Mantén esta ventana abierta un momento.' : 'We are confirming the link. Keep this window open for a moment.')
-        : (es ? 'Tu correo ha sido verificado. Puedes volver a la ventana donde empezaste el registro.' : 'Your email has been verified. You can return to the window where you started signing up.');
-      var buttonText = opts.loading
+        : (unsuccessful ? (es ? 'No pudimos confirmar este enlace. Solicita uno nuevo e intenta de nuevo.' : 'We could not confirm this link. Request a new one and try again.') : (es ? 'Tu correo ha sido verificado. Puedes volver a la ventana donde empezaste el registro.' : 'Your email has been verified. You can return to the window where you started signing up.')));
+      var buttonText = outcome === 'loading'
         ? (es ? 'Verificando...' : 'Verifying...')
         : (canClose ? (es ? 'Cerrar ventana' : 'Close window') : (es ? 'Cerrar pestaña' : 'Close tab'));
       var verifiedIcon = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><path d="M5 12.5l4.2 4.2L19 7" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      var pendingIcon = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><path d="M12 7v5" stroke-width="2.4" stroke-linecap="round"/><path d="M12 16.5h.01" stroke-width="3" stroke-linecap="round"/><path d="M10.1 3.9 3.3 16a2.3 2.3 0 0 0 2 3.4h13.4a2.3 2.3 0 0 0 2-3.4L13.9 3.9a2.2 2.2 0 0 0-3.8 0Z" stroke-width="1.8" stroke-linejoin="round"/></svg>';
 
       if (!document.body) {
         document.addEventListener('DOMContentLoaded', function() {
@@ -224,19 +237,19 @@
       document.body.innerHTML =
         '<main class="verification-shell" aria-live="polite">' +
           '<a href="/index.html" class="site-header__logo logo verification-logo">SERVI<span class="logo-dot">.</span></a>' +
-          '<section class="verification-card' + (opts.loading ? ' is-loading' : '') + '" id="verification-card" aria-labelledby="verification-title">' +
-            '<div class="success-icon" role="img" aria-label="' + (opts.loading ? (es ? 'Verificando' : 'Verifying') : (es ? 'Verificación exitosa' : 'Verified')) + '">' + (opts.loading ? '' : verifiedIcon) + '</div>' +
+          '<section class="verification-card is-' + outcome + '" id="verification-card" aria-labelledby="verification-title">' +
+            '<div class="success-icon" role="img" aria-label="' + (outcome === 'loading' ? (es ? 'Verificando' : 'Verifying') : (unsuccessful ? (es ? 'Verificación no confirmada' : 'Verification not confirmed') : (es ? 'Verificación exitosa' : 'Verified'))) + '">' + (outcome === 'loading' ? '' : (unsuccessful ? pendingIcon : verifiedIcon)) + '</div>' +
             '<h1 id="verification-title">' + title + '</h1>' +
             '<p id="verification-message">' + message + '</p>' +
             '<div class="countdown hidden" id="countdown"></div>' +
-            '<button class="close-btn" id="close-btn" type="button"' + (opts.loading ? ' disabled' : '') + '>' + buttonText + '</button>' +
-            '<div class="verification-note" id="verification-note">' + (canClose ? (es ? 'Si la ventana no se cierra sola, puedes cerrarla manualmente.' : 'If the window does not close automatically, you can close it manually.') : (es ? 'Para terminar tu registro, vuelve a la pestaña donde lo iniciaste. Tu correo ya está verificado allí.' : 'To finish signing up, return to the tab where you started. Your email is already verified there.')) + '</div>' +
+            '<button class="close-btn" id="close-btn" type="button"' + (outcome === 'loading' ? ' disabled' : '') + '>' + buttonText + '</button>' +
+            '<div class="verification-note" id="verification-note">' + (unsuccessful ? (es ? 'Vuelve a la pestaña donde lo solicitaste para pedir un enlace nuevo.' : 'Return to the tab where you requested it to get a new link.') : (canClose ? (es ? 'Si la ventana no se cierra sola, puedes cerrarla manualmente.' : 'If the window does not close automatically, you can close it manually.') : (es ? 'Para terminar tu registro, vuelve a la pestaña donde lo iniciaste. Tu correo ya está verificado allí.' : 'To finish signing up, return to the tab where you started. Your email is already verified there.'))) + '</div>' +
           '</section>' +
         '</main>' +
         '<div id="auth-modal-global"></div>';
 
       var closeBtn = document.getElementById('close-btn');
-      if (closeBtn && !opts.loading) {
+      if (closeBtn && outcome !== 'loading') {
         closeBtn.addEventListener('click', function() {
           window.close();
         });
@@ -304,16 +317,11 @@
       } catch (err) {
         console.error('[email-verified] Token verification error:', err);
         // Show error UI: render success card but with error message
-        window.__renderEmailVerifiedScreen({ loading: false, es: es, canClose: !!window.opener });
-        var msgEl = document.getElementById('verification-message');
-        if (msgEl) {
-          msgEl.textContent = es ? 'Este enlace es inválido o ya expiró.' : 'This link is invalid or has expired.';
-          msgEl.style.color = '#c55d49';
-        }
-        var titleEl = document.getElementById('verification-title');
-        if (titleEl) {
-          titleEl.textContent = es ? 'Enlace inválido' : 'Invalid link';
-        }
+        window.__renderEmailVerifiedScreen({
+          outcome: 'error', es: es, canClose: !!window.opener,
+          title: es ? 'Enlace inválido' : 'Invalid link',
+          message: es ? 'Este enlace es inválido o ya expiró.' : 'This link is invalid or has expired.'
+        });
         return;
       }
     }
@@ -328,16 +336,11 @@
     }
 
     if (window.__emailLinkProcessingStatus === 'missing-email' || window.__emailLinkProcessingStatus === 'error') {
-      window.__renderEmailVerifiedScreen({ loading: false, es: es, canClose: !!window.opener });
-      var errorMsgEl = document.getElementById('verification-message');
-      if (errorMsgEl) {
-        errorMsgEl.textContent = es ? 'No pudimos confirmar este enlace. Solicita un nuevo enlace e intenta de nuevo.' : 'We could not confirm this link. Request a new link and try again.';
-        errorMsgEl.style.color = '#c55d49';
-      }
-      var errorTitleEl = document.getElementById('verification-title');
-      if (errorTitleEl) {
-        errorTitleEl.textContent = es ? 'Verificación pendiente' : 'Verification pending';
-      }
+      window.__renderEmailVerifiedScreen({
+        outcome: 'pending', es: es, canClose: !!window.opener,
+        title: es ? 'Verificación pendiente' : 'Verification pending',
+        message: es ? 'No pudimos confirmar este enlace. Solicita un nuevo enlace e intenta de nuevo.' : 'We could not confirm this link. Request a new link and try again.'
+      });
       return;
     }
 
@@ -349,16 +352,11 @@
         window.__renderEmailVerifiedScreen({ loading: false, es: es, canClose: !!window.opener });
         return;
       }
-      window.__renderEmailVerifiedScreen({ loading: false, es: es, canClose: !!window.opener });
-      var accountMsgEl = document.getElementById('verification-message');
-      if (accountMsgEl) {
-        accountMsgEl.textContent = es ? 'No pudimos confirmar este correo. Solicita un nuevo enlace desde tu cuenta.' : 'We could not confirm this email. Request a new link from your account.';
-        accountMsgEl.style.color = '#c55d49';
-      }
-      var accountTitleEl = document.getElementById('verification-title');
-      if (accountTitleEl) {
-        accountTitleEl.textContent = es ? 'Verificación pendiente' : 'Verification pending';
-      }
+      window.__renderEmailVerifiedScreen({
+        outcome: 'pending', es: es, canClose: !!window.opener,
+        title: es ? 'Verificación pendiente' : 'Verification pending',
+        message: es ? 'No pudimos confirmar este correo. Solicita un nuevo enlace desde tu cuenta.' : 'We could not confirm this email. Request a new link from your account.'
+      });
       return;
     }
 

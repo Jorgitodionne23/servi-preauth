@@ -2116,30 +2116,55 @@
   window.__sendEmailVerification = async function (email) {
     if (!email) return false;
     try {
+      var emailNorm = String(email || '').trim().toLowerCase();
+      if (!emailNorm || !emailNorm.includes('@')) return false;
       var ok = await ensureFirebase();
       if (!ok) return false;
       var user = await waitForCurrentFirebaseUser(1500);
       if (!user) return false;
-      var emailNorm = String(email || '').trim().toLowerCase();
-      if (!emailNorm || !emailNorm.includes('@')) return false;
-      var verificationSettings = {
+      var currentEmail = String(user.email || '').trim().toLowerCase();
+
+      // Updating a Firebase-owned address must still use Firebase's action code so
+      // its identity record changes with the SERVI profile. Normal verification uses
+      // our branded, authenticated transactional-email route below.
+      if (!currentEmail) {
+        if (!auth.sendSignInLinkToEmail) return false;
+        await auth.sendSignInLinkToEmail(emailNorm, {
+          url: window.location.origin + '/email-verified.html',
+          handleCodeInApp: true
+        });
+        return true;
+      }
+      if (currentEmail && currentEmail !== emailNorm) {
+        if (!user.verifyBeforeUpdateEmail) return false;
+        await user.verifyBeforeUpdateEmail(emailNorm, {
+          url: window.location.origin + '/email-verified.html',
+          handleCodeInApp: true
+        });
+        return true;
+      }
+      if (currentEmail === emailNorm && user.emailVerified === true) {
+        await syncVerifiedEmailToBackend(emailNorm, { broadcast: true });
+        return true;
+      }
+
+      var sessionToken = window.getSessionToken ? window.getSessionToken() : null;
+      if (!sessionToken) return false;
+      var response = await fetch(API() + '/api/auth/send-email-verification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + sessionToken },
+        body: JSON.stringify({})
+      });
+      var data = await response.json().catch(function () { return {}; });
+      if (response.ok && data.sent === true) return true;
+
+      // Keep local development and a temporarily unconfigured deployment usable.
+      // Production should configure SMTP + EMAIL_FROM so this fallback is not used.
+      if (data.error !== 'email_not_configured' || !user.sendEmailVerification) return false;
+      await user.sendEmailVerification({
         url: window.location.origin + '/email-verified.html',
         handleCodeInApp: true
-      };
-      var currentEmail = String(user.email || '').trim().toLowerCase();
-      if (!currentEmail) {
-        await auth.sendSignInLinkToEmail(emailNorm, verificationSettings);
-      } else if (currentEmail === emailNorm) {
-        if (user.emailVerified === true) {
-          await syncVerifiedEmailToBackend(emailNorm, { broadcast: true });
-          return true;
-        }
-        if (!user.sendEmailVerification) return false;
-        await user.sendEmailVerification(verificationSettings);
-      } else {
-        if (!user.verifyBeforeUpdateEmail) return false;
-        await user.verifyBeforeUpdateEmail(emailNorm, verificationSettings);
-      }
+      });
       return true;
     } catch (err) {
       console.error('[sendEmailVerification] Error:', err);
