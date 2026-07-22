@@ -34,7 +34,7 @@
     explicit.API_BASE ||
     window.CONFIG_API_BASE ||
     window.SERVI_API_BASE ||
-    (placeholderApi !== '__API_BASE__' ? placeholderApi : '') ||
+    (/^https?:\/\//i.test(placeholderApi) ? placeholderApi : '') ||
     '';
   const normalizedApi = (rawApi || '').replace(/\/+$/, '') || fallbackApi;
 
@@ -44,7 +44,7 @@
     explicit.STRIPE_PUBLISHABLE_KEY ||
     window.CONFIG_STRIPE_PUBLISHABLE_KEY ||
     window.STRIPE_PUBLISHABLE_KEY ||
-    (placeholderPk !== '__STRIPE_PK__' ? placeholderPk : localTestPk) ||
+    (/^pk_(?:live|test)_/.test(placeholderPk) ? placeholderPk : localTestPk) ||
     '';
 
   // Single source of truth for the WhatsApp support number.
