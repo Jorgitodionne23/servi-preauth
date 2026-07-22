@@ -792,6 +792,36 @@ export async function initDb() {
     CREATE INDEX IF NOT EXISTS idx_auth_events_type
       ON auth_events(event_type, created_at DESC);
 
+    -- System error / bug log. One row per distinct error (rolled up by fingerprint);
+    -- 'count' increments on repeats. Powers the admin dashboard "Errores" tab so a
+    -- non-technical operator can spot + triage backend and frontend breakage.
+    CREATE TABLE IF NOT EXISTS error_events (
+      id            BIGSERIAL PRIMARY KEY,
+      fingerprint   TEXT UNIQUE NOT NULL,   -- hash(source|tag|normalized message) for roll-up
+      source        TEXT NOT NULL,          -- 'backend' | 'frontend' | 'uncaught' | 'express'
+      level         TEXT DEFAULT 'error',   -- 'error' | 'warn' | 'critical'
+      tag           TEXT,                   -- route tag e.g. [POST /capture-order] or page path
+      message       TEXT,
+      stack         TEXT,
+      url           TEXT,                   -- request URL or page URL
+      user_agent    TEXT,
+      ip            TEXT,
+      user_id       TEXT,
+      context       JSONB,                  -- {orderId, paymentIntentId, eventType, ...}
+      count         INT DEFAULT 1,          -- occurrences rolled into this fingerprint
+      status        TEXT DEFAULT 'new',     -- new, seen, resolved, ignored
+      admin_notes   TEXT,
+      first_seen_at TIMESTAMPTZ DEFAULT NOW(),
+      last_seen_at  TIMESTAMPTZ DEFAULT NOW(),
+      created_at    TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_error_events_status
+      ON error_events(status, last_seen_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_error_events_source
+      ON error_events(source, last_seen_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_error_events_lastseen
+      ON error_events(last_seen_at DESC);
+
   `);
 }
 

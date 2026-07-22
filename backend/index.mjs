@@ -211,6 +211,96 @@ async function logAuthEvent(req, userId, eventType, metadata) {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// System error / bug log — fire-and-forget capture into error_events, surfaced on
+// the admin dashboard "Errores" tab so a non-technical operator can spot + triage
+// backend and frontend breakage. Never throws; rolls up repeats by fingerprint.
+// ─────────────────────────────────────────────────────────────────────────────
+const _origConsoleError = console.error.bind(console);
+let _inErrorCapture = false; // re-entrancy guard: capture must never recurse into itself
+
+// Collapse volatile tokens (ids, uuids, hex, numbers) so repeats of "the same"
+// error share one fingerprint instead of flooding the list.
+function normalizeErrorMessage(msg) {
+  return String(msg || '')
+    .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '<uuid>')
+    .replace(/\b(?:pi|cus|ch|re|seti|sub|in|evt)_[A-Za-z0-9]+/g, '<id>')
+    .replace(/\b[0-9a-f]{16,}\b/gi, '<hex>')
+    .replace(/\d+/g, '<n>')
+    .slice(0, 500);
+}
+
+// Best-effort error/bug log writer. Never throws. `err` may be an Error or a string.
+// `opts`: { req, context, level }. Rolls up by fingerprint; a resolved error that
+// recurs is auto-reopened to 'new' (regression signal); 'ignored'/'seen' stay put.
+async function logErrorEvent(source, tag, err, { req, context, level } = {}) {
+  try {
+    const isErrObj = err && typeof err === 'object';
+    const rawMessage = isErrObj ? (err.message || String(err)) : String(err ?? '');
+    const message = rawMessage.slice(0, 2000) || null;
+    const stack = isErrObj && err.stack ? String(err.stack).slice(0, 8000) : null;
+    const tagStr = (tag ? String(tag) : '').slice(0, 300) || null;
+    const src = String(source || 'backend').slice(0, 40);
+    const lvl = String(level || 'error').slice(0, 20);
+
+    const ip = (req?.headers?.['x-forwarded-for'] || req?.ip || '').toString().split(',')[0].trim() || null;
+    const ua = (req?.headers?.['user-agent'] || '').toString().slice(0, 512) || null;
+    // Prefer an explicit page URL from context (frontend reports) over the request URL
+    // (for a frontend report, req.originalUrl is just the intake endpoint).
+    const url = ((context?.url) || (req ? (req.originalUrl || req.url || '') : '')).toString().slice(0, 500) || null;
+    const userId = (context?.userId || req?.user?.id || null);
+
+    const fingerprint = createHash('sha256')
+      .update(src + '|' + (tagStr || '') + '|' + normalizeErrorMessage(message))
+      .digest('hex')
+      .slice(0, 16);
+
+    const ctxObj = context ? { ...context } : null;
+    if (ctxObj) { delete ctxObj.userId; delete ctxObj.url; }
+    const ctx = ctxObj && Object.keys(ctxObj).length ? JSON.stringify(ctxObj).slice(0, 4000) : null;
+
+    await pool.query(
+      `INSERT INTO error_events
+         (fingerprint, source, level, tag, message, stack, url, user_agent, ip, user_id, context)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+       ON CONFLICT (fingerprint) DO UPDATE SET
+         count = error_events.count + 1,
+         last_seen_at = NOW(),
+         level = EXCLUDED.level,
+         stack = COALESCE(EXCLUDED.stack, error_events.stack),
+         context = COALESCE(EXCLUDED.context, error_events.context),
+         status = CASE WHEN error_events.status = 'resolved' THEN 'new' ELSE error_events.status END`,
+      [fingerprint, src, lvl, tagStr, message, stack, url, ua, ip, userId, ctx]
+    );
+  } catch (e) {
+    // Use the ORIGINAL console.error so this failure can't recurse through the wrap.
+    _origConsoleError('[logErrorEvent]', e && e.message);
+  }
+}
+
+// Wrap console.error so the 200+ existing `console.error('[tag]', err)` catch-block
+// logs are captured automatically, with no per-route edits. The first string arg is
+// the tag; the first Error arg supplies the stack.
+console.error = function (...args) {
+  _origConsoleError(...args);
+  if (_inErrorCapture) return;
+  try {
+    _inErrorCapture = true;
+    const tag = args.find(a => typeof a === 'string') || 'console.error';
+    // Never re-capture our own logger's failures (already printed above).
+    if (typeof tag === 'string' && tag.startsWith('[logErrorEvent]')) return;
+    const errArg = args.find(a => a instanceof Error)
+      || args.find(a => a && typeof a === 'object' && a.stack)
+      || args.filter(a => typeof a === 'string').slice(1).join(' ')
+      || tag;
+    logErrorEvent('backend', typeof tag === 'string' ? tag : 'console.error', errArg);
+  } catch (_) {
+    // never let logging break console.error
+  } finally {
+    _inErrorCapture = false;
+  }
+};
+
 // Coarse device label from a raw user-agent ("Chrome · iPhone"). Intentionally
 // rough — the activity list only needs enough to let a user spot a stranger.
 function summarizeUserAgent(ua) {
@@ -1308,7 +1398,8 @@ async function postToGoogleWebhook(payload, { maxAttempts = 3, delayMs = 1000, t
       clearTimeout(timer);
     }
   }
-  console.error('[webhook] all retry attempts exhausted for payload:', JSON.stringify(payload));
+  logErrorEvent('backend', '[Google Sheets sync] retries exhausted', new Error(`Sheets webhook failed after ${maxAttempts} attempts`), { context: { payloadType: payload?.type } });
+  _origConsoleError('[webhook] all retry attempts exhausted for payload:', JSON.stringify(payload));
 }
 
 function notifyConsentChange({
@@ -4392,7 +4483,8 @@ app.post('/cancel-order', adminRateLimit, requireAdminAuth, async (req, res) => 
       message
     });
   } catch (err) {
-    console.error('cancel-order error:', err);
+    logErrorEvent('backend', '[POST /cancel-order]', err, { req, level: 'critical', context: { orderId } });
+    _origConsoleError('cancel-order error:', err);
     const status = err.status || 400;
     return res.status(status).json({
       error: err.code || 'cancel_failed',
@@ -4486,7 +4578,8 @@ app.post('/refund-order', adminRateLimit, requireAdminAuth, async (req, res) => 
           : 'Reembolso parcial realizado.'
     });
   } catch (err) {
-    console.error('refund-order error:', err);
+    logErrorEvent('backend', '[POST /refund-order]', err, { req, level: 'critical', context: { orderId } });
+    _origConsoleError('refund-order error:', err);
     const status = err.status || 400;
     return res.status(status).json({
       error: err.code || 'refund_failed',
@@ -4551,7 +4644,8 @@ app.post('/capture-order', adminRateLimit, requireAdminAuth, async (req, res) =>
     }
     return res.send({ ok: true, paymentIntentId: updated.id, status: updated.status, captured });
   } catch (e) {
-    console.error('capture-order error:', e);
+    logErrorEvent('backend', '[POST /capture-order]', e, { req, level: 'critical', context: { orderId: orderRow?.id, paymentIntentId: piId } });
+    _origConsoleError('[POST /capture-order]', e); // _orig avoids double-capture via the console.error wrap
     return res.status(500).send({ error: e.message || 'capture failed' });
   }
 });
@@ -4564,7 +4658,8 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
   try {
     event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
   } catch (err) {
-    console.error('❌ Webhook verification failed:', err.message);
+    logErrorEvent('backend', '[POST /webhook] signature verification', err, { req, level: 'critical' });
+    _origConsoleError('❌ Webhook verification failed:', err.message);
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
@@ -5243,7 +5338,8 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
   res.status(200).send('Webhook received');
 
   } catch (handlerErr) {
-    console.error(`[webhook] handler error event=${event.id} type=${event.type}:`, handlerErr?.message || handlerErr);
+    logErrorEvent('backend', '[POST /webhook] handler', handlerErr, { req, level: 'critical', context: { eventId: event?.id, eventType: event?.type, paymentIntentId } });
+    _origConsoleError(`[webhook] handler error event=${event.id} type=${event.type}:`, handlerErr?.message || handlerErr);
     if (claimedDelivery) {
       await pool.query('DELETE FROM stripe_webhook_events WHERE event_id = $1', [event.id])
         .catch(delErr => console.error('[webhook] dedupe row cleanup failed:', delErr?.message || delErr));
@@ -6072,6 +6168,35 @@ app.post('/api/reports', publicFormLimit, async (req, res) => {
     return res.status(201).json({ id, status: 'new' });
   } catch (err) {
     console.error('[POST /api/reports]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// --- Public: Frontend error reporter intake ---
+// Customer-facing pages (config.js reporter) POST JS crashes + failed API calls here.
+// Anonymous by design (pay/book/admin have no session). Rate-limited; feeds the same
+// error_events store the backend uses, surfaced on the admin "Errores" tab.
+app.post('/api/client-errors', publicFormLimit, async (req, res) => {
+  try {
+    const { page, message, stack, url, level, context } = req.body || {};
+    if (!message && !stack) {
+      return res.status(400).json({ error: 'missing_message' });
+    }
+    // Loop guard: never store errors about the reporter endpoint itself.
+    if (typeof url === 'string' && url.includes('/api/client-errors')) {
+      return res.status(202).json({ ok: true, skipped: true });
+    }
+    const tag = ('[frontend] ' + (String(page || url || 'page').slice(0, 120))).slice(0, 300);
+    const errLike = { message: String(message || '').slice(0, 2000), stack: stack ? String(stack).slice(0, 8000) : null };
+    const safeContext = (context && typeof context === 'object') ? context : undefined;
+    logErrorEvent('frontend', tag, errLike, {
+      req,
+      level: (level === 'warn' || level === 'critical') ? level : 'error',
+      context: { ...(safeContext || {}), page: page || null, url: url || null },
+    });
+    return res.status(202).json({ ok: true });
+  } catch (err) {
+    console.error('[POST /api/client-errors]', err);
     return res.status(500).json({ error: 'internal_error' });
   }
 });
@@ -9087,6 +9212,96 @@ app.patch('/api/reports/:id', adminRateLimit, requireAdminAuth, async (req, res)
   }
 });
 
+// --- Admin: Error / bug log (Errores tab) ---
+// List rolled-up errors with filters + status counts for the dashboard.
+app.get('/api/admin/errors', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const { status, source, level, q, limit = '50', offset = '0' } = req.query;
+    const params = [];
+    const conditions = [];
+    if (status && status !== 'all') { params.push(status); conditions.push(`status = $${params.length}`); }
+    if (source && source !== 'all') { params.push(source); conditions.push(`source = $${params.length}`); }
+    if (level && level !== 'all') { params.push(level); conditions.push(`level = $${params.length}`); }
+    if (q) { params.push(`%${q}%`); conditions.push(`(message ILIKE $${params.length} OR tag ILIKE $${params.length})`); }
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const countParams = [...params];
+    params.push(Number(limit) || 50, Number(offset) || 0);
+    const { rows } = await pool.query(
+      `SELECT * FROM error_events ${where} ORDER BY last_seen_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params
+    );
+    const { rows: countRows } = await pool.query(
+      `SELECT count(*)::int AS total FROM error_events ${where}`,
+      countParams
+    );
+    // Global status/source tallies (unfiltered) for the summary cards + nav badge.
+    const { rows: tallyRows } = await pool.query(
+      `SELECT
+         count(*) FILTER (WHERE status = 'new')::int                                        AS new,
+         count(*) FILTER (WHERE status = 'seen')::int                                       AS seen,
+         count(*) FILTER (WHERE status = 'resolved')::int                                   AS resolved,
+         count(*) FILTER (WHERE status = 'ignored')::int                                    AS ignored,
+         count(*) FILTER (WHERE source = 'frontend' AND status IN ('new','seen'))::int      AS frontend_open,
+         count(*) FILTER (WHERE source <> 'frontend' AND status IN ('new','seen'))::int     AS backend_open,
+         count(*) FILTER (WHERE last_seen_at > NOW() - INTERVAL '24 hours')::int            AS last24h
+       FROM error_events`
+    );
+    return res.json({ items: rows, total: countRows[0]?.total || 0, counts: tallyRows[0] || {} });
+  } catch (err) {
+    console.error('[GET /api/admin/errors]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// Triage a single error: change status (new/seen/resolved/ignored) or add notes.
+app.patch('/api/admin/errors/:id', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, adminNotes } = req.body || {};
+    const sets = [];
+    const params = [];
+    if (status) {
+      if (!['new', 'seen', 'resolved', 'ignored'].includes(status)) {
+        return res.status(400).json({ error: 'invalid_status' });
+      }
+      params.push(status); sets.push(`status = $${params.length}`);
+    }
+    if (adminNotes !== undefined) { params.push(adminNotes); sets.push(`admin_notes = $${params.length}`); }
+    if (sets.length === 0) return res.status(400).json({ error: 'no_fields_to_update' });
+    params.push(id);
+    const { rowCount } = await pool.query(
+      `UPDATE error_events SET ${sets.join(', ')} WHERE id = $${params.length}`,
+      params
+    );
+    if (!rowCount) return res.status(404).json({ error: 'not_found' });
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error('[PATCH /api/admin/errors/:id]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// Bulk cleanup: delete resolved/ignored errors (optionally older than ?days=N).
+app.delete('/api/admin/errors', adminRateLimit, requireAdminAuth, async (req, res) => {
+  try {
+    const days = Number(req.query.days);
+    const params = [];
+    let ageClause = '';
+    if (Number.isFinite(days) && days > 0) {
+      params.push(days);
+      ageClause = ` AND last_seen_at < NOW() - ($${params.length} * INTERVAL '1 day')`;
+    }
+    const { rowCount } = await pool.query(
+      `DELETE FROM error_events WHERE status IN ('resolved', 'ignored')${ageClause}`,
+      params
+    );
+    return res.json({ ok: true, deleted: rowCount || 0 });
+  } catch (err) {
+    console.error('[DELETE /api/admin/errors]', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
 // --- Admin: Partner applications CRUD ---
 app.get('/api/partner-applications', adminRateLimit, requireAdminAuth, async (req, res) => {
   try {
@@ -9405,7 +9620,7 @@ app.get('/api/admin/orders/:id', adminRateLimit, requireAdminAuth, async (req, r
 app.get('/api/admin/stats', adminRateLimit, requireAdminAuth, async (req, res) => {
   try {
     const today = new Date().toISOString().slice(0, 10);
-    const [requests, pendingOrders, confirmed, captured, reports, applications, pendingChanges] = await Promise.all([
+    const [requests, pendingOrders, confirmed, captured, reports, applications, pendingChanges, newErrors] = await Promise.all([
       pool.query(`SELECT count(*)::int AS c FROM service_requests WHERE created_at::date = $1`, [today]),
       pool.query(`SELECT count(*)::int AS c FROM all_bookings WHERE lower(status) = 'pending'`),
       pool.query(`SELECT count(*)::int AS c FROM all_bookings WHERE status = 'Confirmed'`),
@@ -9413,6 +9628,7 @@ app.get('/api/admin/stats', adminRateLimit, requireAdminAuth, async (req, res) =
       pool.query(`SELECT count(*)::int AS c FROM service_reports WHERE status = 'new'`),
       pool.query(`SELECT count(*)::int AS c FROM partner_applications WHERE status = 'pending'`),
       pool.query(`SELECT count(*)::int AS c FROM order_changes WHERE ${ADMIN_CHANGE_ATTENTION_SQL}`),
+      pool.query(`SELECT count(*)::int AS c FROM error_events WHERE status = 'new'`),
     ]);
     return res.json({
       requestsToday: requests.rows[0]?.c || 0,
@@ -9423,6 +9639,7 @@ app.get('/api/admin/stats', adminRateLimit, requireAdminAuth, async (req, res) =
       newReports: reports.rows[0]?.c || 0,
       pendingApplications: applications.rows[0]?.c || 0,
       pendingChanges: pendingChanges.rows[0]?.c || 0,
+      newErrors: newErrors.rows[0]?.c || 0,
     });
   } catch (err) {
     console.error('[GET /api/admin/stats]', err);
@@ -10881,6 +11098,25 @@ app.patch('/api/admin/providers/:providerId', adminRateLimit, requireAdminAuth, 
     console.error('[PATCH /api/admin/providers/:providerId]', err);
     return res.status(500).json({ error: 'internal_error' });
   }
+});
+
+// Terminal Express error handler — catches errors thrown (not caught) inside routes.
+// Must be registered AFTER all routes. Logs to the error store, then responds 500.
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  logErrorEvent('express', `[${req.method} ${req.path}]`, err, { req });
+  if (res.headersSent) return next(err);
+  return res.status(500).json({ error: 'internal_error' });
+});
+
+// Global crash handlers — funnel currently-invisible crashes into the error store.
+// Do NOT exit (preserves prior behavior where these went unhandled to the process log).
+process.on('uncaughtException', (err) => {
+  logErrorEvent('uncaught', 'uncaughtException', err, { level: 'critical' });
+});
+process.on('unhandledRejection', (reason) => {
+  const err = reason instanceof Error ? reason : new Error(String(reason));
+  logErrorEvent('uncaught', 'unhandledRejection', err, { level: 'critical' });
 });
 
 // 🚀 Start server

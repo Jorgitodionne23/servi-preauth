@@ -97,4 +97,115 @@
     FIREBASE_CONFIG,
     GOOGLE_CLIENT_ID: '315005869570-lb1549n2f20thjsmb43neoun4vf1nc1p.apps.googleusercontent.com'
   };
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Global error reporter. config.js is the only script on every page, so this
+  // captures JS crashes, unhandled promise rejections, and failed API/payment
+  // calls from ALL customer-facing + payment + admin pages and posts them to the
+  // backend, where they surface on the admin dashboard "Errores" tab.
+  // Fully defensive: it must never break a page, so everything is try/wrapped and
+  // rate-capped. Anonymous by design (pay/book/admin have no session token).
+  // ───────────────────────────────────────────────────────────────────────────
+  (function installErrorReporter() {
+    try {
+      var ENDPOINT = normalizedApi + '/api/client-errors';
+      var MAX_PER_PAGE = 10;      // hard cap per page load — never flood the store
+      var sent = 0;
+      var seen = {};              // dedupe identical messages within this page load
+
+      function report(payload) {
+        try {
+          if (sent >= MAX_PER_PAGE) return;
+          var msg = (payload && payload.message) || '';
+          var key = (payload.source || '') + '|' + msg + '|' + (payload.stack || '').slice(0, 200);
+          if (seen[key]) return;
+          seen[key] = true;
+          sent++;
+          var body = JSON.stringify({
+            page: location.pathname,
+            url: location.href,
+            level: payload.level || 'error',
+            message: String(msg).slice(0, 2000),
+            stack: payload.stack ? String(payload.stack).slice(0, 8000) : null,
+            userAgent: navigator.userAgent,
+            context: payload.context || null
+          });
+          // keepalive so a report still flushes if the page is unloading.
+          fetch(ENDPOINT, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: body,
+            keepalive: true,
+            credentials: 'omit'
+          }).catch(function () {});
+        } catch (_) {}
+      }
+
+      window.addEventListener('error', function (e) {
+        try {
+          // Ignore resource-load errors (img/script 404s) — only real script errors.
+          if (!e || (!e.error && !e.message)) return;
+          report({
+            source: 'js-error',
+            message: e.message || (e.error && e.error.message) || 'Script error',
+            stack: e.error && e.error.stack,
+            context: { filename: e.filename, lineno: e.lineno, colno: e.colno }
+          });
+        } catch (_) {}
+      });
+
+      window.addEventListener('unhandledrejection', function (e) {
+        try {
+          var reason = e && e.reason;
+          var message = (reason && reason.message) || String(reason || 'Unhandled rejection');
+          report({
+            source: 'promise-rejection',
+            message: message,
+            stack: reason && reason.stack,
+            context: { kind: 'unhandledrejection' }
+          });
+        } catch (_) {}
+      });
+
+      // Wrap fetch to surface network failures + 5xx responses to our OWN backend.
+      // Skips 4xx (expected/auth), non-API hosts, and the reporter endpoint (loop guard).
+      if (typeof window.fetch === 'function') {
+        var _origFetch = window.fetch.bind(window);
+        window.fetch = function (input, init) {
+          var url = '';
+          try { url = (typeof input === 'string') ? input : (input && input.url) || ''; } catch (_) {}
+          var isOwnApi = normalizedApi && url.indexOf(normalizedApi) === 0;
+          var isReporter = url.indexOf('/api/client-errors') !== -1;
+          var p = _origFetch(input, init);
+          if (isOwnApi && !isReporter) {
+            p.then(function (res) {
+              try {
+                if (res && res.status >= 500) {
+                  var method = (init && init.method) || 'GET';
+                  report({
+                    source: 'api-5xx',
+                    level: 'error',
+                    message: 'API ' + res.status + ' ' + method + ' ' + url,
+                    context: { status: res.status, method: method, api: url }
+                  });
+                }
+              } catch (_) {}
+            }, function (err) {
+              try {
+                var method2 = (init && init.method) || 'GET';
+                report({
+                  source: 'api-network',
+                  level: 'error',
+                  message: 'Network fail ' + method2 + ' ' + url + ' — ' + ((err && err.message) || err),
+                  stack: err && err.stack,
+                  context: { method: method2, api: url }
+                });
+              } catch (_) {}
+            });
+          }
+          return p;
+        };
+      }
+    } catch (_) { /* reporter must never break the page */ }
+  })();
 })();
