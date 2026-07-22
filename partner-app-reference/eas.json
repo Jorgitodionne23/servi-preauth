@@ -7,6 +7,9 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
+      "ios": {
+        "simulator": true
+      },
       "env": {
         "EXPO_PUBLIC_API_URL": "http://localhost:4242",
         "EXPO_PUBLIC_WEB_URL": "http://localhost:4242"
