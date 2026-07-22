@@ -13,7 +13,7 @@ import { Screen } from '@/components/ui/Screen';
 import { Txt } from '@/components/ui/Text';
 import { Icon, type FeatherName } from '@/components/ui/Icon';
 import { ServiLogo } from '@/components/ui/ServiLogo';
-import { LangToggle, Avatar } from '@/components/ui/LangToggle';
+import { Avatar } from '@/components/ui/LangToggle';
 import { PressableScale } from '@/components/ui/Pressable';
 import { SmartRequestBox } from '@/components/SmartRequestBox';
 import { CategoryShortcut } from '@/components/CategoryCard';
@@ -117,7 +117,6 @@ export default function HomeScreen() {
           </View>
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
-          <LangToggle />
           <Avatar initials={user ? user.firstName[0] + user.lastName[0] : 'SE'} onPress={() => router.push('/(tabs)/account')} />
         </View>
       </View>
