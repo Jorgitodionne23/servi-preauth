@@ -1381,12 +1381,19 @@
       lang: lang(),
     };
     // Guided service-page intake metadata (additive — already persisted by the backend):
-    // the deterministically matched service + the tailored follow-up answers give admin
-    // dispatch context without an AI parse.
+    // This page starts with a deterministic catalog selection, so it has already
+    // resolved the service. Include the Smart Request understanding fields too:
+    // the API uses them to distinguish a complete catalog booking from an
+    // unresolved free-form request.
     payload.requestMode = 'service';
     if (subKey) payload.matchedSubKey = subKey;
     if (data.serviceName) payload.matchedService = data.serviceName;
     if (data.detailAnswers && Object.keys(data.detailAnswers).length) payload.detailAnswers = data.detailAnswers;
+    payload.understandingStatus = 'understood';
+    payload.missingFields = [];
+    payload.requiredFollowups = [];
+    payload.understandingSummary = data.description || data.serviceName || serviceName;
+    payload.resolutionMethod = 'catalog_picker';
     // Carry the trusted-specialist preference (a preference, not a guarantee). The backend
     // re-validates the provider is verified and fills the real name; we send only the id.
     if (_svcPreferredProviderId) payload.preferredProviderId = _svcPreferredProviderId;
