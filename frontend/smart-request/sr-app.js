@@ -351,8 +351,12 @@
 	    var required = requiredFollowups(req);
 	    var missing = required.filter(function (item) { return item.required && !String(S.answers[item.key] || '').trim(); });
 	    var catalogMatch = !!(req.category && req.category !== 'custom' && req.subKey && req.service);
-	    var customReady = req.category === 'custom' && req.resolutionMethod === 'custom_confirmed' && missing.length === 0;
-	    var unresolved = req.aiStatus === 'unclear' || req.adminReview || (req.candidateServices && req.candidateServices.length > 1) || (!catalogMatch && !customReady);
+	    // A valid, in-progress custom resolution path — true as soon as the flow is entered,
+	    // independent of whether the follow-up questions are answered yet. Used only to decide
+	    // whether to suppress the "unclear" failure card; NOT a proxy for "fully answered".
+	    var customInProgress = req.category === 'custom' && req.resolutionMethod === 'custom_confirmed';
+	    var customReady = customInProgress && missing.length === 0;
+	    var unresolved = req.aiStatus === 'unclear' || req.adminReview || (req.candidateServices && req.candidateServices.length > 1) || (!catalogMatch && !customInProgress);
 	    var status = !S.rechecking && (catalogMatch || customReady) && missing.length === 0 ? 'understood' : (unresolved ? 'unresolved' : 'clarifying');
 	    return { status: status, required: required, missing: missing, ready: status === 'understood' };
 	  }
@@ -371,7 +375,7 @@
 	      : (req.caption ? '<div class="sr-transcript"><b>' + esc(tr('fromPhotos')) + '</b>' + esc(req.caption) + '</div>' : '');
 	    return '<div class="sr-understand sr-fade-in"><div class="sr-understand__top">' +
 	      '<span class="sr-understand__emoji">' + (req.emoji || '✨') + '</span><div class="sr-understand__head">' +
-	      '<div class="sr-understand__eyebrow">' + I.spark(13) + esc(state.ready ? tr('understood') : tr('understoodSoFar')) + '</div>' +
+	      '<div class="sr-understand__eyebrow">' + I.spark(13) + esc(state.ready ? tr('understood') : (req.category === 'custom' ? tr('understoodCustom') : tr('understoodSoFar'))) + '</div>' +
 	      '<div class="sr-understand__svc"><strong>' + esc(req.service || tr('customRequest')) + '</strong>' +
 	      '<span class="sr-understand__cat">' + esc(req.subLabel ? req.subLabel + ' · ' + req.categoryLabel : req.categoryLabel) + '</span></div></div></div>' +
 	      (req.summary ? '<p class="sr-understand__summary">“' + esc(req.summary) + '”</p>' : '') + transcript +
@@ -776,6 +780,17 @@
       var wait = Math.max(0, 850 - (Date.now() - started));
       setTimeout(function () {
         S.req = parsed;
+        // AI understood this as a genuinely open-ended (off-catalog) request — auto-enter the
+        // same "special request" resolution path 'custom-start' uses, but WITHOUT discarding
+        // the AI's own service/summary text (custom-start is a manual escape hatch with no AI
+        // context, so it resets to a generic placeholder; here we have real content to keep).
+        if (parsed.aiStatus === 'understood' && parsed.category === 'custom' && !parsed.adminReview) {
+          S.req = Object.assign({}, S.req, { resolutionMethod: 'custom_confirmed' });
+          S.answers = Object.assign({}, S.answers, {
+            custom_goal: S.answers.custom_goal || String(parsed.service || '').trim(),
+            custom_context: S.answers.custom_context || String(parsed.summary || '').trim(),
+          });
+        }
         if (parsed.inferredDate) { S.when = 'schedule'; S.date = parsed.inferredDate; S.dateLabel = parsed.inferredDateLabel || ''; }
         else if (parsed.urgency === 'asap') { S.when = 'asap'; S.date = ''; S.dateLabel = ''; }
         else if (parsed.urgency === 'scheduled') { S.when = 'schedule'; S.date = ''; S.dateLabel = ''; }

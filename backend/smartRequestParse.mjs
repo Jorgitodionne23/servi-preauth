@@ -2,26 +2,28 @@ import { SERVI_CATALOG, catalogPromptText, CATEGORY_KEYS } from './smartRequestC
 
 export const MAX_TEXT = 600;
 export const MEDIA_CONFIDENCE_THRESHOLD = 0.72;
+export const MAX_SERVICE_LABEL = 80;
+export const MIN_CUSTOM_UNDERSTOOD_CONFIDENCE = 0.45;
 
 export function buildParseSystemPrompt() {
-  return `You are SERVI's request-understanding engine. SERVI is an on-demand home-services platform in Mexico City. A user typed a service request in plain language. Map it to the closest service in SERVI's catalog and decide what brief follow-up details would help a specialist arrive prepared.
+  return `You are SERVI's request-understanding engine. SERVI is an on-demand home-services platform in Mexico City that can arrange a specialist for ANY legitimate home-service need — SERVI is not limited to the categories below. The catalog exists only to help route the request internally when it fits; it is not an exhaustive menu, and a request that doesn't fit it is a normal, expected outcome, not a failure to understand the user. A user typed a service request in plain language. Identify the best-fit category (or 'custom' only when the request is a genuinely different kind of home service that none of the categories cover) and decide what brief follow-up details would help a specialist arrive prepared.
 
 CATALOG (category -> subKey ("label"): example services):
 ${catalogPromptText()}
 
 Respond with ONLY a JSON object (no prose, no markdown) of this exact shape:
 {
-  "category": "<one catalog category key, or 'custom' if nothing fits>",
+  "category": "<one catalog category key, or 'custom' if nothing genuinely fits>",
   "subKey": "<one subKey from that category, or null>",
-  "service": "<the single closest example service label, or a short custom service name>",
+  "service": "<the single closest example service label, or — if none fit closely — a short custom service name describing what the user needs>",
   "summary": "<one short sentence restating the need, max 12 words>",
-  "confidence": <0..1 how sure the mapping is>,
+  "confidence": <0..1 how well YOU understood the request overall, not merely whether it matched a catalog category — a clear, specific home-service request deserves 0.7+ confidence even when "category" is "custom">,
   "urgency": "<'asap' if they imply now/urgent/emergency, 'scheduled' if they name a day/time, else 'flexible'>",
   "inferredDate": <"YYYY-MM-DD" if a specific day is implied, else null>,
   "followups": [ { "q": "<short question to clarify a missing detail>", "key": "<slug>", "chips": ["<2-4 short option labels>"] } ],
   "candidateServices": ["<up to 4 exact catalog service labels when more than one match is plausible>"]
 }
-Rules: Ask 1-3 followups whenever the object/space/problem or minimum job scope is missing. These are required before scheduling. Prefer quick chip options; never ask for name, phone, address, date, or price (handled elsewhere). Keep questions under 8 words. Use exact catalog labels for candidateServices. A vague or off-catalog request must not be presented as understood.`;
+Rules: Ask 1-3 followups whenever the object/space/problem or minimum job scope is missing. These are required before scheduling. Prefer quick chip options; never ask for name, phone, address, date, or price (handled elsewhere). Keep questions under 8 words. Use exact catalog labels for candidateServices. Being off-catalog ('category':'custom') must still be treated as clearly understood whenever the underlying request itself is clear and specific — reserve low confidence (below 0.4) for input that is empty, incoherent, or doesn't describe an actual home-service need at all.`;
 }
 
 export function buildMediaAnalysisSystemPrompt() {
@@ -94,15 +96,30 @@ function normalizeServiceLabel(value) {
   return normalizeSearch(value);
 }
 
-export function validateCatalogSelection(data) {
+function sanitizeServiceText(value) {
+  return String(value == null ? '' : value)
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, MAX_SERVICE_LABEL);
+}
+
+// strictService=true (default) preserves the original exact-literal-match behavior, which
+// parseMediaModelResponse relies on (photo analysis stays strict/fail-closed, unchanged).
+// strictService=false is the text-parse path: category+subKey are still catalog-validated
+// ground truth, but the freeform "service" string is accepted as-is (sanitized), since the
+// model is explicitly invited to describe a need that has no exact example-label match.
+export function validateCatalogSelection(data, opts = {}) {
+  const strictService = opts.strictService !== false;
   const rawCategory = String(data?.category || '').trim();
   if (rawCategory === 'custom') {
+    const service = sanitizeServiceText(data?.service);
     return {
-      valid: true,
+      valid: !!service,
       category: 'custom',
       subKey: null,
-      service: data?.service != null ? String(data.service) : null,
-      reason: '',
+      service: service || null,
+      reason: service ? '' : 'invalid_service',
     };
   }
   if (!CATEGORY_KEYS.includes(rawCategory)) {
@@ -114,12 +131,19 @@ export function validateCatalogSelection(data) {
   if (!sub) {
     return { valid: false, category: 'custom', subKey: null, service: null, reason: 'invalid_subkey' };
   }
-  const serviceNorm = normalizeServiceLabel(data?.service);
-  const service = (sub.services || []).find((item) => normalizeServiceLabel(item) === serviceNorm);
-  if (!service) {
+  if (strictService) {
+    const serviceNorm = normalizeServiceLabel(data?.service);
+    const service = (sub.services || []).find((item) => normalizeServiceLabel(item) === serviceNorm);
+    if (!service) {
+      return { valid: false, category: 'custom', subKey: null, service: null, reason: 'invalid_service' };
+    }
+    return { valid: true, category: rawCategory, subKey: sub.key, service, reason: '' };
+  }
+  const freeform = sanitizeServiceText(data?.service);
+  if (!freeform) {
     return { valid: false, category: 'custom', subKey: null, service: null, reason: 'invalid_service' };
   }
-  return { valid: true, category: rawCategory, subKey: sub.key, service, reason: '' };
+  return { valid: true, category: rawCategory, subKey: sub.key, service: freeform, reason: '' };
 }
 
 function normalizeEvidence(value) {
@@ -148,7 +172,7 @@ export function parseModelResponse(raw) {
   if (start === -1 || end === -1 || end < start) throw new Error('no-json');
   const data = JSON.parse(str.slice(start, end + 1));
 
-  const selection = validateCatalogSelection(data);
+  const selection = validateCatalogSelection(data, { strictService: false });
   let confidence = clampConfidence(data.confidence, 0.7);
   if (!selection.valid) confidence = Math.min(confidence, 0.4);
   const urgency = URGENCY.includes(data.urgency) ? data.urgency : 'flexible';
@@ -158,14 +182,21 @@ export function parseModelResponse(raw) {
         .map((f) => ({ q: String(f.q), key: String(f.key || ''), ...(Array.isArray(f.chips) ? { chips: f.chips.map(String).slice(0, 4) } : {}) }))
     : [];
   const candidateServices = normalizeCandidates(data.candidateServices, selection);
-  const catalogUnderstood = selection.valid && selection.category !== 'custom';
-  const understandingStatus = !catalogUnderstood
+  // A catalog-category match is ground-truthed against the real catalog, so it's always
+  // "understood" regardless of confidence. A 'custom' (off-catalog) match has no catalog
+  // ground truth, so it additionally needs a minimum confidence — this guards against the
+  // model inventing a plausible label for vague/gibberish input, without treating "off
+  // catalog" itself as a failure to understand (that's the whole point of Smart Request).
+  const isCatalogMatch = selection.valid && selection.category !== 'custom';
+  const isViableCustomMatch = selection.valid && selection.category === 'custom' && confidence >= MIN_CUSTOM_UNDERSTOOD_CONFIDENCE;
+  const understood = isCatalogMatch || isViableCustomMatch;
+  const understandingStatus = !understood
     ? 'unresolved'
     : ((confidence < 0.62 || candidateServices.length > 1 || followups.length > 0) ? 'clarifying' : 'understood');
 
   return {
-    aiStatus: catalogUnderstood ? 'understood' : 'unclear',
-    aiReason: selection.reason || (selection.category === 'custom' ? 'off_catalog' : ''),
+    aiStatus: understood ? 'understood' : 'unclear',
+    aiReason: understood ? '' : (selection.reason || (selection.category === 'custom' ? 'low_confidence_custom' : '')),
     category: selection.category,
     subKey: selection.subKey,
     service: selection.service,

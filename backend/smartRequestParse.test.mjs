@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildMediaAnalysisSystemPrompt, buildParseSystemPrompt, buildParseUserPrompt, parseMediaModelResponse, parseModelResponse } from './smartRequestParse.mjs';
+import { buildMediaAnalysisSystemPrompt, buildParseSystemPrompt, buildParseUserPrompt, parseMediaModelResponse, parseModelResponse, validateCatalogSelection } from './smartRequestParse.mjs';
 
 test('system prompt embeds the grounded catalog', () => {
   const p = buildParseSystemPrompt();
@@ -55,13 +55,24 @@ test('parseModelResponse validates and exposes catalog candidates', () => {
   assert.deepEqual(out.candidateServices.map((item) => item.service), ['TV wall mounting', 'Light fixture installation']);
 });
 
-test('custom model output remains unresolved until explicit guided confirmation', () => {
+test('AI-understood custom (off-catalog) output is not treated as a parse failure', () => {
   const out = parseModelResponse(JSON.stringify({
     category: 'custom', service: 'Unusual home task', summary: 'Unusual task', confidence: 0.9,
     urgency: 'flexible', followups: [{ q: 'What result do you want?', key: 'goal' }],
   }));
+  assert.equal(out.aiStatus, 'understood');
+  assert.equal(out.aiReason, '');
+  assert.equal(out.category, 'custom');
+  assert.equal(out.service, 'Unusual home task');
+  assert.equal(out.understandingStatus, 'clarifying'); // has a followup, so still asks before "understood"
+});
+
+test('a low-confidence custom guess stays fail-closed (unclear)', () => {
+  const out = parseModelResponse(JSON.stringify({
+    category: 'custom', service: 'asdkfj', summary: 'unclear input', confidence: 0.2, urgency: 'flexible',
+  }));
   assert.equal(out.aiStatus, 'unclear');
-  assert.equal(out.aiReason, 'off_catalog');
+  assert.equal(out.aiReason, 'low_confidence_custom');
   assert.equal(out.understandingStatus, 'unresolved');
 });
 
@@ -99,20 +110,32 @@ test('parseModelResponse removes date and timing followups', () => {
   assert.deepEqual(out.followups, [{ q: 'Which fixture is affected?', key: 'fixture', chips: ['Sink', 'Toilet'] }]);
 });
 
-test('parseModelResponse rejects non-catalog service for catalog category', () => {
+test('parseModelResponse accepts a freeform service description for a valid catalog category+subKey', () => {
   const out = parseModelResponse(JSON.stringify({
-    category: 'repair',
-    subKey: 'plumbing',
-    service: 'Mystery plumbing visit',
-    summary: 'Mystery issue',
-    confidence: 0.95,
-    urgency: 'flexible',
+    category: 'repair', subKey: 'plumbing', service: 'Mystery plumbing visit',
+    summary: 'Mystery issue', confidence: 0.95, urgency: 'flexible',
   }));
-  assert.equal(out.aiStatus, 'unclear');
-  assert.equal(out.category, 'custom');
-  assert.equal(out.subKey, null);
-  assert.equal(out.service, null);
-  assert.equal(out.confidence, 0.4);
+  assert.equal(out.aiStatus, 'understood');
+  assert.equal(out.category, 'repair');
+  assert.equal(out.subKey, 'plumbing');
+  assert.equal(out.service, 'Mystery plumbing visit');
+  assert.equal(out.confidence, 0.95);
+});
+
+test('validateCatalogSelection stays strict by default (media path behavior unchanged)', () => {
+  const out = validateCatalogSelection({ category: 'repair', subKey: 'plumbing', service: 'Mystery plumbing visit' });
+  assert.equal(out.valid, false);
+  assert.equal(out.reason, 'invalid_service');
+});
+
+test('validateCatalogSelection sanitizes and caps a freeform service string in lenient mode', () => {
+  const out = validateCatalogSelection(
+    { category: 'repair', subKey: 'plumbing', service: '  Weird\n\nrequest   ' + 'x'.repeat(200) },
+    { strictService: false }
+  );
+  assert.equal(out.valid, true);
+  assert.ok(out.service.length <= 80);
+  assert.ok(!/\n/.test(out.service));
 });
 
 test('parseMediaModelResponse accepts high-confidence catalog-backed photo', () => {

@@ -15,6 +15,10 @@
    ──────────────────────────────────────────────────────────────────────── */
 (function () {
   const CAT = () => window.SERVI_CATALOG || {};
+  const customLabel = () => {
+    const dict = (window.__t && window.__t.smartRequest) || {};
+    return dict.customRequest != null ? dict.customRequest : 'Custom request';
+  };
 
   function norm(s) { return String(s || '').toLowerCase(); }
   function normSearch(s) {
@@ -194,7 +198,7 @@
       aiReason: data.aiReason || null,
       aiEvidence: data.aiEvidence || [],
       category: catKey,
-      categoryLabel: cat ? cat.label : 'Custom request',
+      categoryLabel: cat ? cat.label : customLabel(),
       emoji: cat ? cat.emoji : '✨',
       subKey: sub ? sub.key : null,
       subLabel: sub ? sub.label : null,
@@ -240,7 +244,7 @@
       aiEvidence: [],
       emoji: '✨',
       category: 'custom',
-      categoryLabel: 'Custom request',
+      categoryLabel: customLabel(),
       subKey: null,
       subLabel: null,
       service: null,
