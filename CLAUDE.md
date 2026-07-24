@@ -344,6 +344,8 @@ The two Expo apps are no longer mocked prototypes — they are the production cu
 
 Workflow: develop on `dev`, then open a PR from `dev` into `main` when ready to ship. No manual env var swapping — each environment has its keys set permanently in their respective dashboards.
 
+**Occasional direct-to-main hotfixes:** sometimes a change lands straight on `main` instead of going through `dev` first. `.github/workflows/sync-dev-with-main.yml` automatically fast-forwards `dev` to match `main` on every push to `main`, so `dev` doesn't silently fall behind. If `dev` has its own unmerged commits at the same time (a real divergence, not just a fast-forward), the workflow fails on purpose and files a GitHub issue rather than auto-merging — that case needs a manual `git merge main` on `dev`. Before starting git-related work, check `git branch -vv` for drift between `dev`/`main` and proactively flag/offer to sync if the two have diverged.
+
 > If you see references to a `feature/servi-platform` branch anywhere, they're stale. That branch was deleted.
 
 ### Local Setup

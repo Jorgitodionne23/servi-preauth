@@ -1,0 +1,91 @@
+name: Sync dev with main
+
+# Keeps `dev` from silently falling behind when a change is pushed directly to `main`
+# (bypassing the normal dev -> PR -> main flow, e.g. a quick hotfix). Whenever `main`
+# moves, this fast-forwards `dev` to match it.
+#
+# If `dev` has diverged (it has its own unmerged commit(s) that `main` doesn't have, so
+# a fast-forward isn't possible), this does NOT attempt an automatic merge -- that could
+# silently commit unresolved conflicts to `dev`. It fails loudly and files an issue for
+# manual resolution instead.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: sync-dev-with-main
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  sync:
+    name: Fast-forward dev to main
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fast-forward dev to match main
+        run: |
+          set -eu
+          git fetch origin main dev
+          git checkout -B dev origin/dev
+
+          if git merge --ff-only origin/main; then
+            if [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/dev)" ]; then
+              echo "dev is already up to date with main; nothing to push."
+            else
+              git push origin dev
+              echo "✅ Fast-forwarded dev to $(git rev-parse --short HEAD) and pushed."
+            fi
+          else
+            echo "❌ dev has diverged from main and cannot be fast-forwarded automatically."
+            echo "This means dev has its own commit(s) that main doesn't have, at the same"
+            echo "time main gained a commit dev doesn't have. Resolve manually:"
+            echo "  git checkout dev && git merge main   (resolve any conflicts, then push)"
+            exit 1
+          fi
+
+      - name: File GitHub issue on divergence
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          MAIN_SHA: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -eu
+          TITLE="[sync-dev] dev and main have diverged as of ${MAIN_SHA:0:7}"
+          EXISTING=$(gh issue list --state open --search "in:title \"[sync-dev]\"" --json number --jq '.[0].number // ""')
+          if [ -n "$EXISTING" ]; then
+            echo "Issue #$EXISTING already open for a prior divergence; not creating a duplicate."
+            exit 0
+          fi
+          BODY=$(cat <<EOF
+          \`main\` was just pushed to (commit \`$MAIN_SHA\`), but \`dev\` could not be fast-forwarded
+          to match it -- \`dev\` has its own commit(s) that \`main\` doesn't have.
+
+          - Run: $RUN_URL
+
+          ## What this means
+          Someone pushed directly to \`dev\` (or \`main\` diverged some other way) since the last
+          sync, so a simple fast-forward isn't safe -- merging automatically here risks silently
+          committing unresolved conflicts to \`dev\`.
+
+          ## Fix
+          \`\`\`
+          git checkout dev
+          git merge main
+          # resolve any conflicts
+          git push origin dev
+          \`\`\`
+          EOF
+          )
+          gh issue create --title "$TITLE" --body "$BODY" --label "alert" || gh issue create --title "$TITLE" --body "$BODY"
